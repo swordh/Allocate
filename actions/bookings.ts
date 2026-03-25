@@ -11,7 +11,7 @@ import type { BookingItem } from '@/types'
 // ---------------------------------------------------------------------------
 
 function getFunctionsInstance() {
-  const functions = getFunctions(auth.app, 'europe-west1')
+  const functions = getFunctions(auth.app, 'us-central1')
   if (process.env.NODE_ENV === 'development' && process.env.FUNCTIONS_EMULATOR === 'true') {
     connectFunctionsEmulator(functions, 'localhost', 5001)
   }

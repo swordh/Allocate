@@ -24,7 +24,7 @@ let _functions: ReturnType<typeof getFunctions> | null = null
 
 function getFunctionsInstance() {
   if (_functions) return _functions
-  _functions = getFunctions(auth.app, 'europe-west1')
+  _functions = getFunctions(auth.app, 'us-central1')
   if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_FUNCTIONS_EMULATOR === 'true') {
     connectFunctionsEmulator(_functions, 'localhost', 5001)
   }
