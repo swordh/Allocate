@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminAuth } from '@/lib/firebase-admin'
 
 const PUBLIC_PATHS = ['/login', '/signup', '/api/auth/session']
 
 /**
  * Auth guard for all application routes.
- * Verifies the __session cookie on every request.
- * Redirects to /login if the cookie is absent or invalid.
+ * Runs in Edge Runtime — must stay lightweight (no Node.js APIs).
  *
- * CRITICAL: Keep this fast. Never query Firestore here.
+ * This middleware performs a presence check only: if the __session cookie
+ * is missing, redirect to /login. Full cryptographic verification of the
+ * session cookie happens in the DAL (lib/dal.ts → getVerifiedSession),
+ * which runs in the Node.js runtime inside Server Components and Server Actions.
+ *
+ * CRITICAL: Keep this fast. Never import firebase-admin here.
  * Role checks and company scoping happen in Server Components and Server Actions via the DAL.
  *
  * CRITICAL: Server Actions are NOT separate route entries — the matcher below
  * applies to the page that calls the action, not the action itself.
  * Always verify auth inside each Server Action independently via getVerifiedSession().
  */
-export async function proxy(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Allow public routes and Next.js internals through without auth check.
@@ -29,21 +32,12 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
-  try {
-    // Optimistic check — verifies the cookie signature and expiry only.
-    // Does not hit Firestore.
-    await adminAuth.verifySessionCookie(sessionCookie, true)
-
-    // Forward the pathname as a request header so Server Components can read
-    // the current path without a client-side hook.
-    const requestHeaders = new Headers(req.headers)
-    requestHeaders.set('x-pathname', pathname)
-    return NextResponse.next({ request: { headers: requestHeaders } })
-  } catch {
-    const response = NextResponse.redirect(new URL('/login', req.url))
-    response.cookies.delete('__session')
-    return response
-  }
+  // Cookie is present — forward the pathname as a request header so Server
+  // Components can read the current path without a client-side hook.
+  // Full token verification happens in getVerifiedSession() (DAL, Node.js runtime).
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-pathname', pathname)
+  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 export const config = {
