@@ -69,7 +69,8 @@ export const updateEquipment = onCall(async (request) => {
     throw new HttpsError('not-found', 'Equipment not found.');
   }
 
-  const existingData = equipmentSnap.data() as { trackingType: string };
+  // trackingType may be undefined on legacy documents created before Phase 2.
+  const existingData = equipmentSnap.data() as { trackingType?: string };
 
   // ── Optional field validation ──────────────────────────────────────────────
   const VALID_STATUSES = ['available', 'checked_out', 'needs_repair'] as const;
@@ -122,25 +123,29 @@ export const updateEquipment = onCall(async (request) => {
 
   // ── totalQuantity — only valid for quantity items ──────────────────────────
   if (request.data.totalQuantity !== undefined) {
-    if (existingData.trackingType !== 'quantity') {
+    if (existingData.trackingType !== undefined && existingData.trackingType !== 'quantity') {
       throw new HttpsError('invalid-argument', 'totalQuantity can only be updated on quantity-tracked items.');
     }
-    const rawQty: unknown = request.data.totalQuantity;
-    if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
-      throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer.');
+    if (existingData.trackingType !== undefined) {
+      const rawQty: unknown = request.data.totalQuantity;
+      if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
+        throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer.');
+      }
+      // TODO Phase 3: reject if rawQty < max concurrently booked quantity
+      updates['totalQuantity'] = rawQty;
     }
-    // TODO Phase 3: reject if rawQty < max concurrently booked quantity
-    updates['totalQuantity'] = rawQty;
   }
 
   // ── serialNumber — only valid for individual items ─────────────────────────
   if (request.data.serialNumber !== undefined) {
-    if (existingData.trackingType !== 'individual') {
+    if (existingData.trackingType !== undefined && existingData.trackingType !== 'individual') {
       throw new HttpsError('invalid-argument', 'serialNumber is not allowed on quantity-tracked items.');
     }
-    updates['serialNumber'] = request.data.serialNumber
-      ? String(request.data.serialNumber).trim() || null
-      : null;
+    if (existingData.trackingType !== undefined) {
+      updates['serialNumber'] = request.data.serialNumber
+        ? String(request.data.serialNumber).trim() || null
+        : null;
+    }
   }
 
   // ── Write ──────────────────────────────────────────────────────────────────

@@ -94,7 +94,8 @@ export async function createEquipment(
     return { id: result.data.data.id }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create equipment'
-    console.error('[actions/equipment] createEquipment error:', err)
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/equipment] createEquipment failed', { code })
     return { error: message }
   }
 }
@@ -112,7 +113,7 @@ interface UpdateEquipmentPayload {
   status?: string
   requiresApproval?: boolean
   approverId?: string | null
-  active?: boolean
+  // active intentionally omitted — deactivation routes through deactivateEquipment only
 }
 
 export async function updateEquipment(
@@ -125,6 +126,9 @@ export async function updateEquipment(
   const name = (formData.get('name') as string | null)?.trim()
   if (name !== undefined && name !== null && name.length > 100) {
     return { error: 'Name must be 100 characters or fewer' }
+  }
+  if (name !== undefined && name !== null && name.length === 0) {
+    return { error: 'Name cannot be empty' }
   }
 
   const payload: UpdateEquipmentPayload = {}
@@ -156,11 +160,6 @@ export async function updateEquipment(
     payload.approverId = approverIdRaw.trim() || null
   }
 
-  const activeRaw = formData.get('active')
-  if (activeRaw !== null) {
-    payload.active = activeRaw === 'true'
-  }
-
   try {
     const functions = getFunctionsInstance()
     const updateEquipmentFn = httpsCallable<
@@ -184,7 +183,8 @@ export async function updateEquipment(
     return {}
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to update equipment'
-    console.error('[actions/equipment] updateEquipment error:', err)
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/equipment] updateEquipment failed', { code })
     return { error: message }
   }
 }
@@ -219,7 +219,8 @@ export async function deactivateEquipment(equipmentId: string): Promise<{ error?
     return {}
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to deactivate equipment'
-    console.error('[actions/equipment] deactivateEquipment error:', err)
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/equipment] deactivateEquipment failed', { code })
     return { error: message }
   }
 }

@@ -18,7 +18,7 @@ export const getVerifiedSession = cache(async (): Promise<SessionClaims> => {
   const sessionCookie = cookieStore.get('__session')?.value
 
   if (!sessionCookie) {
-    console.log('[dal] No session cookie found — redirecting to /login')
+    console.error('[dal] session_cookie_missing')
     redirect('/login')
   }
 
@@ -33,9 +33,9 @@ export const getVerifiedSession = cache(async (): Promise<SessionClaims> => {
     }
 
     return claims
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[dal] Session cookie verification failed — redirecting to /login', { error: message })
+  } catch {
+    // Do not log the raw error — Firebase session errors can contain tokens or emails.
+    console.error('[dal] session_cookie_invalid')
     redirect('/login')
   }
 })

@@ -33,7 +33,6 @@ export default function EquipmentForm({
   const [status, setStatus] = useState(equipment?.status ?? 'available')
   const [requiresApproval, setRequiresApproval] = useState(equipment?.requiresApproval ?? false)
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
-  const [active, setActive] = useState(equipment?.active ?? true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -60,18 +59,11 @@ export default function EquipmentForm({
     formData.set('approverId', approverId)
     if (!isEditMode) {
       formData.set('trackingType', trackingType)
-      if (trackingType === 'quantity') {
-        formData.set('totalQuantity', String(totalQuantity))
-      } else {
-        formData.set('serialNumber', serialNumber)
-      }
+    }
+    if (trackingType === 'quantity') {
+      formData.set('totalQuantity', String(totalQuantity))
     } else {
-      formData.set('active', String(active))
-      if (trackingType === 'quantity') {
-        formData.set('totalQuantity', String(totalQuantity))
-      } else {
-        formData.set('serialNumber', serialNumber)
-      }
+      formData.set('serialNumber', serialNumber)
     }
 
     let result: { id?: string; error?: string }
@@ -260,21 +252,6 @@ export default function EquipmentForm({
               ))}
             </select>
           </div>
-        </div>
-      )}
-
-      {/* Active — edit mode only */}
-      {isEditMode && (
-        <div className={styles.checkboxField}>
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-              className={styles.checkbox}
-            />
-            <span>Active</span>
-          </label>
         </div>
       )}
 

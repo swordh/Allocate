@@ -106,6 +106,9 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {item.trackingType === 'individual' && item.serialNumber && (
                       <span className={styles.serialNumber}>{item.serialNumber}</span>
                     )}
+                    {!item.trackingType && (
+                      <span className={styles.legacyBadge}>Legacy</span>
+                    )}
                     <span className={styles.categoryPill}>{item.category}</span>
                   </div>
                   {role === 'admin' && (

@@ -148,11 +148,12 @@ export const addEquipment = onCall(async (request) => {
       );
     }
 
-    // Count active equipment using the aggregation API — avoids downloading
-    // every document just to get a count.
+    // Count active equipment — called outside the transaction because Firestore
+    // aggregation queries cannot run inside runTransaction. The plan limit is a
+    // soft cap so the negligible TOCTOU window is acceptable.
     const equipmentRef = db.collection(`companies/${companyId}/equipment`);
-    const countSnap = await tx.get(equipmentRef.where('active', '==', true));
-    const currentCount = countSnap.size;
+    const countSnap = await equipmentRef.where('active', '==', true).count().get();
+    const currentCount = countSnap.data().count;
 
     const limit = subscription.limits.equipment;
     const plan = subscription.plan;
