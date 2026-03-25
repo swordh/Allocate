@@ -32,10 +32,11 @@ export async function createSession(idToken: string): Promise<void> {
       maxAge:   60 * 60 * 24 * 14, // 14 days in seconds
     })
 
-    console.log('[actions/auth]', { uid, action: 'session_created' })
+    console.log('[actions/auth]', { action: 'session_created' })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/auth]', { error: message, uid: uid ?? 'unknown', action: 'create_session_failed' })
+    // Do not log the raw error — Firebase Admin errors can contain emails or tokens.
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/auth]', { code, action: 'create_session_failed' })
     throw new Error('Failed to create session')
   }
 }
@@ -58,11 +59,13 @@ export async function deleteSession(): Promise<void> {
 /**
  * Switches the active company for the current user.
  * Validates that a membership document exists for the target companyId before
- * updating claims. The client must call getIdToken(true) and re-issue the
- * session cookie after this action completes.
+ * updating claims.
  *
- * Full implementation (verifying membership) will be completed once the
- * Firestore membership collection is populated by the createCompany Cloud Function.
+ * IMPORTANT: After calling this action the caller MUST:
+ *   1. Call `auth.currentUser.getIdToken(true)` to force a token refresh
+ *   2. Call `createSession(freshIdToken)` to re-issue the session cookie
+ * Skipping these steps leaves the session cookie carrying stale claims
+ * (old activeCompanyId) until it expires — which is a security defect.
  */
 export async function switchCompany(companyId: string): Promise<void> {
   const session = await getVerifiedSession()
@@ -94,8 +97,8 @@ export async function switchCompany(companyId: string): Promise<void> {
     // Invalidate all cached server data so the new company's data is loaded.
     revalidatePath('/', 'layout')
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/auth]', { error: message, uid, companyId, action: 'switch_company_failed' })
-    throw new Error(message)
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/auth]', { code, action: 'switch_company_failed' })
+    throw new Error('Failed to switch company')
   }
 }
