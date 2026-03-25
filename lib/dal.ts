@@ -25,10 +25,19 @@ export const getVerifiedSession = cache(async (): Promise<SessionClaims> => {
   try {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true)
 
+    const activeCompanyId = decoded['activeCompanyId'] as string | undefined
+
+    // If claims are missing the user completed Auth but not company setup —
+    // send them back to login to restart the flow.
+    if (!activeCompanyId) {
+      console.error('[dal] session_missing_company_claim')
+      redirect('/login')
+    }
+
     const claims: SessionClaims = {
       uid:             decoded.uid,
       email:           decoded.email ?? '',
-      activeCompanyId: decoded['activeCompanyId'] as string,
+      activeCompanyId,
       role:            decoded['role'] as SessionClaims['role'],
     }
 

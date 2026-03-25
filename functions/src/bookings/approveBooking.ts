@@ -20,7 +20,7 @@ import { BookingDocument } from '../types';
  * @throws failed-precondition if the booking is not in the pending/pending-approval state,
  *                             or if a conflict is detected at approval time
  */
-export const approveBooking = onCall(async (request) => {
+export const approveBooking = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

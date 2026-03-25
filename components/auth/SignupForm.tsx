@@ -5,35 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
-import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions'
-import { createSession } from '@/actions/auth'
+import { setupNewCompany, createSession } from '@/actions/auth'
 import styles from './Auth.module.css'
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const MIN_PASSWORD_LENGTH = 8
-
-// ---------------------------------------------------------------------------
-// Firebase Functions singleton — connectFunctionsEmulator must only be called
-// once per instance; calling it on every submit causes SDK warnings.
-// ---------------------------------------------------------------------------
-
-let _functions: ReturnType<typeof getFunctions> | null = null
-
-function getFunctionsInstance() {
-  if (_functions) return _functions
-  _functions = getFunctions(auth.app, 'us-central1')
-  if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_FUNCTIONS_EMULATOR === 'true') {
-    connectFunctionsEmulator(_functions, 'localhost', 5001)
-  }
-  return _functions
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export default function SignupForm() {
   const router = useRouter()
@@ -49,8 +24,6 @@ export default function SignupForm() {
     e.preventDefault()
     setError(null)
 
-    // Client-side pre-validation — trim here so spaces-only inputs are caught
-    // before we hit the network.
     const trimmedCompany = companyName.trim()
     const trimmedName    = userName.trim()
     const trimmedEmail   = email.trim()
@@ -84,25 +57,19 @@ export default function SignupForm() {
       return
     }
 
-    // ── Step 2: Create company — if this fails, delete the orphaned auth user
-    // so the user can retry from scratch without hitting "email already in use".
+    // ── Step 2: Create company server-side (no CORS) ──────────────────────
+    // Pass the initial token only for identity verification. Claims are set
+    // inside setupNewCompany; we must refresh the token AFTER this call.
     try {
-      const functions = getFunctionsInstance()
-      const createCompanyFn = httpsCallable<
-        { companyName: string; userName: string },
-        { success: boolean; companyId: string }
-      >(functions, 'createCompany')
-
-      await createCompanyFn({ companyName: trimmedCompany, userName: trimmedName })
+      const idToken = await credential.user.getIdToken()
+      await setupNewCompany(idToken, trimmedCompany, trimmedName)
     } catch (err) {
-      // Clean up the auth user so the user can retry.
+      // Clean up the orphaned auth user so the user can retry.
       await credential.user.delete().catch(() => {/* best-effort */})
 
-      const code = (err as { code?: string }).code ?? ''
-      if (code === 'functions/already-exists') {
+      const msg = err instanceof Error ? err.message : ''
+      if (msg === 'already-exists') {
         setError('This account is already set up. Please sign in.')
-      } else if (code === 'functions/invalid-argument') {
-        setError('Invalid company or user name.')
       } else {
         setError('Failed to set up your account. Please try again.')
       }
@@ -110,12 +77,11 @@ export default function SignupForm() {
       return
     }
 
-    // ── Step 3: Force token refresh to include new custom claims, then create session
+    // ── Step 3: Force token refresh to pick up new claims, then create session
     try {
-      const idToken = await credential.user.getIdToken(/* forceRefresh */ true)
-      await createSession(idToken)
+      const freshToken = await credential.user.getIdToken(/* forceRefresh */ true)
+      await createSession(freshToken)
     } catch {
-      // Clean up the auth user — session could not be established.
       await credential.user.delete().catch(() => {/* best-effort */})
       setError('Failed to create session. Please try signing in.')
       setLoading(false)
@@ -206,7 +172,6 @@ export default function SignupForm() {
         <Link href="/login">Sign in</Link>
       </p>
 
-      {/* GDPR Art. 13 — inform users of data processing at point of collection */}
       <p className={styles.legal}>
         By creating an account you agree to our{' '}
         <Link href="/terms">Terms of Service</Link> and acknowledge our{' '}

@@ -16,7 +16,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
  * @throws invalid-argument  if companyId or name are missing or invalid
  * @throws already-exists    if a category with the same name (case-insensitive) already exists
  */
-export const addCategory = onCall(async (request) => {
+export const addCategory = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

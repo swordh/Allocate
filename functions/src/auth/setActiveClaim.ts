@@ -16,7 +16,7 @@ import { MembershipDocument } from '../types';
  * Side effects: updates Firebase Custom Claims { activeCompanyId, role },
  *               updates /users/{uid}.activeCompanyId
  */
-export const setActiveClaim = onCall(async (request) => {
+export const setActiveClaim = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

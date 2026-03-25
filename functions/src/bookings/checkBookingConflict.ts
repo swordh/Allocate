@@ -21,7 +21,7 @@ import {
  * @throws permission-denied if companyId does not match the caller's activeCompanyId claim
  * @throws invalid-argument  if required fields are missing or malformed
  */
-export const checkBookingConflict = onCall(async (request) => {
+export const checkBookingConflict = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

@@ -2,8 +2,11 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+
+const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
 
 // 14 days in milliseconds — matches the Firebase session cookie maximum.
 const SESSION_DURATION_MS = 60 * 60 * 24 * 14 * 1000
@@ -39,6 +42,97 @@ export async function createSession(idToken: string): Promise<void> {
     console.error('[actions/auth]', { code, action: 'create_session_failed' })
     throw new Error('Failed to create session')
   }
+}
+
+/**
+ * Creates a company for a newly registered user — server-side, no CORS issues.
+ * Sets custom claims (activeCompanyId, role) on the Auth user.
+ *
+ * IMPORTANT: After this returns the client MUST call `getIdToken(true)` to get
+ * a fresh token that includes the new claims, then call `createSession(freshToken)`.
+ * The session cookie must be issued from the refreshed token — not the one
+ * passed here — otherwise activeCompanyId will be missing from the session.
+ *
+ * @param idToken     - Firebase ID token from the new user (used for identity only)
+ * @param companyName - Company display name (max 100 chars)
+ * @param userName    - User display name (max 100 chars)
+ */
+export async function setupNewCompany(
+  idToken: string,
+  companyName: string,
+  userName: string,
+): Promise<void> {
+  let uid: string
+  let email: string
+  try {
+    const decoded = await adminAuth.verifyIdToken(idToken)
+    uid   = decoded.uid
+    email = decoded.email ?? ''
+  } catch {
+    throw new Error('Invalid token')
+  }
+
+  // Idempotency: if the user already has a membership, the account exists.
+  const membershipCol = adminDb.collection(`users/${uid}/memberships`)
+  const existing = await membershipCol.limit(1).get()
+  if (!existing.empty) {
+    throw new Error('already-exists')
+  }
+
+  const companyRef = adminDb.collection('companies').doc()
+  const companyId  = companyRef.id
+  const userRef    = adminDb.doc(`users/${uid}`)
+  const memberRef  = adminDb.doc(`users/${uid}/memberships/${companyId}`)
+
+  const batch = adminDb.batch()
+
+  batch.set(companyRef, {
+    name:             companyName,
+    createdAt:        FieldValue.serverTimestamp(),
+    createdBy:        uid,
+    stripeCustomerId: '',
+    hadTrial:         false,
+    subscription: {
+      status:            'trialing',
+      plan:              'basic',
+      limits:            { maxEquipment: 50, maxMembers: 5 },
+      currentPeriodEnd:  null,
+      trialEnd:          null,
+      cancelAtPeriodEnd: false,
+    },
+  })
+
+  batch.set(userRef, {
+    name:            userName,
+    email,
+    activeCompanyId: companyId,
+    createdAt:       FieldValue.serverTimestamp(),
+  })
+
+  batch.set(memberRef, {
+    companyId,
+    role:     'admin',
+    joinedAt: FieldValue.serverTimestamp(),
+  })
+
+  for (const name of DEFAULT_CATEGORIES) {
+    const catRef = adminDb.collection(`companies/${companyId}/categories`).doc()
+    batch.set(catRef, { name, createdAt: FieldValue.serverTimestamp(), isDefault: true })
+  }
+
+  try {
+    await batch.commit()
+  } catch {
+    throw new Error('Failed to create company')
+  }
+
+  try {
+    await adminAuth.setCustomUserClaims(uid, { activeCompanyId: companyId, role: 'admin' })
+  } catch {
+    throw new Error('Claims failed')
+  }
+
+  console.log('[actions/auth]', { action: 'company_created' })
 }
 
 /**

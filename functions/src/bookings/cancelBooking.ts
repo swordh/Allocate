@@ -22,7 +22,7 @@ import { BookingDocument } from '../types';
  * @throws not-found           if the booking does not exist
  * @throws failed-precondition if the booking is already cancelled, returned, or checked out
  */
-export const cancelBooking = onCall(async (request) => {
+export const cancelBooking = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');
