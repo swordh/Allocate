@@ -1,0 +1,44 @@
+.nav {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.links {
+  display: flex;
+  gap: 40px;
+  align-items: baseline;
+}
+
+.link {
+  font-size: var(--font-nav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--mid);
+  transition: color 0.15s ease;
+}
+
+.link:hover,
+.link.active {
+  color: var(--white);
+}
+
+.newBooking {
+  font-size: var(--font-nav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--mid);
+  border: 1px solid #3A3A3A;
+  padding: 5px 18px 12px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.newBooking:hover {
+  color: var(--white);
+  border-color: var(--white);
+}

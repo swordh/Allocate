@@ -32,7 +32,7 @@ html {
 }
 
 body {
-  font-family: var(--font-aktiv), system-ui, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 300;
   font-size: var(--font-body);
   line-height: 1.4;

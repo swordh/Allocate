@@ -1,0 +1,40 @@
+.wrapper {
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.headline {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+
+.sub {
+  font-size: var(--font-body);
+  font-weight: 300;
+  color: var(--mid);
+}
+
+.addBtn {
+  margin-top: 8px;
+  align-self: flex-start;
+  font-size: var(--font-body);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--black);
+  background: var(--white);
+  border: none;
+  cursor: pointer;
+  padding: 10px 24px;
+  transition: opacity 0.15s ease;
+}
+
+.addBtn:hover {
+  opacity: 0.85;
+}

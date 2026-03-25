@@ -1,0 +1,36 @@
+.wrapper {
+  width: 100%;
+  border-bottom: 1px solid var(--rule);
+  padding: 0 var(--booking-pad-h);
+}
+
+.logoBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.logo {
+  font-size: var(--font-logo);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  line-height: 0.9;
+  /* Falls back to Aktiv Grotesk then system-ui if Editor's Note is not installed */
+  font-family: 'Editors Note', 'Editor\'s Note', var(--font-aktiv), system-ui, sans-serif;
+  color: var(--white);
+}
+
+.subRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 16px;
+}
+
+.subLabel {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--mid);
+}
