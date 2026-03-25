@@ -1,0 +1,171 @@
+/* -----------------------------------------------------------------------
+   Booking Week View — 7-column day grid
+   ----------------------------------------------------------------------- */
+
+.container {
+  width: 100%;
+}
+
+/* Nav bar */
+.navBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.navBtn {
+  background: none;
+  border: 1px solid var(--dim);
+  color: var(--mid);
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.navBtn:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+.weekLabel {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--white);
+  min-width: 160px;
+}
+
+.todayBtn {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  background: none;
+  border: 1px solid var(--dim);
+  padding: 4px 12px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.todayBtn:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+/* 7-column grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-left: 1px solid var(--rule);
+}
+
+/* Day column */
+.column {
+  border-right: 1px solid var(--rule);
+  min-height: 500px;
+}
+
+.columnToday {
+  background: rgba(238, 204, 2, 0.03);
+}
+
+.columnHeader {
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.columnWeekday {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--mid);
+}
+
+.columnDate {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mid);
+}
+
+.columnDateToday {
+  color: var(--accent);
+}
+
+.columnBody {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.emptyDay {
+  /* intentionally empty — no placeholder text in day columns */
+}
+
+/* Booking block */
+.block {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--dim);
+  transition: border-color 0.1s ease;
+}
+
+.block:hover {
+  border-color: var(--white);
+}
+
+.blockProject {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--white);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blockMeta {
+  display: flex;
+  align-items: center;
+}
+
+/* Empty week state */
+.emptyState {
+  padding: 60px var(--booking-pad-h);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--mid);
+  font-size: 14px;
+}
+
+.emptyAction {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--white);
+  border: 1px solid var(--white);
+  padding: 8px 20px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.emptyAction:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

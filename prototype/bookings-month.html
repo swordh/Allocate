@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Month View</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  .secondary-nav {
+    display: flex;
+    gap: 40px;
+    padding: 20px 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .sec-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--dim);
+    letter-spacing: -0.02em;
+  }
+  .sec-link:hover { color: var(--white); }
+  .sec-link.active { color: var(--white); }
+
+  .logo-row {
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+  .logo-right {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--white);
+    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .logo-right a { color: var(--mid); text-decoration: none; font-size: 20px; font-weight: 700; }
+  .logo-right a:hover { color: var(--white); }
+
+  /* Calendar */
+  .cal-outer {
+    padding: 32px 48px;
+  }
+  .cal-week-headers {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 0;
+  }
+  .week-header {
+    padding: 10px 12px;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    text-align: center;
+  }
+  .week-header.weekend { opacity: 0.45; }
+
+  .cal-body {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-left: 1px solid var(--rule);
+    border-top: 1px solid var(--rule);
+  }
+  .cal-day {
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 12px;
+    min-height: 100px;
+    position: relative;
+  }
+  .cal-day.other-month {
+    opacity: 0.25;
+  }
+  .cal-day.weekend {
+    background: rgba(255,255,255,0.015);
+  }
+  .day-num {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+    display: inline-block;
+    width: 26px;
+    height: 26px;
+    line-height: 26px;
+    text-align: center;
+  }
+  .day-num.today {
+    background: var(--accent);
+    color: var(--black);
+    font-weight: 700;
+  }
+  .booking-dots {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .dot-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mid);
+    cursor: pointer;
+    text-decoration: none;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .dot-row:hover { color: var(--white); }
+  .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-accent { background: var(--accent); }
+  .dot-repair { background: var(--repair); }
+  .dot-dim { background: var(--mid); }
+  .dot-blue { background: #5a5aaa; }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html" class="active">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<nav class="primary-nav">
+  <div class="nav-links">
+    <a href="bookings.html" class="nav-link active">Bookings</a>
+    <a href="equipment.html" class="nav-link">Equipment</a>
+    <a href="settings-company.html" class="nav-link">Settings</a>
+  </div>
+  <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+</nav>
+
+<nav class="secondary-nav">
+  <a href="bookings.html" class="sec-link">List</a>
+  <a href="bookings-week.html" class="sec-link">Week</a>
+  <a href="bookings-month.html" class="sec-link active">Month</a>
+  <a href="#" class="sec-link">4 Weeks</a>
+</nav>
+
+<div class="logo-row">
+  <div>
+    <div class="logo-text">ALLOCATE</div>
+    <div class="logo-sub">Gear Management System</div>
+  </div>
+  <div class="logo-right">
+    <a href="#">←</a>
+    March 2026
+    <a href="#">→</a>
+  </div>
+</div>
+
+<div class="cal-outer">
+  <div class="cal-week-headers">
+    <div class="week-header">Mon</div>
+    <div class="week-header">Tue</div>
+    <div class="week-header">Wed</div>
+    <div class="week-header">Thu</div>
+    <div class="week-header">Fri</div>
+    <div class="week-header weekend">Sat</div>
+    <div class="week-header weekend">Sun</div>
+  </div>
+  <div class="cal-body">
+    <!-- Week 1: Mar starts on Sunday. Feb days fill Mon-Sat -->
+    <!-- Mon Feb 23 -->
+    <div class="cal-day other-month"><span class="day-num">23</span></div>
+    <div class="cal-day other-month"><span class="day-num">24</span></div>
+    <div class="cal-day other-month"><span class="day-num">25</span></div>
+    <div class="cal-day other-month"><span class="day-num">26</span></div>
+    <div class="cal-day other-month"><span class="day-num">27</span></div>
+    <div class="cal-day other-month weekend"><span class="day-num">28</span></div>
+    <!-- Sun Mar 1 -->
+    <div class="cal-day weekend">
+      <span class="day-num">1</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Solstigen</a>
+      </div>
+    </div>
+
+    <!-- Week 2 -->
+    <div class="cal-day">
+      <span class="day-num">2</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Kustlinjen</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">3</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">4</span>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">5</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">6</span>
+    </div>
+    <div class="cal-day weekend"><span class="day-num">7</span></div>
+    <div class="cal-day weekend"><span class="day-num">8</span></div>
+
+    <!-- Week 3 -->
+    <div class="cal-day">
+      <span class="day-num">9</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Fjällräven</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">10</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">11</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Stockholmsdrömmar</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">12</span>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">13</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+      </div>
+    </div>
+    <div class="cal-day weekend"><span class="day-num">14</span></div>
+    <div class="cal-day weekend"><span class="day-num">15</span></div>
+
+    <!-- Week 4 -->
+    <div class="cal-day">
+      <span class="day-num">16</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Kustlinjen S2</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">17</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">18</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Solstigen</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">19</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">20</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
+      </div>
+    </div>
+    <div class="cal-day weekend"><span class="day-num">21</span></div>
+    <div class="cal-day weekend"><span class="day-num">22</span></div>
+
+    <!-- Week 5 — includes today (25) -->
+    <div class="cal-day">
+      <span class="day-num">23</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">24</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Stockholmsdrömmar</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <!-- TODAY = 25 -->
+      <span class="day-num today">25</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Vintermörker</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">26</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Kustlinjen S2</a>
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Fjällräven</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">27</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Norrland</a>
+      </div>
+    </div>
+    <div class="cal-day weekend"><span class="day-num">28</span></div>
+    <div class="cal-day weekend"><span class="day-num">29</span></div>
+
+    <!-- Week 6 -->
+    <div class="cal-day">
+      <span class="day-num">30</span>
+      <div class="booking-dots">
+        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Norrland</a>
+      </div>
+    </div>
+    <div class="cal-day">
+      <span class="day-num">31</span>
+    </div>
+    <!-- Apr days -->
+    <div class="cal-day other-month"><span class="day-num">1</span></div>
+    <div class="cal-day other-month"><span class="day-num">2</span></div>
+    <div class="cal-day other-month"><span class="day-num">3</span></div>
+    <div class="cal-day other-month weekend"><span class="day-num">4</span></div>
+    <div class="cal-day other-month weekend"><span class="day-num">5</span></div>
+  </div>
+</div>
+</body>
+</html>

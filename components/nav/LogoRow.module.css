@@ -34,3 +34,11 @@
   letter-spacing: 0.28em;
   color: var(--mid);
 }
+
+.rightContent {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--mid);
+}

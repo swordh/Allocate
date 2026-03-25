@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Bookings</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  /* Layout */
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l, .sidebar-r {
+    border-right: 1px solid var(--rule);
+  }
+  .sidebar-r {
+    border-right: none;
+    border-left: 1px solid var(--rule);
+  }
+  .main {
+    padding: 0 48px;
+  }
+
+  /* Primary Nav */
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 32px 48px 32px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links {
+    display: flex;
+    gap: 40px;
+    flex: 1;
+  }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  /* Secondary Nav */
+  .secondary-nav {
+    display: flex;
+    gap: 40px;
+    padding: 20px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .sec-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--dim);
+    letter-spacing: -0.02em;
+  }
+  .sec-link:hover { color: var(--white); }
+  .sec-link.active { color: var(--white); }
+
+  /* Logo row */
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 0 48px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    padding-top: 24px;
+  }
+  .logo-left {}
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+  .logo-right {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding-bottom: 4px;
+    text-align: right;
+  }
+
+  /* Stats row */
+  .stats-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    border-bottom: 1px solid var(--rule);
+  }
+  .stat-cell {
+    padding: 28px 48px;
+    border-right: 1px solid var(--rule);
+  }
+  .stat-cell:last-child { border-right: none; }
+  .stat-num {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-num.repair { color: var(--repair); }
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+  }
+
+  /* Booking list */
+  .booking-list {
+    grid-column: 1 / -1;
+  }
+  .date-group {}
+  .booking-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    border-bottom: 1px solid var(--rule);
+    min-height: 72px;
+    align-items: center;
+  }
+  .booking-date {
+    padding: 20px 48px 20px;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    line-height: 1.5;
+    border-right: 1px solid var(--rule);
+  }
+  .booking-date .day-num {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -0.02em;
+    display: block;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .booking-date .today-label {
+    color: var(--accent);
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    display: block;
+  }
+  .booking-center {
+    padding: 20px 48px;
+    border-right: 1px solid var(--rule);
+  }
+  .booking-title {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    text-decoration: none;
+    color: var(--white);
+  }
+  .booking-title:hover { color: var(--accent); }
+  .booking-meta {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 6px;
+  }
+  .booking-status {
+    padding: 20px 48px;
+    display: flex;
+    align-items: center;
+  }
+  .badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .badge-pending { border: 1px solid var(--dim); color: var(--mid); }
+  .badge-confirmed { border: 1px solid var(--white); color: var(--white); }
+  .badge-checkedout { background: var(--accent); color: var(--black); }
+  .badge-returned { color: var(--dim); font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; padding: 5px 10px; white-space: nowrap; }
+  .badge-rejected { border: 1px solid var(--repair); color: var(--repair); }
+
+  /* Date group header */
+  .date-header {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .date-header-label {
+    padding: 12px 48px;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    grid-column: 1 / -1;
+    background: var(--rule);
+  }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html" class="active">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <!-- Primary Nav -->
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link active">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <!-- Secondary Nav -->
+  <nav class="secondary-nav">
+    <a href="bookings.html" class="sec-link active">List</a>
+    <a href="bookings-week.html" class="sec-link">Week</a>
+    <a href="bookings-month.html" class="sec-link">Month</a>
+    <a href="#" class="sec-link">4 Weeks</a>
+  </nav>
+
+  <!-- Logo Row -->
+  <div class="logo-row">
+    <div class="logo-left">
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+    <div class="logo-right">
+      (04 of 07 today)
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-cell">
+      <div class="stat-num">4</div>
+      <div class="stat-label">Bookings Today</div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-num">12 of 23</div>
+      <div class="stat-label">Items Out</div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-num repair">2</div>
+      <div class="stat-label">Needs Repair</div>
+    </div>
+  </div>
+
+  <!-- Booking List -->
+  <div class="booking-list">
+
+    <!-- Today -->
+    <div class="date-header">
+      <div class="date-header-label">Today — Wednesday 25 Mar 2026</div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date">
+        <span class="day-num">25</span>
+        Wed
+        <span class="today-label">TODAY</span>
+      </div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Nordic Noir EP4 — Grip Package</a>
+        <div class="booking-meta">07:00 → 22:00 &nbsp;·&nbsp; 6 items &nbsp;·&nbsp; Erik Lindström</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-checkedout">Checked Out</span></div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date"></div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Stockholmsdrömmar — Camera A</a>
+        <div class="booking-meta">08:00 → 18:00 &nbsp;·&nbsp; 3 items &nbsp;·&nbsp; Anna Bergström</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-checkedout">Checked Out</span></div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date"></div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Havet Kallar — Full Audio Kit</a>
+        <div class="booking-meta">09:00 → 16:00 &nbsp;·&nbsp; 4 items &nbsp;·&nbsp; Jonas Pettersson</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-confirmed">Confirmed</span></div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date"></div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Vintermörker — Lighting Rig</a>
+        <div class="booking-meta">12:00 → 20:00 &nbsp;·&nbsp; 5 items &nbsp;·&nbsp; Sara Nilsson</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-pending">Pending</span></div>
+    </div>
+
+    <!-- Tomorrow -->
+    <div class="date-header">
+      <div class="date-header-label">Tomorrow — Thursday 26 Mar 2026</div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date">
+        <span class="day-num">26</span>
+        Thu
+      </div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Kustlinjen S2 — Camera Package</a>
+        <div class="booking-meta">07:00 → 19:00 &nbsp;·&nbsp; 7 items &nbsp;·&nbsp; Erik Lindström</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-confirmed">Confirmed</span></div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date"></div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Fjällräven — Documentary Kit</a>
+        <div class="booking-meta">06:00 → 22:00 &nbsp;·&nbsp; 9 items &nbsp;·&nbsp; Marcus Holm</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-pending">Pending</span></div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date"></div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Solstigen — Lens Package</a>
+        <div class="booking-meta">10:00 → 17:00 &nbsp;·&nbsp; 2 items &nbsp;·&nbsp; Lena Björk</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-confirmed">Confirmed</span></div>
+    </div>
+
+    <!-- Friday -->
+    <div class="date-header">
+      <div class="date-header-label">Friday 27 Mar 2026</div>
+    </div>
+
+    <div class="booking-row">
+      <div class="booking-date">
+        <span class="day-num">27</span>
+        Fri
+      </div>
+      <div class="booking-center">
+        <a href="booking-detail.html" class="booking-title">Norrland — Full Production Kit</a>
+        <div class="booking-meta">All day &nbsp;·&nbsp; 12 items &nbsp;·&nbsp; Erik Lindström</div>
+      </div>
+      <div class="booking-status"><span class="badge badge-pending">Pending</span></div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

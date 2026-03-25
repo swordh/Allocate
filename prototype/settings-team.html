@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Settings: Team</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  .settings-subnav {
+    display: flex;
+    gap: 40px;
+    padding: 20px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .stab {
+    font-size: 28px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--dim);
+    letter-spacing: -0.02em;
+  }
+  .stab:hover { color: var(--white); }
+  .stab.active { color: var(--white); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+
+  .content {
+    grid-column: 2 / 3;
+    padding: 48px 48px 80px;
+  }
+  .settings-heading {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .settings-sub-heading {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 32px;
+  }
+
+  /* Plan indicator */
+  .plan-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    border: 1px solid var(--dim);
+    margin-bottom: 40px;
+  }
+  .plan-name {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .plan-count {
+    font-size: 12px;
+    color: var(--mid);
+    letter-spacing: 0.1em;
+  }
+  .plan-bar {
+    height: 4px;
+    background: var(--dim);
+    width: 80px;
+    position: relative;
+  }
+  .plan-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 50%; /* 5 of 10 */
+  }
+
+  /* Table */
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 0;
+  }
+  .member-table { width: 100%; border-collapse: collapse; margin-bottom: 48px; }
+  .member-table th {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mid);
+    font-weight: 400;
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .member-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 14px;
+    vertical-align: middle;
+  }
+  .member-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .member-name { font-weight: 400; color: var(--white); }
+  .member-email { color: var(--mid); }
+  .role-select {
+    background: transparent;
+    border: 1px solid var(--dim);
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    cursor: pointer;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 100px;
+  }
+  .role-select option { background: #1a1a1a; }
+  .role-text {
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding: 5px 0;
+  }
+  .btn-remove {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'General Sans', system-ui, sans-serif;
+    padding: 0;
+  }
+  .btn-remove:hover { color: var(--repair); }
+  .you-tag {
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(238,204,2,0.3);
+    padding: 2px 6px;
+    margin-left: 8px;
+  }
+  .since-text { color: var(--mid); font-size: 13px; }
+
+  /* Invite section */
+  .invite-section {
+    border-top: 1px solid var(--rule);
+    padding-top: 40px;
+  }
+  .invite-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 16px;
+    display: block;
+  }
+  .invite-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--dim);
+    margin-bottom: 12px;
+  }
+  .invite-url {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--mid);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    padding: 14px 16px;
+    cursor: text;
+  }
+  .btn-copy {
+    background: var(--dim);
+    color: var(--white);
+    border: none;
+    padding: 14px 20px;
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-left: 1px solid var(--mid);
+  }
+  .btn-copy:hover { background: var(--mid); }
+  .invite-note {
+    font-size: 12px;
+    color: var(--mid);
+  }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html" class="active">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link active">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="settings-subnav">
+    <a href="settings-company.html" class="stab">Company</a>
+    <a href="settings-team.html" class="stab active">Team</a>
+    <a href="settings-subscription.html" class="stab">Subscription</a>
+  </div>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+  </div>
+
+  <div class="sidebar-l"></div>
+  <div class="content">
+    <div class="settings-heading">Settings</div>
+    <div class="settings-sub-heading">Team</div>
+
+    <div class="plan-indicator">
+      <span class="plan-name">Small Plan</span>
+      <div class="plan-bar"><div class="plan-bar-fill"></div></div>
+      <span class="plan-count">5 / 10 members</span>
+    </div>
+
+    <div class="section-label" style="margin-bottom:0;">Members</div>
+    <table class="member-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Since</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="member-name">Erik Lindström</td>
+          <td class="member-email">erik@nordic.com</td>
+          <td>
+            <select class="role-select">
+              <option selected>Admin</option>
+              <option>Crew</option>
+              <option>Viewer</option>
+            </select>
+          </td>
+          <td class="since-text">Jan 2026</td>
+          <td><button class="btn-remove">Remove</button></td>
+        </tr>
+        <tr>
+          <td class="member-name">Anna Bergström</td>
+          <td class="member-email">anna@nordic.com</td>
+          <td>
+            <select class="role-select">
+              <option>Admin</option>
+              <option selected>Crew</option>
+              <option>Viewer</option>
+            </select>
+          </td>
+          <td class="since-text">Feb 2026</td>
+          <td><button class="btn-remove">Remove</button></td>
+        </tr>
+        <tr>
+          <td class="member-name">Jonas Pettersson</td>
+          <td class="member-email">jonas@nordic.com</td>
+          <td>
+            <select class="role-select">
+              <option>Admin</option>
+              <option selected>Crew</option>
+              <option>Viewer</option>
+            </select>
+          </td>
+          <td class="since-text">Feb 2026</td>
+          <td><button class="btn-remove">Remove</button></td>
+        </tr>
+        <tr>
+          <td class="member-name">Sara Nilsson</td>
+          <td class="member-email">sara@nordic.com</td>
+          <td>
+            <select class="role-select">
+              <option>Admin</option>
+              <option>Crew</option>
+              <option selected>Viewer</option>
+            </select>
+          </td>
+          <td class="since-text">Mar 2026</td>
+          <td><button class="btn-remove">Remove</button></td>
+        </tr>
+        <tr>
+          <td class="member-name">You <span class="you-tag">You</span></td>
+          <td class="member-email">you@nordic.com</td>
+          <td><span class="role-text">Admin</span></td>
+          <td class="since-text">Jan 2026</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="invite-section">
+      <span class="invite-label">Invite Link</span>
+      <div class="invite-row">
+        <input class="invite-url" type="text" value="https://app.allocate.io/join/abc123xyz" readonly>
+        <button class="btn-copy" onclick="this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',2000)">Copy</button>
+      </div>
+      <p class="invite-note">Link expires in 7 days. Any invited member will join as Crew by default.</p>
+    </div>
+  </div>
+  <div class="sidebar-r"></div>
+</div>
+</body>
+</html>

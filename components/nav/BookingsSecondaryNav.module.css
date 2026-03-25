@@ -1,0 +1,29 @@
+.nav {
+  display: flex;
+  align-items: baseline;
+  gap: 32px;
+  padding: 10px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.item {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  transition: color 0.15s ease;
+}
+
+.item:hover:not(.itemDisabled) {
+  color: var(--white);
+}
+
+.itemActive {
+  color: var(--white);
+}
+
+.itemDisabled {
+  color: var(--dim);
+  cursor: not-allowed;
+}

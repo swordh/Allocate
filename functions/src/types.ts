@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
@@ -72,4 +72,57 @@ export interface CompanyDocument {
   stripeCustomerId: string;
   hadTrial: boolean;
   subscription: CompanySubscription;
+}
+
+// ─── Booking documents ────────────────────────────────────────────────────────
+
+export type BookingStatus = 'pending' | 'confirmed' | 'checked_out' | 'returned' | 'cancelled';
+export type ApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected';
+
+export interface BookingItem {
+  equipmentId: string;
+  quantity: number;
+}
+
+/**
+ * Firestore representation of a booking document.
+ * Timestamps are stored as Firestore Timestamp objects server-side;
+ * the client types in types/booking.ts use ISO strings after conversion.
+ */
+export interface BookingDocument {
+  projectName: string;
+  notes: string;
+  items: BookingItem[];
+  equipmentIds: string[];          // denormalized flat array for array-contains queries
+  startDate: string;               // "YYYY-MM-DD"
+  endDate: string;                 // "YYYY-MM-DD"
+  userId: string | null;
+  userName: string;
+  status: BookingStatus;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue | null;
+  requiresApproval: boolean;
+  approverId: string | null;
+  approvalStatus: ApprovalStatus;
+  rejectionReason: string | null;
+  cancelledAt: Timestamp | null;
+  cancelledBy: string | null;
+}
+
+// ─── Equipment documents ───────────────────────────────────────────────────────
+
+export type TrackingType = 'individual' | 'quantity';
+
+export interface EquipmentDocument {
+  name: string;
+  category: string;
+  trackingType: TrackingType;
+  totalQuantity: number;
+  serialNumber: string | null;
+  active: boolean;
+  status: string;
+  requiresApproval: boolean;
+  approverId: string | null;
+  createdAt: Timestamp;
+  createdBy: string;
 }
