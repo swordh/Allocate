@@ -97,7 +97,7 @@ export interface BookingDocument {
   startDate: string;               // "YYYY-MM-DD"
   endDate: string;                 // "YYYY-MM-DD"
   userId: string | null;
-  userName: string;
+  userName: string | null;        // null — not stored; userId is the reference. Resolving name at read time avoids storing PII on the booking document.
   status: BookingStatus;
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue | null;

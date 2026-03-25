@@ -7,6 +7,7 @@ initializeApp();
 
 export { createCompany } from './auth/createCompany';
 export { setActiveClaim } from './auth/setActiveClaim';
+export { deleteAccount } from './auth/deleteAccount';
 export { addEquipment } from './equipment/addEquipment';
 export { updateEquipment } from './equipment/updateEquipment';
 export { deactivateEquipment } from './equipment/deactivateEquipment';

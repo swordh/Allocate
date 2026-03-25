@@ -8,7 +8,7 @@ import {
   extractEquipmentIds,
   BookingItemInput,
 } from './conflictDetection';
-import { CompanyDocument, EquipmentDocument, UserDocument } from '../types';
+import { CompanyDocument, EquipmentDocument } from '../types';
 
 /**
  * Creates a new booking after running full conflict detection inside a transaction.
@@ -115,12 +115,13 @@ export const createBooking = onCall(async (request) => {
       );
     }
 
-    // 2. Read caller's user document for denormalized userName.
-    const userRef = db.doc(`users/${uid}`);
-    const userSnap = await tx.get(userRef);
-    const userName: string = userSnap.exists
-      ? (userSnap.data() as UserDocument).name
-      : 'Unknown User';
+    // 2. userName is intentionally not stored on booking documents.
+    //    userId is the canonical reference; callers resolve the display name
+    //    at read time from the user document. Storing a denormalized name
+    //    on the booking constitutes unnecessary PII retention (GDPR Art. 5(1)(c))
+    //    and would require anonymization on account deletion in addition to userId.
+    //    Phase 5 data export: include userId + companyId so the export can
+    //    reconstruct the human-readable name from the user profile at export time.
 
     // 3. Validate all equipment items inside the transaction.
     //    Collect requiresApproval flag and approverId from equipment documents.
@@ -210,7 +211,7 @@ export const createBooking = onCall(async (request) => {
       startDate,
       endDate,
       userId: uid,
-      userName,
+      userName: null,
       status: bookingStatus,
       requiresApproval,
       approverId,

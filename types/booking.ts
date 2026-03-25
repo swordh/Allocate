@@ -17,7 +17,7 @@ export interface Booking {
   startDate: string              // "YYYY-MM-DD" — inclusive
   endDate: string                // "YYYY-MM-DD" — inclusive
   userId: string | null          // null if user was deleted (GDPR anonymized)
-  userName: string               // denormalized at creation time; not updated if user renames
+  userName: string | null        // null — not stored (userId is the reference; resolve name at read time if needed)
   status: BookingStatus
   createdAt: string              // ISO string (converted from Timestamp at render boundary)
   updatedAt?: string             // ISO string; set on every write after creation
