@@ -11,6 +11,9 @@ import { CompanyDocument } from '../types';
  * @param data.companyId         - Company to add equipment to
  * @param data.name              - Display name (required, max 100 chars)
  * @param data.category          - Category label (required)
+ * @param data.trackingType      - 'individual' or 'quantity' (required, immutable after creation)
+ * @param data.totalQuantity     - Pool size for quantity items; forced to 1 for individual items
+ * @param data.serialNumber      - Optional serial number for individual items; rejected on quantity items
  * @param data.status            - Initial status; defaults to 'available'
  * @param data.requiresApproval  - Whether bookings need approval; defaults to false
  * @param data.approverId        - UserId of the designated approver, or null for any Admin
@@ -89,6 +92,39 @@ export const addEquipment = onCall(async (request) => {
       ? null
       : String(rawApproverId);
 
+  // ── trackingType validation ────────────────────────────────────────────────
+  const VALID_TRACKING_TYPES = ['individual', 'quantity'] as const;
+  type TrackingType = typeof VALID_TRACKING_TYPES[number];
+
+  const rawTrackingType: unknown = request.data.trackingType;
+  if (!VALID_TRACKING_TYPES.includes(rawTrackingType as TrackingType)) {
+    throw new HttpsError(
+      'invalid-argument',
+      `trackingType is required and must be one of: ${VALID_TRACKING_TYPES.join(', ')}.`,
+    );
+  }
+  const trackingType = rawTrackingType as TrackingType;
+
+  // ── totalQuantity validation ───────────────────────────────────────────────
+  let totalQuantity = 1;
+  if (trackingType === 'quantity') {
+    const rawQty: unknown = request.data.totalQuantity;
+    if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
+      throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer for quantity items.');
+    }
+    totalQuantity = rawQty;
+  }
+  // For individual items totalQuantity is always 1, regardless of what the client sends.
+
+  // ── serialNumber validation ────────────────────────────────────────────────
+  let serialNumber: string | null = null;
+  if (trackingType === 'quantity' && request.data.serialNumber !== undefined && request.data.serialNumber !== null) {
+    throw new HttpsError('invalid-argument', 'serialNumber is not allowed for quantity-tracked items.');
+  }
+  if (trackingType === 'individual' && request.data.serialNumber) {
+    serialNumber = String(request.data.serialNumber).trim() || null;
+  }
+
   // ── Transaction: count + write atomically ──────────────────────────────────
   const db = getFirestore();
   let newEquipmentId: string;
@@ -135,6 +171,9 @@ export const addEquipment = onCall(async (request) => {
     tx.set(newRef, {
       name,
       category,
+      trackingType,
+      totalQuantity,
+      serialNumber,
       status,
       active: true,
       requiresApproval,

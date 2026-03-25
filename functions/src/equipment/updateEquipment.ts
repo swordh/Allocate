@@ -52,6 +52,25 @@ export const updateEquipment = onCall(async (request) => {
   }
   const equipmentId = rawEquipmentId.trim();
 
+  // ── trackingType is immutable ──────────────────────────────────────────────
+  if (request.data.trackingType !== undefined) {
+    throw new HttpsError(
+      'invalid-argument',
+      'trackingType cannot be changed after creation. Deactivate this item and create a new one.',
+    );
+  }
+
+  // ── Fetch existing document (needed to validate totalQuantity/serialNumber) ─
+  const db = getFirestore();
+  const equipmentRef = db.doc(`companies/${companyId}/equipment/${equipmentId}`);
+  const equipmentSnap = await equipmentRef.get();
+
+  if (!equipmentSnap.exists) {
+    throw new HttpsError('not-found', 'Equipment not found.');
+  }
+
+  const existingData = equipmentSnap.data() as { trackingType: string };
+
   // ── Optional field validation ──────────────────────────────────────────────
   const VALID_STATUSES = ['available', 'checked_out', 'needs_repair'] as const;
   type EquipmentStatus = typeof VALID_STATUSES[number];
@@ -101,15 +120,30 @@ export const updateEquipment = onCall(async (request) => {
       request.data.approverId === null ? null : String(request.data.approverId);
   }
 
-  // ── Existence check + write ────────────────────────────────────────────────
-  const db = getFirestore();
-  const equipmentRef = db.doc(`companies/${companyId}/equipment/${equipmentId}`);
-  const equipmentSnap = await equipmentRef.get();
-
-  if (!equipmentSnap.exists) {
-    throw new HttpsError('not-found', 'Equipment not found.');
+  // ── totalQuantity — only valid for quantity items ──────────────────────────
+  if (request.data.totalQuantity !== undefined) {
+    if (existingData.trackingType !== 'quantity') {
+      throw new HttpsError('invalid-argument', 'totalQuantity can only be updated on quantity-tracked items.');
+    }
+    const rawQty: unknown = request.data.totalQuantity;
+    if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
+      throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer.');
+    }
+    // TODO Phase 3: reject if rawQty < max concurrently booked quantity
+    updates['totalQuantity'] = rawQty;
   }
 
+  // ── serialNumber — only valid for individual items ─────────────────────────
+  if (request.data.serialNumber !== undefined) {
+    if (existingData.trackingType !== 'individual') {
+      throw new HttpsError('invalid-argument', 'serialNumber is not allowed on quantity-tracked items.');
+    }
+    updates['serialNumber'] = request.data.serialNumber
+      ? String(request.data.serialNumber).trim() || null
+      : null;
+  }
+
+  // ── Write ──────────────────────────────────────────────────────────────────
   await equipmentRef.update(updates);
 
   logger.info('updateEquipment: equipment updated', {

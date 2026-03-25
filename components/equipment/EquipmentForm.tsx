@@ -5,7 +5,7 @@ import { createEquipment, updateEquipment } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
 import { useAuth } from '@/lib/auth-context'
-import type { Equipment, EquipmentStatus } from '@/types'
+import type { Equipment, EquipmentStatus, TrackingType } from '@/types'
 import styles from './EquipmentForm.module.css'
 
 interface EquipmentFormProps {
@@ -27,6 +27,9 @@ export default function EquipmentForm({
 
   const [name, setName] = useState(equipment?.name ?? '')
   const [category, setCategory] = useState(equipment?.category ?? '')
+  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'individual')
+  const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
+  const [serialNumber, setSerialNumber] = useState(equipment?.serialNumber ?? '')
   const [status, setStatus] = useState(equipment?.status ?? 'available')
   const [requiresApproval, setRequiresApproval] = useState(equipment?.requiresApproval ?? false)
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
@@ -55,8 +58,20 @@ export default function EquipmentForm({
     formData.set('status', status)
     formData.set('requiresApproval', String(requiresApproval))
     formData.set('approverId', approverId)
-    if (isEditMode) {
+    if (!isEditMode) {
+      formData.set('trackingType', trackingType)
+      if (trackingType === 'quantity') {
+        formData.set('totalQuantity', String(totalQuantity))
+      } else {
+        formData.set('serialNumber', serialNumber)
+      }
+    } else {
       formData.set('active', String(active))
+      if (trackingType === 'quantity') {
+        formData.set('totalQuantity', String(totalQuantity))
+      } else {
+        formData.set('serialNumber', serialNumber)
+      }
     }
 
     let result: { id?: string; error?: string }
@@ -97,6 +112,72 @@ export default function EquipmentForm({
           placeholder="e.g. Sony FX9"
         />
       </div>
+
+      {/* Tracking type — immutable after creation */}
+      <div className={styles.field}>
+        <label className={styles.label}>
+          Tracking Type
+          {isEditMode && <span className={styles.optional}> (cannot be changed)</span>}
+        </label>
+        <div className={styles.toggleGroup}>
+          <label className={`${styles.toggleOption} ${trackingType === 'individual' ? styles.toggleActive : ''}`}>
+            <input
+              type="radio"
+              name="trackingType"
+              value="individual"
+              checked={trackingType === 'individual'}
+              onChange={() => setTrackingType('individual')}
+              disabled={isEditMode}
+              className={styles.toggleRadio}
+            />
+            Individual
+          </label>
+          <label className={`${styles.toggleOption} ${trackingType === 'quantity' ? styles.toggleActive : ''}`}>
+            <input
+              type="radio"
+              name="trackingType"
+              value="quantity"
+              checked={trackingType === 'quantity'}
+              onChange={() => setTrackingType('quantity')}
+              disabled={isEditMode}
+              className={styles.toggleRadio}
+            />
+            Quantity
+          </label>
+        </div>
+      </div>
+
+      {/* Serial number — individual only */}
+      {trackingType === 'individual' && (
+        <div className={styles.field}>
+          <label htmlFor="eq-serial" className={styles.label}>
+            Serial Number <span className={styles.optional}>(optional)</span>
+          </label>
+          <input
+            id="eq-serial"
+            type="text"
+            value={serialNumber}
+            onChange={(e) => setSerialNumber(e.target.value)}
+            className={styles.input}
+            placeholder="e.g. K1.0012345"
+          />
+        </div>
+      )}
+
+      {/* Total quantity — quantity only */}
+      {trackingType === 'quantity' && (
+        <div className={styles.field}>
+          <label htmlFor="eq-qty" className={styles.label}>Total Quantity</label>
+          <input
+            id="eq-qty"
+            type="number"
+            min={1}
+            value={totalQuantity}
+            onChange={(e) => setTotalQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            className={styles.input}
+          />
+        </div>
+      )}
 
       {/* Category */}
       <div className={styles.field}>

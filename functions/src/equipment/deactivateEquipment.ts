@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 /**
  * Soft-deletes an equipment item by setting active: false.
@@ -62,24 +62,13 @@ export const deactivateEquipment = onCall(async (request) => {
   }
 
   // ── Active/upcoming booking check ─────────────────────────────────────────
-  // Query for any booking that:
-  //   1. References this equipment in its equipmentIds array
-  //   2. Has an endTime in the future (endTime > now)
-  // If any such bookings exist, the equipment cannot be deactivated.
-  const now = Timestamp.now();
-  const bookingsRef = db.collection(`companies/${companyId}/bookings`);
-  const conflictSnap = await bookingsRef
-    .where('equipmentIds', 'array-contains', equipmentId)
-    .where('endTime', '>', now)
-    .limit(1)
-    .get();
-
-  if (!conflictSnap.empty) {
-    throw new HttpsError(
-      'failed-precondition',
-      'This equipment has active or upcoming bookings. Remove them before deactivating.',
-    );
-  }
+  // TODO Phase 3: re-introduce this check using the bookings 'items' array.
+  // The booking schema uses items: { equipmentId: string, quantity: number }[]
+  // Firestore does not support array-contains on map values, so the check must
+  // fetch bookings by date range and filter in application code.
+  // Do NOT restore the old equipmentIds query — that field no longer exists.
+  //
+  // For Phase 2 (no booking documents exist) the check is skipped entirely.
 
   // ── Soft delete ────────────────────────────────────────────────────────────
   await equipmentRef.update({

@@ -28,6 +28,9 @@ function getFunctionsInstance() {
 interface CreateEquipmentPayload {
   name: string
   category: string
+  trackingType: 'individual' | 'quantity'
+  totalQuantity: number
+  serialNumber: string | null
   status: string
   requiresApproval: boolean
   approverId: string | null
@@ -50,6 +53,12 @@ export async function createEquipment(
   if (name.length > 100) return { error: 'Name must be 100 characters or fewer' }
 
   const category = (formData.get('category') as string | null)?.trim() ?? ''
+  const trackingType = (formData.get('trackingType') as string | null) === 'quantity' ? 'quantity' : 'individual'
+  const totalQuantity = trackingType === 'quantity'
+    ? parseInt(formData.get('totalQuantity') as string ?? '1', 10) || 1
+    : 1
+  const serialNumberRaw = formData.get('serialNumber') as string | null
+  const serialNumber = trackingType === 'individual' ? (serialNumberRaw?.trim() || null) : null
   const status = (formData.get('status') as string | null) ?? 'available'
   const requiresApproval = formData.get('requiresApproval') === 'true'
   const approverIdRaw = formData.get('approverId') as string | null
@@ -58,6 +67,9 @@ export async function createEquipment(
   const payload: CreateEquipmentPayload = {
     name,
     category,
+    trackingType,
+    totalQuantity,
+    serialNumber,
     status,
     requiresApproval,
     approverId,
@@ -94,6 +106,9 @@ export async function createEquipment(
 interface UpdateEquipmentPayload {
   name?: string
   category?: string
+  // trackingType intentionally omitted — immutable after creation
+  totalQuantity?: number
+  serialNumber?: string | null
   status?: string
   requiresApproval?: boolean
   approverId?: string | null
@@ -117,6 +132,16 @@ export async function updateEquipment(
 
   const category = (formData.get('category') as string | null)?.trim()
   if (category) payload.category = category
+
+  const totalQuantityRaw = formData.get('totalQuantity')
+  if (totalQuantityRaw !== null) {
+    payload.totalQuantity = parseInt(totalQuantityRaw as string, 10) || 1
+  }
+
+  const serialNumberRaw = formData.get('serialNumber')
+  if (serialNumberRaw !== null) {
+    payload.serialNumber = (serialNumberRaw as string).trim() || null
+  }
 
   const status = formData.get('status') as string | null
   if (status) payload.status = status

@@ -100,6 +100,12 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                   <div className={styles.rowLeft}>
                     <EquipmentStatusBadge status={item.status} />
                     <span className={styles.name}>{item.name}</span>
+                    {item.trackingType === 'quantity' && (
+                      <span className={styles.quantityBadge}>×{item.totalQuantity}</span>
+                    )}
+                    {item.trackingType === 'individual' && item.serialNumber && (
+                      <span className={styles.serialNumber}>{item.serialNumber}</span>
+                    )}
                     <span className={styles.categoryPill}>{item.category}</span>
                   </div>
                   {role === 'admin' && (
