@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User profiles ─────────────────────────────────────────────────────────
+    // Users may read their own profile. All writes are via Cloud Functions only.
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ── Memberships ───────────────────────────────────────────────────────────
+    // Users may read their own membership documents (needed for company switcher).
+    // All writes are via Cloud Functions only — prevents self-elevation to admin.
+    match /users/{userId}/memberships/{companyId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ── Company root document ─────────────────────────────────────────────────
+    // All company writes are via Cloud Functions only.
+    // Subscription state is Stripe's source of truth and must never be
+    // written directly by a client.
+    match /companies/{companyId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if false;
+    }
+
+    // ── Nested company data (equipment, bookings, and future subcollections) ──
+    // Read: any authenticated member of the active company.
+    // Write: restricted to admin role for Phase 1.
+    //        Phase 2 will add a specific equipment rule (admin write).
+    //        Phase 3 will add a specific bookings rule (crew can create their own).
+    match /companies/{companyId}/{document=**} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if request.auth != null
+                   && request.auth.token.activeCompanyId == companyId
+                   && request.auth.token.role == 'admin';
+    }
+
+    // ── Stripe event deduplication log ────────────────────────────────────────
+    // Written only by the webhook Cloud Function. Never readable by clients.
+    match /_stripeEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    // ── GDPR deletion audit log ───────────────────────────────────────────────
+    // Written only by the deleteAccount Cloud Function. Never readable by clients.
+    match /deletionAuditLog/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
