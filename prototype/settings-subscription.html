@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Settings: Subscription</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  .settings-subnav {
+    display: flex;
+    gap: 40px;
+    padding: 20px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .stab {
+    font-size: 28px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--dim);
+    letter-spacing: -0.02em;
+  }
+  .stab:hover { color: var(--white); }
+  .stab.active { color: var(--white); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+
+  .content {
+    grid-column: 2 / 3;
+    padding: 48px 48px 80px;
+  }
+  .settings-heading {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .settings-sub-heading {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 40px;
+  }
+
+  /* Current plan block */
+  .current-plan-block {
+    border: 1px solid rgba(238,204,2,0.3);
+    padding: 28px 32px;
+    margin-bottom: 48px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .plan-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: var(--black);
+    padding: 6px 14px;
+  }
+  .plan-price {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .plan-price span {
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--mid);
+    letter-spacing: 0;
+  }
+  .plan-details {
+    font-size: 13px;
+    color: var(--mid);
+  }
+  .trial-notice {
+    margin-left: auto;
+    background: rgba(238,204,2,0.08);
+    border: 1px solid rgba(238,204,2,0.2);
+    padding: 10px 18px;
+    font-size: 11px;
+    color: #c8a800;
+    letter-spacing: 0.12em;
+  }
+
+  /* Plan table */
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 20px;
+  }
+  .plan-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-bottom: 48px;
+  }
+  .plan-card {
+    background: var(--black);
+    padding: 28px 24px 24px;
+  }
+  .plan-card.current {
+    border: 1px solid rgba(238,204,2,0.4);
+    margin: -1px;
+    background: #0c0b00;
+    position: relative;
+    z-index: 1;
+  }
+  .plan-card-name {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 12px;
+  }
+  .plan-card.current .plan-card-name { color: var(--accent); }
+  .plan-card-price {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .plan-card-period {
+    font-size: 11px;
+    color: var(--mid);
+    margin-bottom: 24px;
+  }
+  .plan-feature {
+    font-size: 12px;
+    color: var(--mid);
+    padding: 7px 0;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .plan-feature strong { color: var(--white); font-weight: 400; }
+  .btn-plan {
+    display: block;
+    width: 100%;
+    text-align: center;
+    margin-top: 24px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 11px 0;
+    cursor: pointer;
+    font-family: 'General Sans', system-ui, sans-serif;
+    text-decoration: none;
+  }
+  .btn-plan-current {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid rgba(238,204,2,0.3);
+  }
+  .btn-plan-upgrade {
+    background: transparent;
+    color: var(--white);
+    border: 1px solid var(--dim);
+  }
+  .btn-plan-upgrade:hover { border-color: var(--mid); }
+  .btn-plan-downgrade {
+    background: transparent;
+    color: var(--mid);
+    border: 1px solid var(--rule);
+  }
+  .btn-plan-downgrade:hover { border-color: var(--dim); color: var(--white); }
+  .current-tag {
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: var(--black);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+
+  /* Billing link */
+  .billing-link {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mid);
+    text-decoration: none;
+    border-bottom: 1px solid var(--dim);
+    padding-bottom: 2px;
+  }
+  .billing-link:hover { color: var(--white); border-color: var(--mid); }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html" class="active">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link active">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="settings-subnav">
+    <a href="settings-company.html" class="stab">Company</a>
+    <a href="settings-team.html" class="stab">Team</a>
+    <a href="settings-subscription.html" class="stab active">Subscription</a>
+  </div>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+  </div>
+
+  <div class="sidebar-l"></div>
+  <div class="content">
+    <div class="settings-heading">Settings</div>
+    <div class="settings-sub-heading">Subscription</div>
+
+    <div class="current-plan-block">
+      <span class="plan-badge">Small</span>
+      <div>
+        <div class="plan-price">$79<span>/month</span></div>
+      </div>
+      <div class="plan-details">
+        5 members · 25 equipment items<br>
+        Next billing: 25 Apr 2026
+      </div>
+      <div class="trial-notice">Trial ends in 7 days</div>
+    </div>
+
+    <div class="section-label">Plans</div>
+    <div class="plan-grid">
+
+      <!-- Basic -->
+      <div class="plan-card">
+        <div class="plan-card-name">Basic</div>
+        <div class="plan-card-price">$29</div>
+        <div class="plan-card-period">per month</div>
+        <div class="plan-feature"><strong>10</strong> equipment items</div>
+        <div class="plan-feature"><strong>3</strong> members</div>
+        <div class="plan-feature"><strong>1</strong> location</div>
+        <button class="btn-plan btn-plan-downgrade">Downgrade</button>
+      </div>
+
+      <!-- Small (current) -->
+      <div class="plan-card current">
+        <span class="current-tag">Current</span>
+        <div class="plan-card-name">Small</div>
+        <div class="plan-card-price">$79</div>
+        <div class="plan-card-period">per month</div>
+        <div class="plan-feature"><strong>25</strong> equipment items</div>
+        <div class="plan-feature"><strong>10</strong> members</div>
+        <div class="plan-feature"><strong>3</strong> locations</div>
+        <button class="btn-plan btn-plan-current">Current Plan</button>
+      </div>
+
+      <!-- Mid -->
+      <div class="plan-card">
+        <div class="plan-card-name">Mid</div>
+        <div class="plan-card-price">$179</div>
+        <div class="plan-card-period">per month</div>
+        <div class="plan-feature"><strong>60</strong> equipment items</div>
+        <div class="plan-feature"><strong>25</strong> members</div>
+        <div class="plan-feature"><strong>10</strong> locations</div>
+        <button class="btn-plan btn-plan-upgrade">Upgrade</button>
+      </div>
+
+      <!-- Large -->
+      <div class="plan-card">
+        <div class="plan-card-name">Large</div>
+        <div class="plan-card-price">$349</div>
+        <div class="plan-card-period">per month</div>
+        <div class="plan-feature"><strong>150</strong> equipment items</div>
+        <div class="plan-feature"><strong>75</strong> members</div>
+        <div class="plan-feature">Unlimited locations</div>
+        <button class="btn-plan btn-plan-upgrade">Upgrade</button>
+      </div>
+
+    </div>
+
+    <a href="#" class="billing-link">Manage Billing →</a>
+
+  </div>
+  <div class="sidebar-r"></div>
+</div>
+</body>
+</html>

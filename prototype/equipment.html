@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Equipment</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+  .main { padding: 0 48px; }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+  .logo-right {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding-bottom: 4px;
+  }
+
+  /* Equipment section */
+  .equip-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .equip-heading {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+  }
+  .btn-add {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--white);
+    border: 1px solid var(--mid);
+    padding: 10px 20px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-add:hover { border-color: var(--white); }
+
+  /* Equipment list */
+  .equip-list { grid-column: 1 / -1; }
+
+  /* Category header row */
+  .cat-header {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    background: var(--rule);
+    border-bottom: 1px solid var(--dim);
+  }
+  .cat-label {
+    grid-column: 1 / -1;
+    padding: 10px 48px;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* Equipment type row */
+  .type-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    border-bottom: 1px solid var(--dim);
+    min-height: 60px;
+    align-items: center;
+    background: rgba(255,255,255,0.01);
+  }
+  .type-row:hover { background: rgba(255,255,255,0.03); }
+  .type-left {
+    padding: 16px 48px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .tracking-pill {
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--mid);
+    border: 1px solid var(--dim);
+    padding: 2px 7px;
+  }
+  .type-center {
+    padding: 16px 48px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .type-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--white);
+    letter-spacing: -0.01em;
+  }
+  .cat-pill {
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--mid);
+    border: 1px solid var(--dim);
+    padding: 2px 8px;
+  }
+  .type-actions {
+    padding: 16px 32px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  /* Unit row */
+  .unit-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    border-bottom: 1px solid var(--rule);
+    min-height: 48px;
+    align-items: center;
+  }
+  .unit-row:hover { background: rgba(255,255,255,0.015); }
+  .unit-left {
+    padding: 12px 48px;
+    border-right: 1px solid var(--rule);
+  }
+  .unit-center {
+    padding: 10px 48px 10px 80px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-available { background: var(--white); }
+  .dot-checkedout { background: var(--accent); }
+  .dot-repair { background: var(--repair); }
+  .unit-name {
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--white);
+  }
+  .unit-serial {
+    font-size: 11px;
+    color: var(--mid);
+    letter-spacing: 0.05em;
+  }
+  .unit-status-text {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .unit-status-text.available { color: var(--mid); }
+  .unit-status-text.checkedout { color: var(--accent); }
+  .unit-status-text.repair { color: var(--repair); }
+  .unit-right {
+    padding: 10px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  /* Add unit row */
+  .add-unit-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    border-bottom: 1px solid var(--rule);
+    min-height: 40px;
+    align-items: center;
+  }
+  .add-unit-center {
+    padding: 10px 48px 10px 80px;
+    border-right: 1px solid var(--rule);
+  }
+  .add-unit-link {
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-decoration: none;
+  }
+  .add-unit-link:hover { color: var(--mid); }
+
+  /* Quantity type info */
+  .qty-info {
+    font-size: 13px;
+    color: var(--mid);
+  }
+  .qty-info span { color: var(--white); }
+
+  .btn-sm {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--mid);
+    border: 1px solid var(--dim);
+    padding: 5px 10px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-sm:hover { color: var(--white); border-color: var(--mid); }
+  .btn-sm.danger:hover { color: var(--repair); border-color: var(--repair); }
+  .btn-sm.add { border-color: var(--mid); color: var(--mid); }
+  .btn-sm.add:hover { color: var(--white); border-color: var(--white); }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html" class="active">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link">Bookings</a>
+      <a href="equipment.html" class="nav-link active">Equipment</a>
+      <a href="settings-company.html" class="nav-link">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+    <div class="logo-right">4 TYPES · 7 UNITS</div>
+  </div>
+
+  <div class="equip-header">
+    <div class="equip-heading">Equipment</div>
+    <a href="#" class="btn-add">+ Add Equipment</a>
+  </div>
+
+  <div class="equip-list">
+
+    <!-- ── CAMERA ── -->
+    <div class="cat-header">
+      <div class="cat-label">Camera</div>
+    </div>
+
+    <!-- Type: ARRI Alexa Mini LF -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Units</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">ARRI Alexa Mini LF</span>
+        <span class="cat-pill">Camera</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm add">+ Add Unit</a>
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-available"></span>
+        <span class="unit-name">Alexa #1</span>
+        <span class="unit-serial">S/N K1.0012345</span>
+        <span class="unit-status-text available">Available</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-checkedout"></span>
+        <span class="unit-name">Alexa #2</span>
+        <span class="unit-serial">S/N K1.0012346</span>
+        <span class="unit-status-text checkedout">Checked Out</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="add-unit-row">
+      <div class="unit-left"></div>
+      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
+      <div class="unit-right"></div>
+    </div>
+
+    <!-- Type: Sony FX9 -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Units</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">Sony FX9</span>
+        <span class="cat-pill">Camera</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm add">+ Add Unit</a>
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-available"></span>
+        <span class="unit-name">Sony #1</span>
+        <span class="unit-serial">S/N 1234567</span>
+        <span class="unit-status-text available">Available</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="add-unit-row">
+      <div class="unit-left"></div>
+      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
+      <div class="unit-right"></div>
+    </div>
+
+    <!-- ── LENSES ── -->
+    <div class="cat-header">
+      <div class="cat-label">Lenses</div>
+    </div>
+
+    <!-- Type: Zeiss Supreme Prime Set -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Units</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">Zeiss Supreme Prime Set</span>
+        <span class="cat-pill">Lenses</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm add">+ Add Unit</a>
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-available"></span>
+        <span class="unit-name">25mm T1.5</span>
+        <span class="unit-serial">S/N ZS-001</span>
+        <span class="unit-status-text available">Available</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-available"></span>
+        <span class="unit-name">50mm T1.5</span>
+        <span class="unit-serial">S/N ZS-002</span>
+        <span class="unit-status-text available">Available</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="add-unit-row">
+      <div class="unit-left"></div>
+      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
+      <div class="unit-right"></div>
+    </div>
+
+    <!-- ── GRIP ── -->
+    <div class="cat-header">
+      <div class="cat-label">Grip</div>
+    </div>
+
+    <!-- Type: C-Stand (quantity) -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Qty</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">C-Stand</span>
+        <span class="cat-pill">Grip</span>
+        <span class="qty-info"><span>10</span> available</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+
+    <!-- Type: Sandbag (quantity) -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Qty</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">Sandbag</span>
+        <span class="cat-pill">Grip</span>
+        <span class="qty-info"><span>20</span> available</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+
+    <!-- ── AUDIO ── -->
+    <div class="cat-header">
+      <div class="cat-label">Audio</div>
+    </div>
+
+    <!-- Type: Sennheiser MKH 416 -->
+    <div class="type-row">
+      <div class="type-left">
+        <span class="tracking-pill">Units</span>
+      </div>
+      <div class="type-center">
+        <span class="type-name">Sennheiser MKH 416</span>
+        <span class="cat-pill">Audio</span>
+      </div>
+      <div class="type-actions">
+        <a href="#" class="btn-sm add">+ Add Unit</a>
+        <a href="#" class="btn-sm">Edit</a>
+        <a href="#" class="btn-sm danger">Deactivate</a>
+      </div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-available"></span>
+        <span class="unit-name">MKH #1</span>
+        <span class="unit-status-text available">Available</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="unit-row">
+      <div class="unit-left"></div>
+      <div class="unit-center">
+        <span class="status-dot dot-repair"></span>
+        <span class="unit-name">MKH #2</span>
+        <span class="unit-status-text repair">Needs Repair</span>
+      </div>
+      <div class="unit-right"></div>
+    </div>
+    <div class="add-unit-row">
+      <div class="unit-left"></div>
+      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
+      <div class="unit-right"></div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

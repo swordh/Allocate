@@ -1,0 +1,137 @@
+.page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+.wordmark {
+  font-size: clamp(48px, 10vw, 96px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--white);
+  margin-bottom: 48px;
+  line-height: 1;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+}
+
+.input {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--dim);
+  color: var(--white);
+  font-family: inherit;
+  font-size: var(--font-body);
+  font-weight: 300;
+  padding: 10px 0;
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.input:focus {
+  outline: none;
+  border-bottom-color: var(--white);
+}
+
+.input::placeholder {
+  color: var(--mid);
+}
+
+.input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.error {
+  font-size: var(--font-body);
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 10px 14px;
+}
+
+.submitBtn {
+  font-family: inherit;
+  font-size: var(--font-body);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--black);
+  background: var(--white);
+  border: none;
+  cursor: pointer;
+  padding: 14px 24px;
+  width: 100%;
+  margin-top: 8px;
+  transition: opacity 0.15s ease;
+}
+
+.submitBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.footer {
+  margin-top: 32px;
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--mid);
+  text-align: center;
+}
+
+.footer a {
+  color: var(--white);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.labelHint {
+  font-weight: 300;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.legal {
+  margin-top: 16px;
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--mid);
+  text-align: center;
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.legal a {
+  color: var(--mid);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -1,0 +1,326 @@
+/* -----------------------------------------------------------------------
+   Booking Detail
+   ----------------------------------------------------------------------- */
+
+.container {
+  width: 100%;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 32px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.headerRight {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.backLink {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  transition: color 0.15s ease;
+}
+
+.backLink:hover {
+  color: var(--white);
+}
+
+.title {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--white);
+  line-height: 1;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bookedBy {
+  font-size: 12px;
+  color: var(--mid);
+  font-weight: 400;
+}
+
+.editLink {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mid);
+  border: 1px solid var(--dim);
+  padding: 6px 16px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.editLink:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+.errorBanner {
+  padding: 12px var(--booking-pad-h);
+  background: rgba(204, 51, 51, 0.12);
+  border-bottom: 1px solid var(--repair);
+  color: var(--repair);
+  font-size: 13px;
+}
+
+/* Body: 2-column layout */
+.body {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  min-height: calc(100vh - 300px);
+}
+
+/* Details column */
+.details {
+  padding: 32px var(--booking-pad-h);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--mid);
+}
+
+.sectionValue {
+  font-size: 16px;
+  color: var(--white);
+  line-height: 1.4;
+}
+
+.rejectionText {
+  color: var(--repair);
+}
+
+/* Equipment items list */
+.itemList {
+  list-style: none;
+  border: 1px solid var(--dim);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.itemName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--white);
+  flex: 1;
+}
+
+.itemQty {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mid);
+}
+
+.approvalTag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mid);
+  border: 1px solid var(--dim);
+  padding: 2px 6px;
+}
+
+/* Actions column */
+.actions {
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Approval section */
+.approvalSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--dim);
+}
+
+.approvalLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+}
+
+.approvalButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.approveBtn {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: var(--accent);
+  color: var(--black);
+  border: 1px solid var(--accent);
+  padding: 10px;
+  transition: opacity 0.15s ease;
+}
+
+.approveBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.approveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rejectBtn {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: none;
+  color: var(--mid);
+  border: 1px solid var(--dim);
+  padding: 10px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.rejectBtn:not(:disabled):hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+.rejectBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Rejection form */
+.rejectForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+}
+
+.rejectLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+}
+
+.rejectTextarea {
+  background: transparent;
+  border: 1px solid var(--dim);
+  color: var(--white);
+  font-family: var(--font-aktiv), system-ui, sans-serif;
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s ease;
+  line-height: 1.4;
+}
+
+.rejectTextarea:focus {
+  border-color: var(--white);
+}
+
+.rejectTextarea::placeholder {
+  color: var(--mid);
+}
+
+.rejectConfirmBtn {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: none;
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 8px 16px;
+  transition: opacity 0.15s ease;
+}
+
+.rejectConfirmBtn:not(:disabled):hover {
+  opacity: 0.8;
+}
+
+.rejectConfirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Cancel button */
+.cancelBtn {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: none;
+  color: var(--mid);
+  border: 1px solid var(--dim);
+  padding: 10px 16px;
+  width: 100%;
+  text-align: left;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.cancelBtn:not(:disabled):hover {
+  color: var(--repair);
+  border-color: var(--repair);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

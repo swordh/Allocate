@@ -44,6 +44,17 @@ service cloud.firestore {
       allow write: if false; // Cloud Functions only
     }
 
+    // ── Bookings ───────────────────────────────────────────────────────────────
+    // All writes are via Cloud Functions only (createBooking, updateBooking,
+    // cancelBooking, approveBooking, rejectBooking, updateBookingStatus).
+    // The companyId claim check ensures tenant isolation — a user can only read
+    // bookings for the company they are currently active in.
+    match /companies/{companyId}/bookings/{bookingId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if false; // Cloud Functions only
+    }
+
     // ── Nested company data (fallback for future subcollections) ──────────────
     // Covers any subcollection not yet given its own explicit rule above.
     // Phase 3 will add a specific bookings rule (crew can create their own).

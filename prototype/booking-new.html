@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — New Booking</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--white);
+    border: 1px solid var(--white);
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--accent); border-color: var(--accent); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+
+  /* Content area */
+  .content-wrap {
+    grid-column: 2 / 3;
+    padding: 0 48px;
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 0;
+    align-items: start;
+  }
+  .form-section {
+    padding: 48px 48px 48px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .summary-section {
+    padding: 48px 0 48px 48px;
+    position: sticky;
+    top: 0;
+  }
+  .page-heading {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    margin-bottom: 48px;
+  }
+
+  /* Form fields */
+  .field-group {
+    margin-bottom: 36px;
+  }
+  .field-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 8px;
+    display: block;
+  }
+  .field-input {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 22px;
+    font-weight: 400;
+    padding: 8px 0 12px;
+    caret-color: var(--accent);
+  }
+  .field-input:focus { border-bottom-color: var(--mid); }
+  .field-input::placeholder { color: var(--dim); }
+
+  .date-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .date-row .field-input {
+    font-size: 18px;
+  }
+
+  /* Textarea */
+  .field-textarea {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--rule);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 300;
+    padding: 14px 16px;
+    caret-color: var(--accent);
+    resize: vertical;
+    min-height: 96px;
+  }
+  .field-textarea:focus { border-color: var(--mid); }
+  .field-textarea::placeholder { color: var(--dim); }
+
+  /* Equipment checklist */
+  .equip-section-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding: 10px 0 8px;
+    margin-top: 8px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .type-row {
+    border-bottom: 1px solid var(--rule);
+  }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 0;
+    cursor: pointer;
+  }
+  .check-row:hover { background: rgba(255,255,255,0.02); }
+  .check-row input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--mid);
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .check-row input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .check-row input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: 2px solid var(--black);
+    border-left: none;
+    border-top: none;
+    transform: rotate(45deg);
+  }
+  .check-label {
+    font-size: 15px;
+    font-weight: 300;
+    color: var(--white);
+    flex: 1;
+    cursor: pointer;
+  }
+  .tracking-tag {
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--mid);
+    border: 1px solid var(--dim);
+    padding: 2px 6px;
+    flex-shrink: 0;
+  }
+  /* Sub-selector shown when type is checked */
+  .sub-selector {
+    padding: 8px 0 12px 30px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .sub-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mid);
+    flex-shrink: 0;
+  }
+  .sub-select {
+    background: var(--dim);
+    border: 1px solid var(--mid);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 300;
+    padding: 6px 10px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 200px;
+  }
+  .sub-select option { background: #1a1a1a; }
+  .sub-number {
+    background: var(--dim);
+    border: 1px solid var(--mid);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 300;
+    padding: 6px 10px;
+    width: 80px;
+    text-align: center;
+  }
+  .qty-avail {
+    font-size: 11px;
+    color: var(--mid);
+  }
+
+  /* Summary panel */
+  .summary-heading {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .summary-empty {
+    font-size: 14px;
+    color: var(--dim);
+    font-style: italic;
+  }
+  .summary-item {
+    font-size: 12px;
+    font-weight: 300;
+    color: var(--white);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .summary-date-info {
+    margin-top: 24px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .summary-date-row {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 8px;
+  }
+  .summary-date-val {
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--white);
+  }
+  .approval-notice {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border: 1px solid #3a2a00;
+    background: #1a1500;
+    font-size: 12px;
+    color: #c8a800;
+    line-height: 1.5;
+  }
+  .approval-notice strong {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .btn-confirm {
+    display: block;
+    width: 100%;
+    background: var(--accent);
+    color: var(--black);
+    border: none;
+    padding: 18px 24px;
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 28px;
+  }
+  .btn-confirm:hover { background: #d4b500; }
+
+  .item-count {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    background: rgba(238,204,2,0.1);
+    padding: 2px 7px;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html" class="active">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+  </div>
+
+  <div class="sidebar-l"></div>
+  <div class="content-wrap">
+    <div class="form-section">
+      <div class="page-heading">New Booking</div>
+
+      <div class="field-group">
+        <label class="field-label" for="title">Project / Title</label>
+        <input class="field-input" type="text" id="title" placeholder="e.g. Nordic Noir EP5 — Camera Package">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Date</label>
+        <div class="date-row">
+          <div>
+            <label class="field-label" style="font-size:9px;">Start Date</label>
+            <input class="field-input" type="date" value="2026-03-26">
+          </div>
+          <div>
+            <label class="field-label" style="font-size:9px;">End Date</label>
+            <input class="field-input" type="date" value="2026-03-26">
+          </div>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Time</label>
+        <div class="date-row">
+          <div>
+            <label class="field-label" style="font-size:9px;">Start Time</label>
+            <input class="field-input" type="time" value="07:00">
+          </div>
+          <div>
+            <label class="field-label" style="font-size:9px;">End Time</label>
+            <input class="field-input" type="time" value="22:00">
+          </div>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Equipment</label>
+
+        <div class="equip-section-label">Camera</div>
+
+        <!-- ARRI Alexa Mini LF — unit-tracked, selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox" checked>
+            <span class="check-label">ARRI Alexa Mini LF</span>
+            <span class="tracking-tag">Units</span>
+          </label>
+          <div class="sub-selector">
+            <span class="sub-label">Which unit?</span>
+            <select class="sub-select">
+              <option>Alexa #1 — S/N K1.0012345 (available)</option>
+              <option>Alexa #2 — S/N K1.0012346 (checked out)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Sony FX9 — unit-tracked, not selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox">
+            <span class="check-label">Sony FX9</span>
+            <span class="tracking-tag">Units</span>
+          </label>
+        </div>
+
+        <div class="equip-section-label">Lenses</div>
+
+        <!-- Zeiss Supreme Prime Set — unit-tracked, selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox" checked>
+            <span class="check-label">Zeiss Supreme Prime Set</span>
+            <span class="tracking-tag">Units</span>
+          </label>
+          <div class="sub-selector">
+            <span class="sub-label">Which unit?</span>
+            <select class="sub-select">
+              <option>25mm T1.5 — S/N ZS-001 (available)</option>
+              <option>50mm T1.5 — S/N ZS-002 (available)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="equip-section-label">Grip</div>
+
+        <!-- C-Stand — quantity-tracked, selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox" checked>
+            <span class="check-label">C-Stand</span>
+            <span class="tracking-tag">Qty</span>
+          </label>
+          <div class="sub-selector">
+            <span class="sub-label">How many?</span>
+            <input type="number" class="sub-number" value="4" min="1" max="10">
+            <span class="qty-avail">max 10 available</span>
+          </div>
+        </div>
+
+        <!-- Sandbag — quantity-tracked, not selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox">
+            <span class="check-label">Sandbag</span>
+            <span class="tracking-tag">Qty</span>
+          </label>
+        </div>
+
+        <div class="equip-section-label">Audio</div>
+
+        <!-- Sennheiser MKH 416 — unit-tracked, not selected -->
+        <div class="type-row">
+          <label class="check-row">
+            <input type="checkbox">
+            <span class="check-label">Sennheiser MKH 416</span>
+            <span class="tracking-tag">Units</span>
+          </label>
+        </div>
+
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="notes">Notes</label>
+        <textarea class="field-textarea" id="notes" rows="4" placeholder="Any additional notes or special requirements…"></textarea>
+      </div>
+    </div>
+
+    <!-- Summary panel -->
+    <div class="summary-section">
+      <div class="summary-heading">Booking Summary</div>
+
+      <div class="summary-item">
+        <span>ARRI Alexa Mini LF</span>
+        <span style="font-size:10px;color:var(--mid);">Alexa #1</span>
+      </div>
+      <div class="summary-item">
+        <span>Zeiss Supreme Prime Set</span>
+        <span style="font-size:10px;color:var(--mid);">25mm T1.5</span>
+      </div>
+      <div class="summary-item">
+        <span>C-Stand</span>
+        <span style="font-size:10px;color:var(--mid);">×4</span>
+      </div>
+
+      <div style="padding:10px 0;font-size:10px;letter-spacing:0.2em;color:var(--mid);text-transform:uppercase;margin-top:4px;">
+        3 items selected
+      </div>
+
+      <div class="summary-date-info">
+        <div class="summary-date-row">Date</div>
+        <div class="summary-date-val">Thu 26 Mar 2026</div>
+      </div>
+      <div class="summary-date-info">
+        <div class="summary-date-row">Time</div>
+        <div class="summary-date-val">07:00 → 22:00</div>
+      </div>
+
+      <button class="btn-confirm">Confirm Booking</button>
+    </div>
+  </div>
+  <div class="sidebar-r"></div>
+</div>
+</body>
+</html>

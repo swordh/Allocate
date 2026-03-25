@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Booking Detail</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+
+  /* Content */
+  .content {
+    grid-column: 2 / 3;
+    padding: 48px 48px 80px;
+  }
+
+  .booking-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    gap: 24px;
+  }
+  .booking-title {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    flex: 1;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .badge-pending { border: 1px solid var(--mid); color: var(--mid); }
+
+  /* Details grid */
+  .details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--rule);
+    margin-bottom: 48px;
+  }
+  .detail-cell {
+    padding: 20px 28px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .detail-cell:nth-child(even) { border-right: none; }
+  .detail-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .detail-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 6px;
+  }
+  .detail-value {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--white);
+  }
+
+  /* Section */
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 0;
+  }
+
+  /* Equipment list */
+  .equip-list { margin-bottom: 48px; }
+  .equip-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .equip-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--mid);
+    background: transparent;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .equip-check.checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .equip-check.checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: 2px solid var(--black);
+    border-left: none;
+    border-top: none;
+    transform: rotate(45deg);
+  }
+  .equip-item-name {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 300;
+  }
+  .equip-item-status {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+  }
+  .s-included { border: 1px solid var(--dim); color: var(--mid); }
+  .s-checkedout { background: var(--accent); color: var(--black); }
+
+  /* Notes */
+  .notes-block {
+    padding: 20px 0;
+    font-size: 15px;
+    font-weight: 300;
+    line-height: 1.6;
+    color: var(--white);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 48px;
+  }
+
+  /* Admin actions */
+  .actions-section { margin-bottom: 48px; }
+  .actions-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .btn-approve {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: var(--black);
+    border: none;
+    padding: 14px 32px;
+    cursor: pointer;
+    font-family: 'General Sans', system-ui, sans-serif;
+  }
+  .btn-approve:hover { background: #d4b500; }
+  .btn-reject {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--mid);
+    border: 1px solid var(--dim);
+    padding: 14px 32px;
+    cursor: pointer;
+    font-family: 'General Sans', system-ui, sans-serif;
+  }
+  .btn-reject:hover { color: var(--repair); border-color: var(--repair); }
+  .reject-panel {
+    display: none;
+    margin-top: 24px;
+  }
+  .reject-panel.visible { display: block; }
+  .reject-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 8px;
+    display: block;
+  }
+  .reject-textarea {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    background: transparent;
+    border: 1px solid var(--rule);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 300;
+    padding: 14px 16px;
+    caret-color: var(--accent);
+    resize: vertical;
+    min-height: 80px;
+    margin-bottom: 16px;
+  }
+  .reject-textarea:focus { border-color: var(--mid); }
+  .btn-send-reject {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: var(--repair);
+    color: var(--white);
+    border: none;
+    padding: 12px 24px;
+    cursor: pointer;
+    font-family: 'General Sans', system-ui, sans-serif;
+  }
+  .cancel-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--mid);
+    text-decoration: none;
+    letter-spacing: 0.05em;
+  }
+  .cancel-link:hover { color: var(--repair); }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html" class="active">booking-detail</a>
+  <a href="settings-company.html">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link active">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+  </div>
+
+  <div class="sidebar-l"></div>
+  <div class="content">
+
+    <div class="booking-title-row">
+      <div class="booking-title">Grip Package — Nordic Noir EP4</div>
+      <span class="badge badge-pending">Pending</span>
+    </div>
+
+    <div class="details-grid">
+      <div class="detail-cell">
+        <div class="detail-label">Date</div>
+        <div class="detail-value">Mon 17 Mar 2026 — Wed 19 Mar 2026</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">Time</div>
+        <div class="detail-value">07:00 → 22:00</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">Booked by</div>
+        <div class="detail-value">Erik Lindström</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">Requested</div>
+        <div class="detail-value">14 Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="equip-list">
+      <div class="section-label">Equipment — 3 items</div>
+      <div class="equip-item">
+        <div class="equip-check"></div>
+        <span class="equip-item-name">Dana Dolly Kit + Track (6m)</span>
+        <span class="equip-item-status s-included">Included</span>
+      </div>
+      <div class="equip-item">
+        <div class="equip-check"></div>
+        <span class="equip-item-name">Sachtler Ace XL Fluid Head</span>
+        <span class="equip-item-status s-included">Included</span>
+      </div>
+      <div class="equip-item">
+        <div class="equip-check checked"></div>
+        <span class="equip-item-name">Ronin 2 Gimbal Stabilizer</span>
+        <span class="equip-item-status s-checkedout">Checked Out</span>
+      </div>
+    </div>
+
+    <div class="notes-block">
+      <div class="section-label" style="margin-bottom:16px;">Notes</div>
+      This is for the exterior night shoot at Gamla Stan on Monday and Tuesday. We'll also need the dolly track extended to 12m if possible — please confirm availability. Wrap on Wednesday afternoon, gear return by 22:00.
+    </div>
+
+    <div class="actions-section">
+      <div class="section-label">Admin Actions</div>
+      <div class="actions-row">
+        <button class="btn-approve" onclick="this.textContent='Approved ✓'; this.style.opacity='0.5'; this.disabled=true;">Approve</button>
+        <button class="btn-reject" onclick="document.getElementById('rejectPanel').classList.toggle('visible')">Reject</button>
+      </div>
+      <div class="reject-panel" id="rejectPanel">
+        <label class="reject-label" for="rejectReason">Reason for rejection</label>
+        <textarea class="reject-textarea" id="rejectReason" placeholder="Explain why this booking cannot be approved…" rows="3"></textarea>
+        <button class="btn-send-reject">Send Rejection</button>
+      </div>
+    </div>
+
+    <a href="bookings.html" class="cancel-link">Cancel booking →</a>
+
+  </div>
+  <div class="sidebar-r"></div>
+</div>
+</body>
+</html>

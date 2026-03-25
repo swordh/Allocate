@@ -1,5 +1,15 @@
-// Bookings layout — shared across all four booking views (list, week, month, 4weeks).
-// Secondary nav and LogoRow will be added in Phase 3.
+import BookingsSecondaryNav from '@/components/nav/BookingsSecondaryNav'
+
+/**
+ * Bookings layout — Server Component.
+ * Shared across all four booking views: list, week, month, 4weeks.
+ * Renders the secondary sub-nav (List | Week | Month | 4 Weeks).
+ */
 export default function BookingsLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return (
+    <>
+      <BookingsSecondaryNav />
+      {children}
+    </>
+  )
 }

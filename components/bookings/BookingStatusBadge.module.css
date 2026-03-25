@@ -1,0 +1,48 @@
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* pending — dim border, mid text */
+.pending {
+  color: var(--mid);
+  border: 1px solid var(--dim);
+}
+
+/* confirmed — white border */
+.confirmed {
+  color: var(--white);
+  border: 1px solid var(--white);
+}
+
+/* checked_out — accent background */
+.checked_out {
+  background: var(--accent);
+  color: var(--black);
+  border: 1px solid var(--accent);
+}
+
+/* returned — very dim */
+.returned {
+  color: var(--dim);
+  border: 1px solid transparent;
+}
+
+/* cancelled — muted */
+.cancelled {
+  color: var(--mid);
+  border: 1px solid transparent;
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+/* rejected (pending + approvalStatus=rejected) */
+.rejected {
+  color: var(--repair);
+  border: 1px solid var(--repair);
+}

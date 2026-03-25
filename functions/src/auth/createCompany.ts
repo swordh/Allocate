@@ -18,7 +18,7 @@ import { PLAN_LIMITS } from '../types';
  *               sets Custom Claims { activeCompanyId, role: "admin" }
  * Note: Stripe Customer creation is deferred to Phase 4. stripeCustomerId is left empty.
  */
-export const createCompany = onCall(async (request) => {
+export const createCompany = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

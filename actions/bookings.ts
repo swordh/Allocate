@@ -1,41 +1,320 @@
 'use server'
 
-// Full implementation in Phase 3.
-// Stubs are in place so imports don't break and the file structure matches the architecture.
-
 import { getVerifiedSession } from '@/lib/dal'
-import type { BookingStatus } from '@/types'
+import { auth } from '@/lib/firebase'
+import { httpsCallable, getFunctions, connectFunctionsEmulator } from 'firebase/functions'
+import { revalidatePath } from 'next/cache'
+import type { BookingItem } from '@/types'
 
-export async function createBooking(_formData: FormData): Promise<{ id: string } | { error: string }> {
+// ---------------------------------------------------------------------------
+// Firebase Callable Functions helper
+// ---------------------------------------------------------------------------
+
+function getFunctionsInstance() {
+  const functions = getFunctions(auth.app, 'us-central1')
+  if (process.env.NODE_ENV === 'development' && process.env.FUNCTIONS_EMULATOR === 'true') {
+    connectFunctionsEmulator(functions, 'localhost', 5001)
+  }
+  return functions
+}
+
+interface CallableResult {
+  success: boolean
+  bookingId?: string
+  error?: string
+}
+
+export interface ConflictItem {
+  equipmentId: string
+  reason: 'already_booked' | 'insufficient_quantity'
+  requested?: number
+  available?: number
+}
+
+export interface ConflictResult {
+  hasConflict: boolean
+  conflicts: ConflictItem[]
+}
+
+// ---------------------------------------------------------------------------
+// createBooking
+// ---------------------------------------------------------------------------
+
+export async function createBooking(
+  formData: FormData,
+): Promise<{ bookingId: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
-  console.log('[actions/bookings]', { uid: session.uid, action: 'create_booking_stub' })
-  return { error: 'Not implemented — Phase 3' }
+
+  const projectName = (formData.get('projectName') as string | null)?.trim() ?? ''
+  if (!projectName) return { error: 'Project name is required' }
+  if (projectName.length > 200) return { error: 'Project name must be 200 characters or fewer' }
+
+  const startDate = (formData.get('startDate') as string | null)?.trim() ?? ''
+  if (!startDate) return { error: 'Start date is required' }
+
+  const endDate = (formData.get('endDate') as string | null)?.trim() ?? ''
+  if (!endDate) return { error: 'End date is required' }
+
+  if (endDate < startDate) return { error: 'End date must be on or after start date' }
+
+  const notes = (formData.get('notes') as string | null)?.trim() ?? ''
+  if (notes.length > 2000) return { error: 'Notes must be 2000 characters or fewer' }
+
+  // Items are encoded as JSON in a single "items" field.
+  const itemsRaw = formData.get('items') as string | null
+  let items: BookingItem[] = []
+  try {
+    items = itemsRaw ? (JSON.parse(itemsRaw) as BookingItem[]) : []
+  } catch {
+    return { error: 'Invalid equipment selection' }
+  }
+
+  if (items.length === 0) return { error: 'At least one equipment item is required' }
+  if (items.length > 50) return { error: 'Maximum 50 equipment items per booking' }
+
+  try {
+    const functions = getFunctionsInstance()
+    const fn = httpsCallable<
+      {
+        companyId: string
+        projectName: string
+        startDate: string
+        endDate: string
+        notes: string
+        items: BookingItem[]
+      },
+      CallableResult
+    >(functions, 'createBooking')
+
+    const result = await fn({
+      companyId: session.activeCompanyId,
+      projectName,
+      startDate,
+      endDate,
+      notes,
+      items,
+    })
+
+    if (!result.data.success || !result.data.bookingId) {
+      return { error: result.data.error ?? 'Failed to create booking' }
+    }
+
+    revalidatePath('/bookings')
+    return { bookingId: result.data.bookingId }
+  } catch (err) {
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] createBooking failed', { code })
+    return { error: 'Failed to create booking' }
+  }
 }
+
+// ---------------------------------------------------------------------------
+// updateBooking
+// ---------------------------------------------------------------------------
 
 export async function updateBooking(
-  _bookingId: string,
-  _formData: FormData,
+  bookingId: string,
+  formData: FormData,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
-  console.log('[actions/bookings]', { uid: session.uid, action: 'update_booking_stub' })
-  return { error: 'Not implemented — Phase 3' }
+
+  const payload: Record<string, unknown> = {
+    companyId: session.activeCompanyId,
+    bookingId,
+  }
+
+  const projectName = (formData.get('projectName') as string | null)?.trim()
+  if (projectName !== null && projectName !== undefined) {
+    if (projectName.length === 0) return { error: 'Project name is required' }
+    if (projectName.length > 200) return { error: 'Project name must be 200 characters or fewer' }
+    payload.projectName = projectName
+  }
+
+  const startDate = (formData.get('startDate') as string | null)?.trim()
+  if (startDate) payload.startDate = startDate
+
+  const endDate = (formData.get('endDate') as string | null)?.trim()
+  if (endDate) payload.endDate = endDate
+
+  if (startDate && endDate && endDate < startDate) {
+    return { error: 'End date must be on or after start date' }
+  }
+
+  const notes = (formData.get('notes') as string | null)?.trim()
+  if (notes !== null && notes !== undefined) {
+    if (notes.length > 2000) return { error: 'Notes must be 2000 characters or fewer' }
+    payload.notes = notes
+  }
+
+  const itemsRaw = formData.get('items') as string | null
+  if (itemsRaw) {
+    try {
+      const items = JSON.parse(itemsRaw) as BookingItem[]
+      if (items.length === 0) return { error: 'At least one equipment item is required' }
+      if (items.length > 50) return { error: 'Maximum 50 equipment items per booking' }
+      payload.items = items
+    } catch {
+      return { error: 'Invalid equipment selection' }
+    }
+  }
+
+  try {
+    const functions = getFunctionsInstance()
+    const fn = httpsCallable<Record<string, unknown>, CallableResult>(functions, 'updateBooking')
+    const result = await fn(payload)
+
+    if (!result.data.success) {
+      return { error: result.data.error ?? 'Failed to update booking' }
+    }
+
+    revalidatePath('/bookings')
+    revalidatePath(`/bookings/${bookingId}`)
+    return {}
+  } catch (err) {
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] updateBooking failed', { code })
+    return { error: 'Failed to update booking' }
+  }
 }
 
-export async function deleteBooking(_bookingId: string): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
-  console.log('[actions/bookings]', { uid: session.uid, action: 'delete_booking_stub' })
-  return { error: 'Not implemented — Phase 3' }
-}
+// ---------------------------------------------------------------------------
+// cancelBooking
+// ---------------------------------------------------------------------------
 
-export async function updateBookingStatus(
-  _bookingId: string,
-  _status: BookingStatus,
+export async function cancelBooking(
+  bookingId: string,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
-  console.log('[actions/bookings]', { uid: session.uid, action: 'update_booking_status_stub' })
-  return { error: 'Not implemented — Phase 3' }
+
+  try {
+    const functions = getFunctionsInstance()
+    const fn = httpsCallable<
+      { companyId: string; bookingId: string },
+      CallableResult
+    >(functions, 'cancelBooking')
+
+    const result = await fn({
+      companyId: session.activeCompanyId,
+      bookingId,
+    })
+
+    if (!result.data.success) {
+      return { error: result.data.error ?? 'Failed to cancel booking' }
+    }
+
+    revalidatePath('/bookings')
+    revalidatePath(`/bookings/${bookingId}`)
+    return {}
+  } catch (err) {
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] cancelBooking failed', { code })
+    return { error: 'Failed to cancel booking' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// approveBooking (wraps both approveBooking and rejectBooking Cloud Functions)
+// ---------------------------------------------------------------------------
+
+export async function approveBooking(
+  bookingId: string,
+  approved: boolean,
+  rejectionReason?: string,
+): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  if (session.role === 'viewer') return { error: 'Unauthorized' }
+
+  try {
+    const functions = getFunctionsInstance()
+
+    if (approved) {
+      const fn = httpsCallable<
+        { companyId: string; bookingId: string },
+        CallableResult
+      >(functions, 'approveBooking')
+
+      const result = await fn({
+        companyId: session.activeCompanyId,
+        bookingId,
+      })
+
+      if (!result.data.success) {
+        return { error: result.data.error ?? 'Failed to approve booking' }
+      }
+    } else {
+      const fn = httpsCallable<
+        { companyId: string; bookingId: string; reason?: string },
+        CallableResult
+      >(functions, 'rejectBooking')
+
+      const result = await fn({
+        companyId: session.activeCompanyId,
+        bookingId,
+        reason: rejectionReason,
+      })
+
+      if (!result.data.success) {
+        return { error: result.data.error ?? 'Failed to reject booking' }
+      }
+    }
+
+    revalidatePath('/bookings')
+    revalidatePath(`/bookings/${bookingId}`)
+    return {}
+  } catch (err) {
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] approveBooking failed', { code })
+    return { error: 'Failed to update approval' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// checkConflict (read-only pre-check — not authoritative, Cloud Function is)
+// ---------------------------------------------------------------------------
+
+export async function checkConflict(
+  companyId: string,
+  startDate: string,
+  endDate: string,
+  items: BookingItem[],
+  excludeBookingId?: string,
+): Promise<ConflictResult> {
+  const session = await getVerifiedSession()
+
+  // Security: ignore caller-supplied companyId if it doesn't match the session.
+  if (companyId !== session.activeCompanyId) {
+    return { hasConflict: false, conflicts: [] }
+  }
+
+  try {
+    const functions = getFunctionsInstance()
+    const fn = httpsCallable<
+      {
+        companyId: string
+        startDate: string
+        endDate: string
+        items: BookingItem[]
+        excludeBookingId?: string
+      },
+      ConflictResult
+    >(functions, 'checkBookingConflict')
+
+    const result = await fn({
+      companyId,
+      startDate,
+      endDate,
+      items,
+      excludeBookingId,
+    })
+
+    return result.data
+  } catch (err) {
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] checkConflict failed', { code })
+    // On failure return no conflicts — the authoritative check is on submit.
+    return { hasConflict: false, conflicts: [] }
+  }
 }

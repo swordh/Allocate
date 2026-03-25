@@ -23,7 +23,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
  * @throws invalid-argument    if status is not one of the accepted values when provided
  * @throws not-found           if the equipment document does not exist
  */
-export const updateEquipment = onCall(async (request) => {
+export const updateEquipment = onCall({ cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

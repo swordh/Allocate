@@ -1,4 +1,12 @@
-// Month view — full implementation in Phase 3.
+import styles from './page.module.css'
+
+/**
+ * Month view — coming in Phase 4.
+ */
 export default function BookingsMonthPage() {
-  return <div>Month view coming in Phase 3</div>
+  return (
+    <div className={styles.stub}>
+      <span className={styles.label}>Month view — coming soon</span>
+    </div>
+  )
 }
