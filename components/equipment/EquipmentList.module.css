@@ -1,0 +1,151 @@
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.pageTitle {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+
+.addBtn {
+  font-size: var(--font-body);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--black);
+  background: var(--white);
+  border: none;
+  cursor: pointer;
+  padding: 10px 24px;
+  transition: opacity 0.15s ease;
+}
+
+.addBtn:hover {
+  opacity: 0.85;
+}
+
+.actionError {
+  padding: 12px var(--booking-pad-h);
+  color: var(--repair);
+  border-bottom: 1px solid var(--repair);
+  font-size: var(--font-body);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.category {
+  display: flex;
+  flex-direction: column;
+}
+
+.categoryHeader {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--mid);
+  padding: 16px var(--booking-pad-h) 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+  transition: background 0.1s ease;
+}
+
+.row:hover {
+  background: var(--dim);
+}
+
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.name {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--white);
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+}
+
+.categoryPill {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.editBtn {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s ease;
+}
+
+.editBtn:hover {
+  color: var(--white);
+}
+
+.deactivateBtn {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s ease;
+}
+
+.deactivateBtn:hover:not(:disabled) {
+  color: var(--repair);
+}
+
+.deactivateBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.errorState {
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  color: var(--repair);
+  border-bottom: 1px solid var(--rule);
+}
+
+.errorDetail {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}

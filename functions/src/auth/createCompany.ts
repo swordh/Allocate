@@ -96,6 +96,20 @@ export const createCompany = onCall(async (request) => {
     joinedAt: FieldValue.serverTimestamp(),
   });
 
+  // ── Seed default categories ────────────────────────────────────────────────
+  // Six default categories are created for every new company so the equipment
+  // add form has sensible options immediately. They are marked isDefault: true
+  // so the UI can distinguish them from user-created categories.
+  const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories'];
+  for (const categoryName of DEFAULT_CATEGORIES) {
+    const categoryRef = db.collection(`companies/${newCompanyId}/categories`).doc();
+    batch.set(categoryRef, {
+      name: categoryName,
+      createdAt: FieldValue.serverTimestamp(),
+      isDefault: true,
+    });
+  }
+
   try {
     await batch.commit();
   } catch (err: unknown) {

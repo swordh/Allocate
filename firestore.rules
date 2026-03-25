@@ -27,17 +27,31 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── Nested company data (equipment, bookings, and future subcollections) ──
-    // Read: any authenticated member of the active company.
-    // Write: restricted to admin role for Phase 1.
-    //        Phase 2 will add a specific equipment rule (admin write).
-    //        Phase 3 will add a specific bookings rule (crew can create their own).
+    // ── Equipment ─────────────────────────────────────────────────────────────
+    // All writes are via Cloud Functions only (addEquipment, updateEquipment,
+    // deactivateEquipment). The client never writes equipment documents directly.
+    match /companies/{companyId}/equipment/{equipmentId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ── Categories ────────────────────────────────────────────────────────────
+    // All writes are via Cloud Functions only (addCategory, seeded by createCompany).
+    match /companies/{companyId}/categories/{categoryId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ── Nested company data (fallback for future subcollections) ──────────────
+    // Covers any subcollection not yet given its own explicit rule above.
+    // Phase 3 will add a specific bookings rule (crew can create their own).
+    // This wildcard must remain as a safe fallback — read for members, no writes.
     match /companies/{companyId}/{document=**} {
       allow read: if request.auth != null
                   && request.auth.token.activeCompanyId == companyId;
-      allow write: if request.auth != null
-                   && request.auth.token.activeCompanyId == companyId
-                   && request.auth.token.role == 'admin';
+      allow write: if false; // Default: all writes via Cloud Functions
     }
 
     // ── Stripe event deduplication log ────────────────────────────────────────

@@ -33,7 +33,12 @@ export async function proxy(req: NextRequest) {
     // Optimistic check — verifies the cookie signature and expiry only.
     // Does not hit Firestore.
     await adminAuth.verifySessionCookie(sessionCookie, true)
-    return NextResponse.next()
+
+    // Forward the pathname as a request header so Server Components can read
+    // the current path without a client-side hook.
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-pathname', pathname)
+    return NextResponse.next({ request: { headers: requestHeaders } })
   } catch {
     const response = NextResponse.redirect(new URL('/login', req.url))
     response.cookies.delete('__session')
