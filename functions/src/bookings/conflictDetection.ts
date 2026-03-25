@@ -49,15 +49,18 @@ interface StoredBookingForConflict {
   startDate: string;
   endDate: string;
   status: string;
+  approvalStatus: string;
   items: BookingItemInput[];
   equipmentIds: string[];
 }
 
 /**
  * Run conflict detection outside of a transaction (used by checkBookingConflict).
+ * This is advisory only — not authoritative. Write paths must use
+ * detectConflictsInTransaction to prevent TOCTOU races.
  * Returns a ConflictResult describing all conflicts found.
  */
-export async function detectConflicts(
+export async function detectConflictsReadOnly(
   db: Firestore,
   companyId: string,
   requestedItems: BookingItemInput[],
@@ -97,7 +100,9 @@ export async function detectConflicts(
     const overlapping = query.docs.filter((doc) => {
       if (doc.id === excludeBookingId) return false;
       const data = doc.data() as StoredBookingForConflict;
+      // Cancelled and rejected bookings do not hold equipment — exclude them.
       if (data.status === 'cancelled') return false;
+      if (data.approvalStatus === 'rejected') return false;
       // The query gives us bookings whose endDate >= requestedStartDate.
       // We also need: booking.startDate <= requestedEndDate.
       return data.startDate <= endDate;
@@ -181,7 +186,9 @@ export async function detectConflictsInTransaction(
     const overlapping = querySnap.docs.filter((doc) => {
       if (doc.id === excludeBookingId) return false;
       const data = doc.data() as StoredBookingForConflict;
+      // Cancelled and rejected bookings do not hold equipment — exclude them.
       if (data.status === 'cancelled') return false;
+      if (data.approvalStatus === 'rejected') return false;
       return data.startDate <= endDate;
     });
 

@@ -1,3 +1,10 @@
+// Status machine:
+//   pending    → waiting for approval (requiresApproval bookings only)
+//   confirmed  → approved / no approval needed; equipment reserved but not yet collected
+//   checked_out → equipment physically handed over
+//   returned   → equipment back; booking closed
+//   cancelled  → terminal state; equipment released
+// Note: there is no 'ready' status — 'confirmed' is the canonical pre-checkout state.
 export type BookingStatus = 'pending' | 'confirmed' | 'checked_out' | 'returned' | 'cancelled'
 export type ApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected'
 

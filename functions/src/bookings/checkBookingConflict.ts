@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
-  detectConflicts,
+  detectConflictsReadOnly,
   validateItems,
   validateDateString,
 } from './conflictDetection';
@@ -67,7 +67,7 @@ export const checkBookingConflict = onCall(async (request) => {
 
   // ── Conflict detection ─────────────────────────────────────────────────────
   const db = getFirestore();
-  const result = await detectConflicts(
+  const result = await detectConflictsReadOnly(
     db,
     companyId,
     items,

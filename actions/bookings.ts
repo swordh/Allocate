@@ -103,9 +103,9 @@ export async function createBooking(
     revalidatePath('/bookings')
     return { bookingId: result.data.bookingId }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create booking'
-    console.error('[actions/bookings] createBooking failed', { message })
-    return { error: message }
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] createBooking failed', { code })
+    return { error: 'Failed to create booking' }
   }
 }
 
@@ -173,9 +173,9 @@ export async function updateBooking(
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to update booking'
-    console.error('[actions/bookings] updateBooking failed', { message })
-    return { error: message }
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] updateBooking failed', { code })
+    return { error: 'Failed to update booking' }
   }
 }
 
@@ -209,9 +209,9 @@ export async function cancelBooking(
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to cancel booking'
-    console.error('[actions/bookings] cancelBooking failed', { message })
-    return { error: message }
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] cancelBooking failed', { code })
+    return { error: 'Failed to cancel booking' }
   }
 }
 
@@ -265,9 +265,9 @@ export async function approveBooking(
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to update approval'
-    console.error('[actions/bookings] approveBooking failed', { message })
-    return { error: message }
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] approveBooking failed', { code })
+    return { error: 'Failed to update approval' }
   }
 }
 
@@ -312,7 +312,8 @@ export async function checkConflict(
 
     return result.data
   } catch (err) {
-    console.error('[actions/bookings] checkConflict failed', { err })
+    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    console.error('[actions/bookings] checkConflict failed', { code })
     // On failure return no conflicts — the authoritative check is on submit.
     return { hasConflict: false, conflicts: [] }
   }

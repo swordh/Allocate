@@ -238,13 +238,21 @@ export const updateBooking = onCall(async (request) => {
       updateData.approverId = approverId;
     }
 
-    // If booking was previously rejected and the owner is re-editing, reset approval.
-    if (
-      booking.approvalStatus === 'rejected' &&
-      (datesChanged || itemsChanged)
-    ) {
-      updateData.approvalStatus = 'pending';
-      updateData.rejectionReason = null;
+    // Re-apply approval logic when dates or items change on an approval-required booking.
+    if (datesChanged || itemsChanged) {
+      if (requiresApproval) {
+        // Reset to pending regardless of previous approval state.
+        // This covers: re-edits of rejected bookings AND edits of already-confirmed
+        // bookings that require approval — the approver must re-evaluate the new dates/items.
+        updateData.status = 'pending';
+        updateData.approvalStatus = 'pending';
+        updateData.rejectionReason = null;
+      } else {
+        // No approval required — ensure booking is confirmed after edit.
+        updateData.status = 'confirmed';
+        updateData.approvalStatus = 'none';
+        updateData.rejectionReason = null;
+      }
     }
 
     tx.update(bookingRef, updateData);

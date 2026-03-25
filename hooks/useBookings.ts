@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   collection,
   query,
+  where,
   orderBy,
   onSnapshot,
   Timestamp,
@@ -14,9 +15,13 @@ import type { Booking, BookingStatus, ApprovalStatus, BookingItem } from '@/type
 export interface UseBookingsOptions {
   /** Include cancelled bookings in the result. Defaults to false. */
   includeCancelled?: boolean
-  /** Lower bound date filter "YYYY-MM-DD" (inclusive). Optional. */
+  /**
+   * Server-side lower bound for endDate "YYYY-MM-DD" (inclusive).
+   * Bookings whose endDate is before this value are excluded at the Firestore level.
+   * Defaults to 90 days ago to prevent a full collection scan.
+   */
   startDate?: string
-  /** Upper bound date filter "YYYY-MM-DD" (inclusive). Optional. */
+  /** Upper bound date filter "YYYY-MM-DD" (inclusive). Applied client-side. */
   endDate?: string
 }
 
@@ -72,9 +77,20 @@ export function useBookings(
       return
     }
 
+    // Server-side lower bound: use caller-supplied startDate, or default to 90 days
+    // ago. This prevents a full collection scan regardless of how many bookings exist.
+    // We filter on endDate so that bookings still in progress (started before the
+    // window but ending within it) are included.
+    const serverLowerBound = startDate ?? (() => {
+      const d = new Date()
+      d.setDate(d.getDate() - 90)
+      return d.toISOString().slice(0, 10)
+    })()
+
     const baseQuery = query(
       collection(db, 'companies', companyId, 'bookings'),
-      orderBy('startDate', 'desc'),
+      where('endDate', '>=', serverLowerBound),
+      orderBy('endDate', 'asc'),
     )
 
     const unsubscribe = onSnapshot(
@@ -84,23 +100,24 @@ export function useBookings(
           docToBooking(doc.id, doc.data() as Record<string, unknown>),
         )
 
-        // Client-side filters applied after fetch
+        // Client-side filters applied after server-bounded fetch.
         if (!includeCancelled) {
           docs = docs.filter((b) => b.status !== 'cancelled')
-        }
-        if (startDate) {
-          docs = docs.filter((b) => b.startDate >= startDate)
         }
         if (endDate) {
           docs = docs.filter((b) => b.endDate <= endDate)
         }
+
+        // Sort by startDate descending for the list view.
+        docs.sort((a, b) => (a.startDate > b.startDate ? -1 : 1))
 
         setBookings(docs)
         setLoading(false)
         setError(null)
       },
       (err) => {
-        console.error('[useBookings] Firestore listener error:', err)
+        const code = (err as { code?: string }).code ?? 'unknown'
+        console.error('[useBookings] Firestore listener error', { code })
         setError(err)
         setLoading(false)
       },
