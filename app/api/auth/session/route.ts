@@ -33,12 +33,12 @@ export async function POST(request: NextRequest) {
       maxAge:   60 * 60 * 24 * 14, // 14 days in seconds
     })
 
-    console.log('[auth/session]', { uid, action: 'session_created' })
+    console.log('[auth/session]', { uid: uid.slice(0, 8) + '...', action: 'session_created' })
 
     return NextResponse.json({ ok: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[auth/session]', { error: message, uid: uid ?? 'unknown' })
+    console.error('[auth/session]', { error: message, uid: uid ? uid.slice(0, 8) + '...' : 'unknown' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }

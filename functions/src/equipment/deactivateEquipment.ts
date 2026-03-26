@@ -31,7 +31,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
  * @throws invalid-argument     if companyId or equipmentId are missing
  * @throws not-found            if the equipment document does not exist
  */
-export const deactivateEquipment = onCall({ cors: true, invoker: 'public' }, async (request) => {
+export const deactivateEquipment = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

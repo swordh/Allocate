@@ -75,7 +75,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
  *
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export const deleteAccount = onCall(async (_request) => {
+export const deleteAccount = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (_request) => {
   // Phase 5: implement the steps documented above.
   throw new HttpsError(
     'unimplemented',

@@ -29,7 +29,7 @@ import { CompanyDocument, EquipmentDocument } from '../types';
  * @throws failed-precondition  if subscription is inactive, equipment is inactive,
  *                              or a conflict is detected
  */
-export const createBooking = onCall({ cors: true, invoker: 'public' }, async (request) => {
+export const createBooking = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');
@@ -227,7 +227,7 @@ export const createBooking = onCall({ cors: true, invoker: 'public' }, async (re
   logger.info('createBooking: booking created', {
     companyId,
     bookingId: newBookingId!,
-    uid,
+    uid: uid.slice(0, 8) + '...',
   });
 
   return { bookingId: newBookingId!, success: true };

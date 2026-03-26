@@ -174,7 +174,7 @@ export async function switchCompany(companyId: string): Promise<void> {
     const membershipSnap = await membershipRef.get()
 
     if (!membershipSnap.exists) {
-      console.error('[actions/auth]', { uid, companyId, action: 'switch_company_denied_no_membership' })
+      console.error('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, action: 'switch_company_denied_no_membership' })
       throw new Error('No membership found for this company')
     }
 
@@ -186,7 +186,7 @@ export async function switchCompany(companyId: string): Promise<void> {
       role,
     })
 
-    console.log('[actions/auth]', { uid, companyId, role, action: 'company_switched' })
+    console.log('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, role, action: 'company_switched' })
 
     // Invalidate all cached server data so the new company's data is loaded.
     revalidatePath('/', 'layout')

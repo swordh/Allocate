@@ -27,7 +27,7 @@ import { CompanyDocument } from '../types';
  * @throws failed-precondition  if subscription status is not 'trialing' or 'active'
  * @throws resource-exhausted   if the company is at its equipment limit
  */
-export const addEquipment = onCall({ cors: true, invoker: 'public' }, async (request) => {
+export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

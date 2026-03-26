@@ -32,7 +32,7 @@ import { BookingDocument, EquipmentDocument } from '../types';
  * @throws not-found           if booking or any new equipment does not exist
  * @throws failed-precondition if booking status does not allow edits, or conflict detected
  */
-export const updateBooking = onCall({ cors: true, invoker: 'public' }, async (request) => {
+export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');

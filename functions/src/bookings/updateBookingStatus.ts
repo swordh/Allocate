@@ -24,7 +24,7 @@ import { BookingDocument, BookingStatus } from '../types';
  * @throws not-found           if the booking does not exist
  * @throws failed-precondition if the requested transition is not allowed from current status
  */
-export const updateBookingStatus = onCall({ cors: true, invoker: 'public' }, async (request) => {
+export const updateBookingStatus = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');
