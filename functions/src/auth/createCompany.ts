@@ -18,7 +18,7 @@ import { PLAN_LIMITS } from '../types';
  *               sets Custom Claims { activeCompanyId, role: "admin" }
  * Note: Stripe Customer creation is deferred to Phase 4. stripeCustomerId is left empty.
  */
-export const createCompany = onCall(async (request) => {
+export const createCompany = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.');
@@ -96,11 +96,25 @@ export const createCompany = onCall(async (request) => {
     joinedAt: FieldValue.serverTimestamp(),
   });
 
+  // ── Seed default categories ────────────────────────────────────────────────
+  // Six default categories are created for every new company so the equipment
+  // add form has sensible options immediately. They are marked isDefault: true
+  // so the UI can distinguish them from user-created categories.
+  const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories'];
+  for (const categoryName of DEFAULT_CATEGORIES) {
+    const categoryRef = db.collection(`companies/${newCompanyId}/categories`).doc();
+    batch.set(categoryRef, {
+      name: categoryName,
+      createdAt: FieldValue.serverTimestamp(),
+      isDefault: true,
+    });
+  }
+
   try {
     await batch.commit();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error('createCompany: batch write failed', { uid, error: message });
+    logger.error('createCompany: batch write failed', { uid: uid.slice(0, 8) + '...', error: message });
     throw new HttpsError('internal', 'Failed to create company. Please try again.');
   }
 
@@ -113,14 +127,14 @@ export const createCompany = onCall(async (request) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error('createCompany: setCustomUserClaims failed', { uid, newCompanyId, error: message });
+    logger.error('createCompany: setCustomUserClaims failed', { uid: uid.slice(0, 8) + '...', newCompanyId, error: message });
     // Documents are already written. Log the failure so it can be repaired,
     // but do not surface an internal error to the client — the user can call
     // setActiveClaim to recover the claims on next sign-in.
     throw new HttpsError('internal', 'Company created but claims could not be set. Please sign in again.');
   }
 
-  logger.info('createCompany: company created', { uid, companyId: newCompanyId });
+  logger.info('createCompany: company created', { uid: uid.slice(0, 8) + '...', companyId: newCompanyId });
 
   return { companyId: newCompanyId, success: true };
 });

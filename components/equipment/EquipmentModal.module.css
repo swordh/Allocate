@@ -1,0 +1,18 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 8, 0.88);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  z-index: 100;
+}
+
+.panel {
+  background: var(--dim);
+  width: 480px;
+  min-height: 100vh;
+  padding: 48px 40px;
+  overflow-y: auto;
+  border-left: 1px solid var(--rule);
+}

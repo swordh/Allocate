@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allocate — Settings: Company</title>
+<style>
+  @font-face {
+    font-family: 'General Sans';
+    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --black: #080808;
+    --white: #F0EDE8;
+    --dim: #2A2A2A;
+    --mid: #4A4A4A;
+    --rule: #161616;
+    --accent: #EECC02;
+    --repair: #cc3333;
+  }
+  body {
+    font-family: 'General Sans', system-ui, sans-serif;
+    background: var(--black);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 300;
+    min-height: 100vh;
+  }
+  .proto-bar {
+    background: #111;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .proto-bar a { color: #666; text-decoration: none; }
+  .proto-bar a:hover { color: var(--white); }
+  .proto-bar a.active { color: var(--accent); }
+
+  .page-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    min-height: calc(100vh - 29px);
+  }
+  .sidebar-l { border-right: 1px solid var(--rule); }
+  .sidebar-r { border-left: 1px solid var(--rule); }
+
+  .primary-nav {
+    display: flex;
+    align-items: center;
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .nav-links { display: flex; gap: 40px; flex: 1; }
+  .nav-link {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    letter-spacing: -0.02em;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--white); }
+  .nav-new {
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--mid);
+    border: 1px solid #3A3A3A;
+    padding: 5px 18px 12px;
+    letter-spacing: -0.02em;
+  }
+  .nav-new:hover { color: var(--white); border-color: var(--white); }
+
+  /* Settings sub-nav */
+  .settings-subnav {
+    display: flex;
+    gap: 40px;
+    padding: 20px 48px;
+    border-bottom: 1px solid var(--rule);
+    grid-column: 1 / -1;
+  }
+  .stab {
+    font-size: 28px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--dim);
+    letter-spacing: -0.02em;
+  }
+  .stab:hover { color: var(--white); }
+  .stab.active { color: var(--white); }
+
+  .logo-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 24px 48px 16px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .logo-text {
+    font-size: clamp(90px, 11vw, 148px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+  }
+  .logo-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 8px;
+  }
+
+  /* Content */
+  .content {
+    grid-column: 2 / 3;
+    padding: 48px 48px 80px;
+    max-width: 640px;
+  }
+  .settings-heading {
+    font-size: 40px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .settings-sub-heading {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 48px;
+  }
+
+  .field-group {
+    margin-bottom: 32px;
+  }
+  .field-label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-bottom: 8px;
+  }
+  .field-input {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 400;
+    padding: 8px 0 12px;
+    caret-color: var(--accent);
+  }
+  .field-input:focus { border-bottom-color: var(--mid); }
+  .field-select {
+    display: block;
+    width: 100%;
+    background: var(--black);
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    outline: none;
+    color: var(--white);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 400;
+    padding: 8px 0 12px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .field-select option { background: #1a1a1a; }
+  .select-wrap { position: relative; }
+  .select-arrow {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--mid);
+    font-size: 14px;
+  }
+
+  .btn-save {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--black);
+    border: none;
+    padding: 16px 40px;
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  .btn-save:hover { background: #d4b500; }
+
+  /* Logo upload stub */
+  .logo-upload-disabled {
+    border: 1px dashed var(--dim);
+    padding: 20px 24px;
+    color: var(--mid);
+    font-size: 13px;
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Banners */
+  .success-banner {
+    background: rgba(40,160,80,0.12);
+    border: 1px solid rgba(40,160,80,0.4);
+    color: #6ec98a;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .error-banner {
+    background: rgba(204,51,51,0.12);
+    border: 1px solid rgba(204,51,51,0.4);
+    color: #e07070;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <a href="index.html">← Back to index</a>
+  <a href="login.html">login</a>
+  <a href="signup.html">signup</a>
+  <a href="bookings.html">bookings</a>
+  <a href="bookings-week.html">week</a>
+  <a href="bookings-month.html">month</a>
+  <a href="equipment.html">equipment</a>
+  <a href="booking-new.html">new-booking</a>
+  <a href="booking-detail.html">booking-detail</a>
+  <a href="trial-started.html">trial-started</a>
+  <a href="settings-company.html" class="active">settings-company</a>
+  <a href="settings-team.html">settings-team</a>
+  <a href="settings-subscription.html">settings-subscription</a>
+</div>
+
+<div class="page-grid">
+  <nav class="primary-nav">
+    <div class="nav-links">
+      <a href="bookings.html" class="nav-link">Bookings</a>
+      <a href="equipment.html" class="nav-link">Equipment</a>
+      <a href="settings-company.html" class="nav-link active">Settings</a>
+    </div>
+    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  </nav>
+
+  <div class="settings-subnav">
+    <a href="settings-company.html" class="stab active">Company</a>
+    <a href="settings-team.html" class="stab">Team</a>
+    <a href="settings-subscription.html" class="stab">Subscription</a>
+  </div>
+
+  <div class="logo-row">
+    <div>
+      <div class="logo-text">ALLOCATE</div>
+      <div class="logo-sub">Gear Management System</div>
+    </div>
+  </div>
+
+  <div class="sidebar-l"></div>
+  <div class="content">
+    <div class="settings-heading">Settings</div>
+    <div class="settings-sub-heading">Company</div>
+
+    <div class="field-group">
+      <label class="field-label" for="company-name">Company Name</label>
+      <input class="field-input" type="text" id="company-name" value="Nordic Film Productions" maxlength="100">
+    </div>
+
+    <div class="field-group">
+      <span class="field-label">Logo</span>
+      <div class="logo-upload-disabled">Logo upload coming soon</div>
+    </div>
+
+    <!-- Error banner — shown when save fails -->
+    <!-- <div class="error-banner">Failed to save changes. Please try again.</div> -->
+
+    <!-- Success banner — shown after successful save -->
+    <div class="success-banner">Changes saved.</div>
+
+    <button class="btn-save">Save Changes</button>
+  </div>
+  <div class="sidebar-r"></div>
+</div>
+</body>
+</html>

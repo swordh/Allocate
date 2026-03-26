@@ -1,0 +1,26 @@
+.badge {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+/* available — no border, dim color */
+.available {
+  color: var(--mid);
+}
+
+/* checked_out — accent background */
+.checked_out {
+  background: var(--accent);
+  color: var(--black);
+  padding: 2px 8px;
+}
+
+/* needs_repair — red text + red border */
+.needs_repair {
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 2px 8px;
+}

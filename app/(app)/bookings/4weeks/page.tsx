@@ -1,4 +1,12 @@
-// 4 Weeks view — full implementation in Phase 3.
+import styles from './page.module.css'
+
+/**
+ * 4-week view — coming in Phase 4.
+ */
 export default function BookingsFourWeeksPage() {
-  return <div>4 Weeks view coming in Phase 3</div>
+  return (
+    <div className={styles.stub}>
+      <span className={styles.label}>4-week view — coming soon</span>
+    </div>
+  )
 }

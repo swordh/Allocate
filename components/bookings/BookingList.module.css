@@ -1,0 +1,192 @@
+/* -----------------------------------------------------------------------
+   Booking List — 3-column grid layout matching the design system
+   ----------------------------------------------------------------------- */
+
+.container {
+  width: 100%;
+}
+
+/* Stats bar */
+.statsBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  padding: 24px var(--booking-pad-h);
+  border-right: 1px solid var(--rule);
+  min-width: 180px;
+}
+
+.statValue {
+  font-size: var(--font-stat);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--white);
+  letter-spacing: -0.03em;
+}
+
+.statLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  margin-top: 6px;
+}
+
+/* Controls row */
+.controls {
+  display: flex;
+  align-items: center;
+  padding: 12px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.toggleBtn {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  background: none;
+  border: 1px solid var(--dim);
+  padding: 4px 12px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.toggleBtn:hover,
+.toggleActive {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+/* Date group */
+.group {
+  border-bottom: 1px solid var(--rule);
+}
+
+.groupHeader {
+  padding: 10px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.dateLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--mid);
+}
+
+.dateLabelToday {
+  color: var(--accent);
+}
+
+/* Booking row — 3-column grid: date | project | meta */
+.row {
+  display: grid;
+  grid-template-columns: var(--grid-col-date) 1fr var(--grid-col-right);
+  align-items: center;
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+  gap: 0;
+  transition: background 0.1s ease;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rowCancelled {
+  opacity: 0.4;
+}
+
+.rowDate {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+}
+
+.rowProject {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--white);
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  padding-right: 24px;
+}
+
+.rowCancelled .rowProject {
+  text-decoration: line-through;
+}
+
+.rowMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.rowItemCount {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mid);
+}
+
+/* Error state */
+.errorState {
+  padding: 48px var(--booking-pad-h);
+  color: var(--repair);
+  font-size: 14px;
+}
+
+/* Empty state */
+.emptyState {
+  padding: 80px var(--booking-pad-h);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.emptyHeading {
+  font-size: 24px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+
+.emptyBody {
+  font-size: 14px;
+  color: var(--mid);
+}
+
+.emptyAction {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--white);
+  border: 1px solid var(--white);
+  padding: 8px 20px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.emptyAction:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

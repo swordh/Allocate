@@ -1,0 +1,11 @@
+.stub {
+  padding: 80px var(--booking-pad-h);
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+}
