@@ -71,6 +71,42 @@
   background: var(--dim);
 }
 
+/* Individual tracking: outer wrapper for one parent + its units */
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Parent name row for individual equipment groups */
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--booking-pad-v) var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Indented unit row nested under the parent */
+.unitRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px var(--booking-pad-h) 10px calc(var(--booking-pad-h) + 32px);
+  border-bottom: 1px solid var(--rule);
+  transition: background 0.1s ease;
+}
+
+.unitRow:hover {
+  background: var(--dim);
+}
+
+.unitName {
+  font-size: var(--font-body);
+  font-weight: 300;
+  color: var(--white);
+}
+
 .rowLeft {
   display: flex;
   align-items: center;

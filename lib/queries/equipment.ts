@@ -9,6 +9,7 @@ function docToEquipment(doc: FirebaseFirestore.DocumentSnapshot): Equipment {
   return {
     id:               doc.id,
     name:             data.name             ?? '',
+    equipmentName:    data.equipmentName    ?? null,
     category:         data.category         ?? '',
     icon:             data.icon             ?? undefined,
     active:           data.active           ?? true,

@@ -67,6 +67,16 @@ export async function createEquipment(
   const serialNumber: string | null =
     trackingType === 'individual' ? (serialNumberRaw?.trim() || null) : null
 
+  // equipmentName: the parent equipment name for individual units (e.g. "Sony FX9").
+  // Stored on each unit document so units can be grouped in the UI.
+  // Not used for quantity items.
+  const equipmentNameRaw = formData.get('equipmentName') as string | null
+  if (trackingType === 'quantity' && equipmentNameRaw !== null && equipmentNameRaw !== '') {
+    return { error: 'equipmentName is not allowed for quantity-tracked items' }
+  }
+  const equipmentName: string | null =
+    trackingType === 'individual' ? (equipmentNameRaw?.trim() || null) : null
+
   const requiresApproval = formData.get('requiresApproval') === 'true'
   const approverIdRaw = formData.get('approverId') as string | null
   const approverId: string | null = approverIdRaw?.trim() || null
@@ -120,6 +130,7 @@ export async function createEquipment(
 
       tx.set(newRef, {
         name,
+        equipmentName,
         category,
         trackingType,
         totalQuantity,
@@ -243,6 +254,20 @@ export async function updateEquipment(
     if (existingData.trackingType !== undefined) {
       updates['serialNumber'] =
         rawSerialNumber ? (rawSerialNumber as string).trim() || null : null
+    }
+  }
+
+  const rawEquipmentName = formData.get('equipmentName')
+  if (rawEquipmentName !== null) {
+    if (
+      existingData.trackingType !== undefined &&
+      existingData.trackingType !== 'individual'
+    ) {
+      return { error: 'equipmentName is not allowed on quantity-tracked items.' }
+    }
+    if (existingData.trackingType !== undefined) {
+      updates['equipmentName'] =
+        rawEquipmentName ? (rawEquipmentName as string).trim() || null : null
     }
   }
 

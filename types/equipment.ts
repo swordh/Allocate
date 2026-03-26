@@ -17,7 +17,8 @@ export const DEFAULT_EQUIPMENT_CATEGORIES = [
 
 export interface Equipment {
   id: string
-  name: string
+  name: string                // unit label (e.g. "Kamera 1") for individual; equipment name for quantity
+  equipmentName: string | null // parent equipment name for individual units (e.g. "Sony FX9"); null for quantity
   category: string            // from company's category list
   icon?: string
   active: boolean
