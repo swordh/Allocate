@@ -28,16 +28,22 @@ function docToBooking(doc: FirebaseFirestore.DocumentSnapshot): Booking {
   } as Booking
 }
 
+const DEFAULT_PAGE_LIMIT = 50
+
 export interface GetBookingsOptions {
   includeCancelled?: boolean
   startDate?: string  // "YYYY-MM-DD" lower bound (inclusive)
   endDate?: string    // "YYYY-MM-DD" upper bound (inclusive)
+  limit?: number
+  /** startDate value of the last document from the previous page (for cursor-based pagination). */
+  startAfterDate?: string
 }
 
 /**
  * One-shot fetch of bookings for a company.
  * Ordered by startDate descending (most recent first).
  * Cancelled bookings are excluded by default.
+ * Defaults to 50 documents per page; pass startAfterDate for the next page.
  *
  * Wrapped in React.cache so multiple Server Components calling this in the
  * same render pass share one Firestore read.
@@ -46,6 +52,8 @@ export const getBookings = cache(async (
   companyId: string,
   options: GetBookingsOptions = {},
 ): Promise<Booking[]> => {
+  const pageLimit = options.limit ?? DEFAULT_PAGE_LIMIT
+
   let query: FirebaseFirestore.Query = adminDb
     .collection('companies')
     .doc(companyId)
@@ -58,6 +66,11 @@ export const getBookings = cache(async (
   if (options.endDate) {
     query = query.where('endDate', '<=', options.endDate)
   }
+  if (options.startAfterDate) {
+    query = query.startAfter(options.startAfterDate)
+  }
+
+  query = query.limit(pageLimit)
 
   const snapshot = await query.get()
   const bookings = snapshot.docs.map(docToBooking)

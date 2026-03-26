@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBooking, checkConflict } from '@/actions/bookings'
+import { createBooking, updateBooking, checkConflict } from '@/actions/bookings'
 import type { Equipment, BookingItem } from '@/types'
 import type { ConflictResult } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
@@ -12,8 +12,12 @@ interface BookingFormProps {
   equipment: Equipment[]
   defaultStartDate: string
   defaultEndDate: string
-  /** When provided, the form is in edit mode. Not used for new bookings. */
+  /** When provided, the form operates in edit mode. */
   bookingId?: string
+  /** Pre-filled values for edit mode. */
+  initialProjectName?: string
+  initialNotes?: string
+  initialItems?: BookingItem[]
 }
 
 interface SelectedItem {
@@ -43,14 +47,18 @@ export default function BookingForm({
   equipment,
   defaultStartDate,
   defaultEndDate,
+  bookingId,
+  initialProjectName = '',
+  initialNotes = '',
+  initialItems = [],
 }: BookingFormProps) {
   const router = useRouter()
 
-  const [projectName, setProjectName]   = useState('')
+  const [projectName, setProjectName]   = useState(initialProjectName)
   const [startDate, setStartDate]       = useState(defaultStartDate)
   const [endDate, setEndDate]           = useState(defaultEndDate)
-  const [notes, setNotes]               = useState('')
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
+  const [notes, setNotes]               = useState(initialNotes)
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(initialItems)
   const [error, setError]               = useState<string | null>(null)
   const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null)
   const [isCheckingConflict, setIsCheckingConflict] = useState(false)
@@ -183,14 +191,25 @@ export default function BookingForm({
     formData.set('notes', notes)
     formData.set('items', JSON.stringify(selectedItems))
 
-    startTransition(async () => {
-      const result = await createBooking(formData)
-      if ('error' in result) {
-        setError(result.error)
-      } else {
-        router.push(`/bookings/${result.bookingId}`)
-      }
-    })
+    if (bookingId) {
+      startTransition(async () => {
+        const result = await updateBooking(bookingId, formData)
+        if (result.error) {
+          setError(result.error)
+        } else {
+          router.push(`/bookings/${bookingId}`)
+        }
+      })
+    } else {
+      startTransition(async () => {
+        const result = await createBooking(formData)
+        if ('error' in result) {
+          setError(result.error)
+        } else {
+          router.push(`/bookings/${result.bookingId}`)
+        }
+      })
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -207,7 +226,7 @@ export default function BookingForm({
       <div className={styles.layout}>
         {/* Left: form fields */}
         <div className={styles.fields}>
-          <div className={styles.pageTitle}>New Booking</div>
+          <div className={styles.pageTitle}>{bookingId ? 'Edit Booking' : 'New Booking'}</div>
 
           {error && (
             <div className={styles.errorBanner}>{error}</div>
@@ -358,7 +377,9 @@ export default function BookingForm({
               className={styles.submitBtn}
               disabled={isPending || isCheckingConflict}
             >
-              {isPending ? 'Creating...' : 'Create Booking'}
+              {isPending
+              ? (bookingId ? 'Saving...' : 'Creating...')
+              : (bookingId ? 'Save Changes' : 'Create Booking')}
             </button>
           </div>
         </div>

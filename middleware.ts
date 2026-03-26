@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/signup', '/api/auth/session']
+const PUBLIC_PATHS = ['/login', '/signup']
 
 /**
  * Auth guard for all application routes.
@@ -18,7 +18,7 @@ const PUBLIC_PATHS = ['/login', '/signup', '/api/auth/session']
  * applies to the page that calls the action, not the action itself.
  * Always verify auth inside each Server Action independently via getVerifiedSession().
  */
-export function proxy(req: NextRequest) {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Allow public routes and Next.js internals through without auth check.

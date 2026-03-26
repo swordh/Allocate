@@ -75,7 +75,19 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
  *
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export const deleteAccount = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (_request) => {
+export const deleteAccount = onCall({ region: 'europe-west1', cors: true, invoker: 'public' }, async (request) => {
+  // ── Auth guard ─────────────────────────────────────────────────────────────
+  // Must be signed in. The function may only delete the account that belongs to
+  // the calling user — uid is taken from request.auth, never from caller-supplied data.
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Must be signed in.');
+  }
+
+  // uid is the authoritative identity for all subsequent operations.
+  // It is never read from request.data — that would allow a caller to delete
+  // an arbitrary account. Stored here for use in the Phase 5 implementation.
+  void request.auth.uid;
+
   // Phase 5: implement the steps documented above.
   throw new HttpsError(
     'unimplemented',

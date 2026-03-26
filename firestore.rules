@@ -2,71 +2,104 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Helper functions ───────────────────────────────────────────────────────
+    // All role and company checks read from Custom Claims, never from Firestore.
+    // This avoids extra reads and prevents spoofing via client-supplied data.
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // True when the caller's active company claim matches the path segment.
+    function hasActiveClaim(companyId) {
+      return request.auth.token.activeCompanyId == companyId;
+    }
+
+    // Role is stored in the Custom Claim set by setActiveClaim / switchCompany.
+    function callerRole() {
+      return request.auth.token.role;
+    }
+
+    // Any authenticated member of the company (viewer, crew, admin).
+    function isMember(companyId) {
+      return isSignedIn() && hasActiveClaim(companyId);
+    }
+
+    // Crew or admin — can create and edit their own bookings.
+    function isCrew(companyId) {
+      return isMember(companyId) && callerRole() in ['admin', 'crew'];
+    }
+
+    // Admin only — can manage equipment, categories, and all bookings.
+    function isAdmin(companyId) {
+      return isMember(companyId) && callerRole() == 'admin';
+    }
+
     // ── User profiles ─────────────────────────────────────────────────────────
-    // Users may read their own profile. All writes are via Cloud Functions only.
+    // Users may read their own profile. All writes are via Server Actions only
+    // (Admin SDK bypasses these rules, so allow write: if false is correct).
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if false;
     }
 
     // ── Memberships ───────────────────────────────────────────────────────────
     // Users may read their own membership documents (needed for company switcher).
-    // All writes are via Cloud Functions only — prevents self-elevation to admin.
+    // All writes are via Server Actions only — prevents self-elevation to admin.
     match /users/{userId}/memberships/{companyId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if false;
     }
 
     // ── Company root document ─────────────────────────────────────────────────
-    // All company writes are via Cloud Functions only.
+    // All company writes are via Server Actions only.
     // Subscription state is Stripe's source of truth and must never be
     // written directly by a client.
     match /companies/{companyId} {
-      allow read: if request.auth != null
-                  && request.auth.token.activeCompanyId == companyId;
+      allow read: if isMember(companyId);
       allow write: if false;
     }
 
     // ── Equipment ─────────────────────────────────────────────────────────────
-    // All writes are via Cloud Functions only (addEquipment, updateEquipment,
-    // deactivateEquipment). The client never writes equipment documents directly.
+    // All members may read. Only admins may write (via Server Actions using Admin SDK).
+    // The write rule below is a defence-in-depth guard for any future direct-write
+    // path; current mutations all go through Admin SDK and bypass these rules.
     match /companies/{companyId}/equipment/{equipmentId} {
-      allow read: if request.auth != null
-                  && request.auth.token.activeCompanyId == companyId;
-      allow write: if false; // Cloud Functions only
+      allow read: if isMember(companyId);
+      allow create, update, delete: if isAdmin(companyId);
     }
 
     // ── Categories ────────────────────────────────────────────────────────────
-    // All writes are via Cloud Functions only (addCategory, seeded by createCompany).
+    // All members may read. Only admins may write.
     match /companies/{companyId}/categories/{categoryId} {
-      allow read: if request.auth != null
-                  && request.auth.token.activeCompanyId == companyId;
-      allow write: if false; // Cloud Functions only
+      allow read: if isMember(companyId);
+      allow create, update, delete: if isAdmin(companyId);
     }
 
     // ── Bookings ───────────────────────────────────────────────────────────────
-    // All writes are via Cloud Functions only (createBooking, updateBooking,
-    // cancelBooking, approveBooking, rejectBooking, updateBookingStatus).
-    // The companyId claim check ensures tenant isolation — a user can only read
-    // bookings for the company they are currently active in.
+    // All members may read bookings for the active company.
+    // Crew and admins may create bookings.
+    // Crew may update/delete only their own bookings; admins may update/delete any.
+    // Status transitions (approve, reject, check-out, return) go through Server
+    // Actions using Admin SDK, so the update rules here are defence-in-depth.
     match /companies/{companyId}/bookings/{bookingId} {
-      allow read: if request.auth != null
-                  && request.auth.token.activeCompanyId == companyId;
-      allow write: if false; // Cloud Functions only
+      allow read: if isMember(companyId);
+      allow create: if isCrew(companyId);
+      allow update: if isAdmin(companyId)
+        || (isCrew(companyId) && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin(companyId);
     }
 
     // ── Nested company data (fallback for future subcollections) ──────────────
     // Covers any subcollection not yet given its own explicit rule above.
-    // Phase 3 will add a specific bookings rule (crew can create their own).
-    // This wildcard must remain as a safe fallback — read for members, no writes.
+    // Members may read; writes require admin role.
     match /companies/{companyId}/{document=**} {
-      allow read: if request.auth != null
-                  && request.auth.token.activeCompanyId == companyId;
-      allow write: if false; // Default: all writes via Cloud Functions
+      allow read: if isMember(companyId);
+      allow write: if isAdmin(companyId);
     }
 
     // ── Stripe event deduplication log ────────────────────────────────────────
-    // Written only by the webhook Cloud Function. Never readable by clients.
+    // Written only by the Stripe webhook Server Action. Never readable by clients.
     match /_stripeEvents/{eventId} {
       allow read, write: if false;
     }

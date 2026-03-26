@@ -10,17 +10,22 @@ setGlobalOptions({ region: 'europe-west1' });
 // they rely on this default app being initialized first.
 initializeApp();
 
-export { createCompany } from './auth/createCompany';
-export { setActiveClaim } from './auth/setActiveClaim';
+// ── Auth ──────────────────────────────────────────────────────────────────────
+// createCompany  → superseded by actions/auth.ts#setupNewCompany  (#21)
+// setActiveClaim → superseded by actions/auth.ts#switchCompany     (#21)
 export { deleteAccount } from './auth/deleteAccount';
-export { addEquipment } from './equipment/addEquipment';
-export { updateEquipment } from './equipment/updateEquipment';
-export { deactivateEquipment } from './equipment/deactivateEquipment';
-export { addCategory } from './equipment/addCategory';
-export { checkBookingConflict } from './bookings/checkBookingConflict';
-export { createBooking } from './bookings/createBooking';
-export { updateBooking } from './bookings/updateBooking';
-export { cancelBooking } from './bookings/cancelBooking';
-export { approveBooking } from './bookings/approveBooking';
-export { rejectBooking } from './bookings/rejectBooking';
+
+// ── Equipment ─────────────────────────────────────────────────────────────────
+// addEquipment       → superseded by actions/equipment.ts#createEquipment    (#21)
+// updateEquipment    → superseded by actions/equipment.ts#updateEquipment    (#21)
+// deactivateEquipment→ superseded by actions/equipment.ts#deactivateEquipment(#21)
+// addCategory        → superseded by actions/equipment.ts (category actions) (#21)
+
+// ── Bookings ──────────────────────────────────────────────────────────────────
+// checkBookingConflict → superseded by actions/bookings.ts#checkConflict     (#21, #22)
+// createBooking        → superseded by actions/bookings.ts#createBooking     (#21)
+// updateBooking        → superseded by actions/bookings.ts#updateBooking     (#21)
+// cancelBooking        → superseded by actions/bookings.ts#cancelBooking     (#21)
+// approveBooking       → superseded by actions/bookings.ts#approveBooking    (#21)
+// rejectBooking        → superseded by actions/bookings.ts#approveBooking    (#21)
 export { updateBookingStatus } from './bookings/updateBookingStatus';

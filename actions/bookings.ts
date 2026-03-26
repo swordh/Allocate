@@ -308,7 +308,8 @@ export async function createBooking(
 
   if (endDate < startDate) return { error: 'End date must be on or after start date' }
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const _today = new Date()
+  const todayStr = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`
   if (startDate < todayStr) return { error: 'startDate must be today or a future date.' }
 
   const notes = (formData.get('notes') as string | null) ?? ''
@@ -398,7 +399,13 @@ export async function createBooking(
         throw new Error(`Booking conflict detected for: ${names}.`)
       }
 
-      // 4. Write the booking document.
+      // 4. Resolve the user's display name.
+      const userRef = adminDb.doc(`users/${session.uid}`)
+      const userSnap = await tx.get(userRef)
+      const userName: string =
+        (userSnap.data()?.name as string | undefined) ?? session.email ?? ''
+
+      // 5. Write the booking document.
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const newRef = bookingsRef.doc()
       newBookingId = newRef.id
@@ -415,7 +422,7 @@ export async function createBooking(
         startDate,
         endDate,
         userId: session.uid,
-        userName: null,
+        userName,
         status: bookingStatus,
         requiresApproval,
         approverId,
