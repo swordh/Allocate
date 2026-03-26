@@ -212,6 +212,34 @@
     margin-top: 12px;
   }
   .btn-save:hover { background: #d4b500; }
+
+  /* Logo upload stub */
+  .logo-upload-disabled {
+    border: 1px dashed var(--dim);
+    padding: 20px 24px;
+    color: var(--mid);
+    font-size: 13px;
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Banners */
+  .success-banner {
+    background: rgba(40,160,80,0.12);
+    border: 1px solid rgba(40,160,80,0.4);
+    color: #6ec98a;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .error-banner {
+    background: rgba(204,51,51,0.12);
+    border: 1px solid rgba(204,51,51,0.4);
+    color: #e07070;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
 </style>
 </head>
 <body>
@@ -261,23 +289,19 @@
 
     <div class="field-group">
       <label class="field-label" for="company-name">Company Name</label>
-      <input class="field-input" type="text" id="company-name" value="Nordic Film Productions">
+      <input class="field-input" type="text" id="company-name" value="Nordic Film Productions" maxlength="100">
     </div>
 
     <div class="field-group">
-      <label class="field-label" for="timezone">Timezone</label>
-      <div class="select-wrap">
-        <select class="field-select" id="timezone">
-          <option value="Europe/Stockholm" selected>Europe/Stockholm (UTC+1)</option>
-          <option value="Europe/London">Europe/London (UTC+0)</option>
-          <option value="Europe/Berlin">Europe/Berlin (UTC+1)</option>
-          <option value="America/New_York">America/New_York (UTC-5)</option>
-          <option value="America/Los_Angeles">America/Los_Angeles (UTC-8)</option>
-          <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
-        </select>
-        <span class="select-arrow">↓</span>
-      </div>
+      <span class="field-label">Logo</span>
+      <div class="logo-upload-disabled">Logo upload coming soon</div>
     </div>
+
+    <!-- Error banner — shown when save fails -->
+    <!-- <div class="error-banner">Failed to save changes. Please try again.</div> -->
+
+    <!-- Success banner — shown after successful save -->
+    <div class="success-banner">Changes saved.</div>
 
     <button class="btn-save">Save Changes</button>
   </div>

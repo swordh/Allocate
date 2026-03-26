@@ -144,10 +144,10 @@
   .current-plan-block {
     border: 1px solid rgba(238,204,2,0.3);
     padding: 28px 32px;
-    margin-bottom: 48px;
+    margin-bottom: 32px;
     display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 24px;
     flex-wrap: wrap;
   }
   .plan-badge {
@@ -159,22 +159,35 @@
     color: var(--black);
     padding: 6px 14px;
   }
-  .plan-price {
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1;
+  .plan-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .plan-price span {
-    font-size: 14px;
-    font-weight: 300;
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mid);
+  }
+  .status-dot.active { background: #40c870; }
+  .status-dot.trialing { background: var(--accent); }
+  .status-dot.past-due { background: var(--repair); }
+  .status-dot.canceled { background: var(--dim); }
+  .status-label {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
     color: var(--mid);
-    letter-spacing: 0;
   }
   .plan-details {
     font-size: 13px;
     color: var(--mid);
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
+  .detail-sep { color: var(--dim); }
   .trial-notice {
     margin-left: auto;
     background: rgba(238,204,2,0.08);
@@ -184,123 +197,45 @@
     color: #c8a800;
     letter-spacing: 0.12em;
   }
-
-  /* Plan table */
-  .section-label {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 20px;
-  }
-  .plan-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-    margin-bottom: 48px;
-  }
-  .plan-card {
-    background: var(--black);
-    padding: 28px 24px 24px;
-  }
-  .plan-card.current {
-    border: 1px solid rgba(238,204,2,0.4);
-    margin: -1px;
-    background: #0c0b00;
-    position: relative;
-    z-index: 1;
-  }
-  .plan-card-name {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 12px;
-  }
-  .plan-card.current .plan-card-name { color: var(--accent); }
-  .plan-card-price {
-    font-size: 36px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-  .plan-card-period {
-    font-size: 11px;
-    color: var(--mid);
-    margin-bottom: 24px;
-  }
-  .plan-feature {
+  .renewal-notice {
     font-size: 12px;
     color: var(--mid);
-    padding: 7px 0;
-    border-top: 1px solid var(--rule);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .plan-feature strong { color: var(--white); font-weight: 400; }
-  .btn-plan {
-    display: block;
-    width: 100%;
-    text-align: center;
-    margin-top: 24px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    padding: 11px 0;
-    cursor: pointer;
-    font-family: 'General Sans', system-ui, sans-serif;
-    text-decoration: none;
-  }
-  .btn-plan-current {
-    background: transparent;
-    color: var(--accent);
-    border: 1px solid rgba(238,204,2,0.3);
-  }
-  .btn-plan-upgrade {
-    background: transparent;
-    color: var(--white);
-    border: 1px solid var(--dim);
-  }
-  .btn-plan-upgrade:hover { border-color: var(--mid); }
-  .btn-plan-downgrade {
-    background: transparent;
-    color: var(--mid);
-    border: 1px solid var(--rule);
-  }
-  .btn-plan-downgrade:hover { border-color: var(--dim); color: var(--white); }
-  .current-tag {
-    position: absolute;
-    top: -1px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--accent);
-    color: var(--black);
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    padding: 3px 10px;
-    white-space: nowrap;
   }
 
-  /* Billing link */
-  .billing-link {
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--mid);
-    text-decoration: none;
-    border-bottom: 1px solid var(--dim);
-    padding-bottom: 2px;
+  /* No subscription */
+  .no-subscription {
+    padding: 32px 0;
   }
-  .billing-link:hover { color: var(--white); border-color: var(--mid); }
+  .no-sub-text {
+    font-size: 16px;
+    color: var(--mid);
+  }
+
+  /* Error banner */
+  .error-banner {
+    background: rgba(204,51,51,0.12);
+    border: 1px solid rgba(204,51,51,0.4);
+    color: #e07070;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+  }
+
+  /* Manage button */
+  .btn-manage {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--black);
+    border: none;
+    padding: 16px 40px;
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .btn-manage:hover { background: #d4b500; }
 </style>
 </head>
 <body>
@@ -348,69 +283,39 @@
     <div class="settings-heading">Settings</div>
     <div class="settings-sub-heading">Subscription</div>
 
+    <!-- Active subscription state -->
     <div class="current-plan-block">
       <span class="plan-badge">Small</span>
-      <div>
-        <div class="plan-price">$79<span>/month</span></div>
+
+      <div class="plan-status">
+        <span class="status-dot trialing"></span>
+        <span class="status-label">Trial</span>
       </div>
+
       <div class="plan-details">
-        5 members · 25 equipment items<br>
-        Next billing: 25 Apr 2026
+        <span>25 equipment items</span>
+        <span class="detail-sep">·</span>
+        <span>10 members</span>
       </div>
-      <div class="trial-notice">Trial ends in 7 days</div>
+
+      <!-- Shown during trial -->
+      <div class="trial-notice">Trial ends 2 Apr 2026</div>
+
+      <!-- Shown when active (not trial) — uncomment to preview
+      <div class="renewal-notice">Renews 25 Apr 2026</div>
+      -->
     </div>
 
-    <div class="section-label">Plans</div>
-    <div class="plan-grid">
+    <!-- Error banner — shown when portal redirect fails -->
+    <!-- <div class="error-banner">Something went wrong. Please try again.</div> -->
 
-      <!-- Basic -->
-      <div class="plan-card">
-        <div class="plan-card-name">Basic</div>
-        <div class="plan-card-price">$29</div>
-        <div class="plan-card-period">per month</div>
-        <div class="plan-feature"><strong>10</strong> equipment items</div>
-        <div class="plan-feature"><strong>3</strong> members</div>
-        <div class="plan-feature"><strong>1</strong> location</div>
-        <button class="btn-plan btn-plan-downgrade">Downgrade</button>
-      </div>
+    <button class="btn-manage">Manage Subscription</button>
 
-      <!-- Small (current) -->
-      <div class="plan-card current">
-        <span class="current-tag">Current</span>
-        <div class="plan-card-name">Small</div>
-        <div class="plan-card-price">$79</div>
-        <div class="plan-card-period">per month</div>
-        <div class="plan-feature"><strong>25</strong> equipment items</div>
-        <div class="plan-feature"><strong>10</strong> members</div>
-        <div class="plan-feature"><strong>3</strong> locations</div>
-        <button class="btn-plan btn-plan-current">Current Plan</button>
-      </div>
-
-      <!-- Mid -->
-      <div class="plan-card">
-        <div class="plan-card-name">Mid</div>
-        <div class="plan-card-price">$179</div>
-        <div class="plan-card-period">per month</div>
-        <div class="plan-feature"><strong>60</strong> equipment items</div>
-        <div class="plan-feature"><strong>25</strong> members</div>
-        <div class="plan-feature"><strong>10</strong> locations</div>
-        <button class="btn-plan btn-plan-upgrade">Upgrade</button>
-      </div>
-
-      <!-- Large -->
-      <div class="plan-card">
-        <div class="plan-card-name">Large</div>
-        <div class="plan-card-price">$349</div>
-        <div class="plan-card-period">per month</div>
-        <div class="plan-feature"><strong>150</strong> equipment items</div>
-        <div class="plan-feature"><strong>75</strong> members</div>
-        <div class="plan-feature">Unlimited locations</div>
-        <button class="btn-plan btn-plan-upgrade">Upgrade</button>
-      </div>
-
+    <!-- No subscription state — shown when subscription is null
+    <div class="no-subscription">
+      <p class="no-sub-text">No active subscription.</p>
     </div>
-
-    <a href="#" class="billing-link">Manage Billing →</a>
+    -->
 
   </div>
   <div class="sidebar-r"></div>

@@ -140,37 +140,21 @@
     margin-bottom: 32px;
   }
 
-  /* Plan indicator */
-  .plan-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    border: 1px solid var(--dim);
-    margin-bottom: 40px;
+  /* Error banner */
+  .error-banner {
+    background: rgba(204,51,51,0.12);
+    border: 1px solid rgba(204,51,51,0.4);
+    color: #e07070;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
   }
-  .plan-name {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--accent);
-    font-weight: 700;
-  }
-  .plan-count {
-    font-size: 12px;
+
+  /* Loading / empty states */
+  .loading-state, .empty-state {
+    font-size: 14px;
     color: var(--mid);
-    letter-spacing: 0.1em;
-  }
-  .plan-bar {
-    height: 4px;
-    background: var(--dim);
-    width: 80px;
-    position: relative;
-  }
-  .plan-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    width: 50%; /* 5 of 10 */
+    padding: 24px 0;
   }
 
   /* Table */
@@ -262,25 +246,34 @@
     margin-bottom: 16px;
     display: block;
   }
-  .invite-row {
+  .invite-error {
+    background: rgba(204,51,51,0.12);
+    border: 1px solid rgba(204,51,51,0.4);
+    color: #e07070;
+    font-size: 13px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .invite-form {
     display: flex;
     align-items: center;
     gap: 0;
     border: 1px solid var(--dim);
     margin-bottom: 12px;
   }
-  .invite-url {
+  .invite-input {
     flex: 1;
     background: transparent;
     border: none;
     outline: none;
-    color: var(--mid);
+    color: var(--white);
     font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 13px;
+    font-size: 15px;
     padding: 14px 16px;
-    cursor: text;
+    caret-color: var(--accent);
   }
-  .btn-copy {
+  .invite-input::placeholder { color: var(--dim); }
+  .btn-invite {
     background: var(--dim);
     color: var(--white);
     border: none;
@@ -292,8 +285,9 @@
     text-transform: uppercase;
     cursor: pointer;
     border-left: 1px solid var(--mid);
+    white-space: nowrap;
   }
-  .btn-copy:hover { background: var(--mid); }
+  .btn-invite:hover { background: var(--mid); }
   .invite-note {
     font-size: 12px;
     color: var(--mid);
@@ -345,93 +339,59 @@
     <div class="settings-heading">Settings</div>
     <div class="settings-sub-heading">Team</div>
 
-    <div class="plan-indicator">
-      <span class="plan-name">Small Plan</span>
-      <div class="plan-bar"><div class="plan-bar-fill"></div></div>
-      <span class="plan-count">5 / 10 members</span>
-    </div>
+    <!-- Error banner for remove actions — shown when a remove fails -->
+    <!-- <div class="error-banner">Failed to remove member. Please try again.</div> -->
 
     <div class="section-label" style="margin-bottom:0;">Members</div>
     <table class="member-table">
       <thead>
         <tr>
           <th>Name</th>
-          <th>Email</th>
           <th>Role</th>
-          <th>Since</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td class="member-name">Erik Lindström</td>
-          <td class="member-email">erik@nordic.com</td>
-          <td>
-            <select class="role-select">
-              <option selected>Admin</option>
-              <option>Crew</option>
-              <option>Viewer</option>
-            </select>
-          </td>
-          <td class="since-text">Jan 2026</td>
+          <td><span class="role-text">Admin</span></td>
           <td><button class="btn-remove">Remove</button></td>
         </tr>
         <tr>
           <td class="member-name">Anna Bergström</td>
-          <td class="member-email">anna@nordic.com</td>
-          <td>
-            <select class="role-select">
-              <option>Admin</option>
-              <option selected>Crew</option>
-              <option>Viewer</option>
-            </select>
-          </td>
-          <td class="since-text">Feb 2026</td>
+          <td><span class="role-text">Crew</span></td>
           <td><button class="btn-remove">Remove</button></td>
         </tr>
         <tr>
           <td class="member-name">Jonas Pettersson</td>
-          <td class="member-email">jonas@nordic.com</td>
-          <td>
-            <select class="role-select">
-              <option>Admin</option>
-              <option selected>Crew</option>
-              <option>Viewer</option>
-            </select>
-          </td>
-          <td class="since-text">Feb 2026</td>
+          <td><span class="role-text">Crew</span></td>
           <td><button class="btn-remove">Remove</button></td>
         </tr>
         <tr>
           <td class="member-name">Sara Nilsson</td>
-          <td class="member-email">sara@nordic.com</td>
-          <td>
-            <select class="role-select">
-              <option>Admin</option>
-              <option>Crew</option>
-              <option selected>Viewer</option>
-            </select>
-          </td>
-          <td class="since-text">Mar 2026</td>
+          <td><span class="role-text">Viewer</span></td>
           <td><button class="btn-remove">Remove</button></td>
         </tr>
+        <!-- Current user row: "You" badge, no Remove button -->
         <tr>
-          <td class="member-name">You <span class="you-tag">You</span></td>
-          <td class="member-email">you@nordic.com</td>
+          <td class="member-name">Joakim Svardh <span class="you-tag">You</span></td>
           <td><span class="role-text">Admin</span></td>
-          <td class="since-text">Jan 2026</td>
           <td></td>
         </tr>
       </tbody>
     </table>
 
     <div class="invite-section">
-      <span class="invite-label">Invite Link</span>
-      <div class="invite-row">
-        <input class="invite-url" type="text" value="https://app.allocate.io/join/abc123xyz" readonly>
-        <button class="btn-copy" onclick="this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',2000)">Copy</button>
+      <span class="invite-label">Invite by Email</span>
+
+      <!-- Invite error banner — shown when invite fails -->
+      <!-- <div class="invite-error">This email is already a member.</div> -->
+
+      <div class="invite-form">
+        <input class="invite-input" type="email" placeholder="colleague@example.com">
+        <button class="btn-invite">Send Invite</button>
       </div>
-      <p class="invite-note">Link expires in 7 days. Any invited member will join as Crew by default.</p>
+      <p class="invite-note">Invited members will join as Crew by default.</p>
     </div>
   </div>
   <div class="sidebar-r"></div>
