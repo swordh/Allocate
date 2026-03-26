@@ -27,4 +27,5 @@ export interface Equipment {
   serialNumber: string | null // optional for individual; always null for quantity
   requiresApproval: boolean   // triggers approval flow when booked
   approverId: string | null   // specific user who must approve; Admin if null
+  createdAt: string | null    // ISO string (converted from Timestamp at read boundary)
 }

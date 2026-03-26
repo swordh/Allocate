@@ -1,0 +1,207 @@
+.container {
+  padding: var(--booking-pad-h);
+  max-width: 800px;
+}
+
+.heading {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 4px;
+  color: var(--white);
+}
+
+.subHeading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+  margin-bottom: 32px;
+}
+
+/* Error banner */
+.errorBanner {
+  font-size: var(--font-body);
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 12px 16px;
+  margin-bottom: 24px;
+}
+
+/* Section label */
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0;
+}
+
+/* Members table */
+.memberTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 48px;
+}
+
+.th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mid);
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.memberRow:hover .td,
+.memberRow:hover .tdAction {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.tdAction {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+  text-align: right;
+  width: 80px;
+}
+
+/* Loading / empty states */
+.loadingState,
+.emptyState {
+  padding: 24px 0;
+  font-size: 14px;
+  color: var(--mid);
+}
+
+.memberName {
+  font-weight: 400;
+  color: var(--white);
+}
+
+.youTag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(238, 204, 2, 0.3);
+  padding: 2px 6px;
+  margin-left: 8px;
+}
+
+.roleText {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--mid);
+}
+
+.btnRemove {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.btnRemove:hover {
+  color: var(--repair);
+}
+
+/* Invite section */
+.inviteSection {
+  border-top: 1px solid var(--rule);
+  padding-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inviteLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+}
+
+.inviteForm {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--mid);
+  width: fit-content;
+}
+
+.inviteInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 300;
+  padding: 12px 16px;
+  width: 320px;
+  caret-color: var(--accent);
+}
+
+.inviteInput::placeholder {
+  color: var(--mid);
+}
+
+.btnInvite {
+  background: var(--dim);
+  color: var(--white);
+  border: none;
+  border-left: 1px solid var(--mid);
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.btnInvite:hover:not(:disabled) {
+  background: var(--mid);
+}
+
+.btnInvite:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.inviteNote {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--mid);
+}

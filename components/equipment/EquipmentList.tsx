@@ -44,7 +44,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
     setActionError(null)
     const result = await deactivateEquipment(item.id)
     setDeactivatingId(null)
-    if (result.error) {
+    if ('error' in result) {
       setActionError(result.error)
     }
   }

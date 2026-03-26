@@ -1,0 +1,152 @@
+.container {
+  padding: var(--booking-pad-h);
+  max-width: 800px;
+}
+
+.heading {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 4px;
+  color: var(--white);
+}
+
+.subHeading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+  margin-bottom: 40px;
+}
+
+/* No subscription state */
+.noSubscription {
+  padding: 24px 0;
+}
+
+.noSubText {
+  font-size: var(--font-body);
+  color: var(--mid);
+}
+
+/* Current plan block */
+.currentPlanBlock {
+  border: 1px solid rgba(238, 204, 2, 0.3);
+  padding: 28px 32px;
+  margin-bottom: 40px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.planBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--black);
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+/* Status indicator */
+.planStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mid);
+}
+
+.status_active    { background: var(--accent); }
+.status_trialing  { background: #c8a800; }
+.status_past_due  { background: var(--repair); }
+.status_canceled  { background: var(--mid); }
+
+.statusLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--mid);
+}
+
+/* Plan details */
+.planDetails {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mid);
+}
+
+.detailSep {
+  color: var(--dim);
+}
+
+/* Trial / renewal notices */
+.trialNotice {
+  margin-left: auto;
+  background: rgba(238, 204, 2, 0.08);
+  border: 1px solid rgba(238, 204, 2, 0.2);
+  padding: 10px 18px;
+  font-size: 11px;
+  color: #c8a800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.renewalNotice {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--mid);
+}
+
+/* Error banner */
+.errorBanner {
+  font-size: var(--font-body);
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 12px 16px;
+  margin-bottom: 24px;
+}
+
+/* Manage button */
+.btnManage {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mid);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--dim);
+  padding-bottom: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.btnManage:hover:not(:disabled) {
+  color: var(--white);
+  border-color: var(--mid);
+}
+
+.btnManage:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
