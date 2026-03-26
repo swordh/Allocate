@@ -1,28 +1,271 @@
 'use server'
 
-import { getVerifiedSession } from '@/lib/dal'
-import { auth } from '@/lib/firebase'
-import { httpsCallable, getFunctions, connectFunctionsEmulator } from 'firebase/functions'
+import { FieldValue } from 'firebase-admin/firestore'
+import type { Firestore, Transaction } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
-import type { BookingItem } from '@/types'
+import { adminDb } from '@/lib/firebase-admin'
+import { getVerifiedSession } from '@/lib/dal'
+import type { BookingItem, Subscription } from '@/types'
 
-// ---------------------------------------------------------------------------
-// Firebase Callable Functions helper
-// ---------------------------------------------------------------------------
+// ── Internal Firestore document shapes ──────────────────────────────────────
 
-function getFunctionsInstance() {
-  const functions = getFunctions(auth.app, 'us-central1')
-  if (process.env.NODE_ENV === 'development' && process.env.FUNCTIONS_EMULATOR === 'true') {
-    connectFunctionsEmulator(functions, 'localhost', 5001)
+interface CompanyDocumentInternal {
+  subscription: Subscription
+}
+
+interface EquipmentDocumentInternal {
+  name: string
+  active: boolean
+  trackingType: 'individual' | 'quantity'
+  totalQuantity: number
+  requiresApproval: boolean
+  approverId: string | null
+}
+
+interface BookingDocumentInternal {
+  projectName: string
+  notes: string
+  items: BookingItem[]
+  equipmentIds: string[]
+  startDate: string
+  endDate: string
+  userId: string | null
+  status: string
+  requiresApproval: boolean
+  approverId: string | null
+  approvalStatus: string
+  rejectionReason: string | null
+  cancelledAt: null
+  cancelledBy: null
+}
+
+// ── Conflict detection (inlined from Cloud Functions business logic) ──────────
+// These helpers mirror functions/src/bookings/conflictDetection.ts exactly.
+// They cannot be imported from there because functions/ is a separate package.
+
+interface ConflictDetailInternal {
+  equipmentId: string
+  equipmentName: string
+  reason: 'already_booked' | 'insufficient_quantity'
+  requested?: number
+  available?: number
+  conflictingBookingId?: string
+}
+
+interface ConflictResultInternal {
+  hasConflict: boolean
+  conflicts: ConflictDetailInternal[]
+}
+
+interface StoredBookingForConflict {
+  startDate: string
+  endDate: string
+  status: string
+  approvalStatus: string
+  items: BookingItem[]
+  equipmentIds: string[]
+}
+
+/**
+ * Validate items array. Throws a plain Error on failure.
+ */
+function validateItems(rawItems: unknown): BookingItem[] {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new Error('items must be a non-empty array.')
   }
-  return functions
+  if (rawItems.length > 50) {
+    throw new Error('items may not exceed 50 entries.')
+  }
+  return rawItems.map((entry: unknown, idx: number) => {
+    if (typeof entry !== 'object' || entry === null) {
+      throw new Error(`items[${idx}]: each entry must be an object.`)
+    }
+    const { equipmentId, quantity } = entry as Record<string, unknown>
+    if (typeof equipmentId !== 'string' || equipmentId.trim().length === 0) {
+      throw new Error(`items[${idx}].equipmentId is required.`)
+    }
+    if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`items[${idx}].quantity must be a positive integer.`)
+    }
+    return { equipmentId: equipmentId.trim(), quantity }
+  })
 }
 
-interface CallableResult {
-  success: boolean
-  bookingId?: string
-  error?: string
+/**
+ * Validate a YYYY-MM-DD date string. Throws a plain Error on failure.
+ */
+function validateDateString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${fieldName} must be a date string in YYYY-MM-DD format.`)
+  }
+  return value
 }
+
+/**
+ * Extract a flat array of equipment IDs from an items array.
+ */
+function extractEquipmentIds(items: BookingItem[]): string[] {
+  return items.map((i) => i.equipmentId)
+}
+
+/**
+ * Read-only conflict detection — used by the checkConflict pre-check.
+ * Advisory only; write paths use detectConflictsInTransaction.
+ */
+async function detectConflictsReadOnly(
+  db: Firestore,
+  companyId: string,
+  requestedItems: BookingItem[],
+  startDate: string,
+  endDate: string,
+  excludeBookingId?: string,
+): Promise<ConflictResultInternal> {
+  const conflicts: ConflictDetailInternal[] = []
+  const bookingsRef = db.collection(`companies/${companyId}/bookings`)
+
+  for (const item of requestedItems) {
+    const equipmentSnap = await db
+      .doc(`companies/${companyId}/equipment/${item.equipmentId}`)
+      .get()
+
+    if (!equipmentSnap.exists) {
+      conflicts.push({
+        equipmentId: item.equipmentId,
+        equipmentName: 'Unknown',
+        reason: 'already_booked',
+      })
+      continue
+    }
+
+    const equipment = equipmentSnap.data() as EquipmentDocumentInternal
+
+    // Query: bookings referencing this equipment whose endDate >= our startDate.
+    // booking.startDate <= requestedEndDate is checked in memory.
+    const query = await bookingsRef
+      .where('equipmentIds', 'array-contains', item.equipmentId)
+      .where('endDate', '>=', startDate)
+      .get()
+
+    const overlapping = query.docs.filter((doc) => {
+      if (doc.id === excludeBookingId) return false
+      const data = doc.data() as StoredBookingForConflict
+      if (data.status === 'cancelled') return false
+      if (data.approvalStatus === 'rejected') return false
+      return data.startDate <= endDate
+    })
+
+    if (equipment.trackingType === 'individual') {
+      if (overlapping.length > 0) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+          conflictingBookingId: overlapping[0].id,
+        })
+      }
+    } else {
+      let sumBooked = 0
+      for (const doc of overlapping) {
+        const data = doc.data() as StoredBookingForConflict
+        const matchingItem = data.items.find((i) => i.equipmentId === item.equipmentId)
+        if (matchingItem) sumBooked += matchingItem.quantity
+      }
+      const available = equipment.totalQuantity - sumBooked
+      if (item.quantity > available) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'insufficient_quantity',
+          requested: item.quantity,
+          available: Math.max(0, available),
+          conflictingBookingId: overlapping.length > 0 ? overlapping[0].id : undefined,
+        })
+      }
+    }
+  }
+
+  return { hasConflict: conflicts.length > 0, conflicts }
+}
+
+/**
+ * Conflict detection inside a Firestore transaction — authoritative.
+ * Used by createBooking, updateBooking, approveBooking.
+ */
+async function detectConflictsInTransaction(
+  tx: Transaction,
+  db: Firestore,
+  companyId: string,
+  requestedItems: BookingItem[],
+  startDate: string,
+  endDate: string,
+  excludeBookingId?: string,
+): Promise<ConflictResultInternal> {
+  const conflicts: ConflictDetailInternal[] = []
+  const bookingsRef = db.collection(`companies/${companyId}/bookings`)
+
+  for (const item of requestedItems) {
+    const equipmentRef = db.doc(`companies/${companyId}/equipment/${item.equipmentId}`)
+    const equipmentSnap = await tx.get(equipmentRef)
+
+    if (!equipmentSnap.exists) {
+      conflicts.push({
+        equipmentId: item.equipmentId,
+        equipmentName: 'Unknown',
+        reason: 'already_booked',
+      })
+      continue
+    }
+
+    const equipment = equipmentSnap.data() as EquipmentDocumentInternal
+
+    const query = bookingsRef
+      .where('equipmentIds', 'array-contains', item.equipmentId)
+      .where('endDate', '>=', startDate)
+
+    const querySnap = await tx.get(query)
+
+    const overlapping = querySnap.docs.filter((doc) => {
+      if (doc.id === excludeBookingId) return false
+      const data = doc.data() as StoredBookingForConflict
+      if (data.status === 'cancelled') return false
+      if (data.approvalStatus === 'rejected') return false
+      return data.startDate <= endDate
+    })
+
+    if (equipment.trackingType === 'individual') {
+      if (overlapping.length > 0) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+          conflictingBookingId: overlapping[0].id,
+        })
+      }
+    } else {
+      let sumBooked = 0
+      for (const doc of overlapping) {
+        const data = doc.data() as StoredBookingForConflict
+        const matchingItem = data.items.find((i) => i.equipmentId === item.equipmentId)
+        if (matchingItem) sumBooked += matchingItem.quantity
+      }
+      const available = equipment.totalQuantity - sumBooked
+      if (item.quantity > available) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'insufficient_quantity',
+          requested: item.quantity,
+          available: Math.max(0, available),
+          conflictingBookingId: overlapping.length > 0 ? overlapping[0].id : undefined,
+        })
+      }
+    }
+  }
+
+  return { hasConflict: conflicts.length > 0, conflicts }
+}
+
+// ── Public types re-exported for UI consumers ──────────────────────────────
 
 export interface ConflictItem {
   equipmentId: string
@@ -36,9 +279,7 @@ export interface ConflictResult {
   conflicts: ConflictItem[]
 }
 
-// ---------------------------------------------------------------------------
-// createBooking
-// ---------------------------------------------------------------------------
+// ── createBooking ────────────────────────────────────────────────────────────
 
 export async function createBooking(
   formData: FormData,
@@ -46,72 +287,157 @@ export async function createBooking(
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
 
+  const companyId = session.activeCompanyId
+
+  // ── Input validation ───────────────────────────────────────────────────────
   const projectName = (formData.get('projectName') as string | null)?.trim() ?? ''
   if (!projectName) return { error: 'Project name is required' }
   if (projectName.length > 200) return { error: 'Project name must be 200 characters or fewer' }
 
-  const startDate = (formData.get('startDate') as string | null)?.trim() ?? ''
-  if (!startDate) return { error: 'Start date is required' }
+  const rawStartDate = (formData.get('startDate') as string | null)?.trim() ?? ''
+  const rawEndDate = (formData.get('endDate') as string | null)?.trim() ?? ''
 
-  const endDate = (formData.get('endDate') as string | null)?.trim() ?? ''
-  if (!endDate) return { error: 'End date is required' }
+  let startDate: string
+  let endDate: string
+  try {
+    startDate = validateDateString(rawStartDate, 'startDate')
+    endDate = validateDateString(rawEndDate, 'endDate')
+  } catch (err) {
+    return { error: (err as Error).message }
+  }
 
   if (endDate < startDate) return { error: 'End date must be on or after start date' }
 
-  const notes = (formData.get('notes') as string | null)?.trim() ?? ''
+  const todayStr = new Date().toISOString().slice(0, 10)
+  if (startDate < todayStr) return { error: 'startDate must be today or a future date.' }
+
+  const notes = (formData.get('notes') as string | null) ?? ''
+  if (typeof notes !== 'string') return { error: 'notes must be a string.' }
   if (notes.length > 2000) return { error: 'Notes must be 2000 characters or fewer' }
 
-  // Items are encoded as JSON in a single "items" field.
   const itemsRaw = formData.get('items') as string | null
   let items: BookingItem[] = []
   try {
-    items = itemsRaw ? (JSON.parse(itemsRaw) as BookingItem[]) : []
-  } catch {
-    return { error: 'Invalid equipment selection' }
+    items = itemsRaw ? validateItems(JSON.parse(itemsRaw)) : []
+  } catch (err) {
+    return { error: (err as Error).message ?? 'Invalid equipment selection' }
   }
 
   if (items.length === 0) return { error: 'At least one equipment item is required' }
-  if (items.length > 50) return { error: 'Maximum 50 equipment items per booking' }
+
+  // ── Transaction ────────────────────────────────────────────────────────────
+  let newBookingId: string
 
   try {
-    const functions = getFunctionsInstance()
-    const fn = httpsCallable<
-      {
-        companyId: string
-        projectName: string
-        startDate: string
-        endDate: string
-        notes: string
-        items: BookingItem[]
-      },
-      CallableResult
-    >(functions, 'createBooking')
+    await adminDb.runTransaction(async (tx) => {
+      // 1. Verify subscription.
+      const companyRef = adminDb.doc(`companies/${companyId}`)
+      const companySnap = await tx.get(companyRef)
+      if (!companySnap.exists) {
+        throw new Error('Company not found.')
+      }
+      const company = companySnap.data() as CompanyDocumentInternal
+      const { status: subStatus } = company.subscription
+      if (subStatus !== 'active' && subStatus !== 'trialing') {
+        throw new Error('Subscription is not active. Reactivate your plan to create bookings.')
+      }
 
-    const result = await fn({
-      companyId: session.activeCompanyId,
-      projectName,
-      startDate,
-      endDate,
-      notes,
-      items,
+      // 2. Validate each equipment item; collect requiresApproval / approverId.
+      let requiresApproval = false
+      let approverId: string | null = null
+
+      for (const item of items) {
+        const equipRef = adminDb.doc(`companies/${companyId}/equipment/${item.equipmentId}`)
+        const equipSnap = await tx.get(equipRef)
+
+        if (!equipSnap.exists) {
+          throw new Error(`Equipment ${item.equipmentId} not found.`)
+        }
+
+        const equipment = equipSnap.data() as EquipmentDocumentInternal
+
+        if (!equipment.active) {
+          throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
+        }
+
+        if (equipment.trackingType === 'individual' && item.quantity !== 1) {
+          throw new Error(
+            `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
+          )
+        }
+
+        if (
+          equipment.trackingType === 'quantity' &&
+          item.quantity > equipment.totalQuantity
+        ) {
+          throw new Error(
+            `Requested quantity (${item.quantity}) exceeds total stock (${equipment.totalQuantity}) for "${equipment.name}".`,
+          )
+        }
+
+        if (equipment.requiresApproval) {
+          requiresApproval = true
+          if (approverId === null && equipment.approverId) {
+            approverId = equipment.approverId
+          }
+        }
+      }
+
+      // 3. Conflict detection inside the transaction (prevents TOCTOU races).
+      const conflictResult = await detectConflictsInTransaction(
+        tx,
+        adminDb,
+        companyId,
+        items,
+        startDate,
+        endDate,
+      )
+
+      if (conflictResult.hasConflict) {
+        const names = conflictResult.conflicts.map((c) => c.equipmentName).join(', ')
+        throw new Error(`Booking conflict detected for: ${names}.`)
+      }
+
+      // 4. Write the booking document.
+      const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
+      const newRef = bookingsRef.doc()
+      newBookingId = newRef.id
+
+      const bookingStatus = requiresApproval ? 'pending' : 'confirmed'
+      const approvalStatus = requiresApproval ? 'pending' : 'none'
+      const equipmentIds = extractEquipmentIds(items)
+
+      tx.set(newRef, {
+        projectName,
+        notes,
+        items,
+        equipmentIds,
+        startDate,
+        endDate,
+        userId: session.uid,
+        userName: null,
+        status: bookingStatus,
+        requiresApproval,
+        approverId,
+        approvalStatus,
+        rejectionReason: null,
+        cancelledAt: null,
+        cancelledBy: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: null,
+      })
     })
 
-    if (!result.data.success || !result.data.bookingId) {
-      return { error: result.data.error ?? 'Failed to create booking' }
-    }
-
     revalidatePath('/bookings')
-    return { bookingId: result.data.bookingId }
+    return { bookingId: newBookingId! }
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/bookings] createBooking failed', { code })
-    return { error: 'Failed to create booking' }
+    const message = err instanceof Error ? err.message : 'Failed to create booking'
+    console.error('[actions/bookings] createBooking failed', { message })
+    return { error: message }
   }
 }
 
-// ---------------------------------------------------------------------------
-// updateBooking
-// ---------------------------------------------------------------------------
+// ── updateBooking ────────────────────────────────────────────────────────────
 
 export async function updateBooking(
   bookingId: string,
@@ -120,104 +446,257 @@ export async function updateBooking(
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
 
-  const payload: Record<string, unknown> = {
-    companyId: session.activeCompanyId,
-    bookingId,
+  const companyId = session.activeCompanyId
+
+  if (!bookingId?.trim()) return { error: 'bookingId is required' }
+
+  // ── Optional field validation ──────────────────────────────────────────────
+  const rawProjectName = formData.get('projectName') as string | null
+  let projectName: string | undefined
+  if (rawProjectName !== null) {
+    const trimmed = rawProjectName.trim()
+    if (trimmed.length === 0) return { error: 'Project name is required' }
+    if (trimmed.length > 200) return { error: 'Project name must be 200 characters or fewer' }
+    projectName = trimmed
   }
 
-  const projectName = (formData.get('projectName') as string | null)?.trim()
-  if (projectName !== null && projectName !== undefined) {
-    if (projectName.length === 0) return { error: 'Project name is required' }
-    if (projectName.length > 200) return { error: 'Project name must be 200 characters or fewer' }
-    payload.projectName = projectName
+  const rawStartDate = formData.get('startDate') as string | null
+  let startDate: string | undefined
+  if (rawStartDate !== null && rawStartDate.trim() !== '') {
+    try {
+      startDate = validateDateString(rawStartDate.trim(), 'startDate')
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
   }
 
-  const startDate = (formData.get('startDate') as string | null)?.trim()
-  if (startDate) payload.startDate = startDate
-
-  const endDate = (formData.get('endDate') as string | null)?.trim()
-  if (endDate) payload.endDate = endDate
-
-  if (startDate && endDate && endDate < startDate) {
-    return { error: 'End date must be on or after start date' }
+  const rawEndDate = formData.get('endDate') as string | null
+  let endDate: string | undefined
+  if (rawEndDate !== null && rawEndDate.trim() !== '') {
+    try {
+      endDate = validateDateString(rawEndDate.trim(), 'endDate')
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
   }
 
-  const notes = (formData.get('notes') as string | null)?.trim()
-  if (notes !== null && notes !== undefined) {
-    if (notes.length > 2000) return { error: 'Notes must be 2000 characters or fewer' }
-    payload.notes = notes
+  const rawNotes = formData.get('notes') as string | null
+  let notes: string | undefined
+  if (rawNotes !== null) {
+    if (typeof rawNotes !== 'string') return { error: 'notes must be a string.' }
+    if (rawNotes.length > 2000) return { error: 'Notes must be 2000 characters or fewer' }
+    notes = rawNotes
   }
 
   const itemsRaw = formData.get('items') as string | null
+  let items: BookingItem[] | undefined
   if (itemsRaw) {
     try {
-      const items = JSON.parse(itemsRaw) as BookingItem[]
-      if (items.length === 0) return { error: 'At least one equipment item is required' }
-      if (items.length > 50) return { error: 'Maximum 50 equipment items per booking' }
-      payload.items = items
-    } catch {
-      return { error: 'Invalid equipment selection' }
+      items = validateItems(JSON.parse(itemsRaw))
+    } catch (err) {
+      return { error: (err as Error).message ?? 'Invalid equipment selection' }
     }
+    if (items.length === 0) return { error: 'At least one equipment item is required' }
   }
 
-  try {
-    const functions = getFunctionsInstance()
-    const fn = httpsCallable<Record<string, unknown>, CallableResult>(functions, 'updateBooking')
-    const result = await fn(payload)
+  const uid = session.uid
+  const isAdmin = session.role === 'admin'
 
-    if (!result.data.success) {
-      return { error: result.data.error ?? 'Failed to update booking' }
-    }
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
+      const bookingSnap = await tx.get(bookingRef)
+
+      if (!bookingSnap.exists) {
+        throw new Error('Booking not found.')
+      }
+
+      const booking = bookingSnap.data() as BookingDocumentInternal
+
+      // ── Ownership / role check ─────────────────────────────────────────────
+      if (!isAdmin && booking.userId !== uid) {
+        throw new Error('You can only edit your own bookings.')
+      }
+
+      // ── Status check ──────────────────────────────────────────────────────
+      if (booking.status !== 'pending' && booking.status !== 'confirmed') {
+        throw new Error(`Cannot edit a booking with status '${booking.status}'.`)
+      }
+
+      const effectiveItems = items ?? booking.items
+      const effectiveStartDate = startDate ?? booking.startDate
+      const effectiveEndDate = endDate ?? booking.endDate
+
+      if (effectiveEndDate < effectiveStartDate) {
+        throw new Error('endDate must be on or after startDate.')
+      }
+
+      // ── Re-validate equipment if items changed ─────────────────────────────
+      let requiresApproval = booking.requiresApproval
+      let approverId = booking.approverId
+
+      if (items !== undefined) {
+        requiresApproval = false
+        approverId = null
+
+        for (const item of items) {
+          const equipRef = adminDb.doc(`companies/${companyId}/equipment/${item.equipmentId}`)
+          const equipSnap = await tx.get(equipRef)
+
+          if (!equipSnap.exists) {
+            throw new Error(`Equipment ${item.equipmentId} not found.`)
+          }
+
+          const equipment = equipSnap.data() as EquipmentDocumentInternal
+
+          if (!equipment.active) {
+            throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
+          }
+
+          if (equipment.trackingType === 'individual' && item.quantity !== 1) {
+            throw new Error(
+              `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
+            )
+          }
+
+          if (
+            equipment.trackingType === 'quantity' &&
+            item.quantity > equipment.totalQuantity
+          ) {
+            throw new Error(
+              `Requested quantity (${item.quantity}) exceeds total stock (${equipment.totalQuantity}) for "${equipment.name}".`,
+            )
+          }
+
+          if (equipment.requiresApproval) {
+            requiresApproval = true
+            if (approverId === null && equipment.approverId) {
+              approverId = equipment.approverId
+            }
+          }
+        }
+      }
+
+      // ── Conflict detection if dates or items changed ───────────────────────
+      const datesChanged = startDate !== undefined || endDate !== undefined
+      const itemsChanged = items !== undefined
+
+      if (datesChanged || itemsChanged) {
+        const conflictResult = await detectConflictsInTransaction(
+          tx,
+          adminDb,
+          companyId,
+          effectiveItems,
+          effectiveStartDate,
+          effectiveEndDate,
+          bookingId,
+        )
+
+        if (conflictResult.hasConflict) {
+          const names = conflictResult.conflicts.map((c) => c.equipmentName).join(', ')
+          throw new Error(`Booking conflict detected for: ${names}.`)
+        }
+      }
+
+      // ── Build update payload ───────────────────────────────────────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateData: Record<string, any> = {
+        updatedAt: FieldValue.serverTimestamp(),
+      }
+
+      if (projectName !== undefined) updateData.projectName = projectName
+      if (notes !== undefined) updateData.notes = notes
+      if (startDate !== undefined) updateData.startDate = startDate
+      if (endDate !== undefined) updateData.endDate = endDate
+      if (items !== undefined) {
+        updateData.items = items
+        updateData.equipmentIds = extractEquipmentIds(items)
+        updateData.requiresApproval = requiresApproval
+        updateData.approverId = approverId
+      }
+
+      if (datesChanged || itemsChanged) {
+        if (requiresApproval) {
+          updateData.status = 'pending'
+          updateData.approvalStatus = 'pending'
+          updateData.rejectionReason = null
+        } else {
+          updateData.status = 'confirmed'
+          updateData.approvalStatus = 'none'
+          updateData.rejectionReason = null
+        }
+      }
+
+      tx.update(bookingRef, updateData)
+    })
 
     revalidatePath('/bookings')
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/bookings] updateBooking failed', { code })
-    return { error: 'Failed to update booking' }
+    const message = err instanceof Error ? err.message : 'Failed to update booking'
+    console.error('[actions/bookings] updateBooking failed', { message })
+    return { error: message }
   }
 }
 
-// ---------------------------------------------------------------------------
-// cancelBooking
-// ---------------------------------------------------------------------------
+// ── cancelBooking ────────────────────────────────────────────────────────────
 
-export async function cancelBooking(
-  bookingId: string,
-): Promise<{ error?: string }> {
+export async function cancelBooking(bookingId: string): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
 
+  const companyId = session.activeCompanyId
+
+  if (!bookingId?.trim()) return { error: 'bookingId is required' }
+
+  const uid = session.uid
+  const isAdmin = session.role === 'admin'
+
   try {
-    const functions = getFunctionsInstance()
-    const fn = httpsCallable<
-      { companyId: string; bookingId: string },
-      CallableResult
-    >(functions, 'cancelBooking')
+    await adminDb.runTransaction(async (tx) => {
+      const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
+      const bookingSnap = await tx.get(bookingRef)
 
-    const result = await fn({
-      companyId: session.activeCompanyId,
-      bookingId,
+      if (!bookingSnap.exists) {
+        throw new Error('Booking not found.')
+      }
+
+      const booking = bookingSnap.data() as BookingDocumentInternal
+
+      if (!isAdmin && booking.userId !== uid) {
+        throw new Error('You can only cancel your own bookings.')
+      }
+
+      if (booking.status === 'cancelled') {
+        throw new Error('Booking is already cancelled.')
+      }
+      if (booking.status === 'returned') {
+        throw new Error('Cannot cancel a returned booking.')
+      }
+      if (booking.status === 'checked_out') {
+        throw new Error('Cannot cancel a checked-out booking. Return the equipment first.')
+      }
+
+      tx.update(bookingRef, {
+        status: 'cancelled',
+        cancelledAt: FieldValue.serverTimestamp(),
+        cancelledBy: uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      })
     })
-
-    if (!result.data.success) {
-      return { error: result.data.error ?? 'Failed to cancel booking' }
-    }
 
     revalidatePath('/bookings')
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/bookings] cancelBooking failed', { code })
-    return { error: 'Failed to cancel booking' }
+    const message = err instanceof Error ? err.message : 'Failed to cancel booking'
+    console.error('[actions/bookings] cancelBooking failed', { message })
+    return { error: message }
   }
 }
 
-// ---------------------------------------------------------------------------
-// approveBooking (wraps both approveBooking and rejectBooking Cloud Functions)
-// ---------------------------------------------------------------------------
+// ── approveBooking (wraps both approve and reject) ───────────────────────────
 
 export async function approveBooking(
   bookingId: string,
@@ -227,53 +706,94 @@ export async function approveBooking(
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
 
+  const companyId = session.activeCompanyId
+
+  if (!bookingId?.trim()) return { error: 'bookingId is required' }
+
+  // Optional reason validation (reject path only).
+  let validatedReason: string | null = null
+  if (!approved && rejectionReason !== undefined && rejectionReason !== null) {
+    if (typeof rejectionReason !== 'string') return { error: 'reason must be a string.' }
+    if (rejectionReason.length > 500) return { error: 'reason must be 500 characters or fewer.' }
+    validatedReason = rejectionReason.trim() || null
+  }
+
+  const uid = session.uid
+  const isAdmin = session.role === 'admin'
+
   try {
-    const functions = getFunctionsInstance()
+    await adminDb.runTransaction(async (tx) => {
+      const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
+      const bookingSnap = await tx.get(bookingRef)
 
-    if (approved) {
-      const fn = httpsCallable<
-        { companyId: string; bookingId: string },
-        CallableResult
-      >(functions, 'approveBooking')
-
-      const result = await fn({
-        companyId: session.activeCompanyId,
-        bookingId,
-      })
-
-      if (!result.data.success) {
-        return { error: result.data.error ?? 'Failed to approve booking' }
+      if (!bookingSnap.exists) {
+        throw new Error('Booking not found.')
       }
-    } else {
-      const fn = httpsCallable<
-        { companyId: string; bookingId: string; reason?: string },
-        CallableResult
-      >(functions, 'rejectBooking')
 
-      const result = await fn({
-        companyId: session.activeCompanyId,
-        bookingId,
-        reason: rejectionReason,
-      })
+      const booking = bookingSnap.data() as BookingDocumentInternal
 
-      if (!result.data.success) {
-        return { error: result.data.error ?? 'Failed to reject booking' }
+      // ── State check ──────────────────────────────────────────────────────
+      if (booking.status !== 'pending' || booking.approvalStatus !== 'pending') {
+        throw new Error('Booking is not awaiting approval.')
       }
-    }
+
+      // ── Approver check ────────────────────────────────────────────────────
+      const isDesignatedApprover = booking.approverId !== null && booking.approverId === uid
+
+      if (!isAdmin && !isDesignatedApprover) {
+        throw new Error(
+          approved
+            ? 'Only the designated approver or an admin can approve this booking.'
+            : 'Only the designated approver or an admin can reject this booking.',
+        )
+      }
+
+      if (approved) {
+        // Re-run conflict detection before confirming — availability may have
+        // changed since the booking was originally created.
+        const conflictResult = await detectConflictsInTransaction(
+          tx,
+          adminDb,
+          companyId,
+          booking.items,
+          booking.startDate,
+          booking.endDate,
+          bookingId,
+        )
+
+        if (conflictResult.hasConflict) {
+          const names = conflictResult.conflicts.map((c) => c.equipmentName).join(', ')
+          throw new Error(
+            `Cannot approve: conflict detected for ${names}. Resolve conflicts before approving.`,
+          )
+        }
+
+        tx.update(bookingRef, {
+          status: 'confirmed',
+          approvalStatus: 'approved',
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+      } else {
+        // status stays 'pending'; only approvalStatus changes.
+        tx.update(bookingRef, {
+          approvalStatus: 'rejected',
+          rejectionReason: validatedReason,
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+      }
+    })
 
     revalidatePath('/bookings')
     revalidatePath(`/bookings/${bookingId}`)
     return {}
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/bookings] approveBooking failed', { code })
-    return { error: 'Failed to update approval' }
+    const message = err instanceof Error ? err.message : 'Failed to update approval'
+    console.error('[actions/bookings] approveBooking failed', { message })
+    return { error: message }
   }
 }
 
-// ---------------------------------------------------------------------------
-// checkConflict (read-only pre-check — not authoritative, Cloud Function is)
-// ---------------------------------------------------------------------------
+// ── checkConflict (read-only pre-check) ─────────────────────────────────────
 
 export async function checkConflict(
   companyId: string,
@@ -284,36 +804,52 @@ export async function checkConflict(
 ): Promise<ConflictResult> {
   const session = await getVerifiedSession()
 
-  // Security: ignore caller-supplied companyId if it doesn't match the session.
+  // Ignore caller-supplied companyId if it doesn't match the session.
   if (companyId !== session.activeCompanyId) {
     return { hasConflict: false, conflicts: [] }
   }
 
+  let validatedItems: BookingItem[]
+  let validatedStart: string
+  let validatedEnd: string
+
   try {
-    const functions = getFunctionsInstance()
-    const fn = httpsCallable<
-      {
-        companyId: string
-        startDate: string
-        endDate: string
-        items: BookingItem[]
-        excludeBookingId?: string
-      },
-      ConflictResult
-    >(functions, 'checkBookingConflict')
+    validatedItems = validateItems(items)
+    validatedStart = validateDateString(startDate, 'startDate')
+    validatedEnd = validateDateString(endDate, 'endDate')
+  } catch {
+    // Invalid input — return no conflicts; authoritative check runs on submit.
+    return { hasConflict: false, conflicts: [] }
+  }
 
-    const result = await fn({
-      companyId,
-      startDate,
-      endDate,
-      items,
+  if (validatedEnd < validatedStart) {
+    return { hasConflict: false, conflicts: [] }
+  }
+
+  try {
+    const result = await detectConflictsReadOnly(
+      adminDb,
+      session.activeCompanyId,
+      validatedItems,
+      validatedStart,
+      validatedEnd,
       excludeBookingId,
-    })
+    )
 
-    return result.data
+    // Map internal ConflictDetail to the exported ConflictItem shape.
+    return {
+      hasConflict: result.hasConflict,
+      conflicts: result.conflicts.map((c) => ({
+        equipmentId: c.equipmentId,
+        reason: c.reason,
+        requested: c.requested,
+        available: c.available,
+      })),
+    }
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/bookings] checkConflict failed', { code })
+    console.error('[actions/bookings] checkConflict failed', {
+      message: err instanceof Error ? err.message : String(err),
+    })
     // On failure return no conflicts — the authoritative check is on submit.
     return { hasConflict: false, conflicts: [] }
   }

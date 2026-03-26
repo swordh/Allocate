@@ -17,11 +17,20 @@
       ]
     },
     {
+      "collectionGroup": "equipment",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "endDate", "order": "ASCENDING" },
-        { "fieldPath": "startDate", "order": "DESCENDING" }
+        { "fieldPath": "startDate", "order": "DESCENDING" },
+        { "fieldPath": "endDate", "order": "DESCENDING" }
       ]
     }
   ],
