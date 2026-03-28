@@ -32,6 +32,22 @@
         { "fieldPath": "startDate", "order": "DESCENDING" },
         { "fieldPath": "endDate", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "units",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "unitIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "endDate", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

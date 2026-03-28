@@ -136,9 +136,9 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
     }
   }
 
-  // ── serialNumber — only valid for individual items ─────────────────────────
+  // ── serialNumber — only valid for serialized items ────────────────────────
   if (request.data.serialNumber !== undefined) {
-    if (existingData.trackingType !== undefined && existingData.trackingType !== 'individual') {
+    if (existingData.trackingType !== undefined && existingData.trackingType !== 'serialized') {
       throw new HttpsError('invalid-argument', 'serialNumber is not allowed on quantity-tracked items.');
     }
     if (existingData.trackingType !== undefined) {

@@ -2,17 +2,17 @@
   position: fixed;
   inset: 0;
   background: rgba(8, 8, 8, 0.88);
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
   z-index: 100;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .panel {
-  background: var(--dim);
+  background: var(--surface-container-low);
   width: 480px;
   min-height: 100vh;
   padding: 48px 40px;
+  border-left: 1px solid rgba(71, 71, 71, 0.2);
   overflow-y: auto;
-  border-left: 1px solid var(--rule);
 }

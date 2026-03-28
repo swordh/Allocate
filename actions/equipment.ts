@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import type { Subscription } from '@/types'
+import type { Subscription, UnitCondition, EquipmentStatus } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
 
@@ -36,20 +36,10 @@ export async function createEquipment(
   const category = (formData.get('category') as string | null)?.trim() ?? ''
   if (!category) return { error: 'Category is required' }
 
-  const VALID_STATUSES = ['available', 'checked_out', 'needs_repair'] as const
-  type EquipmentStatus = (typeof VALID_STATUSES)[number]
-
-  const rawStatus = formData.get('status') as string | null
-  let status: EquipmentStatus = 'available'
-  if (rawStatus !== null && rawStatus !== undefined) {
-    if (!VALID_STATUSES.includes(rawStatus as EquipmentStatus)) {
-      return { error: `status must be one of: ${VALID_STATUSES.join(', ')}` }
-    }
-    status = rawStatus as EquipmentStatus
-  }
+  const description = (formData.get('description') as string | null)?.trim() || null
 
   const trackingType =
-    (formData.get('trackingType') as string | null) === 'quantity' ? 'quantity' : 'individual'
+    (formData.get('trackingType') as string | null) === 'quantity' ? 'quantity' : 'serialized'
 
   let totalQuantity = 1
   if (trackingType === 'quantity') {
@@ -59,23 +49,6 @@ export async function createEquipment(
     }
     totalQuantity = raw
   }
-
-  const serialNumberRaw = formData.get('serialNumber') as string | null
-  if (trackingType === 'quantity' && serialNumberRaw !== null && serialNumberRaw !== '') {
-    return { error: 'serialNumber is not allowed for quantity-tracked items' }
-  }
-  const serialNumber: string | null =
-    trackingType === 'individual' ? (serialNumberRaw?.trim() || null) : null
-
-  // equipmentName: the parent equipment name for individual units (e.g. "Sony FX9").
-  // Stored on each unit document so units can be grouped in the UI.
-  // Not used for quantity items.
-  const equipmentNameRaw = formData.get('equipmentName') as string | null
-  if (trackingType === 'quantity' && equipmentNameRaw !== null && equipmentNameRaw !== '') {
-    return { error: 'equipmentName is not allowed for quantity-tracked items' }
-  }
-  const equipmentName: string | null =
-    trackingType === 'individual' ? (equipmentNameRaw?.trim() || null) : null
 
   const requiresApproval = formData.get('requiresApproval') === 'true'
   const approverIdRaw = formData.get('approverId') as string | null
@@ -130,12 +103,10 @@ export async function createEquipment(
 
       tx.set(newRef, {
         name,
-        equipmentName,
+        description,
         category,
         trackingType,
         totalQuantity,
-        serialNumber,
-        status,
         active: true,
         requiresApproval,
         approverId,
@@ -186,9 +157,6 @@ export async function updateEquipment(
   const existingData = equipmentSnap.data() as EquipmentDocumentInternal
 
   // ── Build partial update payload ───────────────────────────────────────────
-  const VALID_STATUSES = ['available', 'checked_out', 'needs_repair'] as const
-  type EquipmentStatus = (typeof VALID_STATUSES)[number]
-
   const updates: Record<string, unknown> = {
     updatedAt: FieldValue.serverTimestamp(),
   }
@@ -201,19 +169,16 @@ export async function updateEquipment(
     updates['name'] = name
   }
 
+  const rawDescription = formData.get('description') as string | null
+  if (rawDescription !== null) {
+    updates['description'] = rawDescription.trim() || null
+  }
+
   const rawCategory = formData.get('category') as string | null
   if (rawCategory !== null) {
     const category = rawCategory.trim()
     if (category.length === 0) return { error: 'category must be a non-empty string.' }
     updates['category'] = category
-  }
-
-  const rawStatus = formData.get('status') as string | null
-  if (rawStatus !== null) {
-    if (!VALID_STATUSES.includes(rawStatus as EquipmentStatus)) {
-      return { error: `status must be one of: ${VALID_STATUSES.join(', ')}.` }
-    }
-    updates['status'] = rawStatus as EquipmentStatus
   }
 
   const rawRequiresApproval = formData.get('requiresApproval')
@@ -240,34 +205,6 @@ export async function updateEquipment(
         return { error: 'totalQuantity must be a positive integer.' }
       }
       updates['totalQuantity'] = qty
-    }
-  }
-
-  const rawSerialNumber = formData.get('serialNumber')
-  if (rawSerialNumber !== null) {
-    if (
-      existingData.trackingType !== undefined &&
-      existingData.trackingType !== 'individual'
-    ) {
-      return { error: 'serialNumber is not allowed on quantity-tracked items.' }
-    }
-    if (existingData.trackingType !== undefined) {
-      updates['serialNumber'] =
-        rawSerialNumber ? (rawSerialNumber as string).trim() || null : null
-    }
-  }
-
-  const rawEquipmentName = formData.get('equipmentName')
-  if (rawEquipmentName !== null) {
-    if (
-      existingData.trackingType !== undefined &&
-      existingData.trackingType !== 'individual'
-    ) {
-      return { error: 'equipmentName is not allowed on quantity-tracked items.' }
-    }
-    if (existingData.trackingType !== undefined) {
-      updates['equipmentName'] =
-        rawEquipmentName ? (rawEquipmentName as string).trim() || null : null
     }
   }
 
@@ -309,6 +246,8 @@ export async function deactivateEquipment(
     return { error: 'Equipment not found.' }
   }
 
+  const existingData = equipmentSnap.data() as EquipmentDocumentInternal
+
   // ── Active/upcoming booking check ──────────────────────────────────────────
   // Query by equipmentIds array-contains + endDate range; filter by status in memory.
   // (Firestore does not support array-contains combined with 'in' in one query.)
@@ -334,10 +273,17 @@ export async function deactivateEquipment(
   }
 
   try {
-    await equipmentRef.update({
-      active: false,
-      deactivatedAt: FieldValue.serverTimestamp(),
-    })
+    const batch = adminDb.batch()
+    batch.update(equipmentRef, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+
+    if (existingData.trackingType === 'serialized') {
+      const unitsSnap = await equipmentRef.collection('units').where('active', '==', true).get()
+      for (const unitDoc of unitsSnap.docs) {
+        batch.update(unitDoc.ref, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+      }
+    }
+
+    await batch.commit()
 
     revalidatePath('/equipment')
     revalidatePath('/settings/equipment')
@@ -348,4 +294,129 @@ export async function deactivateEquipment(
     console.error('[actions/equipment] deactivateEquipment failed', { message })
     return { error: message }
   }
+}
+
+// ── createUnit ───────────────────────────────────────────────────────────────
+
+export async function createUnit(
+  equipmentId: string,
+  formData: FormData,
+): Promise<{ id: string } | { error: string }> {
+  const session = await getVerifiedSession()
+  if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+  const parentRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
+  const parentSnap = await parentRef.get()
+  if (!parentSnap.exists) return { error: 'Equipment not found.' }
+
+  const parent = parentSnap.data()!
+  if (parent.trackingType !== 'serialized') return { error: 'Units can only be added to serialized equipment.' }
+  if (!parent.active) return { error: 'Cannot add units to deactivated equipment.' }
+
+  const label = (formData.get('label') as string | null)?.trim() ?? ''
+  if (!label) return { error: 'Label is required.' }
+  if (label.length > 100) return { error: 'Label must be 100 characters or fewer.' }
+
+  const serialNumber = (formData.get('serialNumber') as string | null)?.trim() || null
+  const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor'] as const
+  const conditionRaw = formData.get('condition') as string | null
+  const condition: UnitCondition = (VALID_CONDITIONS as readonly string[]).includes(conditionRaw ?? '')
+    ? (conditionRaw as UnitCondition)
+    : 'good'
+  const notes = (formData.get('notes') as string | null)?.trim() || null
+
+  const unitRef = parentRef.collection('units').doc()
+  await unitRef.set({
+    equipmentId,
+    companyId,
+    label,
+    serialNumber,
+    status: 'available',
+    condition,
+    notes,
+    active: true,
+    createdAt: FieldValue.serverTimestamp(),
+    createdBy: session.uid,
+  })
+
+  revalidatePath('/equipment')
+  return { id: unitRef.id }
+}
+
+// ── updateUnit ───────────────────────────────────────────────────────────────
+
+export async function updateUnit(
+  equipmentId: string,
+  unitId: string,
+  formData: FormData,
+): Promise<void | { error: string }> {
+  const session = await getVerifiedSession()
+  if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+  const unitRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}/units/${unitId}`)
+  const unitSnap = await unitRef.get()
+  if (!unitSnap.exists) return { error: 'Unit not found.' }
+
+  const label = (formData.get('label') as string | null)?.trim() ?? ''
+  if (!label) return { error: 'Label is required.' }
+
+  const VALID_STATUSES: EquipmentStatus[] = ['available', 'checked_out', 'needs_repair']
+  const VALID_CONDITIONS: UnitCondition[] = ['new', 'good', 'fair', 'poor']
+
+  const statusRaw = formData.get('status') as string | null
+  const conditionRaw = formData.get('condition') as string | null
+
+  await unitRef.update({
+    label,
+    serialNumber: (formData.get('serialNumber') as string | null)?.trim() || null,
+    status: VALID_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'available',
+    condition: VALID_CONDITIONS.includes(conditionRaw as UnitCondition) ? conditionRaw : 'good',
+    notes: (formData.get('notes') as string | null)?.trim() || null,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: session.uid,
+  })
+
+  revalidatePath('/equipment')
+}
+
+// ── deactivateUnit ───────────────────────────────────────────────────────────
+
+export async function deactivateUnit(
+  equipmentId: string,
+  unitId: string,
+  force = false,
+): Promise<void | { error: string }> {
+  const session = await getVerifiedSession()
+  if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+  const unitRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}/units/${unitId}`)
+  const unitSnap = await unitRef.get()
+  if (!unitSnap.exists) return { error: 'Unit not found.' }
+
+  if (!force) {
+    const bookingsSnap = await adminDb
+      .collection('companies').doc(companyId).collection('bookings')
+      .where('unitIds', 'array-contains', unitId)
+      .get()
+
+    const activeBookings = bookingsSnap.docs.filter((doc) => {
+      const data = doc.data()
+      return data.status !== 'cancelled' && data.status !== 'returned'
+    })
+
+    if (activeBookings.length > 0) {
+      return { error: 'This unit has active bookings. Deactivate or cancel them first.' }
+    }
+  }
+
+  await unitRef.update({
+    active: false,
+    deactivatedAt: FieldValue.serverTimestamp(),
+    deactivatedBy: session.uid,
+  })
+
+  revalidatePath('/equipment')
 }

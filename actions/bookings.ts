@@ -16,7 +16,7 @@ interface CompanyDocumentInternal {
 interface EquipmentDocumentInternal {
   name: string
   active: boolean
-  trackingType: 'individual' | 'quantity'
+  trackingType: 'serialized' | 'quantity'
   totalQuantity: number
   requiresApproval: boolean
   approverId: string | null
@@ -80,14 +80,18 @@ function validateItems(rawItems: unknown): BookingItem[] {
     if (typeof entry !== 'object' || entry === null) {
       throw new Error(`items[${idx}]: each entry must be an object.`)
     }
-    const { equipmentId, quantity } = entry as Record<string, unknown>
+    const { equipmentId, quantity, unitId } = entry as Record<string, unknown>
     if (typeof equipmentId !== 'string' || equipmentId.trim().length === 0) {
       throw new Error(`items[${idx}].equipmentId is required.`)
     }
     if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 1) {
       throw new Error(`items[${idx}].quantity must be a positive integer.`)
     }
-    return { equipmentId: equipmentId.trim(), quantity }
+    return {
+      equipmentId: equipmentId.trim(),
+      quantity,
+      ...(unitId ? { unitId: String(unitId).trim() } : {}),
+    }
   })
 }
 
@@ -139,22 +143,44 @@ async function detectConflictsReadOnly(
 
     const equipment = equipmentSnap.data() as EquipmentDocumentInternal
 
-    // Query: bookings referencing this equipment whose endDate >= our startDate.
-    // booking.startDate <= requestedEndDate is checked in memory.
-    const query = await bookingsRef
-      .where('equipmentIds', 'array-contains', item.equipmentId)
-      .where('endDate', '>=', startDate)
-      .get()
+    if (equipment.trackingType === 'serialized') {
+      // For serialized items, conflict is per-unit, not per-equipment-type.
+      if (!item.unitId) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+        })
+        continue
+      }
 
-    const overlapping = query.docs.filter((doc) => {
-      if (doc.id === excludeBookingId) return false
-      const data = doc.data() as StoredBookingForConflict
-      if (data.status === 'cancelled') return false
-      if (data.approvalStatus === 'rejected') return false
-      return data.startDate <= endDate
-    })
+      // Verify the unit exists and is active.
+      const unitSnap = await db
+        .doc(`companies/${companyId}/equipment/${item.equipmentId}/units/${item.unitId}`)
+        .get()
+      if (!unitSnap.exists || unitSnap.data()?.active === false) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+        })
+        continue
+      }
 
-    if (equipment.trackingType === 'individual') {
+      // Query: bookings referencing this specific unit whose endDate >= our startDate.
+      const unitQuery = await bookingsRef
+        .where('unitIds', 'array-contains', item.unitId)
+        .where('endDate', '>=', startDate)
+        .get()
+
+      const overlapping = unitQuery.docs.filter((doc) => {
+        if (doc.id === excludeBookingId) return false
+        const data = doc.data() as StoredBookingForConflict
+        if (data.status === 'cancelled') return false
+        if (data.approvalStatus === 'rejected') return false
+        return data.startDate <= endDate
+      })
+
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,
@@ -164,6 +190,22 @@ async function detectConflictsReadOnly(
         })
       }
     } else {
+      // Quantity items: check aggregate availability.
+      // Query: bookings referencing this equipment whose endDate >= our startDate.
+      // booking.startDate <= requestedEndDate is checked in memory.
+      const eqQuery = await bookingsRef
+        .where('equipmentIds', 'array-contains', item.equipmentId)
+        .where('endDate', '>=', startDate)
+        .get()
+
+      const overlapping = eqQuery.docs.filter((doc) => {
+        if (doc.id === excludeBookingId) return false
+        const data = doc.data() as StoredBookingForConflict
+        if (data.status === 'cancelled') return false
+        if (data.approvalStatus === 'rejected') return false
+        return data.startDate <= endDate
+      })
+
       let sumBooked = 0
       for (const doc of overlapping) {
         const data = doc.data() as StoredBookingForConflict
@@ -218,21 +260,43 @@ async function detectConflictsInTransaction(
 
     const equipment = equipmentSnap.data() as EquipmentDocumentInternal
 
-    const query = bookingsRef
-      .where('equipmentIds', 'array-contains', item.equipmentId)
-      .where('endDate', '>=', startDate)
+    if (equipment.trackingType === 'serialized') {
+      // For serialized items, conflict is per-unit, not per-equipment-type.
+      if (!item.unitId) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+        })
+        continue
+      }
 
-    const querySnap = await tx.get(query)
+      // Verify the unit exists and is active.
+      const unitRef = db.doc(`companies/${companyId}/equipment/${item.equipmentId}/units/${item.unitId}`)
+      const unitSnap = await tx.get(unitRef)
+      if (!unitSnap.exists || unitSnap.data()?.active === false) {
+        conflicts.push({
+          equipmentId: item.equipmentId,
+          equipmentName: equipment.name,
+          reason: 'already_booked',
+        })
+        continue
+      }
 
-    const overlapping = querySnap.docs.filter((doc) => {
-      if (doc.id === excludeBookingId) return false
-      const data = doc.data() as StoredBookingForConflict
-      if (data.status === 'cancelled') return false
-      if (data.approvalStatus === 'rejected') return false
-      return data.startDate <= endDate
-    })
+      const unitQuery = bookingsRef
+        .where('unitIds', 'array-contains', item.unitId)
+        .where('endDate', '>=', startDate)
 
-    if (equipment.trackingType === 'individual') {
+      const unitQuerySnap = await tx.get(unitQuery)
+
+      const overlapping = unitQuerySnap.docs.filter((doc) => {
+        if (doc.id === excludeBookingId) return false
+        const data = doc.data() as StoredBookingForConflict
+        if (data.status === 'cancelled') return false
+        if (data.approvalStatus === 'rejected') return false
+        return data.startDate <= endDate
+      })
+
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,
@@ -242,6 +306,21 @@ async function detectConflictsInTransaction(
         })
       }
     } else {
+      // Quantity items: check aggregate availability.
+      const eqQuery = bookingsRef
+        .where('equipmentIds', 'array-contains', item.equipmentId)
+        .where('endDate', '>=', startDate)
+
+      const querySnap = await tx.get(eqQuery)
+
+      const overlapping = querySnap.docs.filter((doc) => {
+        if (doc.id === excludeBookingId) return false
+        const data = doc.data() as StoredBookingForConflict
+        if (data.status === 'cancelled') return false
+        if (data.approvalStatus === 'rejected') return false
+        return data.startDate <= endDate
+      })
+
       let sumBooked = 0
       for (const doc of overlapping) {
         const data = doc.data() as StoredBookingForConflict
@@ -360,10 +439,17 @@ export async function createBooking(
           throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
         }
 
-        if (equipment.trackingType === 'individual' && item.quantity !== 1) {
-          throw new Error(
-            `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
-          )
+        if (equipment.trackingType === 'serialized') {
+          if (item.quantity !== 1) {
+            throw new Error(
+              `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
+            )
+          }
+          if (!item.unitId) {
+            throw new Error(
+              `Equipment "${equipment.name}" is serialized; unitId is required.`,
+            )
+          }
         }
 
         if (
@@ -406,12 +492,14 @@ export async function createBooking(
       const bookingStatus = requiresApproval ? 'pending' : 'confirmed'
       const approvalStatus = requiresApproval ? 'pending' : 'none'
       const equipmentIds = extractEquipmentIds(items)
+      const unitIds = items.flatMap((i) => (i.unitId ? [i.unitId] : []))
 
       tx.set(newRef, {
         projectName,
         notes,
         items,
         equipmentIds,
+        unitIds,
         startDate,
         endDate,
         userId: session.uid,
@@ -553,9 +641,9 @@ export async function updateBooking(
             throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
           }
 
-          if (equipment.trackingType === 'individual' && item.quantity !== 1) {
+          if (equipment.trackingType === 'serialized' && item.quantity !== 1) {
             throw new Error(
-              `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
+              `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
             )
           }
 
@@ -611,6 +699,7 @@ export async function updateBooking(
       if (items !== undefined) {
         updateData.items = items
         updateData.equipmentIds = extractEquipmentIds(items)
+        updateData.unitIds = items.flatMap((i) => (i.unitId ? [i.unitId] : []))
         updateData.requiresApproval = requiresApproval
         updateData.approverId = approverId
       }

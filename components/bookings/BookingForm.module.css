@@ -7,10 +7,9 @@
 }
 
 .layout {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  min-height: calc(100vh - 200px);
-  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
 }
 
 /* -----------------------------------------------------------------------
@@ -18,8 +17,6 @@
    ----------------------------------------------------------------------- */
 
 .fields {
-  padding: 40px var(--booking-pad-h);
-  border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -58,20 +55,22 @@
 
 .input {
   background: transparent;
-  border: 1px solid var(--dim);
+  border: none;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
+  padding: 8px 0;
   color: var(--white);
-  font-family: var(--font-aktiv), system-ui, sans-serif;
+  border-radius: 0;
+  outline: none;
+  width: 100%;
+  font-family: inherit;
   font-size: 16px;
   font-weight: 400;
-  padding: 10px 12px;
-  width: 100%;
-  outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-bottom-color 0.1s;
   color-scheme: dark;
 }
 
 .input:focus {
-  border-color: var(--white);
+  border-bottom-color: var(--white);
 }
 
 .input::placeholder {
@@ -80,21 +79,23 @@
 
 .textarea {
   background: transparent;
-  border: 1px solid var(--dim);
+  border: none;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
+  padding: 8px 0;
   color: var(--white);
-  font-family: var(--font-aktiv), system-ui, sans-serif;
+  border-radius: 0;
+  outline: none;
+  width: 100%;
+  font-family: inherit;
   font-size: 14px;
   font-weight: 400;
-  padding: 10px 12px;
-  width: 100%;
-  outline: none;
   resize: vertical;
-  transition: border-color 0.15s ease;
+  transition: border-bottom-color 0.1s;
   line-height: 1.5;
 }
 
 .textarea:focus {
-  border-color: var(--white);
+  border-bottom-color: var(--white);
 }
 
 .textarea::placeholder {
@@ -130,15 +131,16 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  border: 1px solid var(--dim);
 }
 
 .category {
-  border-bottom: 1px solid var(--dim);
+  background: var(--surface-container-lowest);
+  padding: 24px;
+  margin-bottom: 4px;
 }
 
 .category:last-child {
-  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .categoryLabel {
@@ -147,9 +149,8 @@
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: var(--mid);
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--dim);
+  padding-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .equipmentRow {
@@ -186,11 +187,21 @@
 }
 
 .checkbox {
+  appearance: none;
+  -webkit-appearance: none;
   width: 14px;
   height: 14px;
-  accent-color: var(--accent);
+  border: 1px solid var(--outline-variant);
+  border-radius: 0;
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.checkbox:checked {
+  background: var(--white);
+  border-color: var(--white);
 }
 
 .equipmentName {
@@ -266,15 +277,21 @@
 }
 
 .submitBtn {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--black);
-  background: var(--accent);
-  border: 1px solid var(--accent);
+  background: var(--white);
+  color: var(--on-primary);
   padding: 12px 32px;
-  transition: opacity 0.15s ease;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: var(--secondary);
 }
 
 .submitBtn:disabled {
@@ -282,19 +299,17 @@
   cursor: not-allowed;
 }
 
-.submitBtn:not(:disabled):hover {
-  opacity: 0.85;
-}
-
 /* -----------------------------------------------------------------------
    Right column: summary
    ----------------------------------------------------------------------- */
 
 .summary {
-  padding: 40px 24px;
+  padding: 32px;
+  background: var(--surface-container-lowest);
   display: flex;
   flex-direction: column;
   gap: 24px;
+  border-top: 1px solid rgba(71, 71, 71, 0.3);
 }
 
 .summaryTitle {

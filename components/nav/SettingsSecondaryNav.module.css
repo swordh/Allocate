@@ -1,18 +1,17 @@
 .nav {
   display: flex;
-  align-items: baseline;
-  gap: 32px;
-  padding: 10px var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
+  gap: 4px;
 }
 
 .item {
-  font-size: 12px;
-  font-weight: 700;
+  padding: 8px 16px;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--mid);
-  transition: color 0.15s ease;
+  font-weight: 600;
+  color: rgba(145, 145, 145, 0.6);
+  text-decoration: none;
+  transition: all 0.1s;
 }
 
 .item:hover {
@@ -20,5 +19,7 @@
 }
 
 .itemActive {
+  background: var(--surface-container-highest);
   color: var(--white);
+  padding: 8px 16px;
 }

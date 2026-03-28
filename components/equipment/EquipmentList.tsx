@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { useEquipment } from '@/hooks/useEquipment'
-import { deactivateEquipment } from '@/actions/equipment'
+import { deactivateEquipment, deactivateUnit } from '@/actions/equipment'
 import EquipmentStatusBadge from './EquipmentStatusBadge'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentModal from './EquipmentModal'
-import type { Equipment, Role } from '@/types'
+import { UnitModal } from './UnitModal'
+import type { Equipment, EquipmentUnit, Role } from '@/types'
 import styles from './EquipmentList.module.css'
 
 interface EquipmentListProps {
@@ -26,6 +27,12 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  // Unit modal state
+  const [unitModalOpen, setUnitModalOpen] = useState(false)
+  const [selectedUnit, setSelectedUnit] = useState<EquipmentUnit | undefined>(undefined)
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>('')
+  const [deactivatingUnitId, setDeactivatingUnitId] = useState<string | null>(null)
+
   function openAddModal() {
     setEditingItem(undefined)
     setModalOpen(true)
@@ -34,6 +41,18 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   function openEditModal(item: Equipment) {
     setEditingItem(item)
     setModalOpen(true)
+  }
+
+  function openAddUnitModal(equipmentId: string) {
+    setSelectedEquipmentId(equipmentId)
+    setSelectedUnit(undefined)
+    setUnitModalOpen(true)
+  }
+
+  function openEditUnitModal(equipmentId: string, unit: EquipmentUnit) {
+    setSelectedEquipmentId(equipmentId)
+    setSelectedUnit(unit)
+    setUnitModalOpen(true)
   }
 
   async function handleDeactivate(item: Equipment) {
@@ -45,6 +64,19 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
     const result = await deactivateEquipment(item.id)
     setDeactivatingId(null)
     if ('error' in result) {
+      setActionError(result.error)
+    }
+  }
+
+  async function handleDeactivateUnit(equipmentId: string, unit: EquipmentUnit) {
+    if (!confirm(`Deactivate unit "${unit.label}"? It will no longer appear in the equipment list.`)) {
+      return
+    }
+    setDeactivatingUnitId(unit.id)
+    setActionError(null)
+    const result = await deactivateUnit(equipmentId, unit.id)
+    setDeactivatingUnitId(null)
+    if (result && 'error' in result) {
       setActionError(result.error)
     }
   }
@@ -95,32 +127,25 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
           {categories.map((cat) => {
             const items = grouped[cat]
 
-            // Separate quantity items (flat) from individual items (grouped by name)
+            // Separate quantity items (flat) from serialized items (group header + unit rows)
             const quantityItems = items.filter((i) => i.trackingType === 'quantity' || !i.trackingType)
-            const individualItems = items.filter((i) => i.trackingType === 'individual')
-
-            // Group individual items by equipmentName (parent name).
-            // Fall back to item.name for legacy units that predate this field.
-            const individualGroups = individualItems.reduce<Record<string, Equipment[]>>((acc, item) => {
-              const key = item.equipmentName ?? item.name
-              if (!acc[key]) acc[key] = []
-              acc[key].push(item)
-              return acc
-            }, {})
-            const individualGroupNames = Object.keys(individualGroups)
+            const serializedItems = items.filter((i) => i.trackingType === 'serialized')
 
             return (
               <section key={cat} className={styles.category}>
-                <h2 className={styles.categoryHeader}>{cat}</h2>
+                <div className={styles.categoryHeader}>
+                  <h2 className={styles.categoryHeaderLabel}>{cat}</h2>
+                  <div className={styles.categoryHeaderRule} />
+                  <span className={styles.categoryHeaderCount}>{items.length}</span>
+                </div>
 
-                {/* Quantity items render flat, same as before */}
+                {/* Quantity items render flat */}
                 {quantityItems.map((item) => (
                   <div key={item.id} className={styles.row}>
                     <div className={styles.rowLeft}>
-                      <EquipmentStatusBadge status={item.status} />
                       <span className={styles.name}>{item.name}</span>
                       {item.trackingType === 'quantity' && (
-                        <span className={styles.quantityBadge}>×{item.totalQuantity}</span>
+                        <span className={styles.quantityBadge}>x{item.totalQuantity}</span>
                       )}
                       {!item.trackingType && (
                         <span className={styles.legacyBadge}>Legacy</span>
@@ -140,49 +165,53 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                           onClick={() => handleDeactivate(item)}
                           disabled={deactivatingId === item.id}
                         >
-                          {deactivatingId === item.id ? 'Deactivating…' : 'Deactivate'}
+                          {deactivatingId === item.id ? 'Deactivating...' : 'Deactivate'}
                         </button>
                       </div>
                     )}
                   </div>
                 ))}
 
-                {/* Individual items render as a parent group header + indented unit rows */}
-                {individualGroupNames.map((parentName) => (
-                  <div key={parentName} className={styles.group}>
+                {/* Serialized items render as a parent group header + indented unit rows */}
+                {serializedItems.map((eq) => (
+                  <div key={eq.id} className={styles.group}>
                     {/* Parent row — shows the equipment name and admin actions */}
                     <div className={styles.groupHeader}>
                       <div className={styles.rowLeft}>
-                        <span className={styles.name}>{parentName}</span>
+                        <span className={styles.name}>{eq.name}</span>
                         <span className={styles.categoryPill}>{cat}</span>
                       </div>
                       {role === 'admin' && (
                         <div className={styles.rowActions}>
                           <button
                             className={styles.editBtn}
-                            onClick={() => openEditModal(individualGroups[parentName][0])}
+                            onClick={() => openAddUnitModal(eq.id)}
+                          >
+                            Add Unit
+                          </button>
+                          <button
+                            className={styles.editBtn}
+                            onClick={() => openEditModal(eq)}
                           >
                             Edit
                           </button>
                           <button
                             className={styles.deactivateBtn}
-                            onClick={() => handleDeactivate(individualGroups[parentName][0])}
-                            disabled={individualGroups[parentName].some((u) => deactivatingId === u.id)}
+                            onClick={() => handleDeactivate(eq)}
+                            disabled={deactivatingId === eq.id}
                           >
-                            {individualGroups[parentName].some((u) => deactivatingId === u.id)
-                              ? 'Deactivating…'
-                              : 'Deactivate'}
+                            {deactivatingId === eq.id ? 'Deactivating...' : 'Deactivate'}
                           </button>
                         </div>
                       )}
                     </div>
 
                     {/* Unit rows — indented children */}
-                    {individualGroups[parentName].map((unit) => (
+                    {(eq.units ?? []).map((unit) => (
                       <div key={unit.id} className={styles.unitRow}>
                         <div className={styles.rowLeft}>
                           <EquipmentStatusBadge status={unit.status} />
-                          <span className={styles.unitName}>{unit.name}</span>
+                          <span className={styles.unitName}>{unit.label}</span>
                           {unit.serialNumber && (
                             <span className={styles.serialNumber}>{unit.serialNumber}</span>
                           )}
@@ -191,16 +220,16 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                           <div className={styles.rowActions}>
                             <button
                               className={styles.editBtn}
-                              onClick={() => openEditModal(unit)}
+                              onClick={() => openEditUnitModal(eq.id, unit)}
                             >
                               Edit
                             </button>
                             <button
                               className={styles.deactivateBtn}
-                              onClick={() => handleDeactivate(unit)}
-                              disabled={deactivatingId === unit.id}
+                              onClick={() => handleDeactivateUnit(eq.id, unit)}
+                              disabled={deactivatingUnitId === unit.id}
                             >
-                              {deactivatingId === unit.id ? 'Deactivating…' : 'Deactivate'}
+                              {deactivatingUnitId === unit.id ? 'Deactivating...' : 'Deactivate'}
                             </button>
                           </div>
                         )}
@@ -219,6 +248,13 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         onClose={() => setModalOpen(false)}
         companyId={companyId}
         equipment={editingItem}
+      />
+
+      <UnitModal
+        isOpen={unitModalOpen}
+        onClose={() => setUnitModalOpen(false)}
+        equipmentId={selectedEquipmentId}
+        unit={selectedUnit}
       />
     </>
   )

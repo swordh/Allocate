@@ -1,12 +1,14 @@
 import { headers } from 'next/headers'
 import { getVerifiedSession } from '@/lib/dal'
 import PrimaryNav from '@/components/nav/PrimaryNav'
-import LogoRow from '@/components/nav/LogoRow'
+import { MobileBottomNav } from '@/components/nav/MobileBottomNav'
+import styles from './app-layout.module.css'
 
 /**
  * Authenticated layout — Server Component.
  * Verifies session on every render; redirects to /login if invalid.
- * Renders PrimaryNav and LogoRow, passing serializable role and activePath.
+ * Renders PrimaryNav, passing serializable role and activePath.
+ * LogoRow removed; each section now uses PageHeader.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getVerifiedSession()
@@ -19,8 +21,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
       <PrimaryNav role={session.role} activePath={activePath} />
-      <LogoRow />
-      {children}
+      <main className={styles.main}>
+        {children}
+      </main>
+      <MobileBottomNav role={session.role} />
     </div>
   )
 }

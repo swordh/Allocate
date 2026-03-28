@@ -111,7 +111,7 @@ export interface BookingDocument {
 
 // ─── Equipment documents ───────────────────────────────────────────────────────
 
-export type TrackingType = 'individual' | 'quantity';
+export type TrackingType = 'serialized' | 'quantity';
 
 export interface EquipmentDocument {
   name: string;

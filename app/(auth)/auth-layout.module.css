@@ -1,0 +1,54 @@
+.authShell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.authHeader {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+}
+
+.wordmark {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.authMain {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.authFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(71, 71, 71, 0.2);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(145, 145, 145, 0.5);
+}
+
+.authFooterLinks {
+  display: flex;
+  gap: 24px;
+}
+
+.authFooterLinks a {
+  color: rgba(145, 145, 145, 0.5);
+  transition: color 0.1s;
+}
+
+.authFooterLinks a:hover {
+  color: var(--white);
+}

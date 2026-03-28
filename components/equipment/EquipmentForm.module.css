@@ -33,20 +33,21 @@
 }
 
 .input {
-  background: none;
+  background: transparent;
   border: none;
-  border-bottom: 1px solid var(--dim);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
+  padding: 8px 0;
   color: var(--white);
+  border-radius: 0;
+  outline: none;
+  width: 100%;
   font-family: inherit;
   font-size: var(--font-body);
   font-weight: 300;
-  padding: 8px 0;
-  width: 100%;
-  transition: border-color 0.15s ease;
+  transition: border-bottom-color 0.1s;
 }
 
 .input:focus {
-  outline: none;
   border-bottom-color: var(--white);
 }
 
@@ -56,21 +57,22 @@
 
 .select {
   appearance: none;
-  background: none;
+  background: transparent;
   border: none;
-  border-bottom: 1px solid var(--dim);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
   color: var(--white);
   font-family: inherit;
   font-size: var(--font-body);
   font-weight: 300;
   padding: 8px 24px 8px 0;
   width: 100%;
+  border-radius: 0;
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  outline: none;
+  transition: border-bottom-color 0.1s;
 }
 
 .select:focus {
-  outline: none;
   border-bottom-color: var(--white);
 }
 
@@ -183,20 +185,21 @@
 }
 
 .submitBtn {
-  font-size: var(--font-body);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--black);
   background: var(--white);
+  color: var(--on-primary);
+  padding: 12px 32px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   border: none;
+  border-radius: 0;
   cursor: pointer;
-  padding: 10px 24px;
-  transition: opacity 0.15s ease;
+  transition: background 0.1s;
 }
 
 .submitBtn:hover:not(:disabled) {
-  opacity: 0.85;
+  background: var(--secondary);
 }
 
 .submitBtn:disabled {

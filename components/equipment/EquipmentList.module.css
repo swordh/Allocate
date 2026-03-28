@@ -2,8 +2,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: var(--booking-pad-v) var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
+  margin-bottom: 32px;
 }
 
 .pageTitle {
@@ -15,32 +14,35 @@
 }
 
 .addBtn {
-  font-size: var(--font-body);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--black);
   background: var(--white);
+  color: var(--on-primary);
+  padding: 12px 32px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   border: none;
+  border-radius: 0;
   cursor: pointer;
-  padding: 10px 24px;
-  transition: opacity 0.15s ease;
+  transition: background 0.1s;
 }
 
 .addBtn:hover {
-  opacity: 0.85;
+  background: var(--secondary);
 }
 
 .actionError {
-  padding: 12px var(--booking-pad-h);
-  color: var(--repair);
-  border-bottom: 1px solid var(--repair);
+  padding: 12px 16px;
+  color: var(--error);
+  border-bottom: 1px solid var(--error);
   font-size: var(--font-body);
+  margin-bottom: 24px;
 }
 
 .list {
   display: flex;
   flex-direction: column;
+  gap: 32px;
 }
 
 .category {
@@ -48,33 +50,56 @@
   flex-direction: column;
 }
 
+/* Category header: flex row with label, grow rule, count */
 .categoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.categoryHeaderLabel {
   font-size: var(--font-subnav);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  color: var(--mid);
-  padding: 16px var(--booking-pad-h) 8px;
-  border-bottom: 1px solid var(--rule);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+
+.categoryHeaderRule {
+  flex: 1;
+  height: 1px;
+  background: rgba(71, 71, 71, 0.2);
+}
+
+.categoryHeaderCount {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(145, 145, 145, 0.4);
+  white-space: nowrap;
 }
 
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--booking-pad-v) var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
-  transition: background 0.1s ease;
+  background: var(--surface-container-lowest);
+  padding: var(--booking-pad-v) 24px;
+  margin-bottom: 2px;
+  transition: background 0.1s;
 }
 
 .row:hover {
-  background: var(--dim);
+  background: var(--surface-container-low);
 }
 
 /* Individual tracking: outer wrapper for one parent + its units */
 .group {
   display: flex;
   flex-direction: column;
+  margin-bottom: 2px;
 }
 
 /* Parent name row for individual equipment groups */
@@ -82,9 +107,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--booking-pad-v) var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-container-low);
+  padding: 16px 24px;
 }
 
 /* Indented unit row nested under the parent */
@@ -92,13 +116,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px var(--booking-pad-h) 10px calc(var(--booking-pad-h) + 32px);
-  border-bottom: 1px solid var(--rule);
-  transition: background 0.1s ease;
+  background: var(--surface-container-lowest);
+  padding: 12px 24px 12px calc(24px + 32px);
+  margin-top: 2px;
+  transition: background 0.1s;
 }
 
 .unitRow:hover {
-  background: var(--dim);
+  background: var(--surface-container-low);
 }
 
 .unitName {
@@ -125,7 +150,7 @@
   font-size: var(--font-subnav);
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--black);
+  color: var(--on-primary);
   background: var(--white);
   padding: 2px 7px;
 }
@@ -135,15 +160,15 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--repair);
-  border: 1px solid var(--repair);
+  color: var(--error);
+  border: 1px solid var(--error);
   padding: 2px 6px;
 }
 
 .serialNumber {
   font-size: 11px;
   font-weight: 300;
-  color: var(--mid);
+  color: var(--on-surface-variant);
   font-variant-numeric: tabular-nums;
 }
 
@@ -152,7 +177,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mid);
+  color: var(--on-surface-variant);
 }
 
 .rowActions {
@@ -166,16 +191,16 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mid);
   background: none;
-  border: none;
+  color: var(--white);
+  border: 1px solid rgba(145, 145, 145, 0.4);
+  padding: 4px 12px;
   cursor: pointer;
-  padding: 4px 0;
-  transition: color 0.15s ease;
+  transition: border-color 0.1s;
 }
 
 .editBtn:hover {
-  color: var(--white);
+  border-color: var(--white);
 }
 
 .deactivateBtn {
@@ -183,16 +208,17 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mid);
   background: none;
-  border: none;
+  color: var(--white);
+  border: 1px solid rgba(145, 145, 145, 0.4);
+  padding: 4px 12px;
   cursor: pointer;
-  padding: 4px 0;
-  transition: color 0.15s ease;
+  transition: border-color 0.1s, color 0.1s;
 }
 
 .deactivateBtn:hover:not(:disabled) {
-  color: var(--repair);
+  color: var(--error);
+  border-color: var(--error);
 }
 
 .deactivateBtn:disabled {
@@ -201,9 +227,8 @@
 }
 
 .errorState {
-  padding: var(--booking-pad-v) var(--booking-pad-h);
-  color: var(--repair);
-  border-bottom: 1px solid var(--rule);
+  padding: var(--booking-pad-v) 0;
+  color: var(--error);
 }
 
 .errorDetail {

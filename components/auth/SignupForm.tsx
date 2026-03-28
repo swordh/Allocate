@@ -93,90 +93,92 @@ export default function SignupForm() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.wordmark}>Allocate</div>
+      <div className={styles.formCard}>
+        <h1 className={styles.pageTitle}>CREATE ACCOUNT</h1>
 
-      <form className={styles.form} onSubmit={handleSubmit} noValidate>
-        {error && (
-          <div className={styles.error} role="alert" aria-live="assertive">
-            {error}
+        <form className={styles.form} onSubmit={handleSubmit} noValidate>
+          {error && (
+            <div className={styles.error} role="alert" aria-live="assertive">
+              {error}
+            </div>
+          )}
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="companyName">Company name</label>
+            <input
+              id="companyName"
+              className={styles.input}
+              type="text"
+              autoComplete="organization"
+              maxLength={100}
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              required
+              disabled={loading}
+            />
           </div>
-        )}
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="companyName">Company name</label>
-          <input
-            id="companyName"
-            className={styles.input}
-            type="text"
-            autoComplete="organization"
-            maxLength={100}
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="userName">Your name</label>
+            <input
+              id="userName"
+              className={styles.input}
+              type="text"
+              autoComplete="name"
+              maxLength={100}
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="userName">Your name</label>
-          <input
-            id="userName"
-            className={styles.input}
-            type="text"
-            autoComplete="name"
-            maxLength={100}
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="email">Email</label>
+            <input
+              id="email"
+              className={styles.input}
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="email">Email</label>
-          <input
-            id="email"
-            className={styles.input}
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="password">
+              Password <span className={styles.labelHint}>(min {MIN_PASSWORD_LENGTH} characters)</span>
+            </label>
+            <input
+              id="password"
+              className={styles.input}
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="password">
-            Password <span className={styles.labelHint}>(min {MIN_PASSWORD_LENGTH} characters)</span>
-          </label>
-          <input
-            id="password"
-            className={styles.input}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <button className={styles.submitBtn} type="submit" disabled={loading}>
+            {loading ? 'Creating account…' : 'Create account'}
+          </button>
+        </form>
 
-        <button className={styles.submitBtn} type="submit" disabled={loading}>
-          {loading ? 'Creating account…' : 'Create account'}
-        </button>
-      </form>
+        <p className={styles.footer}>
+          Already have an account?{' '}
+          <Link href="/login">Sign in</Link>
+        </p>
 
-      <p className={styles.footer}>
-        Already have an account?{' '}
-        <Link href="/login">Sign in</Link>
-      </p>
-
-      <p className={styles.legal}>
-        By creating an account you agree to our{' '}
-        <Link href="/terms">Terms of Service</Link> and acknowledge our{' '}
-        <Link href="/privacy">Privacy Policy</Link>.
-      </p>
+        <p className={styles.legal}>
+          By creating an account you agree to our{' '}
+          <Link href="/terms">Terms of Service</Link> and acknowledge our{' '}
+          <Link href="/privacy">Privacy Policy</Link>.
+        </p>
+      </div>
     </div>
   )
 }

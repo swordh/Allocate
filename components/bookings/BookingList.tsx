@@ -48,6 +48,15 @@ function formatDateLabel(dateStr: string, today: string, tomorrow: string): stri
   })
 }
 
+function formatFullDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).toUpperCase()
+}
+
 // ---------------------------------------------------------------------------
 // Stats computation
 // ---------------------------------------------------------------------------
@@ -96,7 +105,9 @@ export default function BookingList({
   const today    = toLocalDateString(new Date())
   const tomorrow = toLocalDateString(new Date(Date.now() + 86400000))
 
+  // Stats are computed but stats bar is commented out per spec
   const stats = useMemo(() => computeStats(visibleBookings, today), [visibleBookings, today])
+  void stats // prevent unused variable warning
 
   // Group non-cancelled bookings by startDate, sorted newest first.
   const grouped = useMemo(() => {
@@ -121,8 +132,8 @@ export default function BookingList({
 
   return (
     <div className={styles.container}>
-      {/* Stats bar */}
-      <div className={styles.statsBar}>
+      {/* Stats bar — logic preserved, UI hidden per redesign spec */}
+      {/* <div className={styles.statsBar}>
         <div className={styles.stat}>
           <span className={styles.statValue}>{stats.bookingsToday}</span>
           <span className={styles.statLabel}>Bookings today</span>
@@ -135,7 +146,7 @@ export default function BookingList({
           <span className={styles.statValue}>{stats.pendingApprovals}</span>
           <span className={styles.statLabel}>Pending approvals</span>
         </div>
-      </div>
+      </div> */}
 
       {/* Controls */}
       <div className={styles.controls}>
@@ -165,17 +176,22 @@ export default function BookingList({
         const dateBookings = grouped.get(dateStr) ?? []
         const label = formatDateLabel(dateStr, today, tomorrow)
         const isToday = dateStr === today
+        const fullDate = formatFullDate(dateStr)
 
         return (
           <div key={dateStr} className={styles.group}>
             <div className={styles.groupHeader}>
               <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
-                {label}
+                {label.toUpperCase()}
               </span>
+              <div className={styles.groupRule} />
+              <span className={styles.groupDate}>{fullDate}</span>
             </div>
-            {dateBookings.map((booking) => (
-              <BookingRow key={booking.id} booking={booking} />
-            ))}
+            <div className={styles.bookingCards}>
+              {dateBookings.map((booking) => (
+                <BookingRow key={booking.id} booking={booking} />
+              ))}
+            </div>
           </div>
         )
       })}
@@ -187,22 +203,37 @@ export default function BookingList({
 // Booking row
 // ---------------------------------------------------------------------------
 
+function getStatusRowClass(booking: Booking): string {
+  switch (booking.status) {
+    case 'checked_out': return styles.rowCheckedOut
+    case 'confirmed':   return styles.rowConfirmed
+    case 'pending':
+      // Show rejected style if approval was rejected
+      return booking.approvalStatus === 'rejected' ? styles.rowRejected : styles.rowPending
+    case 'cancelled':   return styles.rowCancelled
+    default:            return styles.rowPending
+  }
+}
+
 function BookingRow({ booking }: { booking: Booking }) {
   const isCancelled = booking.status === 'cancelled'
   const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
+  const statusClass = getStatusRowClass(booking)
 
   return (
     <Link
       href={`/bookings/${booking.id}`}
-      className={`${styles.row} ${isCancelled ? styles.rowCancelled : ''}`}
+      className={`${styles.row} ${statusClass} ${isCancelled ? styles.rowCancelled : ''}`}
     >
-      <span className={styles.rowDate}>
-        {booking.startDate === booking.endDate
-          ? formatShortDate(booking.startDate)
-          : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`}
-      </span>
-      <span className={styles.rowProject}>{booking.projectName}</span>
-      <span className={styles.rowMeta}>
+      <div className={styles.rowLeft}>
+        <span className={styles.rowProject}>{booking.projectName}</span>
+        <span className={styles.rowDate}>
+          {booking.startDate === booking.endDate
+            ? formatShortDate(booking.startDate)
+            : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`}
+        </span>
+      </div>
+      <div className={styles.rowMeta}>
         <span className={styles.rowItemCount}>
           {itemCount} {itemCount === 1 ? 'item' : 'items'}
         </span>
@@ -210,7 +241,7 @@ function BookingRow({ booking }: { booking: Booking }) {
           status={booking.status}
           approvalStatus={booking.approvalStatus}
         />
-      </span>
+      </div>
     </Link>
   )
 }
