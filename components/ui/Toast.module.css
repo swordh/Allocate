@@ -1,3 +1,31 @@
+/* ── Saving overlay — full screen, dims background ─────────────────────────── */
+
+.savingOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 8, 0.88);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.savingBox {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 32px;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* ── Inline toasts (success / error) ────────────────────────────────────────── */
+
 .container {
   position: fixed;
   bottom: 32px;
@@ -22,12 +50,6 @@
   text-transform: uppercase;
   pointer-events: all;
   white-space: nowrap;
-}
-
-.saving {
-  background: var(--surface-container-low);
-  color: var(--on-surface-variant);
-  border: 1px solid var(--outline-variant);
 }
 
 .success {
@@ -59,7 +81,7 @@
   opacity: 1;
 }
 
-/* Spinning dot indicator for saving state */
+/* Pulsing dot for saving state */
 .spinner {
   width: 6px;
   height: 6px;
