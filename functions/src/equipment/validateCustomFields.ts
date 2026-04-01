@@ -2,13 +2,12 @@ import { HttpsError } from 'firebase-functions/v2/https';
 
 const MAX_CUSTOM_FIELDS = 20;
 const MAX_LABEL_LENGTH = 100;
-const VALID_TYPES = ['text', 'number', 'range'] as const;
+const VALID_TYPES = ['text', 'value'] as const;
 type FieldType = typeof VALID_TYPES[number];
 
 interface CustomFieldText { id: string; label: string; type: 'text'; value: string }
-interface CustomFieldNumber { id: string; label: string; type: 'number'; value: number }
-interface CustomFieldRange { id: string; label: string; type: 'range'; value: { min: number; max: number | null } }
-type CustomField = CustomFieldText | CustomFieldNumber | CustomFieldRange;
+interface CustomFieldValue { id: string; label: string; type: 'value'; value: { min: number; max: number | null } }
+type CustomField = CustomFieldText | CustomFieldValue;
 
 export function validateCustomFields(raw: unknown): CustomField[] {
   if (raw === undefined || raw === null) return [];
@@ -45,16 +44,9 @@ export function validateCustomFields(raw: unknown): CustomField[] {
       return { id: id.trim(), label: label.trim(), type: 'text', value };
     }
 
-    if (type === 'number') {
-      if (typeof value !== 'number' || !isFinite(value)) {
-        throw new HttpsError('invalid-argument', `customFields[${i}].value must be a finite number for type "number".`);
-      }
-      return { id: id.trim(), label: label.trim(), type: 'number', value };
-    }
-
-    // range
+    // value (single number or range)
     if (typeof value !== 'object' || value === null) {
-      throw new HttpsError('invalid-argument', `customFields[${i}].value must be an object {min, max} for type "range".`);
+      throw new HttpsError('invalid-argument', `customFields[${i}].value must be an object {min, max} for type "value".`);
     }
     const { min, max } = value as Record<string, unknown>;
     if (typeof min !== 'number' || !isFinite(min)) {
@@ -63,6 +55,6 @@ export function validateCustomFields(raw: unknown): CustomField[] {
     if (max !== null && (typeof max !== 'number' || !isFinite(max))) {
       throw new HttpsError('invalid-argument', `customFields[${i}].value.max must be a finite number or null.`);
     }
-    return { id: id.trim(), label: label.trim(), type: 'range', value: { min, max: max ?? null } };
+    return { id: id.trim(), label: label.trim(), type: 'value', value: { min, max: max ?? null } };
   });
 }

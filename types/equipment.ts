@@ -16,21 +16,14 @@ export interface CustomFieldText {
   value: string
 }
 
-export interface CustomFieldNumber {
+export interface CustomFieldValue {
   id: string
   label: string
-  type: 'number'
-  value: number
-}
-
-export interface CustomFieldRange {
-  id: string
-  label: string
-  type: 'range'
+  type: 'value'
   value: { min: number; max: number | null }
 }
 
-export type CustomField = CustomFieldText | CustomFieldNumber | CustomFieldRange
+export type CustomField = CustomFieldText | CustomFieldValue
 export type CustomFieldType = CustomField['type']
 
 export interface Equipment {

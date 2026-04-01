@@ -62,10 +62,7 @@ export default function EquipmentForm({
   }
 
   function handleTypeChange(id: string, newType: CustomFieldType) {
-    let value: CustomField['value']
-    if (newType === 'text') value = ''
-    else if (newType === 'number') value = 0
-    else value = { min: 0, max: null }
+    const value = newType === 'text' ? '' : { min: 0, max: null }
     updateField(id, { type: newType, value } as Partial<CustomField>)
   }
 
@@ -168,8 +165,7 @@ export default function EquipmentForm({
               className={styles.select}
             >
               <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="range">Range</option>
+              <option value="value">Value</option>
             </select>
             {field.type === 'text' && (
               <input
@@ -180,16 +176,7 @@ export default function EquipmentForm({
                 className={styles.input}
               />
             )}
-            {field.type === 'number' && (
-              <input
-                type="number"
-                value={field.value as number}
-                onChange={(e) => updateField(field.id, { value: parseFloat(e.target.value) || 0 })}
-                placeholder="Value"
-                className={styles.input}
-              />
-            )}
-            {field.type === 'range' && (
+            {field.type === 'value' && (
               <>
                 <input
                   type="number"
