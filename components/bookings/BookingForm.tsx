@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBooking, checkConflict } from '@/actions/bookings'
+import { useToast } from '@/lib/toast-context'
 import type { Equipment, BookingItem } from '@/types'
 import type { ConflictResult } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
@@ -46,6 +47,7 @@ export default function BookingForm({
   defaultEndDate,
 }: BookingFormProps) {
   const router = useRouter()
+  const { showToast, dismissToast } = useToast()
 
   const [projectName, setProjectName]   = useState('')
   const [startDate, setStartDate]       = useState(defaultStartDate)
@@ -199,11 +201,15 @@ export default function BookingForm({
     formData.set('notes', notes)
     formData.set('items', JSON.stringify(selectedItems))
 
+    const toastId = showToast('saving', 'Saving booking...')
     startTransition(async () => {
       const result = await createBooking(formData)
+      dismissToast(toastId)
       if ('error' in result) {
         setError(result.error)
+        showToast('error', result.error, 5000)
       } else {
+        showToast('success', 'Booking created', 3000)
         router.push(`/bookings/${result.bookingId}`)
       }
     })
