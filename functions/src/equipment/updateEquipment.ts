@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { validateCustomFields } from './validateCustomFields';
 
 /**
  * Updates fields on an existing equipment document.
@@ -134,6 +135,10 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
       // TODO Phase 3: reject if rawQty < max concurrently booked quantity
       updates['totalQuantity'] = rawQty;
     }
+  }
+
+  if (request.data.customFields !== undefined) {
+    updates['customFields'] = validateCustomFields(request.data.customFields);
   }
 
   // ── serialNumber — only valid for serialized items ────────────────────────

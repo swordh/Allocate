@@ -5,7 +5,7 @@ import { createEquipment, updateEquipment } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
 import { useAuth } from '@/lib/auth-context'
-import type { Equipment, TrackingType } from '@/types'
+import type { Equipment, TrackingType, CustomField, CustomFieldType } from '@/types'
 import styles from './EquipmentForm.module.css'
 
 interface EquipmentFormProps {
@@ -32,6 +32,7 @@ export default function EquipmentForm({
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
   const [requiresApproval, setRequiresApproval] = useState(equipment?.requiresApproval ?? false)
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
+  const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -42,6 +43,28 @@ export default function EquipmentForm({
   useEffect(() => {
     nameRef.current?.focus()
   }, [])
+
+  function addField() {
+    setCustomFields(prev => [...prev, {
+      id: Math.random().toString(36).slice(2, 8),
+      label: '',
+      type: 'text',
+      value: '',
+    }])
+  }
+
+  function removeField(id: string) {
+    setCustomFields(prev => prev.filter(f => f.id !== id))
+  }
+
+  function updateField(id: string, patch: Partial<CustomField>) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, ...patch } as CustomField : f))
+  }
+
+  function handleTypeChange(id: string, newType: CustomFieldType) {
+    const value = newType === 'text' ? '' : { min: 0, max: null }
+    updateField(id, { type: newType, value } as Partial<CustomField>)
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -56,6 +79,7 @@ export default function EquipmentForm({
     formData.set('category', category)
     formData.set('requiresApproval', String(requiresApproval))
     formData.set('approverId', approverId)
+    formData.set('customFields', JSON.stringify(customFields))
     if (!isEditMode) {
       formData.set('trackingType', trackingType)
     }
@@ -115,6 +139,81 @@ export default function EquipmentForm({
           rows={3}
           placeholder="Optional description"
         />
+      </div>
+
+      {/* Custom Fields */}
+      <div className={styles.field}>
+        <div className={styles.customFieldsHeader}>
+          <span className={styles.label}>Custom Fields</span>
+          <button type="button" onClick={addField} className={styles.addFieldBtn}>
+            + Add field
+          </button>
+        </div>
+
+        {customFields.map((field) => (
+          <div key={field.id} className={styles.customFieldRow}>
+            <input
+              type="text"
+              value={field.label}
+              onChange={(e) => updateField(field.id, { label: e.target.value })}
+              placeholder="Label"
+              className={styles.input}
+            />
+            <select
+              value={field.type}
+              onChange={(e) => handleTypeChange(field.id, e.target.value as CustomFieldType)}
+              className={styles.select}
+            >
+              <option value="text">Text</option>
+              <option value="value">Value</option>
+            </select>
+            {field.type === 'text' && (
+              <input
+                type="text"
+                value={field.value as string}
+                onChange={(e) => updateField(field.id, { value: e.target.value })}
+                placeholder="Value"
+                className={styles.input}
+              />
+            )}
+            {field.type === 'value' && (
+              <>
+                <input
+                  type="number"
+                  value={(field.value as { min: number; max: number | null }).min}
+                  onChange={(e) =>
+                    updateField(field.id, {
+                      value: { ...(field.value as { min: number; max: number | null }), min: parseFloat(e.target.value) || 0 },
+                    })
+                  }
+                  placeholder="Min"
+                  className={styles.input}
+                />
+                <span className={styles.customFieldRangeSep}>–</span>
+                <input
+                  type="number"
+                  value={(field.value as { min: number; max: number | null }).max ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    updateField(field.id, {
+                      value: { ...(field.value as { min: number; max: number | null }), max: raw === '' ? null : parseFloat(raw) || 0 },
+                    })
+                  }}
+                  placeholder="Max (optional)"
+                  className={styles.input}
+                />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => removeField(field.id)}
+              className={styles.removeFieldBtn}
+              aria-label="Remove field"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* Tracking type — immutable after creation */}

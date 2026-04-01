@@ -53,16 +53,6 @@ export function UnitForm({ equipmentId, unit, onSuccess }: UnitFormProps) {
       )}
 
       <div className={styles.field}>
-        <label className={styles.label}>Condition</label>
-        <select name="condition" className={styles.input} defaultValue={unit?.condition ?? 'good'}>
-          <option value="new">New</option>
-          <option value="good">Good</option>
-          <option value="fair">Fair</option>
-          <option value="poor">Poor</option>
-        </select>
-      </div>
-
-      <div className={styles.field}>
         <label className={styles.label}>Notes</label>
         <textarea name="notes" className={styles.input} defaultValue={unit?.notes ?? ''} rows={3} />
       </div>

@@ -2,6 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { CompanyDocument } from '../types';
+import { validateCustomFields } from './validateCustomFields';
 
 /**
  * Adds a new equipment item to a company's inventory.
@@ -92,6 +93,8 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       ? null
       : String(rawApproverId);
 
+  const customFields = validateCustomFields(request.data.customFields);
+
   // ── trackingType validation ────────────────────────────────────────────────
   const VALID_TRACKING_TYPES = ['serialized', 'quantity'] as const;
   type TrackingType = typeof VALID_TRACKING_TYPES[number];
@@ -179,6 +182,7 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       active: true,
       requiresApproval,
       approverId,
+      customFields,
       createdAt: FieldValue.serverTimestamp(),
       createdBy: request.auth!.uid,
     });

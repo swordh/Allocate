@@ -206,3 +206,63 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── Custom Fields ─────────────────────────────────────────────────────────── */
+
+.customFieldsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.addFieldBtn {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.addFieldBtn:hover {
+  color: var(--white);
+}
+
+.customFieldRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.customFieldRow .input,
+.customFieldRow .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.customFieldRangeSep {
+  color: var(--mid);
+  font-weight: 300;
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.removeFieldBtn {
+  background: none;
+  border: none;
+  color: var(--mid);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 0 8px 0;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.removeFieldBtn:hover {
+  color: var(--repair);
+}

@@ -1,5 +1,5 @@
 export type { Booking, BookingStatus, ApprovalStatus, BookingItem } from './booking'
-export type { Equipment, EquipmentUnit, EquipmentStatus, TrackingType, UnitCondition } from './equipment'
+export type { Equipment, EquipmentUnit, EquipmentStatus, TrackingType, CustomField, CustomFieldText, CustomFieldValue, CustomFieldType } from './equipment'
 export { DEFAULT_EQUIPMENT_CATEGORIES } from './equipment'
 export type { Company, Subscription, SubscriptionStatus, Plan, BillingInterval } from './company'
 export type { UserProfile, Membership, TeamMember, SessionClaims, Role } from './user'
