@@ -56,7 +56,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   }
 
   async function handleDeactivate(item: Equipment) {
-    if (!confirm(`Deactivate "${item.name}"? It will no longer appear in the equipment list.`)) {
+    if (!confirm(`Delete "${item.name}"? It will no longer appear in the equipment list.`)) {
       return
     }
     setDeactivatingId(item.id)
@@ -69,7 +69,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   }
 
   async function handleDeactivateUnit(equipmentId: string, unit: EquipmentUnit) {
-    if (!confirm(`Deactivate unit "${unit.label}"? It will no longer appear in the equipment list.`)) {
+    if (!confirm(`Delete unit "${unit.label}"? It will no longer appear in the equipment list.`)) {
       return
     }
     setDeactivatingUnitId(unit.id)
@@ -165,7 +165,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                           onClick={() => handleDeactivate(item)}
                           disabled={deactivatingId === item.id}
                         >
-                          {deactivatingId === item.id ? 'Deactivating...' : 'Deactivate'}
+                          {deactivatingId === item.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     )}
@@ -200,7 +200,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                             onClick={() => handleDeactivate(eq)}
                             disabled={deactivatingId === eq.id}
                           >
-                            {deactivatingId === eq.id ? 'Deactivating...' : 'Deactivate'}
+                            {deactivatingId === eq.id ? 'Deleting...' : 'Delete'}
                           </button>
                         </div>
                       )}
@@ -229,7 +229,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                               onClick={() => handleDeactivateUnit(eq.id, unit)}
                               disabled={deactivatingUnitId === unit.id}
                             >
-                              {deactivatingUnitId === unit.id ? 'Deactivating...' : 'Deactivate'}
+                              {deactivatingUnitId === unit.id ? 'Deleting...' : 'Delete'}
                             </button>
                           </div>
                         )}
