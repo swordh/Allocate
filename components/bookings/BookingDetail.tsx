@@ -164,10 +164,10 @@ export default function BookingDetail({
               Equipment ({booking.items.length})
             </div>
             <ul className={styles.itemList}>
-              {booking.items.map((item) => {
+              {booking.items.map((item, index) => {
                 const eq = findEquipment(item.equipmentId)
                 return (
-                  <li key={item.equipmentId} className={styles.item}>
+                  <li key={`${item.equipmentId}-${index}`} className={styles.item}>
                     <span className={styles.itemName}>
                       {eq?.name ?? item.equipmentId}
                     </span>
