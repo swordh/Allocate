@@ -15,8 +15,9 @@ function docToEquipment(doc: FirebaseFirestore.DocumentSnapshot): Equipment {
     active:           data.active           ?? true,
     trackingType:     data.trackingType     ?? 'serialized',
     totalQuantity:    data.totalQuantity    ?? 1,
-    requiresApproval: data.requiresApproval ?? false,
-    approverId:       data.approverId       ?? null,
+    requiresApproval:     data.requiresApproval     ?? false,
+    approverId:           data.approverId           ?? null,
+    availableForBooking:  data.availableForBooking !== false, // !==false defaults existing docs (no field) to true
     createdAt:        data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,
     customFields:     Array.isArray(data.customFields) ? data.customFields : [],
   }

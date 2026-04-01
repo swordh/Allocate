@@ -59,7 +59,8 @@ export default function BookingForm({
   const [isCheckingConflict, setIsCheckingConflict] = useState(false)
   const [isPending, startTransition]    = useTransition()
 
-  const grouped = useMemo(() => groupByCategory(equipment), [equipment])
+  const bookableEquipment = equipment.filter((e) => e.availableForBooking !== false)
+  const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
 
   // ---------------------------------------------------------------------------
   // Derived: which equipment IDs have confirmed conflicts
@@ -289,9 +290,11 @@ export default function BookingForm({
             {isCheckingConflict && (
               <div className={styles.conflictChecking}>Checking availability...</div>
             )}
-            {equipment.length === 0 ? (
+            {bookableEquipment.length === 0 ? (
               <div className={styles.noEquipment}>
-                No equipment available. Add equipment in Settings first.
+                {equipment.length === 0
+                  ? 'No equipment available. Add equipment in the Equipment page first.'
+                  : 'No equipment is currently available for booking.'}
               </div>
             ) : (
               <div className={styles.equipmentList}>

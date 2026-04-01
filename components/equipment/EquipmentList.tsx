@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useEquipment } from '@/hooks/useEquipment'
-import { deactivateEquipment, deactivateUnit } from '@/actions/equipment'
+import { deactivateEquipment, deactivateUnit, toggleEquipmentAvailability } from '@/actions/equipment'
 import EquipmentStatusBadge from './EquipmentStatusBadge'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentModal from './EquipmentModal'
@@ -32,6 +32,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const [selectedUnit, setSelectedUnit] = useState<EquipmentUnit | undefined>(undefined)
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>('')
   const [deactivatingUnitId, setDeactivatingUnitId] = useState<string | null>(null)
+  const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<string | null>(null)
 
   function openAddModal() {
     setEditingItem(undefined)
@@ -77,6 +78,16 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
     const result = await deactivateUnit(equipmentId, unit.id)
     setDeactivatingUnitId(null)
     if (result && 'error' in result) {
+      setActionError(result.error)
+    }
+  }
+
+  async function handleToggleAvailability(item: Equipment) {
+    setTogglingAvailabilityId(item.id)
+    setActionError(null)
+    const result = await toggleEquipmentAvailability(item.id, !item.availableForBooking)
+    setTogglingAvailabilityId(null)
+    if (result.error) {
       setActionError(result.error)
     }
   }
@@ -155,6 +166,17 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {role === 'admin' && (
                       <div className={styles.rowActions}>
                         <button
+                          className={`${styles.editBtn} ${item.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}`}
+                          onClick={() => handleToggleAvailability(item)}
+                          disabled={togglingAvailabilityId === item.id}
+                        >
+                          {togglingAvailabilityId === item.id
+                            ? '...'
+                            : item.availableForBooking
+                              ? 'Available'
+                              : 'Unavailable'}
+                        </button>
+                        <button
                           className={styles.editBtn}
                           onClick={() => openEditModal(item)}
                         >
@@ -183,6 +205,17 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                       </div>
                       {role === 'admin' && (
                         <div className={styles.rowActions}>
+                          <button
+                            className={`${styles.editBtn} ${eq.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}`}
+                            onClick={() => handleToggleAvailability(eq)}
+                            disabled={togglingAvailabilityId === eq.id}
+                          >
+                            {togglingAvailabilityId === eq.id
+                              ? '...'
+                              : eq.availableForBooking
+                                ? 'Available'
+                                : 'Unavailable'}
+                          </button>
                           <button
                             className={styles.editBtn}
                             onClick={() => openAddUnitModal(eq.id)}
