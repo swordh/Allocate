@@ -27,8 +27,8 @@ export function UnitForm({ equipmentId, unit, onSuccess }: UnitFormProps) {
   )
 
   return (
-    <form action={formAction}>
-      <h2>{isEditing ? 'Edit Unit' : 'Add Unit'}</h2>
+    <form action={formAction} className={styles.form}>
+      <h2 className={styles.title}>{isEditing ? 'Edit Unit' : 'Add Unit'}</h2>
       {state?.error && <p className={styles.error}>{state.error}</p>}
 
       <div className={styles.field}>
