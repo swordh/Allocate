@@ -52,5 +52,6 @@ export interface EquipmentUnit {
   status: EquipmentStatus
   notes: string | null
   active: boolean
+  availableForBooking: boolean
   createdAt: string | null
 }

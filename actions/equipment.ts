@@ -337,6 +337,42 @@ export async function toggleEquipmentAvailability(
   }
 }
 
+// ── toggleUnitAvailability ───────────────────────────────────────────────────
+
+export async function toggleUnitAvailability(
+  equipmentId: string,
+  unitId: string,
+  available: boolean,
+): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
+  if (!unitId?.trim()) return { error: 'unitId is required' }
+
+  const companyId = session.activeCompanyId
+  const path = `companies/${companyId}/equipment/${equipmentId}/units/${unitId}`
+  const unitRef = adminDb.doc(path)
+
+  try {
+    const snap = await unitRef.get()
+    if (!snap.exists) return { error: 'Unit not found.' }
+
+    await unitRef.update({
+      availableForBooking: available,
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+
+    revalidatePath('/equipment')
+    revalidatePath('/bookings')
+    revalidatePath('/bookings/new')
+
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 // ── createUnit ───────────────────────────────────────────────────────────────
 
 export async function createUnit(

@@ -305,7 +305,7 @@ export default function BookingForm({
                       const hasConflict = conflictIds.has(eq.id)
 
                       if (eq.trackingType === 'serialized') {
-                        const units = eq.units ?? []
+                        const units = (eq.units ?? []).filter(u => u.availableForBooking !== false)
                         return (
                           <div key={eq.id} className={styles.equipmentGroup}>
                             <div className={styles.equipmentGroupHeader}>

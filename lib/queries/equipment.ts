@@ -33,7 +33,8 @@ function docToUnit(doc: FirebaseFirestore.DocumentSnapshot): EquipmentUnit {
     serialNumber: data.serialNumber ?? null,
     status:       data.status       ?? 'available',
     notes:        data.notes        ?? null,
-    active:       data.active       ?? true,
+    active:               data.active               ?? true,
+    availableForBooking:  data.availableForBooking !== false,
     createdAt:    data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,
   }
 }
