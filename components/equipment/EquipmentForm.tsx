@@ -144,6 +144,91 @@ export default function EquipmentForm({
         />
       </div>
 
+      {/* Custom Fields */}
+      <div className={styles.field}>
+        <div className={styles.customFieldsHeader}>
+          <span className={styles.label}>Custom Fields</span>
+          <button type="button" onClick={addField} className={styles.addFieldBtn}>
+            + Add field
+          </button>
+        </div>
+
+        {customFields.map((field) => (
+          <div key={field.id} className={styles.customFieldRow}>
+            <input
+              type="text"
+              value={field.label}
+              onChange={(e) => updateField(field.id, { label: e.target.value })}
+              placeholder="Label"
+              className={styles.input}
+            />
+            <select
+              value={field.type}
+              onChange={(e) => handleTypeChange(field.id, e.target.value as CustomFieldType)}
+              className={styles.select}
+            >
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+              <option value="range">Range</option>
+            </select>
+            {field.type === 'text' && (
+              <input
+                type="text"
+                value={field.value as string}
+                onChange={(e) => updateField(field.id, { value: e.target.value })}
+                placeholder="Value"
+                className={styles.input}
+              />
+            )}
+            {field.type === 'number' && (
+              <input
+                type="number"
+                value={field.value as number}
+                onChange={(e) => updateField(field.id, { value: parseFloat(e.target.value) || 0 })}
+                placeholder="Value"
+                className={styles.input}
+              />
+            )}
+            {field.type === 'range' && (
+              <>
+                <input
+                  type="number"
+                  value={(field.value as { min: number; max: number | null }).min}
+                  onChange={(e) =>
+                    updateField(field.id, {
+                      value: { ...(field.value as { min: number; max: number | null }), min: parseFloat(e.target.value) || 0 },
+                    })
+                  }
+                  placeholder="Min"
+                  className={styles.input}
+                />
+                <span className={styles.customFieldRangeSep}>–</span>
+                <input
+                  type="number"
+                  value={(field.value as { min: number; max: number | null }).max ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    updateField(field.id, {
+                      value: { ...(field.value as { min: number; max: number | null }), max: raw === '' ? null : parseFloat(raw) || 0 },
+                    })
+                  }}
+                  placeholder="Max (optional)"
+                  className={styles.input}
+                />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => removeField(field.id)}
+              className={styles.removeFieldBtn}
+              aria-label="Remove field"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Tracking type — immutable after creation */}
       <div className={styles.field}>
         <label className={styles.label}>
@@ -259,98 +344,6 @@ export default function EquipmentForm({
           </div>
         </div>
       )}
-
-      {/* Custom Fields */}
-      <div className={styles.field}>
-        <div className={styles.customFieldsHeader}>
-          <span className={styles.label}>Custom Fields</span>
-          <button type="button" onClick={addField} className={styles.addFieldBtn}>
-            + Add field
-          </button>
-        </div>
-
-        {customFields.map((field) => (
-          <div key={field.id} className={styles.customFieldRow}>
-            {/* Label */}
-            <input
-              type="text"
-              value={field.label}
-              onChange={(e) => updateField(field.id, { label: e.target.value })}
-              placeholder="Label"
-              className={styles.input}
-            />
-
-            {/* Type */}
-            <select
-              value={field.type}
-              onChange={(e) => handleTypeChange(field.id, e.target.value as CustomFieldType)}
-              className={styles.select}
-            >
-              <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="range">Range</option>
-            </select>
-
-            {/* Value input(s) */}
-            {field.type === 'text' && (
-              <input
-                type="text"
-                value={field.value as string}
-                onChange={(e) => updateField(field.id, { value: e.target.value })}
-                placeholder="Value"
-                className={styles.input}
-              />
-            )}
-            {field.type === 'number' && (
-              <input
-                type="number"
-                value={field.value as number}
-                onChange={(e) => updateField(field.id, { value: parseFloat(e.target.value) || 0 })}
-                placeholder="Value"
-                className={styles.input}
-              />
-            )}
-            {field.type === 'range' && (
-              <>
-                <input
-                  type="number"
-                  value={(field.value as { min: number; max: number | null }).min}
-                  onChange={(e) =>
-                    updateField(field.id, {
-                      value: { ...(field.value as { min: number; max: number | null }), min: parseFloat(e.target.value) || 0 },
-                    })
-                  }
-                  placeholder="Min"
-                  className={styles.input}
-                />
-                <span className={styles.customFieldRangeSep}>–</span>
-                <input
-                  type="number"
-                  value={(field.value as { min: number; max: number | null }).max ?? ''}
-                  onChange={(e) => {
-                    const raw = e.target.value
-                    updateField(field.id, {
-                      value: { ...(field.value as { min: number; max: number | null }), max: raw === '' ? null : parseFloat(raw) || 0 },
-                    })
-                  }}
-                  placeholder="Max (optional)"
-                  className={styles.input}
-                />
-              </>
-            )}
-
-            {/* Remove */}
-            <button
-              type="button"
-              onClick={() => removeField(field.id)}
-              className={styles.removeFieldBtn}
-              aria-label="Remove field"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
 
       {/* Error message */}
       {error && <p className={styles.error}>{error}</p>}
