@@ -200,7 +200,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                             onClick={() => handleDeactivate(eq)}
                             disabled={deactivatingId === eq.id}
                           >
-                            {deactivatingId === eq.id ? 'Deactivating...' : 'Deactivate'}
+                            {deactivatingId === eq.id ? 'Deleting...' : 'Delete'}
                           </button>
                         </div>
                       )}
