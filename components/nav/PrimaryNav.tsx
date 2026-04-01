@@ -17,31 +17,38 @@ export default function PrimaryNav({ role, activePath }: PrimaryNavProps) {
 
   return (
     <nav className={styles.nav}>
-      <div className={styles.links}>
-        <Link
-          href="/bookings"
-          className={`${styles.link} ${isActive('/bookings') ? styles.active : ''}`}
-        >
-          Bookings
-        </Link>
-        <Link
-          href="/equipment"
-          className={`${styles.link} ${isActive('/equipment') ? styles.active : ''}`}
-        >
-          Equipment
-        </Link>
-        {role === 'admin' && (
+      <div className={styles.inner}>
+        <span className={styles.wordmark}>ALLOCATE</span>
+
+        <div className={styles.links}>
           <Link
-            href="/settings"
-            className={`${styles.link} ${isActive('/settings') ? styles.active : ''}`}
+            href="/bookings"
+            className={`${styles.link} ${isActive('/bookings') ? styles.linkActive : ''}`}
           >
-            Settings
+            BOOKINGS
           </Link>
-        )}
+          <Link
+            href="/equipment"
+            className={`${styles.link} ${isActive('/equipment') ? styles.linkActive : ''}`}
+          >
+            EQUIPMENT
+          </Link>
+          {role === 'admin' && (
+            <Link
+              href="/settings"
+              className={`${styles.link} ${isActive('/settings') ? styles.linkActive : ''}`}
+            >
+              SETTINGS
+            </Link>
+          )}
+        </div>
+
+        <div className={styles.actions}>
+          <Link href="/bookings/new" className={styles.newBookingBtn}>
+            NEW BOOKING
+          </Link>
+        </div>
       </div>
-      <Link href="/bookings/new" className={styles.newBooking}>
-        New Booking
-      </Link>
     </nav>
   )
 }

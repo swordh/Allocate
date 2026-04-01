@@ -1,440 +1,314 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Month View</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Month View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-
-  .primary-nav {
-    display: flex;
-    align-items: center;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .nav-links { display: flex; gap: 40px; flex: 1; }
-  .nav-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    letter-spacing: -0.02em;
-  }
-  .nav-link:hover, .nav-link.active { color: var(--white); }
-  .nav-new {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    border: 1px solid #3A3A3A;
-    padding: 5px 18px 12px;
-    letter-spacing: -0.02em;
-  }
-  .nav-new:hover { color: var(--white); border-color: var(--white); }
-
-  .secondary-nav {
-    display: flex;
-    gap: 40px;
-    padding: 20px 48px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .sec-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-decoration: none;
-    color: var(--dim);
-    letter-spacing: -0.02em;
-  }
-  .sec-link:hover { color: var(--white); }
-  .sec-link.active { color: var(--white); }
-
-  .logo-row {
-    border-bottom: 1px solid var(--rule);
-    padding: 24px 48px 16px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-  }
-  .logo-text {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-  }
-  .logo-sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-top: 8px;
-  }
-  .logo-right {
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--white);
-    padding-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-  }
-  .logo-right a { color: var(--mid); text-decoration: none; font-size: 20px; font-weight: 700; }
-  .logo-right a:hover { color: var(--white); }
-
-  /* Calendar */
-  .cal-outer {
-    padding: 32px 48px;
-  }
-  .cal-week-headers {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    border-bottom: 1px solid var(--rule);
-    margin-bottom: 0;
-  }
-  .week-header {
-    padding: 10px 12px;
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    text-align: center;
-  }
-  .week-header.weekend { opacity: 0.45; }
-
-  .cal-body {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    border-left: 1px solid var(--rule);
-    border-top: 1px solid var(--rule);
-  }
-  .cal-day {
-    border-right: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
-    padding: 10px 12px;
-    min-height: 100px;
-    position: relative;
-  }
-  .cal-day.other-month {
-    opacity: 0.25;
-  }
-  .cal-day.weekend {
-    background: rgba(255,255,255,0.015);
-  }
-  .day-num {
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    margin-bottom: 8px;
-    display: inline-block;
-    width: 26px;
-    height: 26px;
-    line-height: 26px;
-    text-align: center;
-  }
-  .day-num.today {
-    background: var(--accent);
-    color: var(--black);
-    font-weight: 700;
-  }
-  .booking-dots {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  .dot-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--mid);
-    cursor: pointer;
-    text-decoration: none;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  .dot-row:hover { color: var(--white); }
-  .dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .dot-accent { background: var(--accent); }
-  .dot-repair { background: var(--repair); }
-  .dot-dim { background: var(--mid); }
-  .dot-blue { background: #5a5aaa; }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html" class="active">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#EECC02;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
 </div>
 
-<nav class="primary-nav">
-  <div class="nav-links">
-    <a href="bookings.html" class="nav-link active">Bookings</a>
-    <a href="equipment.html" class="nav-link">Equipment</a>
-    <a href="settings-company.html" class="nav-link">Settings</a>
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
-  <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
+  </div>
 </nav>
 
-<nav class="secondary-nav">
-  <a href="bookings.html" class="sec-link">List</a>
-  <a href="bookings-week.html" class="sec-link">Week</a>
-  <a href="bookings-month.html" class="sec-link active">Month</a>
-  <a href="#" class="sec-link">4 Weeks</a>
-</nav>
+<!-- Secondary Nav -->
+<div class="border-b border-[#474747]/20 px-6 flex gap-8">
+  <a href="bookings.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">LIST</a>
+  <a href="bookings-week.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">WEEK</a>
+  <a href="bookings-month.html" class="text-white border-b-2 border-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase">MONTH</a>
+</div>
 
-<div class="logo-row">
-  <div>
-    <div class="logo-text">ALLOCATE</div>
-    <div class="logo-sub">Gear Management System</div>
-  </div>
-  <div class="logo-right">
-    <a href="#">←</a>
-    March 2026
-    <a href="#">→</a>
+<!-- Period row -->
+<div class="border-b border-[#474747]/20 px-6 py-4 flex items-center justify-between">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-outline">March 2026</div>
+  <div class="flex items-center gap-4">
+    <a href="#" class="text-outline hover:text-white transition-colors text-sm font-bold">←</a>
+    <a href="#" class="text-outline hover:text-white transition-colors text-sm font-bold">→</a>
   </div>
 </div>
 
-<div class="cal-outer">
-  <div class="cal-week-headers">
-    <div class="week-header">Mon</div>
-    <div class="week-header">Tue</div>
-    <div class="week-header">Wed</div>
-    <div class="week-header">Thu</div>
-    <div class="week-header">Fri</div>
-    <div class="week-header weekend">Sat</div>
-    <div class="week-header weekend">Sun</div>
+<!-- Calendar -->
+<div class="px-6 py-6 pb-24 md:pb-6">
+  <!-- Week day headers -->
+  <div class="grid grid-cols-7 border-b border-outline-variant/20 mb-0">
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline text-center">Mon</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline text-center">Tue</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline text-center">Wed</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline text-center">Thu</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline text-center">Fri</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline/40 text-center">Sat</div>
+    <div class="py-2 text-[10px] font-bold uppercase tracking-widest text-outline/40 text-center">Sun</div>
   </div>
-  <div class="cal-body">
-    <!-- Week 1: Mar starts on Sunday. Feb days fill Mon-Sat -->
-    <!-- Mon Feb 23 -->
-    <div class="cal-day other-month"><span class="day-num">23</span></div>
-    <div class="cal-day other-month"><span class="day-num">24</span></div>
-    <div class="cal-day other-month"><span class="day-num">25</span></div>
-    <div class="cal-day other-month"><span class="day-num">26</span></div>
-    <div class="cal-day other-month"><span class="day-num">27</span></div>
-    <div class="cal-day other-month weekend"><span class="day-num">28</span></div>
+
+  <!-- Calendar body -->
+  <div class="grid grid-cols-7 border-l border-t border-outline-variant/20">
+
+    <!-- Week 1: Feb days fill Mon-Sat -->
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">23</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">24</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">25</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">26</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">27</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25 bg-white/[0.015]"><span class="text-sm font-bold">28</span></div>
     <!-- Sun Mar 1 -->
-    <div class="cal-day weekend">
-      <span class="day-num">1</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Solstigen</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">1</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Solstigen</a>
       </div>
     </div>
 
     <!-- Week 2 -->
-    <div class="cal-day">
-      <span class="day-num">2</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Kustlinjen</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">2</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Kustlinjen</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">3</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">3</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">4</span>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">4</span>
     </div>
-    <div class="cal-day">
-      <span class="day-num">5</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">5</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0"></span>Havet Kallar</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">6</span>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">6</span>
     </div>
-    <div class="cal-day weekend"><span class="day-num">7</span></div>
-    <div class="cal-day weekend"><span class="day-num">8</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">7</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">8</span></div>
 
     <!-- Week 3 -->
-    <div class="cal-day">
-      <span class="day-num">9</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Fjällräven</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">9</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Vintermörker</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Fjällräven</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">10</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">10</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Vintermörker</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">11</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Stockholmsdrömmar</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">11</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Stockholmsdrömmar</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">12</span>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">12</span>
     </div>
-    <div class="cal-day">
-      <span class="day-num">13</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">13</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
       </div>
     </div>
-    <div class="cal-day weekend"><span class="day-num">14</span></div>
-    <div class="cal-day weekend"><span class="day-num">15</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">14</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">15</span></div>
 
     <!-- Week 4 -->
-    <div class="cal-day">
-      <span class="day-num">16</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Kustlinjen S2</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">16</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Kustlinjen S2</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0"></span>Havet Kallar</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">17</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">17</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Grip Pkg</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">18</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Solstigen</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">18</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Grip Pkg</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Solstigen</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">19</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Grip Pkg</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">19</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Grip Pkg</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">20</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Vintermörker</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">20</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Vintermörker</a>
       </div>
     </div>
-    <div class="cal-day weekend"><span class="day-num">21</span></div>
-    <div class="cal-day weekend"><span class="day-num">22</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">21</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">22</span></div>
 
     <!-- Week 5 — includes today (25) -->
-    <div class="cal-day">
-      <span class="day-num">23</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">23</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">24</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Stockholmsdrömmar</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">24</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Stockholmsdrömmar</a>
       </div>
     </div>
-    <div class="cal-day">
-      <!-- TODAY = 25 -->
-      <span class="day-num today">25</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Nordic Noir</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-repair"></span>Havet Kallar</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Vintermörker</a>
+    <!-- TODAY = 25 -->
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6 bg-tertiary text-on-tertiary">25</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Nordic Noir</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0"></span>Havet Kallar</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Vintermörker</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">26</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Kustlinjen S2</a>
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-accent"></span>Fjällräven</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">26</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Kustlinjen S2</a>
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0"></span>Fjällräven</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">27</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-dim"></span>Norrland</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">27</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-outline/50 flex-shrink-0"></span>Norrland</a>
       </div>
     </div>
-    <div class="cal-day weekend"><span class="day-num">28</span></div>
-    <div class="cal-day weekend"><span class="day-num">29</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">28</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] bg-white/[0.015]"><span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">29</span></div>
 
     <!-- Week 6 -->
-    <div class="cal-day">
-      <span class="day-num">30</span>
-      <div class="booking-dots">
-        <a href="booking-detail.html" class="dot-row"><span class="dot dot-blue"></span>Norrland</a>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">30</span>
+      <div class="mt-1 space-y-1">
+        <a href="booking-detail.html" class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors truncate"><span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></span>Norrland</a>
       </div>
     </div>
-    <div class="cal-day">
-      <span class="day-num">31</span>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px]">
+      <span class="text-sm font-bold inline-block w-6 h-6 text-center leading-6">31</span>
     </div>
     <!-- Apr days -->
-    <div class="cal-day other-month"><span class="day-num">1</span></div>
-    <div class="cal-day other-month"><span class="day-num">2</span></div>
-    <div class="cal-day other-month"><span class="day-num">3</span></div>
-    <div class="cal-day other-month weekend"><span class="day-num">4</span></div>
-    <div class="cal-day other-month weekend"><span class="day-num">5</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">1</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">2</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25"><span class="text-sm font-bold">3</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25 bg-white/[0.015]"><span class="text-sm font-bold">4</span></div>
+    <div class="border-r border-b border-outline-variant/20 p-2.5 min-h-[100px] opacity-25 bg-white/[0.015]"><span class="text-sm font-bold">5</span></div>
   </div>
 </div>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
+
 </body>
 </html>

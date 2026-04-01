@@ -9,10 +9,11 @@ export type BookingStatus = 'pending' | 'confirmed' | 'checked_out' | 'returned'
 export type ApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected'
 
 // One entry per equipment item included in the booking.
-// quantity is always 1 for individual-tracked items.
+// quantity is always 1 for serialized-tracked items.
 export interface BookingItem {
   equipmentId: string
   quantity: number
+  unitId?: string   // set for serialized items; identifies the specific physical unit
 }
 
 export interface Booking {
@@ -21,6 +22,7 @@ export interface Booking {
   notes: string
   items: BookingItem[]
   equipmentIds: string[]         // denormalized for query indexing; derived from items
+  unitIds?: string[]             // denormalized; all unitId values from serialized items
   startDate: string              // "YYYY-MM-DD" — inclusive
   endDate: string                // "YYYY-MM-DD" — inclusive
   userId: string | null          // null if user was deleted (GDPR anonymized)

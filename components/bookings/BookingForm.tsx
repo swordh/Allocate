@@ -18,6 +18,7 @@ interface BookingFormProps {
 
 interface SelectedItem {
   equipmentId: string
+  unitId?: string
   quantity: number
 }
 
@@ -70,28 +71,43 @@ export default function BookingForm({
   // Equipment selection handlers
   // ---------------------------------------------------------------------------
 
+  // For quantity equipment: selected when any item matches equipmentId (no unitId)
   function isSelected(id: string): boolean {
-    return selectedItems.some((i) => i.equipmentId === id)
+    return selectedItems.some((i) => i.equipmentId === id && !i.unitId)
+  }
+
+  // For serialized equipment: selected when a specific unit is in the list
+  function isUnitSelected(equipmentId: string, unitId: string): boolean {
+    return selectedItems.some((i) => i.equipmentId === equipmentId && i.unitId === unitId)
   }
 
   function getQuantity(id: string): number {
-    return selectedItems.find((i) => i.equipmentId === id)?.quantity ?? 1
+    return selectedItems.find((i) => i.equipmentId === id && !i.unitId)?.quantity ?? 1
   }
 
   function toggleItem(eq: Equipment) {
     setSelectedItems((prev) => {
-      if (prev.some((i) => i.equipmentId === eq.id)) {
-        return prev.filter((i) => i.equipmentId !== eq.id)
+      if (prev.some((i) => i.equipmentId === eq.id && !i.unitId)) {
+        return prev.filter((i) => !(i.equipmentId === eq.id && !i.unitId))
       }
       return [...prev, { equipmentId: eq.id, quantity: 1 }]
     })
-    // Clear conflicts when selection changes
+    setConflictResult(null)
+  }
+
+  function toggleUnit(equipmentId: string, unitId: string) {
+    setSelectedItems((prev) => {
+      if (prev.some((i) => i.equipmentId === equipmentId && i.unitId === unitId)) {
+        return prev.filter((i) => !(i.equipmentId === equipmentId && i.unitId === unitId))
+      }
+      return [...prev, { equipmentId, unitId, quantity: 1 }]
+    })
     setConflictResult(null)
   }
 
   function setQuantity(id: string, qty: number) {
     setSelectedItems((prev) =>
-      prev.map((i) => (i.equipmentId === id ? { ...i, quantity: qty } : i)),
+      prev.map((i) => (i.equipmentId === id && !i.unitId ? { ...i, quantity: qty } : i)),
     )
     setConflictResult(null)
   }
@@ -277,8 +293,51 @@ export default function BookingForm({
                   <div key={category} className={styles.category}>
                     <div className={styles.categoryLabel}>{category}</div>
                     {items.map((eq) => {
-                      const selected    = isSelected(eq.id)
                       const hasConflict = conflictIds.has(eq.id)
+
+                      if (eq.trackingType === 'serialized') {
+                        const units = eq.units ?? []
+                        return (
+                          <div key={eq.id} className={styles.equipmentGroup}>
+                            <div className={styles.equipmentGroupHeader}>
+                              <span className={styles.equipmentName}>{eq.name}</span>
+                              {eq.requiresApproval && (
+                                <span className={styles.approvalTag}>Approval required</span>
+                              )}
+                              {hasConflict && (
+                                <span className={styles.conflictTag}>Unavailable</span>
+                              )}
+                            </div>
+                            {units.length === 0 ? (
+                              <div className={styles.noUnits}>No units available</div>
+                            ) : (
+                              units.map((unit) => {
+                                const unitSelected = isUnitSelected(eq.id, unit.id)
+                                return (
+                                  <label
+                                    key={unit.id}
+                                    className={`${styles.unitRow} ${unitSelected ? styles.unitRowSelected : ''}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className={styles.checkbox}
+                                      checked={unitSelected}
+                                      onChange={() => toggleUnit(eq.id, unit.id)}
+                                    />
+                                    <span className={styles.unitLabel}>{unit.label}</span>
+                                    {unit.serialNumber && (
+                                      <span className={styles.unitSerial}>#{unit.serialNumber}</span>
+                                    )}
+                                  </label>
+                                )
+                              })
+                            )}
+                          </div>
+                        )
+                      }
+
+                      // quantity equipment
+                      const selected = isSelected(eq.id)
                       return (
                         <div
                           key={eq.id}
@@ -299,7 +358,7 @@ export default function BookingForm({
                               <span className={styles.conflictTag}>Unavailable</span>
                             )}
                           </label>
-                          {selected && eq.trackingType === 'quantity' && (
+                          {selected && (
                             <div className={styles.quantityControl}>
                               <button
                                 type="button"
@@ -382,14 +441,25 @@ export default function BookingForm({
               <div className={styles.summaryEmpty}>None selected</div>
             ) : (
               <ul className={styles.summaryItems}>
-                {selectedEquipment.map(({ item, equipment: eq }) => (
-                  <li key={item.equipmentId} className={styles.summaryItem}>
-                    <span>{eq!.name}</span>
-                    {eq!.trackingType === 'quantity' && (
-                      <span className={styles.summaryQty}>×{item.quantity}</span>
-                    )}
-                  </li>
-                ))}
+                {selectedEquipment.map(({ item, equipment: eq }) => {
+                  const key = item.unitId
+                    ? `${item.equipmentId}:${item.unitId}`
+                    : item.equipmentId
+                  const unitLabel = item.unitId
+                    ? eq!.units?.find((u) => u.id === item.unitId)?.label
+                    : undefined
+                  return (
+                    <li key={key} className={styles.summaryItem}>
+                      <span>
+                        {eq!.name}
+                        {unitLabel ? ` — ${unitLabel}` : ''}
+                      </span>
+                      {eq!.trackingType === 'quantity' && (
+                        <span className={styles.summaryQty}>×{item.quantity}</span>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

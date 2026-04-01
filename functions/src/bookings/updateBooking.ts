@@ -169,10 +169,10 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
           );
         }
 
-        if (equipment.trackingType === 'individual' && item.quantity !== 1) {
+        if (equipment.trackingType === 'serialized' && item.quantity !== 1) {
           throw new HttpsError(
             'invalid-argument',
-            `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
+            `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
           );
         }
 

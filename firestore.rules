@@ -36,6 +36,25 @@ service cloud.firestore {
       allow write: if false; // Cloud Functions only
     }
 
+    // ── Equipment units subcollection (collectionGroup access) ───────────────
+    // collectionGroup('units') queries cannot match path-specific rules.
+    // This wildcard rule enables client-side real-time listeners while keeping
+    // tenant isolation via the denormalized companyId field on each unit doc.
+    match /{path=**}/units/{unitId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == resource.data.companyId;
+      allow write: if false;
+    }
+
+    // ── Equipment units subcollection ─────────────────────────────────────────
+    // Physical unit documents live under equipment/{equipmentId}/units/{unitId}.
+    // All writes are via Server Actions (Admin SDK) only.
+    match /companies/{companyId}/equipment/{equipmentId}/units/{unitId} {
+      allow read: if request.auth != null
+                  && request.auth.token.activeCompanyId == companyId;
+      allow write: if false;  // Server Actions (admin SDK) only
+    }
+
     // ── Categories ────────────────────────────────────────────────────────────
     // All writes are via Cloud Functions only (addCategory, seeded by createCompany).
     match /companies/{companyId}/categories/{categoryId} {

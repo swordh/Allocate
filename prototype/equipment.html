@@ -1,570 +1,318 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Equipment</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Equipment</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-
-  .page-grid {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    min-height: calc(100vh - 29px);
-  }
-  .sidebar-l { border-right: 1px solid var(--rule); }
-  .sidebar-r { border-left: 1px solid var(--rule); }
-  .main { padding: 0 48px; }
-
-  .primary-nav {
-    display: flex;
-    align-items: center;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-    grid-column: 1 / -1;
-  }
-  .nav-links { display: flex; gap: 40px; flex: 1; }
-  .nav-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    letter-spacing: -0.02em;
-  }
-  .nav-link:hover, .nav-link.active { color: var(--white); }
-  .nav-new {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    border: 1px solid #3A3A3A;
-    padding: 5px 18px 12px;
-    letter-spacing: -0.02em;
-  }
-  .nav-new:hover { color: var(--white); border-color: var(--white); }
-
-  .logo-row {
-    grid-column: 1 / -1;
-    border-bottom: 1px solid var(--rule);
-    padding: 24px 48px 16px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-  }
-  .logo-text {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-  }
-  .logo-sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-top: 8px;
-  }
-  .logo-right {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    padding-bottom: 4px;
-  }
-
-  /* Equipment section */
-  .equip-header {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .equip-heading {
-    font-size: 40px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-  }
-  .btn-add {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    background: transparent;
-    color: var(--white);
-    border: 1px solid var(--mid);
-    padding: 10px 20px;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .btn-add:hover { border-color: var(--white); }
-
-  /* Equipment list */
-  .equip-list { grid-column: 1 / -1; }
-
-  /* Category header row */
-  .cat-header {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    background: var(--rule);
-    border-bottom: 1px solid var(--dim);
-  }
-  .cat-label {
-    grid-column: 1 / -1;
-    padding: 10px 48px;
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  /* Equipment type row */
-  .type-row {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    border-bottom: 1px solid var(--dim);
-    min-height: 60px;
-    align-items: center;
-    background: rgba(255,255,255,0.01);
-  }
-  .type-row:hover { background: rgba(255,255,255,0.03); }
-  .type-left {
-    padding: 16px 48px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .tracking-pill {
-    font-size: 8px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--mid);
-    border: 1px solid var(--dim);
-    padding: 2px 7px;
-  }
-  .type-center {
-    padding: 16px 48px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-  .type-name {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--white);
-    letter-spacing: -0.01em;
-  }
-  .cat-pill {
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--mid);
-    border: 1px solid var(--dim);
-    padding: 2px 8px;
-  }
-  .type-actions {
-    padding: 16px 32px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  /* Unit row */
-  .unit-row {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    border-bottom: 1px solid var(--rule);
-    min-height: 48px;
-    align-items: center;
-  }
-  .unit-row:hover { background: rgba(255,255,255,0.015); }
-  .unit-left {
-    padding: 12px 48px;
-    border-right: 1px solid var(--rule);
-  }
-  .unit-center {
-    padding: 10px 48px 10px 80px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .status-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .dot-available { background: var(--white); }
-  .dot-checkedout { background: var(--accent); }
-  .dot-repair { background: var(--repair); }
-  .unit-name {
-    font-size: 14px;
-    font-weight: 300;
-    color: var(--white);
-  }
-  .unit-serial {
-    font-size: 11px;
-    color: var(--mid);
-    letter-spacing: 0.05em;
-  }
-  .unit-status-text {
-    font-size: 10px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-  }
-  .unit-status-text.available { color: var(--mid); }
-  .unit-status-text.checkedout { color: var(--accent); }
-  .unit-status-text.repair { color: var(--repair); }
-  .unit-right {
-    padding: 10px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  /* Add unit row */
-  .add-unit-row {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    border-bottom: 1px solid var(--rule);
-    min-height: 40px;
-    align-items: center;
-  }
-  .add-unit-center {
-    padding: 10px 48px 10px 80px;
-    border-right: 1px solid var(--rule);
-  }
-  .add-unit-link {
-    font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--dim);
-    text-decoration: none;
-  }
-  .add-unit-link:hover { color: var(--mid); }
-
-  /* Quantity type info */
-  .qty-info {
-    font-size: 13px;
-    color: var(--mid);
-  }
-  .qty-info span { color: var(--white); }
-
-  .btn-sm {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    background: transparent;
-    color: var(--mid);
-    border: 1px solid var(--dim);
-    padding: 5px 10px;
-    cursor: pointer;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .btn-sm:hover { color: var(--white); border-color: var(--mid); }
-  .btn-sm.danger:hover { color: var(--repair); border-color: var(--repair); }
-  .btn-sm.add { border-color: var(--mid); color: var(--mid); }
-  .btn-sm.add:hover { color: var(--white); border-color: var(--white); }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  .content-width { max-width: 800px; margin-left: auto; margin-right: auto; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html" class="active">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#EECC02;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
 </div>
 
-<div class="page-grid">
-  <nav class="primary-nav">
-    <div class="nav-links">
-      <a href="bookings.html" class="nav-link">Bookings</a>
-      <a href="equipment.html" class="nav-link active">Equipment</a>
-      <a href="settings-company.html" class="nav-link">Settings</a>
-    </div>
-    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
-  </nav>
-
-  <div class="logo-row">
-    <div>
-      <div class="logo-text">ALLOCATE</div>
-      <div class="logo-sub">Gear Management System</div>
-    </div>
-    <div class="logo-right">4 TYPES · 7 UNITS</div>
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
-
-  <div class="equip-header">
-    <div class="equip-heading">Equipment</div>
-    <a href="#" class="btn-add">+ Add Equipment</a>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
   </div>
+</nav>
 
-  <div class="equip-list">
+<!-- Main Canvas -->
+<main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
+  <div class="content-width">
+
+    <!-- Page header -->
+    <header class="mb-12">
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="font-bold uppercase tracking-tight leading-none text-5xl md:text-6xl">EQUIPMENT</h1>
+        <a href="#" class="border border-outline/40 text-xs font-bold tracking-widest uppercase px-4 py-2 hover:border-white transition-colors text-white">+ Add Equipment</a>
+      </div>
+      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+    </header>
 
     <!-- ── CAMERA ── -->
-    <div class="cat-header">
-      <div class="cat-label">Camera</div>
-    </div>
+    <div class="mb-12">
+      <div class="flex items-center gap-4 mb-0">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Camera</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      </div>
 
-    <!-- Type: ARRI Alexa Mini LF -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Units</span>
+      <!-- Type: ARRI Alexa Mini LF -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">ARRI Alexa Mini LF</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
+        <!-- Unit: Alexa #1 — available -->
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">Alexa #1</span>
+          <span class="text-[10px] text-outline">S/N K1.0012345</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <!-- Unit: Alexa #2 — checked out -->
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-tertiary flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">Alexa #2</span>
+          <span class="text-[10px] text-outline">S/N K1.0012346</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-tertiary ml-4">Checked Out</span>
+        </div>
+        <!-- Add unit link -->
+        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
+          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
+        </div>
       </div>
-      <div class="type-center">
-        <span class="type-name">ARRI Alexa Mini LF</span>
-        <span class="cat-pill">Camera</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm add">+ Add Unit</a>
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
-      </div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-available"></span>
-        <span class="unit-name">Alexa #1</span>
-        <span class="unit-serial">S/N K1.0012345</span>
-        <span class="unit-status-text available">Available</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-checkedout"></span>
-        <span class="unit-name">Alexa #2</span>
-        <span class="unit-serial">S/N K1.0012346</span>
-        <span class="unit-status-text checkedout">Checked Out</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="add-unit-row">
-      <div class="unit-left"></div>
-      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
-      <div class="unit-right"></div>
-    </div>
 
-    <!-- Type: Sony FX9 -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Units</span>
+      <!-- Type: Sony FX9 -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors mt-0">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">Sony FX9</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">Kamera 1</span>
+          <span class="text-[10px] text-outline">S/N FX9-0001</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-tertiary flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">Kamera 2</span>
+          <span class="text-[10px] text-outline">S/N FX9-0002</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-tertiary ml-4">Checked Out</span>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">Kamera 3</span>
+          <span class="text-[10px] text-outline">S/N FX9-0003</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
+          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
+        </div>
       </div>
-      <div class="type-center">
-        <span class="type-name">Sony FX9</span>
-        <span class="cat-pill">Camera</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm add">+ Add Unit</a>
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
-      </div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-available"></span>
-        <span class="unit-name">Sony #1</span>
-        <span class="unit-serial">S/N 1234567</span>
-        <span class="unit-status-text available">Available</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="add-unit-row">
-      <div class="unit-left"></div>
-      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
-      <div class="unit-right"></div>
     </div>
 
     <!-- ── LENSES ── -->
-    <div class="cat-header">
-      <div class="cat-label">Lenses</div>
-    </div>
+    <div class="mb-12">
+      <div class="flex items-center gap-4 mb-0">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Lenses</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      </div>
 
-    <!-- Type: Zeiss Supreme Prime Set -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Units</span>
+      <!-- Type: Zeiss Supreme Prime Set -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">Zeiss Supreme Prime Set</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">25mm T1.5</span>
+          <span class="text-[10px] text-outline">S/N ZS-001</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">50mm T1.5</span>
+          <span class="text-[10px] text-outline">S/N ZS-002</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
+          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
+        </div>
       </div>
-      <div class="type-center">
-        <span class="type-name">Zeiss Supreme Prime Set</span>
-        <span class="cat-pill">Lenses</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm add">+ Add Unit</a>
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
-      </div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-available"></span>
-        <span class="unit-name">25mm T1.5</span>
-        <span class="unit-serial">S/N ZS-001</span>
-        <span class="unit-status-text available">Available</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-available"></span>
-        <span class="unit-name">50mm T1.5</span>
-        <span class="unit-serial">S/N ZS-002</span>
-        <span class="unit-status-text available">Available</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="add-unit-row">
-      <div class="unit-left"></div>
-      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
-      <div class="unit-right"></div>
     </div>
 
     <!-- ── GRIP ── -->
-    <div class="cat-header">
-      <div class="cat-label">Grip</div>
-    </div>
+    <div class="mb-12">
+      <div class="flex items-center gap-4 mb-0">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Grip</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      </div>
 
-    <!-- Type: C-Stand (quantity) -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Qty</span>
+      <!-- Type: C-Stand (quantity) -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">C-Stand</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Qty</span>
+            <span class="text-sm text-outline"><span class="text-white font-bold">10</span> available</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
       </div>
-      <div class="type-center">
-        <span class="type-name">C-Stand</span>
-        <span class="cat-pill">Grip</span>
-        <span class="qty-info"><span>10</span> available</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
-      </div>
-    </div>
 
-    <!-- Type: Sandbag (quantity) -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Qty</span>
-      </div>
-      <div class="type-center">
-        <span class="type-name">Sandbag</span>
-        <span class="cat-pill">Grip</span>
-        <span class="qty-info"><span>20</span> available</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
+      <!-- Type: Sandbag (quantity) -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors mt-0">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">Sandbag</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Qty</span>
+            <span class="text-sm text-outline"><span class="text-white font-bold">20</span> available</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- ── AUDIO ── -->
-    <div class="cat-header">
-      <div class="cat-label">Audio</div>
-    </div>
+    <div class="mb-12">
+      <div class="flex items-center gap-4 mb-0">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Audio</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      </div>
 
-    <!-- Type: Sennheiser MKH 416 -->
-    <div class="type-row">
-      <div class="type-left">
-        <span class="tracking-pill">Units</span>
+      <!-- Type: Sennheiser MKH 416 -->
+      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+          <div class="flex items-center gap-3">
+            <span class="text-base font-bold">Sennheiser MKH 416</span>
+            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
+            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">MKH #1</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
+          <span class="rounded-full w-2 h-2 bg-error flex-shrink-0"></span>
+          <span class="text-sm font-medium flex-1">MKH #2</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-error ml-4">Needs Repair</span>
+        </div>
+        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
+          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
+        </div>
       </div>
-      <div class="type-center">
-        <span class="type-name">Sennheiser MKH 416</span>
-        <span class="cat-pill">Audio</span>
-      </div>
-      <div class="type-actions">
-        <a href="#" class="btn-sm add">+ Add Unit</a>
-        <a href="#" class="btn-sm">Edit</a>
-        <a href="#" class="btn-sm danger">Deactivate</a>
-      </div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-available"></span>
-        <span class="unit-name">MKH #1</span>
-        <span class="unit-status-text available">Available</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="unit-row">
-      <div class="unit-left"></div>
-      <div class="unit-center">
-        <span class="status-dot dot-repair"></span>
-        <span class="unit-name">MKH #2</span>
-        <span class="unit-status-text repair">Needs Repair</span>
-      </div>
-      <div class="unit-right"></div>
-    </div>
-    <div class="add-unit-row">
-      <div class="unit-left"></div>
-      <div class="add-unit-center"><a href="#" class="add-unit-link">+ Add unit</a></div>
-      <div class="unit-right"></div>
     </div>
 
   </div>
-</div>
+</main>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
+
 </body>
 </html>

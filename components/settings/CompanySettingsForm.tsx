@@ -37,30 +37,34 @@ export default function CompanySettingsForm({ name: initialName }: CompanySettin
       <div className={styles.subHeading}>Company</div>
 
       <form onSubmit={handleSubmit} className={styles.form}>
-        {/* Company name field */}
-        <div className={styles.fieldGroup}>
-          <label htmlFor="company-name" className={styles.fieldLabel}>
-            Company Name
-          </label>
-          <input
-            id="company-name"
-            type="text"
-            className={styles.fieldInput}
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setSuccess(false)
-            }}
-            maxLength={100}
-            required
-          />
-        </div>
+        <div className={styles.formSection}>
+          <div className={styles.sectionLabel}>Company Information</div>
 
-        {/* Logo upload — coming soon */}
-        <div className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Logo</span>
-          <div className={styles.logoUploadDisabled}>
-            <span className={styles.logoUploadText}>Logo upload coming soon</span>
+          {/* Company name field */}
+          <div className={styles.fieldGroup}>
+            <label htmlFor="company-name" className={styles.fieldLabel}>
+              Company Name
+            </label>
+            <input
+              id="company-name"
+              type="text"
+              className={styles.fieldInput}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setSuccess(false)
+              }}
+              maxLength={100}
+              required
+            />
+          </div>
+
+          {/* Logo upload — coming soon */}
+          <div className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Logo</span>
+            <div className={styles.logoUploadDisabled}>
+              <span className={styles.logoUploadText}>Logo upload coming soon</span>
+            </div>
           </div>
         </div>
 

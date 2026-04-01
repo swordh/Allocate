@@ -5,7 +5,7 @@ import { createEquipment, updateEquipment } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
 import { useAuth } from '@/lib/auth-context'
-import type { Equipment, EquipmentStatus, TrackingType } from '@/types'
+import type { Equipment, TrackingType } from '@/types'
 import styles from './EquipmentForm.module.css'
 
 interface EquipmentFormProps {
@@ -26,11 +26,10 @@ export default function EquipmentForm({
   const { members, loading: membersLoading } = useMembers(companyId)
 
   const [name, setName] = useState(equipment?.name ?? '')
+  const [description, setDescription] = useState(equipment?.description ?? '')
   const [category, setCategory] = useState(equipment?.category ?? '')
-  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'individual')
+  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'serialized')
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
-  const [serialNumber, setSerialNumber] = useState(equipment?.serialNumber ?? '')
-  const [status, setStatus] = useState(equipment?.status ?? 'available')
   const [requiresApproval, setRequiresApproval] = useState(equipment?.requiresApproval ?? false)
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
   const [submitting, setSubmitting] = useState(false)
@@ -53,8 +52,8 @@ export default function EquipmentForm({
 
     const formData = new FormData()
     formData.set('name', name)
+    formData.set('description', description)
     formData.set('category', category)
-    formData.set('status', status)
     formData.set('requiresApproval', String(requiresApproval))
     formData.set('approverId', approverId)
     if (!isEditMode) {
@@ -62,8 +61,6 @@ export default function EquipmentForm({
     }
     if (trackingType === 'quantity') {
       formData.set('totalQuantity', String(totalQuantity))
-    } else {
-      formData.set('serialNumber', serialNumber)
     }
 
     let result: { id?: string; error?: string }
@@ -105,6 +102,21 @@ export default function EquipmentForm({
         />
       </div>
 
+      {/* Description */}
+      <div className={styles.field}>
+        <label htmlFor="eq-description" className={styles.label}>
+          Description <span className={styles.optional}>(optional)</span>
+        </label>
+        <textarea
+          id="eq-description"
+          value={description ?? ''}
+          onChange={(e) => setDescription(e.target.value)}
+          className={styles.input}
+          rows={3}
+          placeholder="Optional description"
+        />
+      </div>
+
       {/* Tracking type — immutable after creation */}
       <div className={styles.field}>
         <label className={styles.label}>
@@ -112,17 +124,17 @@ export default function EquipmentForm({
           {isEditMode && <span className={styles.optional}> (cannot be changed)</span>}
         </label>
         <div className={styles.toggleGroup}>
-          <label className={`${styles.toggleOption} ${trackingType === 'individual' ? styles.toggleActive : ''}`}>
+          <label className={`${styles.toggleOption} ${trackingType === 'serialized' ? styles.toggleActive : ''}`}>
             <input
               type="radio"
               name="trackingType"
-              value="individual"
-              checked={trackingType === 'individual'}
-              onChange={() => setTrackingType('individual')}
+              value="serialized"
+              checked={trackingType === 'serialized'}
+              onChange={() => setTrackingType('serialized')}
               disabled={isEditMode}
               className={styles.toggleRadio}
             />
-            Individual
+            Serialized (individual units)
           </label>
           <label className={`${styles.toggleOption} ${trackingType === 'quantity' ? styles.toggleActive : ''}`}>
             <input
@@ -138,23 +150,6 @@ export default function EquipmentForm({
           </label>
         </div>
       </div>
-
-      {/* Serial number — individual only */}
-      {trackingType === 'individual' && (
-        <div className={styles.field}>
-          <label htmlFor="eq-serial" className={styles.label}>
-            Serial Number <span className={styles.optional}>(optional)</span>
-          </label>
-          <input
-            id="eq-serial"
-            type="text"
-            value={serialNumber}
-            onChange={(e) => setSerialNumber(e.target.value)}
-            className={styles.input}
-            placeholder="e.g. K1.0012345"
-          />
-        </div>
-      )}
 
       {/* Total quantity — quantity only */}
       {trackingType === 'quantity' && (
@@ -183,30 +178,13 @@ export default function EquipmentForm({
             disabled={categoriesLoading}
           >
             <option value="">
-              {categoriesLoading ? 'Loading…' : 'Select category'}
+              {categoriesLoading ? 'Loading...' : 'Select category'}
             </option>
             {categories.map((cat) => (
               <option key={cat.id} value={cat.name}>
                 {cat.name}
               </option>
             ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Status */}
-      <div className={styles.field}>
-        <label htmlFor="eq-status" className={styles.label}>Status</label>
-        <div className={styles.selectWrapper}>
-          <select
-            id="eq-status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as EquipmentStatus)}
-            className={styles.select}
-          >
-            <option value="available">Available</option>
-            <option value="checked_out">Checked Out</option>
-            <option value="needs_repair">Needs Repair</option>
           </select>
         </div>
       </div>
@@ -243,7 +221,7 @@ export default function EquipmentForm({
               disabled={membersLoading}
             >
               <option value="">
-                {membersLoading ? 'Loading…' : 'Any Admin'}
+                {membersLoading ? 'Loading...' : 'Any Admin'}
               </option>
               {members.map((member) => (
                 <option key={member.uid} value={member.uid}>
@@ -273,7 +251,7 @@ export default function EquipmentForm({
           className={styles.submitBtn}
           disabled={submitting}
         >
-          {submitting ? 'Saving…' : isEditMode ? 'Save Changes' : 'Add Equipment'}
+          {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
         </button>
       </div>
     </form>

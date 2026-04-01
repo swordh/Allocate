@@ -1,31 +1,38 @@
 .container {
-  padding: var(--booking-pad-h);
   max-width: 640px;
 }
 
+/* Internal heading removed — now handled by PageHeader */
 .heading {
-  font-size: var(--font-booking-title);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  margin-bottom: 4px;
-  color: var(--white);
+  display: none;
 }
 
 .subHeading {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--mid);
-  margin-bottom: 48px;
+  display: none;
 }
 
 .form {
   display: flex;
   flex-direction: column;
   gap: 32px;
+}
+
+/* Section wrapper */
+.formSection {
+  background: var(--surface-container-lowest);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  margin-bottom: 8px;
 }
 
 .fieldGroup {
@@ -40,7 +47,7 @@
   font-weight: 700;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: var(--mid);
+  color: var(--on-surface-variant);
 }
 
 .fieldInput {
@@ -48,19 +55,19 @@
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
   color: var(--white);
   font-family: inherit;
   font-size: 20px;
   font-weight: 400;
-  padding: 8px 0 12px;
-  caret-color: var(--accent);
-  transition: border-bottom-color 0.15s ease;
+  padding: 8px 0;
+  border-radius: 0;
+  outline: none;
+  transition: border-bottom-color 0.1s;
 }
 
 .fieldInput:focus {
-  outline: none;
-  border-bottom-color: var(--mid);
+  border-bottom-color: var(--white);
 }
 
 /* Logo upload placeholder */
@@ -68,50 +75,51 @@
   display: flex;
   align-items: center;
   padding: 16px 0;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.3);
 }
 
 .logoUploadText {
   font-size: var(--font-body);
   font-weight: 300;
-  color: var(--mid);
+  color: var(--on-surface-variant);
 }
 
 /* Error banner */
 .errorBanner {
   font-size: var(--font-body);
-  color: var(--repair);
-  border: 1px solid var(--repair);
+  color: var(--error);
+  border: 1px solid var(--error);
   padding: 12px 16px;
 }
 
 /* Success banner */
 .successBanner {
   font-size: var(--font-body);
-  color: var(--accent);
+  color: var(--tertiary);
   border: 1px solid rgba(238, 204, 2, 0.3);
   padding: 12px 16px;
 }
 
-/* Save button */
+/* Save button — white primary */
 .btnSave {
   display: inline-block;
   align-self: flex-start;
-  background: var(--accent);
-  color: var(--black);
+  background: var(--white);
+  color: var(--on-primary);
   border: none;
-  padding: 16px 40px;
+  border-radius: 0;
+  padding: 12px 32px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background 0.1s;
 }
 
 .btnSave:hover:not(:disabled) {
-  opacity: 0.85;
+  background: var(--secondary);
 }
 
 .btnSave:disabled {

@@ -93,7 +93,7 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
                     )}
                   </td>
                   <td className={styles.td}>
-                    <span className={styles.roleText}>
+                    <span className={member.role === 'admin' ? styles.roleText : styles.roleTextMember}>
                       {ROLE_LABELS[member.role] ?? member.role}
                     </span>
                   </td>

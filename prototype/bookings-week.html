@@ -1,156 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Week View</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Week View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-
-  .primary-nav {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .nav-links { display: flex; gap: 40px; flex: 1; }
-  .nav-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    letter-spacing: -0.02em;
-  }
-  .nav-link:hover, .nav-link.active { color: var(--white); }
-  .nav-new {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    border: 1px solid #3A3A3A;
-    padding: 5px 18px 12px;
-    letter-spacing: -0.02em;
-  }
-  .nav-new:hover { color: var(--white); border-color: var(--white); }
-
-  .secondary-nav {
-    display: flex;
-    gap: 40px;
-    padding: 20px 48px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .sec-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-decoration: none;
-    color: var(--dim);
-    letter-spacing: -0.02em;
-  }
-  .sec-link:hover { color: var(--white); }
-  .sec-link.active { color: var(--white); }
-
-  .logo-row {
-    border-bottom: 1px solid var(--rule);
-    padding: 24px 48px 16px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-  }
-  .logo-text {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-  }
-  .logo-sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-top: 8px;
-  }
-  .logo-right {
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--white);
-    padding-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-  }
-  .logo-right a { color: var(--mid); text-decoration: none; font-size: 20px; font-weight: 700; }
-  .logo-right a:hover { color: var(--white); }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 
   /* Calendar grid */
   .cal-wrap {
     overflow-y: auto;
-    max-height: calc(100vh - 380px);
+    max-height: calc(100vh - 260px);
     min-height: 500px;
   }
   .cal-grid {
     display: grid;
     grid-template-columns: 64px repeat(7, 1fr);
-    border-left: 1px solid var(--rule);
+    border-left: 1px solid #1a1a1a;
   }
   .col-header {
     padding: 12px 8px;
     font-size: 10px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--mid);
-    border-right: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
+    color: #919191;
+    border-right: 1px solid #1a1a1a;
+    border-bottom: 1px solid #1a1a1a;
     text-align: center;
-    background: var(--black);
+    background: #080808;
     position: sticky;
     top: 0;
     z-index: 10;
+    font-family: 'General Sans', sans-serif;
   }
-  .col-header.today { color: var(--accent); }
+  .col-header.today { color: #EECC02; }
   .col-header .day-num {
     display: block;
     font-size: 22px;
@@ -161,7 +51,7 @@
   .col-header.weekend { opacity: 0.45; }
   .time-col {
     padding: 0;
-    border-right: 1px solid var(--rule);
+    border-right: 1px solid #1a1a1a;
     position: relative;
   }
   .time-label {
@@ -172,17 +62,18 @@
     padding: 4px 8px 0;
     font-size: 10px;
     letter-spacing: 0.1em;
-    color: var(--mid);
-    border-bottom: 1px solid var(--rule);
+    color: #919191;
+    border-bottom: 1px solid #1a1a1a;
+    font-family: 'General Sans', sans-serif;
   }
   .day-col {
-    border-right: 1px solid var(--rule);
+    border-right: 1px solid #1a1a1a;
     position: relative;
   }
   .day-col.weekend { opacity: 0.5; }
   .hour-cell {
     height: 48px;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid #1a1a1a;
     position: relative;
   }
   .half-line {
@@ -190,7 +81,7 @@
     top: 50%;
     left: 0;
     right: 0;
-    border-top: 1px solid var(--dim);
+    border-top: 1px solid #2A2A2A;
     opacity: 0.3;
   }
 
@@ -211,103 +102,108 @@
     text-decoration: none;
     line-height: 1.3;
     display: block;
+    white-space: pre-line;
   }
-  .block-1 { background: #1a2a1a; color: #5a9a5a; border-left: 2px solid #5a9a5a; }
-  .block-2 { background: #1a1a2a; color: #5a5aaa; border-left: 2px solid #5a5aaa; }
-  .block-3 { background: #2a1a1a; color: var(--repair); border-left: 2px solid var(--repair); }
-  .block-4 { background: #2a2a10; color: var(--accent); border-left: 2px solid var(--accent); }
-  .block-5 { background: #1a2020; color: #5aaa8a; border-left: 2px solid #5aaa8a; }
-
-  /* Current time line */
-  .time-line {
-    position: absolute;
-    left: -12px;
-    right: 0;
-    z-index: 5;
-    pointer-events: none;
-  }
-  .time-line-bar {
-    height: 1px;
-    background: var(--accent);
-    width: 100%;
-  }
-  .time-line-dot {
-    position: absolute;
-    left: -4px;
-    top: -4px;
-    width: 8px;
-    height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
-  }
-  .time-col-line {
-    position: absolute;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    pointer-events: none;
-  }
-  .time-col-line-bar {
-    height: 1px;
-    background: var(--accent);
-    width: 100%;
-  }
-  .time-col-dot {
-    position: absolute;
-    left: -5px;
-    top: -5px;
-    width: 10px;
-    height: 10px;
-    background: var(--accent);
-    border-radius: 50%;
-  }
+  .block-confirmed { background: #1C1B1B; color: #ffffff; border-left: 2px solid #ffffff; }
+  .block-checkedout { background: rgba(238,204,2,0.12); color: #EECC02; border-left: 2px solid #EECC02; }
+  .block-pending { background: #1C1B1B; color: #919191; border-left: 2px solid #474747; }
+  .block-alt { background: #1a2020; color: #5aaa8a; border-left: 2px solid #5aaa8a; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html" class="active">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#EECC02;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
 </div>
 
-<nav class="primary-nav">
-  <div class="nav-links">
-    <a href="bookings.html" class="nav-link active">Bookings</a>
-    <a href="equipment.html" class="nav-link">Equipment</a>
-    <a href="settings-company.html" class="nav-link">Settings</a>
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
-  <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
+  </div>
 </nav>
 
-<nav class="secondary-nav">
-  <a href="bookings.html" class="sec-link">List</a>
-  <a href="bookings-week.html" class="sec-link active">Week</a>
-  <a href="bookings-month.html" class="sec-link">Month</a>
-  <a href="#" class="sec-link">4 Weeks</a>
-</nav>
+<!-- Secondary Nav -->
+<div class="border-b border-[#474747]/20 px-6 flex gap-8">
+  <a href="bookings.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">LIST</a>
+  <a href="bookings-week.html" class="text-white border-b-2 border-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase">WEEK</a>
+  <a href="bookings-month.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">MONTH</a>
+</div>
 
-<div class="logo-row">
-  <div>
-    <div class="logo-text">ALLOCATE</div>
-    <div class="logo-sub">Gear Management System</div>
-  </div>
-  <div class="logo-right">
-    <a href="#">←</a>
-    W.13 — Mar 2026
-    <a href="#">→</a>
+<!-- Logo / period row -->
+<div class="border-b border-[#474747]/20 px-6 py-4 flex items-center justify-between">
+  <div class="text-[10px] font-bold uppercase tracking-widest text-outline">W.13 — Mar 2026</div>
+  <div class="flex items-center gap-4">
+    <a href="#" class="text-outline hover:text-white transition-colors text-sm font-bold">←</a>
+    <a href="#" class="text-outline hover:text-white transition-colors text-sm font-bold">→</a>
   </div>
 </div>
 
+<!-- Calendar -->
 <div class="cal-wrap" id="calWrap">
   <div class="cal-grid">
     <!-- Headers -->
@@ -334,34 +230,35 @@
       <span class="day-num">29</span>Sun
     </div>
 
-    <!-- Time rows 07:00 to 22:00 = 15 hours -->
-    <div class="time-col" id="timeCol">
-      <!-- time labels inserted by JS -->
-    </div>
+    <!-- Time rows 07:00 to 22:00 -->
+    <div class="time-col" id="timeCol"></div>
 
-    <!-- Mon -->
-    <div class="day-col" id="col-mon">
-    </div>
-    <!-- Tue -->
-    <div class="day-col" id="col-tue">
-    </div>
-    <!-- Wed (today) -->
-    <div class="day-col" id="col-wed">
-    </div>
-    <!-- Thu -->
-    <div class="day-col" id="col-thu">
-    </div>
-    <!-- Fri -->
-    <div class="day-col" id="col-fri">
-    </div>
-    <!-- Sat -->
-    <div class="day-col weekend" id="col-sat">
-    </div>
-    <!-- Sun -->
-    <div class="day-col weekend" id="col-sun">
-    </div>
+    <!-- Day columns -->
+    <div class="day-col" id="col-mon"></div>
+    <div class="day-col" id="col-tue"></div>
+    <div class="day-col" id="col-wed"></div>
+    <div class="day-col" id="col-thu"></div>
+    <div class="day-col" id="col-fri"></div>
+    <div class="day-col weekend" id="col-sat"></div>
+    <div class="day-col weekend" id="col-sun"></div>
   </div>
 </div>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
 
 <script>
   const START_HOUR = 7;
@@ -401,14 +298,14 @@
 
   // Booking data: [colId, startH, startM, endH, endM, title, cssClass]
   const bookings = [
-    ['mon', 7, 0, 22, 0, 'Nordic Noir EP4\nGrip Pkg', 'block-4'],
-    ['tue', 8, 0, 14, 0, 'Stockholmsdrömmar\nCamera A', 'block-2'],
-    ['wed', 7, 0, 22, 0, 'Nordic Noir EP4\nGrip Pkg', 'block-4'],
-    ['wed', 9, 0, 16, 0, 'Havet Kallar\nAudio Kit', 'block-3'],
-    ['thu', 7, 0, 19, 0, 'Kustlinjen S2\nCam Package', 'block-1'],
-    ['thu', 8, 0, 22, 0, 'Fjällräven Doc\nFull Kit', 'block-5'],
-    ['fri', 7, 0, 22, 0, 'Norrland\nProduction Kit', 'block-2'],
-    ['fri', 10, 0, 17, 0, 'Solstigen\nLens Pkg', 'block-3'],
+    ['mon', 7, 0, 22, 0, 'Nordic Noir EP4\nGrip Pkg', 'block-checkedout'],
+    ['tue', 8, 0, 14, 0, 'Stockholmsdrömmar\nCamera A', 'block-confirmed'],
+    ['wed', 7, 0, 22, 0, 'Nordic Noir EP4\nGrip Pkg', 'block-checkedout'],
+    ['wed', 9, 0, 16, 0, 'Havet Kallar\nAudio Kit', 'block-alt'],
+    ['thu', 7, 0, 19, 0, 'Kustlinjen S2\nCam Package', 'block-confirmed'],
+    ['thu', 8, 0, 22, 0, 'Fjällräven Doc\nFull Kit', 'block-pending'],
+    ['fri', 7, 0, 22, 0, 'Norrland\nProduction Kit', 'block-pending'],
+    ['fri', 10, 0, 17, 0, 'Solstigen\nLens Pkg', 'block-confirmed'],
   ];
 
   bookings.forEach(([col, sh, sm, eh, em, title, cls]) => {
@@ -432,15 +329,15 @@
   const lineTop = hourToOffset(demoHour, demoMin);
   const timeLine = document.createElement('div');
   timeLine.style.cssText = `position:absolute;left:0;right:0;top:${lineTop}px;z-index:5;pointer-events:none;`;
-  timeLine.innerHTML = `<div style="height:1px;background:var(--accent);width:100%;position:relative;">
-    <div style="position:absolute;left:-5px;top:-4px;width:9px;height:9px;background:var(--accent);border-radius:50%;"></div>
+  timeLine.innerHTML = `<div style="height:1px;background:#EECC02;width:100%;position:relative;">
+    <div style="position:absolute;left:-5px;top:-4px;width:9px;height:9px;background:#EECC02;border-radius:50%;"></div>
   </div>`;
   wedCol.appendChild(timeLine);
 
   // Also add current time marker in time col
   const timeColLine = document.createElement('div');
   timeColLine.style.cssText = `position:absolute;left:0;right:0;top:${lineTop}px;z-index:5;pointer-events:none;`;
-  timeColLine.innerHTML = `<div style="font-size:9px;color:var(--accent);letter-spacing:0.1em;padding-right:6px;text-align:right;margin-top:-8px;">${demoHour.toString().padStart(2,'0')}:${demoMin.toString().padStart(2,'0')}</div>`;
+  timeColLine.innerHTML = `<div style="font-size:9px;color:#EECC02;letter-spacing:0.1em;padding-right:6px;text-align:right;margin-top:-8px;font-family:'General Sans',sans-serif;">${demoHour.toString().padStart(2,'0')}:${demoMin.toString().padStart(2,'0')}</div>`;
   timeCol.style.position = 'relative';
   timeCol.appendChild(timeColLine);
 

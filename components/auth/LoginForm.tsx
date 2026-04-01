@@ -44,52 +44,54 @@ export default function LoginForm() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.wordmark}>Allocate</div>
+      <div className={styles.formCard}>
+        <h1 className={styles.pageTitle}>SIGN IN</h1>
 
-      <form className={styles.form} onSubmit={handleSubmit} noValidate>
-        {error && (
-          <div className={styles.error} role="alert" aria-live="assertive">
-            {error}
+        <form className={styles.form} onSubmit={handleSubmit} noValidate>
+          {error && (
+            <div className={styles.error} role="alert" aria-live="assertive">
+              {error}
+            </div>
+          )}
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="email">Email</label>
+            <input
+              id="email"
+              className={styles.input}
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
+            />
           </div>
-        )}
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="email">Email</label>
-          <input
-            id="email"
-            className={styles.input}
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="password">Password</label>
+            <input
+              id="password"
+              className={styles.input}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="password">Password</label>
-          <input
-            id="password"
-            className={styles.input}
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+          <button className={styles.submitBtn} type="submit" disabled={loading}>
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
 
-        <button className={styles.submitBtn} type="submit" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-
-      <p className={styles.footer}>
-        No account?{' '}
-        <Link href="/signup">Create one</Link>
-      </p>
+        <p className={styles.footer}>
+          No account?{' '}
+          <Link href="/signup">Create one</Link>
+        </p>
+      </div>
     </div>
   )
 }

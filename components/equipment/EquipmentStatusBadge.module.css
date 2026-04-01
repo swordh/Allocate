@@ -6,21 +6,22 @@
   white-space: nowrap;
 }
 
-/* available — no border, dim color */
+/* available — dim text only */
 .available {
-  color: var(--mid);
+  color: rgba(255, 255, 255, 0.5);
 }
 
-/* checked_out — accent background */
+/* checked_out — tertiary accent */
 .checked_out {
-  background: var(--accent);
-  color: var(--black);
-  padding: 2px 8px;
+  color: var(--tertiary);
 }
 
-/* needs_repair — red text + red border */
+/* needs_repair — very dim */
 .needs_repair {
-  color: var(--repair);
-  border: 1px solid var(--repair);
-  padding: 2px 8px;
+  color: rgba(145, 145, 145, 0.4);
+}
+
+/* in_service — very dim */
+.in_service {
+  color: rgba(145, 145, 145, 0.4);
 }

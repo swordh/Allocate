@@ -1,587 +1,329 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — New Booking</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — New Booking</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-
-  .page-grid {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    min-height: calc(100vh - 29px);
-  }
-  .sidebar-l { border-right: 1px solid var(--rule); }
-  .sidebar-r { border-left: 1px solid var(--rule); }
-
-  .primary-nav {
-    display: flex;
-    align-items: center;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-    grid-column: 1 / -1;
-  }
-  .nav-links { display: flex; gap: 40px; flex: 1; }
-  .nav-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    letter-spacing: -0.02em;
-  }
-  .nav-link:hover, .nav-link.active { color: var(--white); }
-  .nav-new {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--white);
-    border: 1px solid var(--white);
-    padding: 5px 18px 12px;
-    letter-spacing: -0.02em;
-  }
-  .nav-new:hover { color: var(--accent); border-color: var(--accent); }
-
-  .logo-row {
-    grid-column: 1 / -1;
-    border-bottom: 1px solid var(--rule);
-    padding: 24px 48px 16px;
-    display: flex;
-    align-items: flex-end;
-  }
-  .logo-text {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-  }
-  .logo-sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-top: 8px;
-  }
-
-  /* Content area */
-  .content-wrap {
-    grid-column: 2 / 3;
-    padding: 0 48px;
-    display: grid;
-    grid-template-columns: 1fr 360px;
-    gap: 0;
-    align-items: start;
-  }
-  .form-section {
-    padding: 48px 48px 48px 0;
-    border-right: 1px solid var(--rule);
-  }
-  .summary-section {
-    padding: 48px 0 48px 48px;
-    position: sticky;
-    top: 0;
-  }
-  .page-heading {
-    font-size: 40px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-    margin-bottom: 48px;
-  }
-
-  /* Form fields */
-  .field-group {
-    margin-bottom: 36px;
-  }
-  .field-label {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 8px;
-    display: block;
-  }
-  .field-input {
-    display: block;
-    width: 100%;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--rule);
-    outline: none;
-    color: var(--white);
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 22px;
-    font-weight: 400;
-    padding: 8px 0 12px;
-    caret-color: var(--accent);
-  }
-  .field-input:focus { border-bottom-color: var(--mid); }
-  .field-input::placeholder { color: var(--dim); }
-
-  .date-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-  }
-  .date-row .field-input {
-    font-size: 18px;
-  }
-
-  /* Textarea */
-  .field-textarea {
-    display: block;
-    width: 100%;
-    background: transparent;
-    border: 1px solid var(--rule);
-    outline: none;
-    color: var(--white);
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 16px;
-    font-weight: 300;
-    padding: 14px 16px;
-    caret-color: var(--accent);
-    resize: vertical;
-    min-height: 96px;
-  }
-  .field-textarea:focus { border-color: var(--mid); }
-  .field-textarea::placeholder { color: var(--dim); }
-
-  /* Equipment checklist */
-  .equip-section-label {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    padding: 10px 0 8px;
-    margin-top: 8px;
-    border-bottom: 1px solid var(--rule);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .type-row {
-    border-bottom: 1px solid var(--rule);
-  }
-  .check-row {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 11px 0;
-    cursor: pointer;
-  }
-  .check-row:hover { background: rgba(255,255,255,0.02); }
-  .check-row input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
-    border: 1px solid var(--mid);
-    background: transparent;
-    cursor: pointer;
-    flex-shrink: 0;
-    position: relative;
-  }
-  .check-row input[type="checkbox"]:checked {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-  .check-row input[type="checkbox"]:checked::after {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 1px;
-    width: 5px;
-    height: 9px;
-    border: 2px solid var(--black);
-    border-left: none;
-    border-top: none;
-    transform: rotate(45deg);
-  }
-  .check-label {
-    font-size: 15px;
-    font-weight: 300;
-    color: var(--white);
-    flex: 1;
-    cursor: pointer;
-  }
-  .tracking-tag {
-    font-size: 8px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--mid);
-    border: 1px solid var(--dim);
-    padding: 2px 6px;
-    flex-shrink: 0;
-  }
-  /* Sub-selector shown when type is checked */
-  .sub-selector {
-    padding: 8px 0 12px 30px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .sub-label {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--mid);
-    flex-shrink: 0;
-  }
-  .sub-select {
-    background: var(--dim);
-    border: 1px solid var(--mid);
-    outline: none;
-    color: var(--white);
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 13px;
-    font-weight: 300;
-    padding: 6px 10px;
-    cursor: pointer;
-    -webkit-appearance: none;
-    appearance: none;
-    min-width: 200px;
-  }
-  .sub-select option { background: #1a1a1a; }
-  .sub-number {
-    background: var(--dim);
-    border: 1px solid var(--mid);
-    outline: none;
-    color: var(--white);
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 13px;
-    font-weight: 300;
-    padding: 6px 10px;
-    width: 80px;
-    text-align: center;
-  }
-  .qty-avail {
-    font-size: 11px;
-    color: var(--mid);
-  }
-
-  /* Summary panel */
-  .summary-heading {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 24px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .summary-empty {
-    font-size: 14px;
-    color: var(--dim);
-    font-style: italic;
-  }
-  .summary-item {
-    font-size: 12px;
-    font-weight: 300;
-    color: var(--white);
-    padding: 8px 0;
-    border-bottom: 1px solid var(--rule);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .summary-date-info {
-    margin-top: 24px;
-    padding: 16px 0;
-    border-bottom: 1px solid var(--rule);
-  }
-  .summary-date-row {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 8px;
-  }
-  .summary-date-val {
-    font-size: 15px;
-    font-weight: 400;
-    color: var(--white);
-  }
-  .approval-notice {
-    margin-top: 20px;
-    padding: 14px 16px;
-    border: 1px solid #3a2a00;
-    background: #1a1500;
-    font-size: 12px;
-    color: #c8a800;
-    line-height: 1.5;
-  }
-  .approval-notice strong {
-    display: block;
-    font-size: 9px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  .btn-confirm {
-    display: block;
-    width: 100%;
-    background: var(--accent);
-    color: var(--black);
-    border: none;
-    padding: 18px 24px;
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    cursor: pointer;
-    margin-top: 28px;
-  }
-  .btn-confirm:hover { background: #d4b500; }
-
-  .item-count {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    color: var(--accent);
-    background: rgba(238,204,2,0.1);
-    padding: 2px 7px;
-    font-weight: 700;
-  }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  .content-width { max-width: 800px; margin-left: auto; margin-right: auto; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html" class="active">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#EECC02;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
 </div>
 
-<div class="page-grid">
-  <nav class="primary-nav">
-    <div class="nav-links">
-      <a href="bookings.html" class="nav-link">Bookings</a>
-      <a href="equipment.html" class="nav-link">Equipment</a>
-      <a href="settings-company.html" class="nav-link">Settings</a>
-    </div>
-    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
-  </nav>
-
-  <div class="logo-row">
-    <div>
-      <div class="logo-text">ALLOCATE</div>
-      <div class="logo-sub">Gear Management System</div>
-    </div>
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
-
-  <div class="sidebar-l"></div>
-  <div class="content-wrap">
-    <div class="form-section">
-      <div class="page-heading">New Booking</div>
-
-      <div class="field-group">
-        <label class="field-label" for="title">Project / Title</label>
-        <input class="field-input" type="text" id="title" placeholder="e.g. Nordic Noir EP5 — Camera Package">
-      </div>
-
-      <div class="field-group">
-        <label class="field-label">Date</label>
-        <div class="date-row">
-          <div>
-            <label class="field-label" style="font-size:9px;">Start Date</label>
-            <input class="field-input" type="date" value="2026-03-26">
-          </div>
-          <div>
-            <label class="field-label" style="font-size:9px;">End Date</label>
-            <input class="field-input" type="date" value="2026-03-26">
-          </div>
-        </div>
-      </div>
-
-      <div class="field-group">
-        <label class="field-label">Time</label>
-        <div class="date-row">
-          <div>
-            <label class="field-label" style="font-size:9px;">Start Time</label>
-            <input class="field-input" type="time" value="07:00">
-          </div>
-          <div>
-            <label class="field-label" style="font-size:9px;">End Time</label>
-            <input class="field-input" type="time" value="22:00">
-          </div>
-        </div>
-      </div>
-
-      <div class="field-group">
-        <label class="field-label">Equipment</label>
-
-        <div class="equip-section-label">Camera</div>
-
-        <!-- ARRI Alexa Mini LF — unit-tracked, selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox" checked>
-            <span class="check-label">ARRI Alexa Mini LF</span>
-            <span class="tracking-tag">Units</span>
-          </label>
-          <div class="sub-selector">
-            <span class="sub-label">Which unit?</span>
-            <select class="sub-select">
-              <option>Alexa #1 — S/N K1.0012345 (available)</option>
-              <option>Alexa #2 — S/N K1.0012346 (checked out)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Sony FX9 — unit-tracked, not selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox">
-            <span class="check-label">Sony FX9</span>
-            <span class="tracking-tag">Units</span>
-          </label>
-        </div>
-
-        <div class="equip-section-label">Lenses</div>
-
-        <!-- Zeiss Supreme Prime Set — unit-tracked, selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox" checked>
-            <span class="check-label">Zeiss Supreme Prime Set</span>
-            <span class="tracking-tag">Units</span>
-          </label>
-          <div class="sub-selector">
-            <span class="sub-label">Which unit?</span>
-            <select class="sub-select">
-              <option>25mm T1.5 — S/N ZS-001 (available)</option>
-              <option>50mm T1.5 — S/N ZS-002 (available)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="equip-section-label">Grip</div>
-
-        <!-- C-Stand — quantity-tracked, selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox" checked>
-            <span class="check-label">C-Stand</span>
-            <span class="tracking-tag">Qty</span>
-          </label>
-          <div class="sub-selector">
-            <span class="sub-label">How many?</span>
-            <input type="number" class="sub-number" value="4" min="1" max="10">
-            <span class="qty-avail">max 10 available</span>
-          </div>
-        </div>
-
-        <!-- Sandbag — quantity-tracked, not selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox">
-            <span class="check-label">Sandbag</span>
-            <span class="tracking-tag">Qty</span>
-          </label>
-        </div>
-
-        <div class="equip-section-label">Audio</div>
-
-        <!-- Sennheiser MKH 416 — unit-tracked, not selected -->
-        <div class="type-row">
-          <label class="check-row">
-            <input type="checkbox">
-            <span class="check-label">Sennheiser MKH 416</span>
-            <span class="tracking-tag">Units</span>
-          </label>
-        </div>
-
-      </div>
-
-      <div class="field-group">
-        <label class="field-label" for="notes">Notes</label>
-        <textarea class="field-textarea" id="notes" rows="4" placeholder="Any additional notes or special requirements…"></textarea>
-      </div>
-    </div>
-
-    <!-- Summary panel -->
-    <div class="summary-section">
-      <div class="summary-heading">Booking Summary</div>
-
-      <div class="summary-item">
-        <span>ARRI Alexa Mini LF</span>
-        <span style="font-size:10px;color:var(--mid);">Alexa #1</span>
-      </div>
-      <div class="summary-item">
-        <span>Zeiss Supreme Prime Set</span>
-        <span style="font-size:10px;color:var(--mid);">25mm T1.5</span>
-      </div>
-      <div class="summary-item">
-        <span>C-Stand</span>
-        <span style="font-size:10px;color:var(--mid);">×4</span>
-      </div>
-
-      <div style="padding:10px 0;font-size:10px;letter-spacing:0.2em;color:var(--mid);text-transform:uppercase;margin-top:4px;">
-        3 items selected
-      </div>
-
-      <div class="summary-date-info">
-        <div class="summary-date-row">Date</div>
-        <div class="summary-date-val">Thu 26 Mar 2026</div>
-      </div>
-      <div class="summary-date-info">
-        <div class="summary-date-row">Time</div>
-        <div class="summary-date-val">07:00 → 22:00</div>
-      </div>
-
-      <button class="btn-confirm">Confirm Booking</button>
-    </div>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="border border-white text-white px-5 py-2 text-xs font-bold tracking-wider hover:bg-white hover:text-[#080808] transition-all duration-100">NEW BOOKING</a>
   </div>
-  <div class="sidebar-r"></div>
-</div>
+</nav>
+
+<!-- Main Canvas -->
+<main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
+  <div class="content-width">
+
+    <!-- Header -->
+    <header class="mb-12">
+      <h1 class="font-bold uppercase tracking-tight leading-none mb-6 text-5xl md:text-6xl">NEW BOOKING</h1>
+      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+    </header>
+
+    <!-- 2-col layout -->
+    <div class="flex flex-col md:flex-row gap-0 items-start">
+
+      <!-- Form -->
+      <div class="flex-1 md:pr-12 md:border-r md:border-outline-variant/20 pb-12">
+
+        <!-- Project / Title -->
+        <div class="mb-10">
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="title">Project / Title</label>
+          <div class="border-b border-outline-variant/30">
+            <input class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" type="text" id="title" placeholder="e.g. Nordic Noir EP5 — Camera Package">
+          </div>
+        </div>
+
+        <!-- Date -->
+        <div class="mb-10">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Date</div>
+          <div class="grid grid-cols-2 gap-6">
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">Start Date</label>
+              <div class="border-b border-outline-variant/30">
+                <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="date" value="2026-03-26">
+              </div>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">End Date</label>
+              <div class="border-b border-outline-variant/30">
+                <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="date" value="2026-03-26">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Time -->
+        <div class="mb-10">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Time</div>
+          <div class="grid grid-cols-2 gap-6">
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">Start Time</label>
+              <div class="border-b border-outline-variant/30">
+                <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="time" value="07:00">
+              </div>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">End Time</label>
+              <div class="border-b border-outline-variant/30">
+                <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="time" value="22:00">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Equipment -->
+        <div class="mb-10">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Equipment</div>
+
+          <!-- Category: Camera -->
+          <div class="flex items-center gap-4 py-2 mb-1">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Camera</span>
+            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+          </div>
+
+          <!-- ARRI Alexa Mini LF — checked -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+              </div>
+              <span class="flex-1 text-sm font-medium text-white">ARRI Alexa Mini LF</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
+            </label>
+            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">Which unit?</span>
+              <select class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
+                <option>Alexa #1 — S/N K1.0012345 (available)</option>
+                <option>Alexa #2 — S/N K1.0012346 (checked out)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Sony FX9 — unchecked -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
+              <span class="flex-1 text-sm font-medium text-white">Sony FX9</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
+            </label>
+          </div>
+
+          <!-- Category: Lenses -->
+          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Lenses</span>
+            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+          </div>
+
+          <!-- Zeiss Supreme Prime Set — checked -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+              </div>
+              <span class="flex-1 text-sm font-medium text-white">Zeiss Supreme Prime Set</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
+            </label>
+            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">Which unit?</span>
+              <select class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
+                <option>25mm T1.5 — S/N ZS-001 (available)</option>
+                <option>50mm T1.5 — S/N ZS-002 (available)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Category: Grip -->
+          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Grip</span>
+            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+          </div>
+
+          <!-- C-Stand — checked, quantity -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+              </div>
+              <span class="flex-1 text-sm font-medium text-white">C-Stand</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Qty</span>
+            </label>
+            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">How many?</span>
+              <input type="number" class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 w-20 text-center caret-tertiary" value="4" min="1" max="10">
+              <span class="text-[10px] text-outline">max 10 available</span>
+            </div>
+          </div>
+
+          <!-- Sandbag — unchecked -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
+              <span class="flex-1 text-sm font-medium text-white">Sandbag</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Qty</span>
+            </label>
+          </div>
+
+          <!-- Category: Audio -->
+          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Audio</span>
+            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+          </div>
+
+          <!-- Sennheiser MKH 416 — unchecked -->
+          <div class="border-b border-outline-variant/20">
+            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
+              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
+              <span class="flex-1 text-sm font-medium text-white">Sennheiser MKH 416</span>
+              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="mb-10">
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-3" for="notes">Notes</label>
+          <textarea class="block w-full bg-transparent border border-outline-variant/30 outline-none text-white text-sm font-light p-4 resize-y min-h-24 caret-tertiary" id="notes" rows="4" placeholder="Any additional notes or special requirements…" style="caret-color:#EECC02;"></textarea>
+        </div>
+      </div>
+
+      <!-- Summary panel -->
+      <div class="md:pl-12 md:w-80 md:sticky md:top-24 pb-12">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-6 pb-3 border-b border-outline-variant/20">Booking Summary</div>
+
+        <!-- Selected items -->
+        <div class="space-y-0">
+          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+            <span class="text-sm font-medium">ARRI Alexa Mini LF</span>
+            <span class="text-[10px] text-outline">Alexa #1</span>
+          </div>
+          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+            <span class="text-sm font-medium">Zeiss Supreme Prime Set</span>
+            <span class="text-[10px] text-outline">25mm T1.5</span>
+          </div>
+          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+            <span class="text-sm font-medium">C-Stand</span>
+            <span class="text-[10px] text-outline">×4</span>
+          </div>
+        </div>
+
+        <div class="text-[10px] font-bold uppercase tracking-widest text-tertiary mt-3 mb-6">3 items selected</div>
+
+        <!-- Date / Time -->
+        <div class="py-4 border-b border-outline-variant/20 mb-2">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-1">Date</div>
+          <div class="text-base font-medium">Thu 26 Mar 2026</div>
+        </div>
+        <div class="py-4 border-b border-outline-variant/20 mb-6">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-1">Time</div>
+          <div class="text-base font-medium">07:00 → 22:00</div>
+        </div>
+
+        <button class="block w-full bg-tertiary text-on-tertiary py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">CONFIRM BOOKING</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
+
 </body>
 </html>

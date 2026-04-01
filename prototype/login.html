@@ -1,163 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Sign In</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Sign In</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-  .center-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 48px 24px;
-  }
-  .auth-box {
-    width: 100%;
-    max-width: 440px;
-  }
-  .logo {
-    font-size: clamp(64px, 10vw, 108px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-    margin-bottom: 8px;
-  }
-  .sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 64px;
-  }
-  .form-group {
-    margin-bottom: 0;
-    border-bottom: 1px solid var(--rule);
-  }
-  .form-group:first-of-type {
-    border-top: 1px solid var(--rule);
-  }
-  .form-group label {
-    display: block;
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    padding: 16px 0 4px;
-  }
-  .form-group input {
-    display: block;
-    width: 100%;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--white);
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 20px;
-    font-weight: 400;
-    padding: 4px 0 16px;
-    caret-color: var(--accent);
-  }
-  .form-group input::placeholder { color: var(--dim); }
-  .btn-primary {
-    display: block;
-    width: 100%;
-    background: var(--accent);
-    color: var(--black);
-    border: none;
-    padding: 18px 24px;
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    cursor: pointer;
-    margin-top: 32px;
-  }
-  .btn-primary:hover { background: #d4b500; }
-  .auth-link {
-    display: block;
-    text-align: center;
-    margin-top: 24px;
-    font-size: 14px;
-    color: var(--mid);
-    text-decoration: none;
-  }
-  .auth-link:hover { color: var(--white); }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html" class="active">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#EECC02;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
 </div>
-<div class="center-wrap">
-  <div class="auth-box">
-    <div class="logo">ALLOCATE</div>
-    <div class="sub">Gear Management System</div>
-    <div class="form-group">
-      <label for="email">Email</label>
-      <input type="email" id="email" placeholder="you@studio.com" autocomplete="email">
+
+<div class="flex-1 flex flex-col items-center justify-center px-6 py-12">
+  <div class="w-full max-w-sm">
+    <div class="font-black tracking-tighter text-white uppercase text-5xl mb-2">ALLOCATE</div>
+    <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-16">Gear Management System</div>
+
+    <!-- Email field -->
+    <div class="border-t border-outline-variant/30">
+      <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="email">Email</label>
+      <div class="border-b border-outline-variant/30">
+        <input type="email" id="email" class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" placeholder="you@studio.com" autocomplete="email" style="caret-color:#EECC02;">
+      </div>
     </div>
-    <div class="form-group">
-      <label for="password">Password</label>
-      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+
+    <!-- Password field -->
+    <div class="border-b border-outline-variant/30">
+      <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="password">Password</label>
+      <input type="password" id="password" class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" placeholder="••••••••" autocomplete="current-password" style="caret-color:#EECC02;">
     </div>
-    <button class="btn-primary">Sign In</button>
-    <a href="signup.html" class="auth-link">Create account →</a>
+
+    <button class="block w-full bg-tertiary text-on-tertiary mt-8 py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">SIGN IN</button>
+    <a href="signup.html" class="block text-center mt-6 text-sm text-outline hover:text-white transition-colors">Create account →</a>
   </div>
 </div>
+
 </body>
 </html>

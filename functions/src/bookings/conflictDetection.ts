@@ -21,7 +21,7 @@ export interface BookingItemInput {
 }
 
 export interface EquipmentData {
-  trackingType: 'individual' | 'quantity';
+  trackingType: 'serialized' | 'quantity';
   totalQuantity: number;
   name: string;
   active: boolean;
@@ -108,7 +108,7 @@ export async function detectConflictsReadOnly(
       return data.startDate <= endDate;
     });
 
-    if (equipment.trackingType === 'individual') {
+    if (equipment.trackingType === 'serialized') {
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,
@@ -192,7 +192,7 @@ export async function detectConflictsInTransaction(
       return data.startDate <= endDate;
     });
 
-    if (equipment.trackingType === 'individual') {
+    if (equipment.trackingType === 'serialized') {
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,
