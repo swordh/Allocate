@@ -3,12 +3,35 @@ export type EquipmentStatus = 'available' | 'checked_out' | 'needs_repair'
 // 'serialized' = one parent doc per equipment type, one subcollection doc per physical unit
 // 'quantity'   = one document represents a pool of interchangeable items
 export type TrackingType = 'serialized' | 'quantity'
-export type UnitCondition = 'new' | 'good' | 'fair' | 'poor'
 
 // Default categories seeded for every new company
 export const DEFAULT_EQUIPMENT_CATEGORIES = [
   'Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories',
 ] as const
+
+export interface CustomFieldText {
+  id: string
+  label: string
+  type: 'text'
+  value: string
+}
+
+export interface CustomFieldNumber {
+  id: string
+  label: string
+  type: 'number'
+  value: number
+}
+
+export interface CustomFieldRange {
+  id: string
+  label: string
+  type: 'range'
+  value: { min: number; max: number | null }
+}
+
+export type CustomField = CustomFieldText | CustomFieldNumber | CustomFieldRange
+export type CustomFieldType = CustomField['type']
 
 export interface Equipment {
   id: string
@@ -22,6 +45,7 @@ export interface Equipment {
   requiresApproval: boolean   // triggers approval flow when booked
   approverId: string | null   // specific user who must approve; Admin if null
   createdAt: string | null    // ISO string (converted from Timestamp at read boundary)
+  customFields: CustomField[] // defaults to []
   units?: EquipmentUnit[]     // hydrated at query time, never stored in Firestore
 }
 
@@ -32,7 +56,6 @@ export interface EquipmentUnit {
   label: string         // e.g. "Kamera 1"
   serialNumber: string | null
   status: EquipmentStatus
-  condition: UnitCondition
   notes: string | null
   active: boolean
   createdAt: string | null

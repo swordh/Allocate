@@ -18,6 +18,7 @@ function docToEquipment(doc: FirebaseFirestore.DocumentSnapshot): Equipment {
     requiresApproval: data.requiresApproval ?? false,
     approverId:       data.approverId       ?? null,
     createdAt:        data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,
+    customFields:     Array.isArray(data.customFields) ? data.customFields : [],
   }
 }
 
@@ -30,7 +31,6 @@ function docToUnit(doc: FirebaseFirestore.DocumentSnapshot): EquipmentUnit {
     label:        data.label        ?? '',
     serialNumber: data.serialNumber ?? null,
     status:       data.status       ?? 'available',
-    condition:    data.condition    ?? 'good',
     notes:        data.notes        ?? null,
     active:       data.active       ?? true,
     createdAt:    data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,

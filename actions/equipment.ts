@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import type { Subscription, UnitCondition, EquipmentStatus } from '@/types'
+import type { Subscription, EquipmentStatus } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
 
@@ -53,6 +53,9 @@ export async function createEquipment(
   const requiresApproval = formData.get('requiresApproval') === 'true'
   const approverIdRaw = formData.get('approverId') as string | null
   const approverId: string | null = approverIdRaw?.trim() || null
+
+  const customFieldsRaw = formData.get('customFields') as string | null
+  const customFields = customFieldsRaw ? JSON.parse(customFieldsRaw) : []
 
   // ── Transaction: check plan limit + write atomically ──────────────────────
   let newEquipmentId: string
@@ -110,6 +113,7 @@ export async function createEquipment(
         active: true,
         requiresApproval,
         approverId,
+        customFields,
         createdAt: FieldValue.serverTimestamp(),
         createdBy: session.uid,
       })
@@ -189,6 +193,11 @@ export async function updateEquipment(
   const rawApproverId = formData.get('approverId') as string | null
   if (rawApproverId !== null) {
     updates['approverId'] = rawApproverId.trim() || null
+  }
+
+  const rawCustomFields = formData.get('customFields') as string | null
+  if (rawCustomFields !== null) {
+    updates['customFields'] = JSON.parse(rawCustomFields)
   }
 
   const rawTotalQuantity = formData.get('totalQuantity')
@@ -319,11 +328,6 @@ export async function createUnit(
   if (label.length > 100) return { error: 'Label must be 100 characters or fewer.' }
 
   const serialNumber = (formData.get('serialNumber') as string | null)?.trim() || null
-  const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor'] as const
-  const conditionRaw = formData.get('condition') as string | null
-  const condition: UnitCondition = (VALID_CONDITIONS as readonly string[]).includes(conditionRaw ?? '')
-    ? (conditionRaw as UnitCondition)
-    : 'good'
   const notes = (formData.get('notes') as string | null)?.trim() || null
 
   const unitRef = parentRef.collection('units').doc()
@@ -333,7 +337,6 @@ export async function createUnit(
     label,
     serialNumber,
     status: 'available',
-    condition,
     notes,
     active: true,
     createdAt: FieldValue.serverTimestamp(),
@@ -363,16 +366,13 @@ export async function updateUnit(
   if (!label) return { error: 'Label is required.' }
 
   const VALID_STATUSES: EquipmentStatus[] = ['available', 'checked_out', 'needs_repair']
-  const VALID_CONDITIONS: UnitCondition[] = ['new', 'good', 'fair', 'poor']
 
   const statusRaw = formData.get('status') as string | null
-  const conditionRaw = formData.get('condition') as string | null
 
   await unitRef.update({
     label,
     serialNumber: (formData.get('serialNumber') as string | null)?.trim() || null,
     status: VALID_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'available',
-    condition: VALID_CONDITIONS.includes(conditionRaw as UnitCondition) ? conditionRaw : 'good',
     notes: (formData.get('notes') as string | null)?.trim() || null,
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: session.uid,
