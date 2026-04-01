@@ -1,324 +1,167 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Settings: Subscription</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Settings: Subscription</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-
-  .page-grid {
-    display: grid;
-    grid-template-columns: 160px 1fr 160px;
-    min-height: calc(100vh - 29px);
-  }
-  .sidebar-l { border-right: 1px solid var(--rule); }
-  .sidebar-r { border-left: 1px solid var(--rule); }
-
-  .primary-nav {
-    display: flex;
-    align-items: center;
-    padding: 32px 48px;
-    border-bottom: 1px solid var(--rule);
-    grid-column: 1 / -1;
-  }
-  .nav-links { display: flex; gap: 40px; flex: 1; }
-  .nav-link {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    letter-spacing: -0.02em;
-  }
-  .nav-link:hover, .nav-link.active { color: var(--white); }
-  .nav-new {
-    font-size: 28px;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--mid);
-    border: 1px solid #3A3A3A;
-    padding: 5px 18px 12px;
-    letter-spacing: -0.02em;
-  }
-  .nav-new:hover { color: var(--white); border-color: var(--white); }
-
-  .settings-subnav {
-    display: flex;
-    gap: 40px;
-    padding: 20px 48px;
-    border-bottom: 1px solid var(--rule);
-    grid-column: 1 / -1;
-  }
-  .stab {
-    font-size: 28px;
-    font-weight: 700;
-    text-decoration: none;
-    color: var(--dim);
-    letter-spacing: -0.02em;
-  }
-  .stab:hover { color: var(--white); }
-  .stab.active { color: var(--white); }
-
-  .logo-row {
-    grid-column: 1 / -1;
-    border-bottom: 1px solid var(--rule);
-    padding: 24px 48px 16px;
-    display: flex;
-    align-items: flex-end;
-  }
-  .logo-text {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-  }
-  .logo-sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-top: 8px;
-  }
-
-  .content {
-    grid-column: 2 / 3;
-    padding: 48px 48px 80px;
-  }
-  .settings-heading {
-    font-size: 40px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-  .settings-sub-heading {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 40px;
-  }
-
-  /* Current plan block */
-  .current-plan-block {
-    border: 1px solid rgba(238,204,2,0.3);
-    padding: 28px 32px;
-    margin-bottom: 32px;
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex-wrap: wrap;
-  }
-  .plan-badge {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    background: var(--accent);
-    color: var(--black);
-    padding: 6px 14px;
-  }
-  .plan-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--mid);
-  }
-  .status-dot.active { background: #40c870; }
-  .status-dot.trialing { background: var(--accent); }
-  .status-dot.past-due { background: var(--repair); }
-  .status-dot.canceled { background: var(--dim); }
-  .status-label {
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--mid);
-  }
-  .plan-details {
-    font-size: 13px;
-    color: var(--mid);
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .detail-sep { color: var(--dim); }
-  .trial-notice {
-    margin-left: auto;
-    background: rgba(238,204,2,0.08);
-    border: 1px solid rgba(238,204,2,0.2);
-    padding: 10px 18px;
-    font-size: 11px;
-    color: #c8a800;
-    letter-spacing: 0.12em;
-  }
-  .renewal-notice {
-    font-size: 12px;
-    color: var(--mid);
-  }
-
-  /* No subscription */
-  .no-subscription {
-    padding: 32px 0;
-  }
-  .no-sub-text {
-    font-size: 16px;
-    color: var(--mid);
-  }
-
-  /* Error banner */
-  .error-banner {
-    background: rgba(204,51,51,0.12);
-    border: 1px solid rgba(204,51,51,0.4);
-    color: #e07070;
-    font-size: 13px;
-    padding: 12px 16px;
-    margin-bottom: 24px;
-  }
-
-  /* Manage button */
-  .btn-manage {
-    display: inline-block;
-    background: var(--accent);
-    color: var(--black);
-    border: none;
-    padding: 16px 40px;
-    font-family: 'General Sans', system-ui, sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    cursor: pointer;
-  }
-  .btn-manage:hover { background: #d4b500; }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  .content-width { max-width: 800px; margin-left: auto; margin-right: auto; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <a href="index.html">← Back to index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html" class="active">settings-subscription</a>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#EECC02;text-decoration:none;">settings-subscription</a>
 </div>
 
-<div class="page-grid">
-  <nav class="primary-nav">
-    <div class="nav-links">
-      <a href="bookings.html" class="nav-link">Bookings</a>
-      <a href="equipment.html" class="nav-link">Equipment</a>
-      <a href="settings-company.html" class="nav-link active">Settings</a>
-    </div>
-    <a href="booking-new.html" class="nav-new">[ New Booking ]</a>
-  </nav>
-
-  <div class="settings-subnav">
-    <a href="settings-company.html" class="stab">Company</a>
-    <a href="settings-team.html" class="stab">Team</a>
-    <a href="settings-subscription.html" class="stab active">Subscription</a>
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="settings-company.html">SETTINGS</a>
   </div>
-
-  <div class="logo-row">
-    <div>
-      <div class="logo-text">ALLOCATE</div>
-      <div class="logo-sub">Gear Management System</div>
-    </div>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
   </div>
+</nav>
 
-  <div class="sidebar-l"></div>
-  <div class="content">
-    <div class="settings-heading">Settings</div>
-    <div class="settings-sub-heading">Subscription</div>
+<!-- Settings sub-nav -->
+<div class="border-b border-[#474747]/20 px-6 flex gap-8">
+  <a href="settings-company.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">COMPANY</a>
+  <a href="settings-team.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">TEAM</a>
+  <a href="settings-subscription.html" class="text-white border-b-2 border-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase">SUBSCRIPTION</a>
+</div>
 
-    <!-- Active subscription state -->
-    <div class="current-plan-block">
-      <span class="plan-badge">Small</span>
+<!-- Main Canvas -->
+<main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
+  <div class="content-width">
 
-      <div class="plan-status">
-        <span class="status-dot trialing"></span>
-        <span class="status-label">Trial</span>
+    <header class="mb-12">
+      <h1 class="font-bold uppercase tracking-tight leading-none mb-1 text-5xl md:text-6xl">SETTINGS</h1>
+      <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-6">Subscription</div>
+      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+    </header>
+
+    <!-- Current plan block -->
+    <div class="border border-tertiary/30 px-6 py-6 mb-8 flex flex-wrap items-center gap-6">
+      <span class="bg-tertiary text-on-tertiary text-[11px] font-bold uppercase tracking-widest px-3 py-1.5">Small</span>
+
+      <div class="flex items-center gap-2">
+        <span class="rounded-full w-2 h-2 bg-tertiary"></span>
+        <span class="text-[11px] font-bold uppercase tracking-widest text-outline">Trial</span>
       </div>
 
-      <div class="plan-details">
+      <div class="flex items-center gap-2 text-sm text-outline">
         <span>25 equipment items</span>
-        <span class="detail-sep">·</span>
+        <span class="text-outline-variant">·</span>
         <span>10 members</span>
       </div>
 
-      <!-- Shown during trial -->
-      <div class="trial-notice">Trial ends 2 Apr 2026</div>
+      <!-- Trial notice -->
+      <div class="ml-auto bg-tertiary/8 border border-tertiary/20 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-tertiary/80">Trial ends 2 Apr 2026</div>
 
-      <!-- Shown when active (not trial) — uncomment to preview
-      <div class="renewal-notice">Renews 25 Apr 2026</div>
+      <!-- Active renewal notice — uncomment to preview
+      <div class="ml-auto text-xs text-outline">Renews 25 Apr 2026</div>
       -->
     </div>
 
     <!-- Error banner — shown when portal redirect fails -->
-    <!-- <div class="error-banner">Something went wrong. Please try again.</div> -->
+    <!-- <div class="border border-error/40 bg-error/10 text-error text-sm px-4 py-3 mb-6">Something went wrong. Please try again.</div> -->
 
-    <button class="btn-manage">Manage Subscription</button>
+    <button class="bg-tertiary text-on-tertiary px-8 py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">Manage Subscription</button>
 
     <!-- No subscription state — shown when subscription is null
-    <div class="no-subscription">
-      <p class="no-sub-text">No active subscription.</p>
+    <div class="py-8">
+      <p class="text-base text-outline">No active subscription.</p>
     </div>
     -->
 
   </div>
-  <div class="sidebar-r"></div>
-</div>
+</main>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
+
 </body>
 </html>
