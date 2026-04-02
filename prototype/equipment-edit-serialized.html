@@ -21,6 +21,9 @@
     background-size: 1em 1em;
     padding-right: 1.2rem !important;
   }
+  input::placeholder { color: rgba(255,255,255,0.15); }
+  textarea::placeholder { color: rgba(255,255,255,0.15); }
+  input:focus, textarea:focus, select:focus { outline: none; }
 </style>
 <script id="tailwind-config">
   tailwind.config = {
@@ -37,7 +40,6 @@
           "surface-container-low": "#1C1B1B",
           "surface-container": "#201f1f",
           "surface-container-high": "#262525",
-          "surface-container-highest": "#353534",
           "on-surface-variant": "#c6c6c6",
           "outline": "#919191",
           "outline-variant": "#474747",
@@ -55,8 +57,6 @@
 <!-- Proto bar -->
 <div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;position:relative;z-index:100;">
   <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
-  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
-  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
   <a href="equipment.html" style="color:#EECC02;text-decoration:none;">equipment</a>
   <a href="equipment-edit-serialized.html" style="color:#fff;text-decoration:none;">equipment-edit-serialized ←</a>
   <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
@@ -78,7 +78,7 @@
   </div>
 </nav>
 
-<!-- Background page content (blurred) -->
+<!-- Background (blurred) -->
 <main class="px-6 py-16 min-h-screen pointer-events-none select-none filter blur-sm opacity-20">
   <div class="content-width">
     <header class="flex justify-between items-end mb-16">
@@ -86,7 +86,6 @@
       <div class="h-10 w-36 border border-white/20"></div>
     </header>
     <div class="space-y-2">
-      <div class="h-16 bg-surface-container-low border border-white/10 w-full"></div>
       <div class="h-16 bg-surface-container-low border border-white/10 w-full"></div>
       <div class="h-16 bg-surface-container-low border border-white/10 w-full"></div>
     </div>
@@ -101,140 +100,184 @@
   <section class="relative w-full max-w-[860px] bg-surface-container-low border border-white/10 flex flex-col shadow-2xl" style="max-height: calc(100vh - 120px);">
 
     <!-- Modal header -->
-    <div class="px-10 pt-10 pb-0 shrink-0">
-      <div class="flex justify-between items-start mb-8">
-        <div class="space-y-2">
-          <p class="text-[9px] font-bold tracking-[0.25em] text-white/30 uppercase">Management / Unit Configuration</p>
+    <div class="px-10 pt-10 pb-8 shrink-0 border-b border-white/10">
+      <div class="flex justify-between items-start">
+        <div class="space-y-1.5">
+          <p class="text-[9px] font-bold tracking-[0.25em] text-white/30 uppercase">Equipment / Edit</p>
           <h2 class="text-5xl font-bold tracking-tighter uppercase leading-none">ARRI Alexa Mini LF</h2>
         </div>
         <button class="text-white/20 hover:text-white transition-colors mt-1">
           <span class="material-symbols-outlined text-2xl">close</span>
         </button>
       </div>
-
-      <!-- Column headers -->
-      <div class="grid grid-cols-12 px-0 text-[9px] font-bold tracking-[0.2em] text-white/20 uppercase border-b border-white/10 pb-3 mb-0">
-        <div class="col-span-4 pl-6">UNIT / SERIAL</div>
-        <div class="col-span-1 text-center">AVAIL</div>
-        <div class="col-span-3">STATUS</div>
-        <div class="col-span-3">TECHNICAL LOGS</div>
-        <div class="col-span-1"></div>
-      </div>
     </div>
 
-    <!-- Unit list -->
+    <!-- Scrollable body -->
     <div class="flex-grow overflow-y-auto">
-      <div class="divide-y divide-white/5">
 
-        <!-- Unit 1: Available -->
-        <div class="group hover:bg-surface-container-high px-10 py-5 flex items-center transition-colors">
-          <div class="grid grid-cols-12 w-full items-center gap-y-0">
-            <!-- Name + S/N -->
-            <div class="col-span-4 flex items-center gap-3">
-              <div class="w-1.5 h-1.5 rounded-full bg-white shrink-0"></div>
-              <div>
-                <div class="text-xs font-semibold leading-tight">LF_UNIT_01</div>
-                <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N 25482-A</div>
-              </div>
-            </div>
-            <!-- Availability toggle -->
-            <div class="col-span-1 flex justify-center">
-              <button class="w-8 h-4 border border-white/10 relative group-hover:border-white/20 transition-colors">
-                <div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white"></div>
-              </button>
-            </div>
-            <!-- Status -->
-            <div class="col-span-3 pr-4">
-              <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-white/50 uppercase p-0 cursor-pointer hover:text-white transition-colors appearance-none">
-                <option class="bg-surface-container" selected>AVAILABLE</option>
-                <option class="bg-surface-container">CHECKED OUT</option>
-                <option class="bg-surface-container">NEEDS REPAIR</option>
-              </select>
-            </div>
-            <!-- Logs -->
-            <div class="col-span-3 pr-4">
-              <input class="w-full bg-transparent border-none focus:ring-0 text-[9px] text-white/40 p-0 placeholder:text-white/10 tracking-wide focus:outline-none" placeholder="Add log entry..." type="text" value="Sensor recalibrated 10/23. Firmware v5.0."/>
-            </div>
-            <!-- Delete -->
-            <div class="col-span-1 text-right">
-              <button class="text-white/10 hover:text-error transition-colors">
-                <span class="material-symbols-outlined text-lg">delete</span>
-              </button>
-            </div>
+      <!-- Section A: Basic settings -->
+      <div class="px-10 py-8 border-b border-white/10">
+        <p class="text-[9px] font-bold tracking-[0.2em] text-white/30 uppercase mb-6">Grundinställningar</p>
+
+        <div class="grid grid-cols-2 gap-6 mb-6">
+          <!-- Name -->
+          <div>
+            <label class="block text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">Namn</label>
+            <input type="text" value="ARRI Alexa Mini LF"
+              class="w-full bg-surface-container border-b border-white/10 focus:border-white/40 px-0 py-2 text-sm text-white transition-colors"/>
+          </div>
+          <!-- Category -->
+          <div>
+            <label class="block text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">Kategori</label>
+            <select class="w-full bg-surface-container border-b border-white/10 px-0 py-2 text-sm text-white appearance-none">
+              <option>Camera</option>
+              <option>Lenses</option>
+              <option>Audio</option>
+              <option>Grip</option>
+            </select>
           </div>
         </div>
 
-        <!-- Unit 2: Needs repair -->
-        <div class="group hover:bg-surface-container-high px-10 py-5 flex items-center transition-colors">
-          <div class="grid grid-cols-12 w-full items-center">
-            <div class="col-span-4 flex items-center gap-3">
-              <div class="w-1.5 h-1.5 rounded-full bg-error shrink-0"></div>
-              <div>
-                <div class="text-xs font-semibold leading-tight">LF_UNIT_02</div>
-                <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N 25483-B</div>
-              </div>
-            </div>
-            <div class="col-span-1 flex justify-center">
-              <button class="w-8 h-4 border border-white/10 relative">
-                <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-white/20"></div>
-              </button>
-            </div>
-            <div class="col-span-3 pr-4">
-              <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-error uppercase p-0 appearance-none">
-                <option class="bg-surface-container">AVAILABLE</option>
-                <option class="bg-surface-container">CHECKED OUT</option>
-                <option class="bg-surface-container" selected>NEEDS REPAIR</option>
-              </select>
-            </div>
-            <div class="col-span-3 pr-4">
-              <input class="w-full bg-transparent border-none focus:ring-0 text-[9px] text-white/40 p-0 focus:outline-none" type="text" value="PL Mount loose. Sent to service."/>
-            </div>
-            <div class="col-span-1 text-right">
-              <button class="text-white/10 hover:text-error transition-colors">
-                <span class="material-symbols-outlined text-lg">delete</span>
-              </button>
-            </div>
-          </div>
+        <div class="mb-6">
+          <label class="block text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">Beskrivning</label>
+          <textarea rows="2" placeholder="Valfri beskrivning..."
+            class="w-full bg-surface-container border-b border-white/10 focus:border-white/40 px-0 py-2 text-sm text-white resize-none transition-colors">Large format cinema camera with full frame sensor.</textarea>
         </div>
 
-        <!-- Unit 3: Checked out -->
-        <div class="group hover:bg-surface-container-high px-10 py-5 flex items-center transition-colors">
-          <div class="grid grid-cols-12 w-full items-center">
-            <div class="col-span-4 flex items-center gap-3">
-              <div class="w-1.5 h-1.5 rounded-full bg-tertiary shrink-0"></div>
-              <div>
-                <div class="text-xs font-semibold leading-tight">LF_UNIT_03</div>
-                <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N 25485-C</div>
+        <!-- Requires approval -->
+        <div class="flex items-center gap-3">
+          <button class="w-8 h-4 border border-white/10 relative">
+            <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-white/20"></div>
+          </button>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-white/40">Kräver godkännande</span>
+        </div>
+      </div>
+
+      <!-- Section B: Units -->
+      <div class="px-10 py-8">
+        <p class="text-[9px] font-bold tracking-[0.2em] text-white/30 uppercase mb-6">Units</p>
+
+        <!-- Column headers -->
+        <div class="grid grid-cols-12 text-[9px] font-bold tracking-[0.2em] text-white/20 uppercase border-b border-white/10 pb-3 mb-0">
+          <div class="col-span-4">Unit / Serial</div>
+          <div class="col-span-1 text-center">Avail</div>
+          <div class="col-span-3">Status</div>
+          <div class="col-span-3">Notes</div>
+          <div class="col-span-1"></div>
+        </div>
+
+        <!-- Unit rows -->
+        <div class="divide-y divide-white/5">
+
+          <!-- Unit 1: Available -->
+          <div class="group hover:bg-surface-container-high -mx-10 px-10 py-4 flex items-center transition-colors">
+            <div class="grid grid-cols-12 w-full items-center">
+              <div class="col-span-4 flex items-center gap-3">
+                <div class="w-1.5 h-1.5 rounded-full bg-white shrink-0"></div>
+                <div>
+                  <div class="text-xs font-semibold leading-tight">Alexa #1</div>
+                  <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N K1.0012345</div>
+                </div>
+              </div>
+              <div class="col-span-1 flex justify-center">
+                <button class="w-8 h-4 border border-white/10 relative group-hover:border-white/20 transition-colors">
+                  <div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white"></div>
+                </button>
+              </div>
+              <div class="col-span-3 pr-4">
+                <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-white/50 uppercase p-0 appearance-none cursor-pointer hover:text-white transition-colors">
+                  <option selected>AVAILABLE</option>
+                  <option>CHECKED OUT</option>
+                  <option>NEEDS REPAIR</option>
+                </select>
+              </div>
+              <div class="col-span-3 pr-4">
+                <input type="text" value="Sensor recalibrated 10/23."
+                  class="w-full bg-transparent border-none text-[9px] text-white/40 p-0 tracking-wide"/>
+              </div>
+              <div class="col-span-1 text-right">
+                <button class="text-white/10 hover:text-error transition-colors">
+                  <span class="material-symbols-outlined text-lg">delete</span>
+                </button>
               </div>
             </div>
-            <div class="col-span-1 flex justify-center">
-              <button class="w-8 h-4 border border-white/10 relative">
-                <div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white"></div>
-              </button>
-            </div>
-            <div class="col-span-3 pr-4">
-              <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-tertiary uppercase p-0 appearance-none">
-                <option class="bg-surface-container">AVAILABLE</option>
-                <option class="bg-surface-container" selected>CHECKED OUT</option>
-                <option class="bg-surface-container">NEEDS REPAIR</option>
-              </select>
-            </div>
-            <div class="col-span-3 pr-4">
-              <input class="w-full bg-transparent border-none focus:ring-0 text-[9px] text-white/40 p-0 focus:outline-none" type="text" value="Rear fan noisy but functional."/>
-            </div>
-            <div class="col-span-1 text-right">
-              <button class="text-white/10 hover:text-error transition-colors">
-                <span class="material-symbols-outlined text-lg">delete</span>
-              </button>
+          </div>
+
+          <!-- Unit 2: Checked out -->
+          <div class="group hover:bg-surface-container-high -mx-10 px-10 py-4 flex items-center transition-colors">
+            <div class="grid grid-cols-12 w-full items-center">
+              <div class="col-span-4 flex items-center gap-3">
+                <div class="w-1.5 h-1.5 rounded-full bg-tertiary shrink-0"></div>
+                <div>
+                  <div class="text-xs font-semibold leading-tight">Alexa #2</div>
+                  <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N K1.0012346</div>
+                </div>
+              </div>
+              <div class="col-span-1 flex justify-center">
+                <button class="w-8 h-4 border border-white/10 relative">
+                  <div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white"></div>
+                </button>
+              </div>
+              <div class="col-span-3 pr-4">
+                <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-tertiary uppercase p-0 appearance-none">
+                  <option>AVAILABLE</option>
+                  <option selected>CHECKED OUT</option>
+                  <option>NEEDS REPAIR</option>
+                </select>
+              </div>
+              <div class="col-span-3 pr-4">
+                <input type="text" placeholder="Add note..."
+                  class="w-full bg-transparent border-none text-[9px] text-white/40 p-0 tracking-wide"/>
+              </div>
+              <div class="col-span-1 text-right">
+                <button class="text-white/10 hover:text-error transition-colors">
+                  <span class="material-symbols-outlined text-lg">delete</span>
+                </button>
+              </div>
             </div>
           </div>
+
+          <!-- Unit 3: Needs repair -->
+          <div class="group hover:bg-surface-container-high -mx-10 px-10 py-4 flex items-center transition-colors">
+            <div class="grid grid-cols-12 w-full items-center">
+              <div class="col-span-4 flex items-center gap-3">
+                <div class="w-1.5 h-1.5 rounded-full bg-error shrink-0"></div>
+                <div>
+                  <div class="text-xs font-semibold leading-tight">Alexa #3</div>
+                  <div class="text-[9px] text-white/30 uppercase tracking-wider mt-0.5">S/N K1.0012347</div>
+                </div>
+              </div>
+              <div class="col-span-1 flex justify-center">
+                <button class="w-8 h-4 border border-white/10 relative">
+                  <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-white/20"></div>
+                </button>
+              </div>
+              <div class="col-span-3 pr-4">
+                <select class="w-full bg-transparent border-none focus:ring-0 text-[9px] font-bold text-error uppercase p-0 appearance-none">
+                  <option>AVAILABLE</option>
+                  <option>CHECKED OUT</option>
+                  <option selected>NEEDS REPAIR</option>
+                </select>
+              </div>
+              <div class="col-span-3 pr-4">
+                <input type="text" value="PL mount loose. Sent to service."
+                  class="w-full bg-transparent border-none text-[9px] text-white/40 p-0 tracking-wide"/>
+              </div>
+              <div class="col-span-1 text-right">
+                <button class="text-white/10 hover:text-error transition-colors">
+                  <span class="material-symbols-outlined text-lg">delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- Add unit -->
-        <div class="px-10 py-5">
+        <div class="pt-4 mt-2">
           <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-[0.2em] transition-colors flex items-center gap-2">
             <span class="material-symbols-outlined text-sm">add</span>
-            ADD_NEW_UNIT_INSTANCE
+            Add Unit
           </button>
         </div>
 
@@ -242,13 +285,20 @@
     </div>
 
     <!-- Footer -->
-    <div class="px-10 py-8 bg-surface-container-low shrink-0 flex justify-end items-center gap-8">
-      <button class="text-[9px] font-bold tracking-[0.2em] text-white/30 hover:text-white transition-colors uppercase">
-        DISCARD_CHANGES
+    <div class="px-10 py-6 bg-surface-container-low shrink-0 border-t border-white/10 flex justify-between items-center">
+      <!-- Delete (danger, left) -->
+      <button class="text-[9px] font-bold tracking-[0.2em] text-error/50 hover:text-error uppercase transition-colors">
+        DELETE EQUIPMENT
       </button>
-      <button class="bg-white text-on-primary px-10 py-3 font-bold text-[9px] tracking-[0.2em] uppercase hover:bg-secondary transition-colors">
-        SAVE_MODEL_DATA
-      </button>
+      <!-- Discard + Save (right) -->
+      <div class="flex items-center gap-8">
+        <button class="text-[9px] font-bold tracking-[0.2em] text-white/30 hover:text-white uppercase transition-colors">
+          DISCARD
+        </button>
+        <button class="bg-white text-on-primary px-10 py-3 font-bold text-[9px] tracking-[0.2em] uppercase hover:bg-secondary transition-colors">
+          SAVE
+        </button>
+      </div>
     </div>
 
   </section>
