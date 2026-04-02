@@ -353,7 +353,7 @@ export default function EquipmentForm({
         >
           Cancel
         </button>
-        {!isEditMode && trackingType === 'serialized' && (
+        {!isEditMode && trackingType === 'serialized' ? (
           <button
             type="submit"
             className={styles.submitBtn}
@@ -362,15 +362,16 @@ export default function EquipmentForm({
           >
             {submitting ? 'Saving...' : 'Save + Add Unit'}
           </button>
+        ) : (
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={submitting}
+            onClick={() => { addUnitRef.current = false }}
+          >
+            {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
+          </button>
         )}
-        <button
-          type="submit"
-          className={styles.submitBtn}
-          disabled={submitting}
-          onClick={() => { addUnitRef.current = false }}
-        >
-          {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
-        </button>
       </div>
     </form>
   )
