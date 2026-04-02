@@ -155,15 +155,15 @@
 .rowLeft {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   min-width: 0;
 }
 
 .rowProject {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
   color: var(--white);
   white-space: nowrap;
   overflow: hidden;
@@ -174,7 +174,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  column-gap: 16px;
+  row-gap: 8px;
 }
 
 .rowMetaItem {
@@ -185,10 +186,17 @@
   color: var(--outline);
 }
 
-.rowMetaSep {
-  font-size: 10px;
+.rowMetaWithIcon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rowMetaIcon {
+  font-size: 14px;
   color: var(--outline);
-  opacity: 0.4;
+  opacity: 0.6;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
 }
 
 .rowChevron {

@@ -262,18 +262,22 @@ function BookingRow({ booking }: { booking: Booking }) {
           <span className={`${styles.rowMetaItem} ${getStatusTextClass(booking)}`}>
             {getStatusLabel(booking)}
           </span>
-          <span className={styles.rowMetaSep}>·</span>
-          <span className={styles.rowMetaItem}>{timeOrDate}</span>
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
+            <span className={styles.rowMetaItem}>{timeOrDate}</span>
+          </div>
           {booking.userName && (
-            <>
-              <span className={styles.rowMetaSep}>·</span>
+            <div className={styles.rowMetaWithIcon}>
+              <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
               <span className={styles.rowMetaItem}>{booking.userName}</span>
-            </>
+            </div>
           )}
-          <span className={styles.rowMetaSep}>·</span>
-          <span className={styles.rowMetaItem}>
-            {itemCount} {itemCount === 1 ? 'item' : 'items'}
-          </span>
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>inventory_2</span>
+            <span className={styles.rowMetaItem}>
+              {itemCount} {itemCount === 1 ? 'item' : 'items'}
+            </span>
+          </div>
         </div>
       </div>
       <span className={styles.rowChevron}>›</span>
