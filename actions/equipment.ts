@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import type { Subscription, EquipmentStatus } from '@/types'
+import type { Subscription, EquipmentStatus, CustomField } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
 
@@ -487,4 +487,165 @@ export async function deactivateUnit(
   })
 
   revalidatePath('/equipment')
+}
+
+// ── updateEquipmentWithUnits ─────────────────────────────────────────────────
+// Batch-saves equipment basic fields + all unit changes (updates, creates,
+// deletes) in a single Firestore batch write.
+
+const VALID_UNIT_STATUSES: EquipmentStatus[] = ['available', 'checked_out', 'needs_repair']
+
+export interface UnitUpdate {
+  id: string
+  label: string
+  serialNumber: string | null
+  status: EquipmentStatus
+  notes: string | null
+  availableForBooking: boolean
+}
+
+export interface UnitCreate {
+  label: string
+  serialNumber: string | null
+  status: EquipmentStatus
+  notes: string | null
+}
+
+export interface EquipmentFields {
+  name: string
+  category: string
+  description: string | null
+  requiresApproval: boolean
+  approverId: string | null
+  customFields: CustomField[]
+}
+
+export async function updateEquipmentWithUnits(
+  equipmentId: string,
+  equipment: EquipmentFields,
+  unitUpdates: UnitUpdate[],
+  unitCreates: UnitCreate[],
+  deletedUnitIds: string[],
+): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  // ── Validate inputs ────────────────────────────────────────────────────────
+  if (!equipmentId?.trim() || equipmentId.includes('/')) {
+    return { error: 'equipmentId is required' }
+  }
+
+  const name = equipment.name?.trim() ?? ''
+  if (!name) return { error: 'name is required' }
+  if (name.length > 100) return { error: 'Name must be 100 characters or fewer' }
+
+  const category = equipment.category?.trim() ?? ''
+  if (!category) return { error: 'category is required' }
+
+  // Guard against Firestore 500-op batch limit
+  const totalOps = 1 + unitUpdates.length + unitCreates.length + deletedUnitIds.length
+  if (totalOps > 499) return { error: 'Too many changes in one request' }
+
+  for (const u of unitUpdates) {
+    if (!u.id?.trim() || u.id.includes('/')) return { error: 'Invalid unit id' }
+    if (!u.label?.trim()) return { error: 'Unit label is required' }
+    if (!VALID_UNIT_STATUSES.includes(u.status)) {
+      return { error: `Invalid unit status: "${u.status}"` }
+    }
+  }
+
+  for (const u of unitCreates) {
+    if (!u.label?.trim()) return { error: 'Unit label is required' }
+    if (!VALID_UNIT_STATUSES.includes(u.status)) {
+      return { error: `Invalid unit status: "${u.status}"` }
+    }
+  }
+
+  for (const unitId of deletedUnitIds) {
+    if (!unitId?.trim() || unitId.includes('/')) return { error: 'Invalid unit id' }
+  }
+
+  const companyId = session.activeCompanyId
+
+  try {
+    // ── Verify equipment exists ────────────────────────────────────────────────
+    const equipRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
+    const equipSnap = await equipRef.get()
+    if (!equipSnap.exists || !equipSnap.data()?.active) {
+      return { error: 'Equipment not found' }
+    }
+
+    // ── Build batch ────────────────────────────────────────────────────────────
+    const batch = adminDb.batch()
+
+    // Update equipment basic fields
+    batch.update(equipRef, {
+      name,
+      category,
+      description: equipment.description?.trim() || null,
+      requiresApproval: equipment.requiresApproval,
+      approverId: equipment.approverId || null,
+      customFields: equipment.customFields,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: session.uid,
+    })
+
+    // Update existing units
+    for (const u of unitUpdates) {
+      const unitRef = adminDb.doc(
+        `companies/${companyId}/equipment/${equipmentId}/units/${u.id}`
+      )
+      batch.update(unitRef, {
+        label: u.label,
+        serialNumber: u.serialNumber,
+        status: u.status,
+        notes: u.notes,
+        availableForBooking: u.availableForBooking,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: session.uid,
+      })
+    }
+
+    // Create new units
+    const unitsCollection = adminDb
+      .collection(`companies/${companyId}/equipment/${equipmentId}/units`)
+    for (const u of unitCreates) {
+      const newRef = unitsCollection.doc()
+      batch.set(newRef, {
+        equipmentId,
+        companyId,
+        label: u.label,
+        serialNumber: u.serialNumber,
+        status: u.status,
+        notes: u.notes,
+        active: true,
+        availableForBooking: true,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: session.uid,
+      })
+    }
+
+    // Deactivate deleted units
+    for (const unitId of deletedUnitIds) {
+      const unitRef = adminDb.doc(
+        `companies/${companyId}/equipment/${equipmentId}/units/${unitId}`
+      )
+      batch.update(unitRef, {
+        active: false,
+        deactivatedAt: FieldValue.serverTimestamp(),
+        deactivatedBy: session.uid,
+      })
+    }
+
+    await batch.commit()
+
+    revalidatePath('/equipment')
+    revalidatePath('/bookings')
+    revalidatePath('/bookings/new')
+
+    return {}
+  } catch (err) {
+    console.error('[updateEquipmentWithUnits]', err)
+    return { error: 'Failed to save changes. Please try again.' }
+  }
 }
