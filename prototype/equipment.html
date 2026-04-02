@@ -14,6 +14,9 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: #080808; }
   ::-webkit-scrollbar-thumb { background: #474747; }
+  details > summary::-webkit-details-marker { display: none; }
+  summary { list-style: none; }
+  details[open] .collapse-icon { transform: rotate(180deg); }
 </style>
 <script id="tailwind-config">
   tailwind.config = {
@@ -78,18 +81,16 @@
 </div>
 
 <!-- Top Nav -->
-<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+<nav class="bg-[#080808] text-white top-0 z-50 border-b border-white/5 flex justify-between items-center w-full px-8 py-5 sticky">
   <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
-  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
-    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="bookings.html">BOOKINGS</a>
-    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="equipment.html">EQUIPMENT</a>
-    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
+  <div class="hidden md:flex items-center gap-10 absolute left-1/2 -translate-x-1/2">
+    <a class="text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white transition-colors duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-xs font-bold uppercase tracking-widest text-white border-b-2 border-white pb-1" href="equipment.html">EQUIPMENT</a>
+    <a class="text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
   <div class="flex items-center gap-6">
-    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
-      <span class="material-symbols-outlined">notifications</span>
-    </button>
-    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
+    <span class="material-symbols-outlined text-white/50 cursor-pointer hover:text-white">notifications</span>
+    <a href="booking-new.html" class="bg-white text-on-primary px-5 py-2 text-xs font-bold tracking-widest uppercase hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
   </div>
 </nav>
 
@@ -98,217 +99,244 @@
   <div class="content-width">
 
     <!-- Page header -->
-    <header class="mb-12">
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="font-bold uppercase tracking-tight leading-none text-5xl md:text-6xl">EQUIPMENT</h1>
-        <a href="#" class="border border-outline/40 text-xs font-bold tracking-widest uppercase px-4 py-2 hover:border-white transition-colors text-white">+ Add Equipment</a>
-      </div>
-      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+    <header class="flex justify-between items-end mb-16">
+      <h1 class="text-7xl font-bold tracking-tighter uppercase leading-[0.85]">EQUIPMENT</h1>
+      <button class="border border-white/20 px-6 py-2.5 text-[10px] font-bold uppercase tracking-widest hover:bg-white/5 transition-colors">+ ADD EQUIPMENT</button>
     </header>
 
     <!-- ── CAMERA ── -->
-    <div class="mb-12">
-      <div class="flex items-center gap-4 mb-0">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Camera</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-      </div>
+    <section class="mb-12">
+      <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">CAMERA</h2>
 
-      <!-- Type: ARRI Alexa Mini LF -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- ARRI Alexa Mini LF -->
+      <details class="mb-2 group border border-white/10 overflow-hidden" open>
+        <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+          <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-white/20 text-[16px] collapse-icon transition-transform duration-200">expand_more</span>
+            <div class="flex items-center gap-3">
+              <h3 class="text-base font-bold">ARRI Alexa Mini LF</h3>
+              <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+            </div>
+          </div>
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">ARRI Alexa Mini LF</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all" onclick="event.preventDefault()">EDIT</button>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+        </summary>
+        <div class="divide-y divide-white/5 bg-surface-container-low">
+          <!-- Unit: Alexa #1 — available -->
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">Alexa #1</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N K1.0012345</span>
+              </div>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <!-- Unit: Alexa #2 — checked out -->
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-tertiary mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">Alexa #2</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N K1.0012346</span>
+              </div>
+              <span class="text-[9px] font-bold text-tertiary uppercase tracking-widest">CHECKED OUT</span>
+            </div>
+          </div>
+          <!-- Add unit -->
+          <div class="px-10 py-3">
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD UNIT</button>
           </div>
         </div>
-        <!-- Unit: Alexa #1 — available -->
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">Alexa #1</span>
-          <span class="text-[10px] text-outline">S/N K1.0012345</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <!-- Unit: Alexa #2 — checked out -->
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-tertiary flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">Alexa #2</span>
-          <span class="text-[10px] text-outline">S/N K1.0012346</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-tertiary ml-4">Checked Out</span>
-        </div>
-        <!-- Add unit link -->
-        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
-        </div>
-      </div>
+      </details>
 
-      <!-- Type: Sony FX9 -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors mt-0">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- Sony FX9 -->
+      <details class="mb-2 group border border-white/10 overflow-hidden" open>
+        <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+          <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-white/20 text-[16px] collapse-icon transition-transform duration-200">expand_more</span>
+            <div class="flex items-center gap-3">
+              <h3 class="text-base font-bold">Sony FX9</h3>
+              <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+            </div>
+          </div>
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">Sony FX9</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all" onclick="event.preventDefault()">EDIT</button>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+        </summary>
+        <div class="divide-y divide-white/5 bg-surface-container-low">
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">Kamera 1</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N FX9-0001</span>
+              </div>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-tertiary mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">Kamera 2</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N FX9-0002</span>
+              </div>
+              <span class="text-[9px] font-bold text-tertiary uppercase tracking-widest">CHECKED OUT</span>
+            </div>
+          </div>
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">Kamera 3</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N FX9-0003</span>
+              </div>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <div class="px-10 py-3">
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD UNIT</button>
           </div>
         </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">Kamera 1</span>
-          <span class="text-[10px] text-outline">S/N FX9-0001</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-tertiary flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">Kamera 2</span>
-          <span class="text-[10px] text-outline">S/N FX9-0002</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-tertiary ml-4">Checked Out</span>
-        </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">Kamera 3</span>
-          <span class="text-[10px] text-outline">S/N FX9-0003</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
-        </div>
-      </div>
-    </div>
+      </details>
+    </section>
 
     <!-- ── LENSES ── -->
-    <div class="mb-12">
-      <div class="flex items-center gap-4 mb-0">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Lenses</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-      </div>
+    <section class="mb-12">
+      <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">LENSES</h2>
 
-      <!-- Type: Zeiss Supreme Prime Set -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- Zeiss Supreme Prime Set -->
+      <details class="mb-2 group border border-white/10 overflow-hidden" open>
+        <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+          <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-white/20 text-[16px] collapse-icon transition-transform duration-200">expand_more</span>
+            <div class="flex items-center gap-3">
+              <h3 class="text-base font-bold">Zeiss Supreme Prime Set</h3>
+              <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+            </div>
+          </div>
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">Zeiss Supreme Prime Set</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all" onclick="event.preventDefault()">EDIT</button>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+        </summary>
+        <div class="divide-y divide-white/5 bg-surface-container-low">
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">25mm T1.5</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N ZS-001</span>
+              </div>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-medium">50mm T1.5</span>
+                <span class="text-[9px] text-white/30 uppercase tracking-wider">S/N ZS-002</span>
+              </div>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <div class="px-10 py-3">
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD UNIT</button>
           </div>
         </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">25mm T1.5</span>
-          <span class="text-[10px] text-outline">S/N ZS-001</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">50mm T1.5</span>
-          <span class="text-[10px] text-outline">S/N ZS-002</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
-        </div>
-      </div>
-    </div>
+      </details>
+    </section>
 
     <!-- ── GRIP ── -->
-    <div class="mb-12">
-      <div class="flex items-center gap-4 mb-0">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Grip</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-      </div>
+    <section class="mb-12">
+      <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">GRIP</h2>
 
-      <!-- Type: C-Stand (quantity) -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- C-Stand (quantity) -->
+      <div class="mb-2 border border-white/10 bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="px-6 py-4 flex justify-between items-center">
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">C-Stand</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Qty</span>
-            <span class="text-sm text-outline"><span class="text-white font-bold">10</span> available</span>
+            <h3 class="text-base font-bold">C-Stand</h3>
+            <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">QTY</span>
+            <span class="text-xs text-white/30"><span class="text-white font-bold">10</span> available</span>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          <div class="flex items-center gap-3">
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all">EDIT</button>
           </div>
         </div>
       </div>
 
-      <!-- Type: Sandbag (quantity) -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors mt-0">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- Sandbag (quantity) -->
+      <div class="mb-2 border border-white/10 bg-surface-container-low hover:bg-surface-container-high transition-colors">
+        <div class="px-6 py-4 flex justify-between items-center">
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">Sandbag</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Qty</span>
-            <span class="text-sm text-outline"><span class="text-white font-bold">20</span> available</span>
+            <h3 class="text-base font-bold">Sandbag</h3>
+            <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">QTY</span>
+            <span class="text-xs text-white/30"><span class="text-white font-bold">20</span> available</span>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+          <div class="flex items-center gap-3">
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all">EDIT</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- ── AUDIO ── -->
-    <div class="mb-12">
-      <div class="flex items-center gap-4 mb-0">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Audio</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-      </div>
+    <section class="mb-12">
+      <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">AUDIO</h2>
 
-      <!-- Type: Sennheiser MKH 416 -->
-      <div class="bg-surface-container-low hover:bg-surface-container-high transition-colors">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-outline-variant/20">
+      <!-- Sennheiser MKH 416 -->
+      <details class="mb-2 group border border-white/10 overflow-hidden" open>
+        <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+          <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-white/20 text-[16px] collapse-icon transition-transform duration-200">expand_more</span>
+            <div class="flex items-center gap-3">
+              <h3 class="text-base font-bold">Sennheiser MKH 416</h3>
+              <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+            </div>
+          </div>
           <div class="flex items-center gap-3">
-            <span class="text-base font-bold">Sennheiser MKH 416</span>
-            <span class="border border-outline/30 text-[8px] font-bold uppercase tracking-widest text-outline px-1.5 py-0.5">Units</span>
+            <button class="text-[9px] font-bold text-white/40 hover:text-white uppercase tracking-widest px-3 py-1.5 border border-white/10 hover:border-white/30 transition-all" onclick="event.preventDefault()">EDIT</button>
           </div>
-          <div class="flex items-center gap-2">
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">+ Add Unit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-white hover:text-white transition-colors">Edit</a>
-            <a href="#" class="border border-outline/30 text-[9px] font-bold uppercase tracking-widest text-outline px-2.5 py-1.5 hover:border-error hover:text-error transition-colors">Deactivate</a>
+        </summary>
+        <div class="divide-y divide-white/5 bg-surface-container-low">
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-white mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <span class="text-xs font-medium">MKH #1</span>
+              <span class="text-[9px] font-bold text-white/40 uppercase tracking-widest">AVAILABLE</span>
+            </div>
+          </div>
+          <div class="hover:bg-surface-container-high px-10 py-3 flex items-center transition-colors">
+            <div class="w-1.5 h-1.5 rounded-full bg-error mr-4 flex-shrink-0"></div>
+            <div class="flex-grow flex items-center justify-between">
+              <span class="text-xs font-medium">MKH #2</span>
+              <span class="text-[9px] font-bold text-error uppercase tracking-widest">NEEDS REPAIR</span>
+            </div>
+          </div>
+          <div class="px-10 py-3">
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD UNIT</button>
           </div>
         </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-white flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">MKH #1</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-outline/60 ml-4">Available</span>
-        </div>
-        <div class="flex items-center gap-3 px-4 py-3 pl-8 border-b border-outline-variant/20 hover:bg-surface-container-high transition-colors">
-          <span class="rounded-full w-2 h-2 bg-error flex-shrink-0"></span>
-          <span class="text-sm font-medium flex-1">MKH #2</span>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-error ml-4">Needs Repair</span>
-        </div>
-        <div class="px-4 py-2 pl-8 border-b border-outline-variant/20">
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-outline transition-colors">+ Add unit</a>
-        </div>
-      </div>
-    </div>
+      </details>
+    </section>
 
   </div>
 </main>
 
 <!-- Mobile Bottom Nav -->
-<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
-  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="bookings.html">
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-white/5 z-50">
+  <a class="flex flex-col items-center justify-center text-white/40 hover:text-white" href="bookings.html">
     <span class="material-symbols-outlined text-[20px]">calendar_today</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
   </a>
-  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="equipment.html">
+  <a class="flex flex-col items-center justify-center text-tertiary" href="equipment.html">
     <span class="material-symbols-outlined text-[20px]">construction</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
   </a>
-  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+  <a class="flex flex-col items-center justify-center text-white/40 hover:text-white" href="settings-company.html">
     <span class="material-symbols-outlined text-[20px]">settings</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
   </a>

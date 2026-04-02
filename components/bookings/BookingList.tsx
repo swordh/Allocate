@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
-import BookingStatusBadge from './BookingStatusBadge'
 import type { Booking, Role } from '@/types'
 import styles from './BookingList.module.css'
 
@@ -203,45 +202,85 @@ export default function BookingList({
 // Booking row
 // ---------------------------------------------------------------------------
 
+// Status display helpers
+const STATUS_LABELS: Record<string, string> = {
+  checked_out: 'CHECKED OUT',
+  confirmed:   'CONFIRMED',
+  pending:     'PENDING',
+  returned:    'RETURNED',
+  cancelled:   'CANCELLED',
+}
+
+function getStatusLabel(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return 'REJECTED'
+  return STATUS_LABELS[booking.status] ?? booking.status.toUpperCase()
+}
+
 function getStatusRowClass(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.rowRejected
   switch (booking.status) {
     case 'checked_out': return styles.rowCheckedOut
     case 'confirmed':   return styles.rowConfirmed
-    case 'pending':
-      // Show rejected style if approval was rejected
-      return booking.approvalStatus === 'rejected' ? styles.rowRejected : styles.rowPending
+    case 'pending':     return styles.rowPending
+    case 'returned':    return styles.rowReturned
     case 'cancelled':   return styles.rowCancelled
     default:            return styles.rowPending
   }
 }
 
+function getStatusTextClass(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.statusRejected
+  switch (booking.status) {
+    case 'checked_out': return styles.statusCheckedOut
+    case 'confirmed':   return styles.statusConfirmed
+    case 'pending':     return styles.statusPending
+    case 'returned':    return styles.statusReturned
+    case 'cancelled':   return styles.statusCancelled
+    default:            return styles.statusPending
+  }
+}
+
 function BookingRow({ booking }: { booking: Booking }) {
-  const isCancelled = booking.status === 'cancelled'
   const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
   const statusClass = getStatusRowClass(booking)
+
+  const timeOrDate =
+    booking.startTime && booking.endTime
+      ? `${booking.startTime} — ${booking.endTime}`
+      : booking.startDate === booking.endDate
+        ? formatShortDate(booking.startDate)
+        : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`
 
   return (
     <Link
       href={`/bookings/${booking.id}`}
-      className={`${styles.row} ${statusClass} ${isCancelled ? styles.rowCancelled : ''}`}
+      className={`${styles.row} ${statusClass}`}
     >
       <div className={styles.rowLeft}>
         <span className={styles.rowProject}>{booking.projectName}</span>
-        <span className={styles.rowDate}>
-          {booking.startDate === booking.endDate
-            ? formatShortDate(booking.startDate)
-            : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`}
-        </span>
+        <div className={styles.rowMeta}>
+          <span className={`${styles.rowMetaItem} ${getStatusTextClass(booking)}`}>
+            {getStatusLabel(booking)}
+          </span>
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
+            <span className={styles.rowMetaItem}>{timeOrDate}</span>
+          </div>
+          {booking.userName && (
+            <div className={styles.rowMetaWithIcon}>
+              <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
+              <span className={styles.rowMetaItem}>{booking.userName}</span>
+            </div>
+          )}
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>inventory_2</span>
+            <span className={styles.rowMetaItem}>
+              {itemCount} {itemCount === 1 ? 'item' : 'items'}
+            </span>
+          </div>
+        </div>
       </div>
-      <div className={styles.rowMeta}>
-        <span className={styles.rowItemCount}>
-          {itemCount} {itemCount === 1 ? 'item' : 'items'}
-        </span>
-        <BookingStatusBadge
-          status={booking.status}
-          approvalStatus={booking.approvalStatus}
-        />
-      </div>
+      <span className={styles.rowChevron}>›</span>
     </Link>
   )
 }

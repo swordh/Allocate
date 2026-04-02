@@ -1,0 +1,489 @@
+/* ── Backdrop ─────────────────────────────────────────────────────────────── */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  top: 64px; /* clear nav */
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Modal shell ──────────────────────────────────────────────────────────── */
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  max-height: calc(100vh - 120px);
+  background: var(--surface-container-low);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 40px 40px 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.breadcrumb {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 6px;
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--white);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  padding: 2px;
+  line-height: 1;
+  margin-top: 4px;
+  transition: color 0.1s;
+}
+
+.closeBtn:hover {
+  color: var(--white);
+}
+
+/* ── Scrollable body ──────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.section {
+  padding: 32px 40px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionLabel {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 24px;
+}
+
+/* ── Form fields ──────────────────────────────────────────────────────────── */
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field + .field {
+  margin-top: 24px;
+}
+
+.fieldLabel {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.input,
+.textarea,
+.select {
+  background: var(--surface-container);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 0;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-bottom-color: rgba(255, 255, 255, 0.4);
+}
+
+.textarea {
+  resize: none;
+}
+
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23ffffff33' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 1em 1em;
+  padding-right: 24px;
+  cursor: pointer;
+}
+
+/* ── Approval toggle row ──────────────────────────────────────────────────── */
+
+.approvalRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.approvalLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Toggle switch ────────────────────────────────────────────────────────── */
+
+.toggle {
+  width: 32px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.1s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.toggleOn {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.toggleOn::after {
+  transform: translateX(16px);
+  background: var(--white);
+}
+
+/* ── Unit table ───────────────────────────────────────────────────────────── */
+
+.unitTableHeader,
+.unitTableRow {
+  display: grid;
+  grid-template-columns: 4fr 1fr 3fr 3fr 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.unitTableHeader {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 12px;
+  margin-bottom: 0;
+}
+
+.unitTableRow {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.1s;
+}
+
+.unitTableRows {
+  /* rows container — no extra spacing needed */
+}
+
+.colAvail {
+  display: flex;
+  justify-content: center;
+}
+
+.colDelete {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Unit identity cell ───────────────────────────────────────────────────── */
+
+.unitIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Matches `dot_available`, `dot_checked_out`, `dot_needs_repair` */
+.dot_available    { background: var(--white); }
+.dot_checked_out  { background: var(--tertiary); }
+.dot_needs_repair { background: var(--error); }
+
+.unitInputStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ── Inline inputs (inside unit rows) ────────────────────────────────────── */
+
+.inlineInput {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 0;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.inlineInput:focus {
+  border-bottom-color: rgba(255, 255, 255, 0.3);
+}
+
+.inlineInput::placeholder {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.serialInput {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Status select (inside unit rows) ────────────────────────────────────── */
+
+.statusSelect {
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  outline: none;
+  width: 100%;
+}
+
+.statusSelect option {
+  background: var(--surface-container-low);
+  color: var(--white);
+  font-weight: 700;
+}
+
+/* Status color variants */
+.statusColor_available    { color: rgba(255, 255, 255, 0.5); }
+.statusColor_checked_out  { color: var(--tertiary); }
+.statusColor_needs_repair { color: var(--error); }
+
+/* ── Delete row button ────────────────────────────────────────────────────── */
+
+.deleteRowBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  padding: 2px;
+  line-height: 1;
+  transition: color 0.1s;
+  font-size: 18px;
+}
+
+.deleteRowBtn:hover {
+  color: var(--error);
+}
+
+/* ── Add unit ─────────────────────────────────────────────────────────────── */
+
+.addUnitRow {
+  padding-top: 16px;
+}
+
+.addUnitBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.addUnitBtn:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.addUnitBtn .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ── Error ────────────────────────────────────────────────────────────────── */
+
+.error {
+  margin: 0 40px 24px;
+  font-size: 12px;
+  color: var(--error);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 40px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-container-low);
+  flex-shrink: 0;
+}
+
+.footerRight {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.deleteEquipBtn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(204, 51, 51, 0.5);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.deleteEquipBtn:hover:not(:disabled) {
+  color: var(--error);
+}
+
+.deleteEquipBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.discardBtn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.discardBtn:hover:not(:disabled) {
+  color: var(--white);
+}
+
+.discardBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.saveBtn {
+  background: var(--white);
+  color: var(--on-primary);
+  border: none;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 12px 40px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: var(--secondary);
+}
+
+.saveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
