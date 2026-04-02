@@ -233,7 +233,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                           <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} />
                           <span className={styles.unitName}>{unit.label}</span>
                           {unit.serialNumber && (
-                            <span className={styles.serialNumber}>{unit.serialNumber}</span>
+                            <span className={styles.serialNumber}>S/N {unit.serialNumber}</span>
                           )}
                         </div>
                         <div className={styles.unitRowRight}>
