@@ -25,6 +25,8 @@ export interface Booking {
   unitIds?: string[]             // denormalized; all unitId values from serialized items
   startDate: string              // "YYYY-MM-DD" — inclusive
   endDate: string                // "YYYY-MM-DD" — inclusive
+  startTime?: string | null      // "HH:MM" — null/absent means all-day
+  endTime?: string | null        // "HH:MM" — null/absent means all-day
   userId: string | null          // null if user was deleted (GDPR anonymized)
   userName: string | null        // null — not stored (userId is the reference; resolve name at read time if needed)
   status: BookingStatus

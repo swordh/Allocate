@@ -148,46 +148,63 @@
   opacity: 0.4;
 }
 
+.rowReturned {
+  border-left-color: rgba(255, 255, 255, 0.2);
+}
+
 .rowLeft {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .rowProject {
   font-size: 16px;
   font-weight: 700;
-  color: var(--white);
   text-transform: uppercase;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
+  color: var(--white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.rowCancelled .rowProject {
-  text-decoration: line-through;
+.rowMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.rowDate {
-  font-size: 11px;
+.rowMetaItem {
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--outline);
 }
 
-.rowMeta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+.rowMetaSep {
+  font-size: 10px;
+  color: var(--outline);
+  opacity: 0.4;
 }
 
-.rowItemCount {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--mid);
+.rowChevron {
+  font-size: 20px;
+  color: var(--outline);
+  flex-shrink: 0;
+  margin-left: 16px;
 }
+
+/* Status text colors */
+.statusCheckedOut { color: var(--tertiary); }
+.statusConfirmed  { color: var(--white); }
+.statusPending    { color: var(--outline); }
+.statusReturned   { color: var(--outline); }
+.statusCancelled  { color: var(--outline); opacity: 0.4; }
+.statusRejected   { color: var(--repair); }
 
 /* Error state */
 .errorState {

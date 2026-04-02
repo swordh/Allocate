@@ -14,6 +14,8 @@ function docToBooking(doc: FirebaseFirestore.DocumentSnapshot): Booking {
     equipmentIds:    data.equipmentIds    ?? [],
     startDate:       data.startDate       ?? '',
     endDate:         data.endDate         ?? '',
+    startTime:       data.startTime       ?? null,
+    endTime:         data.endTime         ?? null,
     userId:          data.userId          ?? null,
     userName:        data.userName        ?? '',
     status:          data.status          ?? 'pending',

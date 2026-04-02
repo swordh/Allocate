@@ -16,7 +16,10 @@ vi.mock('@/lib/firebase-admin', () => {
     collection: vi.fn(),
     runTransaction: vi.fn(),
   }
-  return { adminDb: mockDb, adminAuth: {} }
+  const mockAuth = {
+    getUser: vi.fn().mockResolvedValue({ displayName: 'Test User', email: 'test@example.com' }),
+  }
+  return { adminDb: mockDb, adminAuth: mockAuth }
 })
 
 vi.mock('@/lib/dal', () => ({
