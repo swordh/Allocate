@@ -15,8 +15,9 @@ function docToEquipment(doc: FirebaseFirestore.DocumentSnapshot): Equipment {
     active:           data.active           ?? true,
     trackingType:     data.trackingType     ?? 'serialized',
     totalQuantity:    data.totalQuantity    ?? 1,
-    requiresApproval: data.requiresApproval ?? false,
-    approverId:       data.approverId       ?? null,
+    requiresApproval:     data.requiresApproval     ?? false,
+    approverId:           data.approverId           ?? null,
+    availableForBooking:  data.availableForBooking !== false, // !==false defaults existing docs (no field) to true
     createdAt:        data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,
     customFields:     Array.isArray(data.customFields) ? data.customFields : [],
   }
@@ -32,7 +33,8 @@ function docToUnit(doc: FirebaseFirestore.DocumentSnapshot): EquipmentUnit {
     serialNumber: data.serialNumber ?? null,
     status:       data.status       ?? 'available',
     notes:        data.notes        ?? null,
-    active:       data.active       ?? true,
+    active:               data.active               ?? true,
+    availableForBooking:  data.availableForBooking !== false,
     createdAt:    data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt ?? null,
   }
 }

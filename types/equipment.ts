@@ -37,6 +37,7 @@ export interface Equipment {
   totalQuantity: number       // always 1 for serialized; >= 1 for quantity
   requiresApproval: boolean   // triggers approval flow when booked
   approverId: string | null   // specific user who must approve; Admin if null
+  availableForBooking: boolean // when false, hidden from the booking form picker
   createdAt: string | null    // ISO string (converted from Timestamp at read boundary)
   customFields: CustomField[] // defaults to []
   units?: EquipmentUnit[]     // hydrated at query time, never stored in Firestore
@@ -51,5 +52,6 @@ export interface EquipmentUnit {
   status: EquipmentStatus
   notes: string | null
   active: boolean
+  availableForBooking: boolean
   createdAt: string | null
 }

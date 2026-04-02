@@ -16,6 +16,7 @@ interface CompanyDocumentInternal {
 interface EquipmentDocumentInternal {
   name: string
   active: boolean
+  availableForBooking?: boolean
   trackingType: 'serialized' | 'quantity'
   totalQuantity: number
   requiresApproval: boolean
@@ -437,6 +438,10 @@ export async function createBooking(
 
         if (!equipment.active) {
           throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
+        }
+
+        if (equipment.availableForBooking === false) {
+          throw new Error('Some selected equipment is not available for booking.')
         }
 
         if (equipment.trackingType === 'serialized') {

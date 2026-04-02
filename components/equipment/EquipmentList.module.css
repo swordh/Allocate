@@ -226,6 +226,20 @@
   cursor: not-allowed;
 }
 
+.availabilityBtnAvailable {
+  border-color: var(--white);
+}
+
+.availabilityBtnUnavailable {
+  opacity: 0.4;
+}
+
+.availabilityBtnAvailable:disabled,
+.availabilityBtnUnavailable:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .errorState {
   padding: var(--booking-pad-v) 0;
   color: var(--error);
