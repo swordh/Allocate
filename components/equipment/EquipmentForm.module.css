@@ -266,3 +266,62 @@
 .removeFieldBtn:hover {
   color: var(--repair);
 }
+
+/* ── Initial Units ─────────────────────────────────────────────────────────── */
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--mid);
+  margin: 0 0 0.5rem;
+}
+
+.inlineRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.inlineRow .input {
+  flex: 1;
+}
+
+.removeBtn {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  background: transparent;
+  border: 1px solid var(--dim);
+  color: var(--mid);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.removeBtn:hover {
+  border-color: var(--repair);
+  color: var(--repair);
+}
+
+.addBtn {
+  font-size: var(--font-subnav);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+  transition: color 0.15s ease;
+}
+
+.addBtn:hover {
+  color: var(--white);
+}
