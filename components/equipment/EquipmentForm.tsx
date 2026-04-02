@@ -13,6 +13,7 @@ interface EquipmentFormProps {
   equipment?: Equipment   // present in edit mode
   onSuccess: () => void
   onCancel: () => void
+  onSuccessWithUnit?: (equipmentId: string) => void
 }
 
 export default function EquipmentForm({
@@ -20,6 +21,7 @@ export default function EquipmentForm({
   equipment,
   onSuccess,
   onCancel,
+  onSuccessWithUnit,
 }: EquipmentFormProps) {
   const { user } = useAuth()
   const { categories, loading: categoriesLoading } = useCategories(companyId)
@@ -36,6 +38,7 @@ export default function EquipmentForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const addUnitRef = useRef<boolean>(false)
 
   const isEditMode = !!equipment
 
@@ -98,8 +101,13 @@ export default function EquipmentForm({
     setSubmitting(false)
 
     if (result.error) {
+      addUnitRef.current = false
       setError(result.error)
+    } else if (addUnitRef.current && onSuccessWithUnit && result.id) {
+      addUnitRef.current = false
+      onSuccessWithUnit(result.id)
     } else {
+      addUnitRef.current = false
       onSuccess()
     }
   }
@@ -345,13 +353,25 @@ export default function EquipmentForm({
         >
           Cancel
         </button>
-        <button
-          type="submit"
-          className={styles.submitBtn}
-          disabled={submitting}
-        >
-          {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
-        </button>
+        {!isEditMode && trackingType === 'serialized' ? (
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={submitting}
+            onClick={() => { addUnitRef.current = true }}
+          >
+            {submitting ? 'Saving...' : 'Save + Add Unit'}
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={submitting}
+            onClick={() => { addUnitRef.current = false }}
+          >
+            {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
+          </button>
+        )}
       </div>
     </form>
   )
