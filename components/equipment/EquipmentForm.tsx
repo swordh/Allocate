@@ -13,6 +13,7 @@ interface EquipmentFormProps {
   equipment?: Equipment   // present in edit mode
   onSuccess: () => void
   onCancel: () => void
+  onSuccessWithUnit?: (equipmentId: string) => void
 }
 
 export default function EquipmentForm({
@@ -20,6 +21,7 @@ export default function EquipmentForm({
   equipment,
   onSuccess,
   onCancel,
+  onSuccessWithUnit,
 }: EquipmentFormProps) {
   const { user } = useAuth()
   const { categories, loading: categoriesLoading } = useCategories(companyId)
@@ -33,12 +35,10 @@ export default function EquipmentForm({
   const [requiresApproval, setRequiresApproval] = useState(equipment?.requiresApproval ?? false)
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
   const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
-  const [initialUnits, setInitialUnits] = useState<Array<{ id: string; value: string }>>(
-    [{ id: Math.random().toString(36).slice(2), value: '' }],
-  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const addUnitRef = useRef<boolean>(false)
 
   const isEditMode = !!equipment
 
@@ -62,16 +62,6 @@ export default function EquipmentForm({
 
   function updateField(id: string, patch: Partial<CustomField>) {
     setCustomFields(prev => prev.map(f => f.id === id ? { ...f, ...patch } as CustomField : f))
-  }
-
-  function addInitialUnit() {
-    setInitialUnits((prev) => [...prev, { id: Math.random().toString(36).slice(2), value: '' }])
-  }
-  function removeInitialUnit(id: string) {
-    setInitialUnits((prev) => prev.filter((u) => u.id !== id))
-  }
-  function updateInitialUnit(id: string, value: string) {
-    setInitialUnits((prev) => prev.map((u) => (u.id === id ? { ...u, value } : u)))
   }
 
   function handleTypeChange(id: string, newType: CustomFieldType) {
@@ -99,11 +89,6 @@ export default function EquipmentForm({
     if (trackingType === 'quantity') {
       formData.set('totalQuantity', String(totalQuantity))
     }
-    if (!isEditMode && trackingType === 'serialized') {
-      initialUnits.forEach(({ value }, index) => {
-        formData.set(`unitName_${index}`, value)
-      })
-    }
 
     let result: { id?: string; error?: string }
     if (isEditMode) {
@@ -116,8 +101,13 @@ export default function EquipmentForm({
     setSubmitting(false)
 
     if (result.error) {
+      addUnitRef.current = false
       setError(result.error)
+    } else if (addUnitRef.current && onSuccessWithUnit && result.id) {
+      addUnitRef.current = false
+      onSuccessWithUnit(result.id)
     } else {
+      addUnitRef.current = false
       onSuccess()
     }
   }
@@ -234,39 +224,6 @@ export default function EquipmentForm({
         ))}
       </div>
 
-      {/* Initial Units — serialized only, create mode only */}
-      {!isEditMode && trackingType === 'serialized' && (
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Initial Units</label>
-          <p className={styles.hint}>Optionally add units now. You can always add more later.</p>
-          {initialUnits.map(({ id, value }, index) => (
-            <div key={id} className={styles.inlineRow}>
-              <input
-                type="text"
-                name={`unitName_${index}`}
-                value={value}
-                onChange={(e) => updateInitialUnit(id, e.target.value)}
-                placeholder="Unit name or serial number"
-                className={styles.input}
-                maxLength={100}
-              />
-              {initialUnits.length > 1 && (
-                <button
-                  type="button"
-                  className={styles.removeBtn}
-                  onClick={() => removeInitialUnit(id)}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          ))}
-          <button type="button" className={styles.addBtn} onClick={addInitialUnit}>
-            + Add Another Unit
-          </button>
-        </div>
-      )}
-
       {/* Tracking type — immutable after creation */}
       <div className={styles.field}>
         <label className={styles.label}>
@@ -292,10 +249,7 @@ export default function EquipmentForm({
               name="trackingType"
               value="quantity"
               checked={trackingType === 'quantity'}
-              onChange={() => {
-                setTrackingType('quantity')
-                setInitialUnits([{ id: Math.random().toString(36).slice(2), value: '' }])
-              }}
+              onChange={() => setTrackingType('quantity')}
               disabled={isEditMode}
               className={styles.toggleRadio}
             />
@@ -399,10 +353,21 @@ export default function EquipmentForm({
         >
           Cancel
         </button>
+        {!isEditMode && trackingType === 'serialized' && (
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={submitting}
+            onClick={() => { addUnitRef.current = true }}
+          >
+            {submitting ? 'Saving...' : 'Save + Add Unit'}
+          </button>
+        )}
         <button
           type="submit"
           className={styles.submitBtn}
           disabled={submitting}
+          onClick={() => { addUnitRef.current = false }}
         >
           {submitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Add Equipment'}
         </button>

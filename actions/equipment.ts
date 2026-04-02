@@ -119,43 +119,6 @@ export async function createEquipment(
       })
     })
 
-    // ── Best-effort unit creation (serialized only) ──────────────────────────
-    if (trackingType === 'serialized') {
-      const unitEntries: Array<{ index: number; label: string }> = []
-      for (const [key, value] of formData.entries()) {
-        if (key.startsWith('unitName_') && typeof value === 'string') {
-          const trimmed = value.trim()
-          if (trimmed) {
-            const index = parseInt(key.replace('unitName_', ''), 10)
-            unitEntries.push({ index: isNaN(index) ? 9999 : index, label: trimmed })
-          }
-        }
-      }
-      unitEntries.sort((a, b) => a.index - b.index)
-
-      if (unitEntries.length > 0) {
-        const unitsCollection = adminDb.collection(
-          `companies/${companyId}/equipment/${newEquipmentId!}/units`,
-        )
-        await Promise.allSettled(
-          unitEntries.map(({ label }) =>
-            unitsCollection.add({
-              equipmentId: newEquipmentId!,
-              companyId,
-              label,
-              serialNumber: null,
-              status: 'available',
-              notes: null,
-              active: true,
-              availableForBooking: true,
-              createdAt: FieldValue.serverTimestamp(),
-              createdBy: session.uid,
-            }),
-          ),
-        )
-      }
-    }
-
     revalidatePath('/equipment')
     revalidatePath('/settings/equipment')
 
