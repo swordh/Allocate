@@ -509,6 +509,7 @@ export interface UnitCreate {
   serialNumber: string | null
   status: EquipmentStatus
   notes: string | null
+  availableForBooking: boolean
 }
 
 export interface EquipmentFields {
@@ -619,7 +620,7 @@ export async function updateEquipmentWithUnits(
         status: u.status,
         notes: u.notes,
         active: true,
-        availableForBooking: true,
+        availableForBooking: u.availableForBooking,
         createdAt: FieldValue.serverTimestamp(),
         createdBy: session.uid,
       })

@@ -67,7 +67,7 @@ const EQUIPMENT_FIELDS = {
   description: null,
   requiresApproval: false,
   approverId: null,
-  customFields: [] as const,
+  customFields: [],
 }
 
 const UNIT_UPDATE = {
@@ -186,7 +186,7 @@ describe('validation', () => {
       EQUIPMENT_ID,
       EQUIPMENT_FIELDS,
       [],
-      [{ label: 'New', serialNumber: null, status: 'broken' as any, notes: null }],
+      [{ label: 'New', serialNumber: null, status: 'broken' as any, notes: null, availableForBooking: true }],
       []
     )
     expect(result).toEqual({ error: expect.stringContaining('status') })
@@ -325,6 +325,7 @@ describe('unit creates', () => {
       serialNumber: null,
       status: 'available' as const,
       notes: null,
+      availableForBooking: true,
     }
 
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [newUnit], [])
