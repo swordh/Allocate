@@ -3,11 +3,10 @@
 import { useState } from 'react'
 import { useEquipment } from '@/hooks/useEquipment'
 import { deactivateEquipment, deactivateUnit, toggleEquipmentAvailability, toggleUnitAvailability } from '@/actions/equipment'
-import EquipmentStatusBadge from './EquipmentStatusBadge'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentModal from './EquipmentModal'
 import { UnitModal } from './UnitModal'
-import type { Equipment, EquipmentUnit, Role } from '@/types'
+import type { Equipment, EquipmentStatus, EquipmentUnit, Role } from '@/types'
 import styles from './EquipmentList.module.css'
 
 interface EquipmentListProps {
@@ -15,6 +14,36 @@ interface EquipmentListProps {
   role: Role
   initialEquipment: Equipment[]
 }
+
+// ---------------------------------------------------------------------------
+// Status helpers
+// ---------------------------------------------------------------------------
+
+const UNIT_STATUS_LABELS: Record<EquipmentStatus, string> = {
+  available:    'Available',
+  checked_out:  'Checked Out',
+  needs_repair: 'Needs Repair',
+}
+
+function getStatusDotClass(status: EquipmentStatus): string {
+  switch (status) {
+    case 'available':    return styles.statusDotAvailable
+    case 'checked_out':  return styles.statusDotCheckedOut
+    case 'needs_repair': return styles.statusDotNeedsRepair
+  }
+}
+
+function getUnitStatusTextClass(status: EquipmentStatus): string {
+  switch (status) {
+    case 'available':    return styles.unitStatusAvailable
+    case 'checked_out':  return styles.unitStatusCheckedOut
+    case 'needs_repair': return styles.unitStatusNeedsRepair
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function EquipmentList({ companyId, role, initialEquipment }: EquipmentListProps) {
   // Real-time listener replaces the server-fetched initial data.
@@ -167,17 +196,21 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     <div className={styles.rowLeft}>
                       <span className={styles.name}>{item.name}</span>
                       {item.trackingType === 'quantity' && (
-                        <span className={styles.quantityBadge}>x{item.totalQuantity}</span>
+                        <>
+                          <span className={styles.trackingTypeBadge}>Qty</span>
+                          <span className={styles.quantityInfo}>
+                            <strong>{item.totalQuantity}</strong> available
+                          </span>
+                        </>
                       )}
                       {!item.trackingType && (
                         <span className={styles.legacyBadge}>Legacy</span>
                       )}
-                      <span className={styles.categoryPill}>{item.category}</span>
                     </div>
                     {role === 'admin' && (
                       <div className={styles.rowActions}>
                         <button
-                          className={`${styles.editBtn} ${item.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}`}
+                          className={item.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}
                           onClick={() => handleToggleAvailability(item)}
                           disabled={togglingAvailabilityId === item.id}
                         >
@@ -212,26 +245,15 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     <div className={styles.groupHeader}>
                       <div className={styles.rowLeft}>
                         <span className={styles.name}>{eq.name}</span>
-                        <span className={styles.categoryPill}>{cat}</span>
+                        <span className={styles.trackingTypeBadge}>Units</span>
                       </div>
                       {role === 'admin' && (
                         <div className={styles.rowActions}>
                           <button
-                            className={`${styles.editBtn} ${eq.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}`}
-                            onClick={() => handleToggleAvailability(eq)}
-                            disabled={togglingAvailabilityId === eq.id}
-                          >
-                            {togglingAvailabilityId === eq.id
-                              ? '...'
-                              : eq.availableForBooking
-                                ? 'Available'
-                                : 'Unavailable'}
-                          </button>
-                          <button
                             className={styles.editBtn}
                             onClick={() => openAddUnitModal(eq.id)}
                           >
-                            Add Unit
+                            + Add Unit
                           </button>
                           <button
                             className={styles.editBtn}
@@ -254,40 +276,45 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {(eq.units ?? []).map((unit) => (
                       <div key={unit.id} className={styles.unitRow}>
                         <div className={styles.rowLeft}>
-                          <EquipmentStatusBadge status={unit.status} />
+                          <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} />
                           <span className={styles.unitName}>{unit.label}</span>
                           {unit.serialNumber && (
                             <span className={styles.serialNumber}>{unit.serialNumber}</span>
                           )}
                         </div>
-                        {role === 'admin' && (
-                          <div className={styles.rowActions}>
-                            <button
-                              className={`${styles.editBtn} ${unit.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}`}
-                              onClick={() => handleToggleUnitAvailability(eq.id, unit)}
-                              disabled={togglingUnitAvailabilityId === unit.id}
-                            >
-                              {togglingUnitAvailabilityId === unit.id
-                                ? '...'
-                                : unit.availableForBooking
-                                  ? 'Available'
-                                  : 'Unavailable'}
-                            </button>
-                            <button
-                              className={styles.editBtn}
-                              onClick={() => openEditUnitModal(eq.id, unit)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className={styles.deactivateBtn}
-                              onClick={() => handleDeactivateUnit(eq.id, unit)}
-                              disabled={deactivatingUnitId === unit.id}
-                            >
-                              {deactivatingUnitId === unit.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
-                        )}
+                        <div className={styles.unitRowRight}>
+                          <span className={`${styles.unitStatusText} ${getUnitStatusTextClass(unit.status)}`}>
+                            {UNIT_STATUS_LABELS[unit.status]}
+                          </span>
+                          {role === 'admin' && (
+                            <>
+                              <button
+                                className={unit.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}
+                                onClick={() => handleToggleUnitAvailability(eq.id, unit)}
+                                disabled={togglingUnitAvailabilityId === unit.id}
+                              >
+                                {togglingUnitAvailabilityId === unit.id
+                                  ? '...'
+                                  : unit.availableForBooking
+                                    ? 'Available'
+                                    : 'Unavailable'}
+                              </button>
+                              <button
+                                className={styles.editBtn}
+                                onClick={() => openEditUnitModal(eq.id, unit)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className={styles.deactivateBtn}
+                                onClick={() => handleDeactivateUnit(eq.id, unit)}
+                                disabled={deactivatingUnitId === unit.id}
+                              >
+                                {deactivatingUnitId === unit.id ? 'Deleting...' : 'Delete'}
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

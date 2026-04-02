@@ -86,7 +86,7 @@
   align-items: center;
   justify-content: space-between;
   background: var(--surface-container-low);
-  padding: var(--booking-pad-v) 24px;
+  padding: var(--booking-pad-v) 16px;
   border-bottom: 1px solid rgba(71, 71, 71, 0.2);
   transition: background 0.1s;
 }
@@ -107,7 +107,7 @@
   align-items: center;
   justify-content: space-between;
   background: var(--surface-container-low);
-  padding: 16px 24px;
+  padding: 16px;
   border-bottom: 1px solid rgba(71, 71, 71, 0.2);
 }
 
@@ -117,7 +117,7 @@
   align-items: center;
   justify-content: space-between;
   background: var(--surface-container-low);
-  padding: 12px 24px 12px calc(24px + 32px);
+  padding: 10px 16px 10px calc(16px + 24px);
   border-bottom: 1px solid rgba(71, 71, 71, 0.2);
   transition: background 0.1s;
 }
@@ -126,16 +126,86 @@
   background: var(--surface-container-high);
 }
 
+/* Right side of a unit row — status text + optional admin actions */
+.unitRowRight {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Status dot — colored circle indicating unit status */
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDotAvailable {
+  background: var(--white);
+}
+
+.statusDotCheckedOut {
+  background: var(--tertiary);
+}
+
+.statusDotNeedsRepair {
+  background: var(--error);
+}
+
+/* Status text shown on the right of a unit row */
+.unitStatusText {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.unitStatusAvailable {
+  color: rgba(145, 145, 145, 0.6);
+}
+
+.unitStatusCheckedOut {
+  color: var(--tertiary);
+}
+
+.unitStatusNeedsRepair {
+  color: var(--error);
+}
+
+/* Tracking type badge: "Units" or "Qty" */
+.trackingTypeBadge {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--on-surface-variant);
+  border: 1px solid rgba(145, 145, 145, 0.3);
+  padding: 2px 6px;
+}
+
+/* "N available" text for quantity items */
+.quantityInfo {
+  font-size: var(--font-subnav);
+  color: var(--on-surface-variant);
+}
+
+.quantityInfo strong {
+  color: var(--white);
+  font-weight: 700;
+}
+
 .unitName {
   font-size: var(--font-body);
-  font-weight: 300;
+  font-weight: 400;
   color: var(--white);
 }
 
 .rowLeft {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
 
 .name {
@@ -144,15 +214,6 @@
   color: var(--white);
   text-transform: uppercase;
   letter-spacing: -0.01em;
-}
-
-.quantityBadge {
-  font-size: var(--font-subnav);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--on-primary);
-  background: var(--white);
-  padding: 2px 7px;
 }
 
 .legacyBadge {
@@ -166,52 +227,45 @@
 }
 
 .serialNumber {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 300;
   color: var(--on-surface-variant);
   font-variant-numeric: tabular-nums;
 }
 
-.categoryPill {
-  font-size: var(--font-subnav);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--on-surface-variant);
-}
-
 .rowActions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
 }
 
 .editBtn {
-  font-size: var(--font-subnav);
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   background: none;
-  color: var(--white);
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  padding: 4px 12px;
+  color: var(--on-surface-variant);
+  border: 1px solid rgba(145, 145, 145, 0.3);
+  padding: 4px 10px;
   cursor: pointer;
-  transition: border-color 0.1s;
+  transition: border-color 0.1s, color 0.1s;
 }
 
 .editBtn:hover {
   border-color: var(--white);
+  color: var(--white);
 }
 
 .deactivateBtn {
-  font-size: var(--font-subnav);
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   background: none;
-  color: var(--white);
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  padding: 4px 12px;
+  color: var(--on-surface-variant);
+  border: 1px solid rgba(145, 145, 145, 0.3);
+  padding: 4px 10px;
   cursor: pointer;
   transition: border-color 0.1s, color 0.1s;
 }
@@ -226,7 +280,7 @@
   cursor: not-allowed;
 }
 
-/* Availability toggle — styled as status text, not a bordered button */
+/* Availability toggle — plain text, no border */
 .availabilityBtnAvailable {
   font-size: 10px;
   font-weight: 700;
