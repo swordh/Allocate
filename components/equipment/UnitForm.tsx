@@ -2,7 +2,7 @@
 import { useActionState } from 'react'
 import { createUnit, updateUnit } from '@/actions/equipment'
 import type { EquipmentUnit } from '@/types'
-import styles from './EquipmentForm.module.css'
+import styles from './UnitForm.module.css'
 
 interface UnitFormProps {
   equipmentId: string

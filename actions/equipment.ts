@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import type { Subscription, EquipmentStatus, CustomField } from '@/types'
+import type { Subscription, EquipmentStatus, CustomField, TrackingType } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
 
@@ -648,5 +648,156 @@ export async function updateEquipmentWithUnits(
   } catch (err) {
     console.error('[updateEquipmentWithUnits]', err)
     return { error: 'Failed to save changes. Please try again.' }
+  }
+}
+
+// ── createEquipmentWithUnits ─────────────────────────────────────────────────
+// Creates an equipment document and its initial unit subcollection docs in one
+// atomic operation. The equipment write runs inside a transaction (plan limit
+// check), and the unit batch is committed immediately after.
+
+export async function createEquipmentWithUnits(
+  fields: {
+    name: string
+    description: string | null
+    category: string
+    trackingType: TrackingType
+    totalQuantity: number
+    requiresApproval: boolean
+    approverId: string | null
+    customFields: CustomField[]
+  },
+  unitCreates: UnitCreate[],
+): Promise<{ id: string } | { error: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+
+  // ── Input validation ─────────────────────────────────────────────────────────
+  const name = fields.name?.trim() ?? ''
+  if (!name) return { error: 'Name is required' }
+  if (name.length > 100) return { error: 'Name must be 100 characters or fewer' }
+
+  const category = fields.category?.trim() ?? ''
+  if (!category) return { error: 'Category is required' }
+
+  if (fields.trackingType === 'quantity') {
+    const qty = fields.totalQuantity
+    if (!Number.isInteger(qty) || qty < 1) {
+      return { error: 'totalQuantity must be a positive integer for quantity items' }
+    }
+  }
+
+  for (const u of unitCreates) {
+    if (!u.label?.trim()) return { error: 'Unit label is required' }
+    if (!VALID_UNIT_STATUSES.includes(u.status)) {
+      return { error: `Invalid unit status: "${u.status}"` }
+    }
+  }
+
+  // Guard against Firestore 500-op batch limit (1 equipment write + unit creates)
+  if (unitCreates.length > 498) return { error: 'Too many units in one request' }
+
+  // ── Transaction: check plan limit + write equipment doc atomically ───────────
+  let newEquipmentId: string
+
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const companyRef = adminDb.doc(`companies/${companyId}`)
+      const companySnap = await tx.get(companyRef)
+
+      if (!companySnap.exists) {
+        throw Object.assign(new Error('Company not found.'), { code: 'not-found' })
+      }
+
+      const company = companySnap.data() as CompanyDocumentInternal
+      const { subscription } = company
+
+      if (subscription.status !== 'trialing' && subscription.status !== 'active') {
+        throw Object.assign(
+          new Error('Subscription is not active. Reactivate your plan to add equipment.'),
+          { code: 'failed-precondition' },
+        )
+      }
+
+      // Count active equipment. Aggregation queries cannot run inside
+      // runTransaction, so we query outside and accept the negligible TOCTOU
+      // window — this is a soft cap, not a security boundary.
+      const countSnap = await adminDb
+        .collection(`companies/${companyId}/equipment`)
+        .where('active', '==', true)
+        .count()
+        .get()
+      const currentCount = countSnap.data().count
+
+      const limit = subscription.limits.equipment
+      const plan = subscription.plan
+
+      if (currentCount >= limit) {
+        throw Object.assign(
+          new Error(
+            `Equipment limit reached. Your ${plan} plan allows ${limit} items. Upgrade to add more.`,
+          ),
+          { code: 'resource-exhausted' },
+        )
+      }
+
+      const newRef = adminDb.collection(`companies/${companyId}/equipment`).doc()
+      newEquipmentId = newRef.id
+
+      tx.set(newRef, {
+        name,
+        description: fields.description?.trim() || null,
+        category,
+        trackingType: fields.trackingType,
+        totalQuantity: fields.totalQuantity,
+        active: true,
+        requiresApproval: fields.requiresApproval,
+        approverId: fields.approverId || null,
+        customFields: fields.customFields,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: session.uid,
+      })
+    })
+
+    // ── Batch-create units (after transaction succeeds) ───────────────────────
+    if (unitCreates.length > 0) {
+      const batch = adminDb.batch()
+      const unitsCollection = adminDb.collection(
+        `companies/${companyId}/equipment/${newEquipmentId!}/units`,
+      )
+
+      for (const u of unitCreates) {
+        const newRef = unitsCollection.doc()
+        batch.set(newRef, {
+          equipmentId: newEquipmentId!,
+          companyId,
+          label: u.label,
+          serialNumber: u.serialNumber,
+          status: u.status,
+          notes: u.notes,
+          active: true,
+          availableForBooking: u.availableForBooking,
+          createdAt: FieldValue.serverTimestamp(),
+          createdBy: session.uid,
+        })
+      }
+
+      await batch.commit()
+    }
+
+    revalidatePath('/equipment')
+    revalidatePath('/settings/equipment')
+
+    return { id: newEquipmentId! }
+  } catch (err) {
+    const code = (err as { code?: string }).code
+    const isUserFacing = ['resource-exhausted', 'failed-precondition', 'not-found'].includes(code ?? '')
+    const userMessage = isUserFacing
+      ? (err instanceof Error ? err.message : 'Unexpected error')
+      : 'Failed to create equipment. Please try again.'
+    console.error('[actions/equipment] createEquipmentWithUnits failed', { message: err instanceof Error ? err.message : err })
+    return { error: userMessage }
   }
 }

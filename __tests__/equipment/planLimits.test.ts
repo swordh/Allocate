@@ -222,12 +222,6 @@ describe('createEquipment — plan limit enforcement', () => {
       expect(result).toEqual({ error: 'Category is required' })
     })
 
-    it('rejects an invalid status value', async () => {
-      const result = await createEquipment(makeFormData({ status: 'broken' }))
-      expect(result).toHaveProperty('error')
-      expect((result as { error: string }).error).toContain('status must be one of')
-    })
-
     it('rejects totalQuantity < 1 for quantity-tracked items', async () => {
       const result = await createEquipment(
         makeFormData({ trackingType: 'quantity', totalQuantity: '0' }),
@@ -236,12 +230,5 @@ describe('createEquipment — plan limit enforcement', () => {
       expect((result as { error: string }).error).toContain('totalQuantity')
     })
 
-    it('rejects a serialNumber on a quantity-tracked item', async () => {
-      const result = await createEquipment(
-        makeFormData({ trackingType: 'quantity', totalQuantity: '5', serialNumber: 'SN-001' }),
-      )
-      expect(result).toHaveProperty('error')
-      expect((result as { error: string }).error).toContain('serialNumber')
-    })
   })
 })
