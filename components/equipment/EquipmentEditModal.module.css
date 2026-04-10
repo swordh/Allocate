@@ -311,14 +311,14 @@
 }
 
 .inlineInput::placeholder {
-  color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .serialInput {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* ── Status select (inside unit rows) ────────────────────────────────────── */
@@ -354,7 +354,7 @@
 .deleteRowBtn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.3);
   cursor: pointer;
   padding: 2px;
   line-height: 1;
