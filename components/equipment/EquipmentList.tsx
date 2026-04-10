@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useEquipment } from '@/hooks/useEquipment'
 import { deactivateEquipment, toggleEquipmentAvailability } from '@/actions/equipment'
 import EquipmentEmpty from './EquipmentEmpty'
-import EquipmentModal from './EquipmentModal'
 import EquipmentEditModal from './EquipmentEditModal'
 import type { Equipment, EquipmentStatus, Role } from '@/types'
 import styles from './EquipmentList.module.css'
@@ -51,31 +50,22 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const { equipment: liveEquipment, loading, error } = useEquipment(companyId)
   const equipment = loading ? initialEquipment : liveEquipment
 
-  // Quantity / add-new modal
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingItem, setEditingItem] = useState<Equipment | undefined>(undefined)
-
-  // Combined serialized edit modal
-  const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editModalEquipment, setEditModalEquipment] = useState<Equipment | undefined>(undefined)
+  // Unified modal state
+  const [unifiedModalOpen, setUnifiedModalOpen] = useState(false)
+  const [unifiedModalEquipment, setUnifiedModalEquipment] = useState<Equipment | undefined>(undefined)
 
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<string | null>(null)
 
   function openAddModal() {
-    setEditingItem(undefined)
-    setModalOpen(true)
+    setUnifiedModalEquipment(undefined)
+    setUnifiedModalOpen(true)
   }
 
   function openEditModal(item: Equipment) {
-    setEditingItem(item)
-    setModalOpen(true)
-  }
-
-  function openEditSerializedModal(item: Equipment) {
-    setEditModalEquipment(item)
-    setEditModalOpen(true)
+    setUnifiedModalEquipment(item)
+    setUnifiedModalOpen(true)
   }
 
   async function handleDeactivate(item: Equipment) {
@@ -203,7 +193,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                   </div>
                 ))}
 
-                {/* Serialized items — collapsible group with combined edit modal */}
+                {/* Serialized items — collapsible group with unified edit modal */}
                 {serializedItems.map((eq) => (
                   <details key={eq.id} className={styles.group} open>
                     <summary className={styles.groupHeader}>
@@ -218,7 +208,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                         <div className={styles.rowActions}>
                           <button
                             className={styles.editBtn}
-                            onClick={(e) => { e.preventDefault(); openEditSerializedModal(eq) }}
+                            onClick={(e) => { e.preventDefault(); openEditModal(eq) }}
                           >
                             Edit
                           </button>
@@ -249,7 +239,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                       <div className={styles.addUnitRow}>
                         <button
                           className={styles.addUnitLink}
-                          onClick={(e) => { e.preventDefault(); openEditSerializedModal(eq) }}
+                          onClick={(e) => { e.preventDefault(); openEditModal(eq) }}
                         >
                           + Add Unit
                         </button>
@@ -263,21 +253,12 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         </div>
       )}
 
-      <EquipmentModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+      <EquipmentEditModal
+        isOpen={unifiedModalOpen}
+        onClose={() => setUnifiedModalOpen(false)}
         companyId={companyId}
-        equipment={editingItem}
+        equipment={unifiedModalEquipment}
       />
-
-      {editModalEquipment && (
-        <EquipmentEditModal
-          isOpen={editModalOpen}
-          onClose={() => setEditModalOpen(false)}
-          companyId={companyId}
-          equipment={editModalEquipment}
-        />
-      )}
     </>
   )
 }

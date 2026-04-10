@@ -1,7 +1,7 @@
 'use client'
 import { UnitForm } from './UnitForm'
 import type { EquipmentUnit } from '@/types'
-import styles from './EquipmentModal.module.css'
+import styles from './UnitModal.module.css'
 
 interface UnitModalProps {
   equipmentId: string

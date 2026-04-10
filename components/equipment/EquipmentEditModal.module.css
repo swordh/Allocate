@@ -59,7 +59,7 @@
 .closeBtn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
   padding: 2px;
   line-height: 1;
@@ -95,7 +95,7 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
   margin-bottom: 24px;
 }
 
@@ -118,12 +118,16 @@
   margin-top: 24px;
 }
 
+.grid2 .field + .field {
+  margin-top: 0;
+}
+
 .fieldLabel {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .optional {
@@ -142,7 +146,7 @@
   color: var(--white);
   font-family: inherit;
   font-size: 14px;
-  padding: 8px 0;
+  padding: 8px 12px;
   width: 100%;
   outline: none;
   transition: border-color 0.1s;
@@ -151,7 +155,7 @@
 .input:focus,
 .textarea:focus,
 .select:focus {
-  border-bottom-color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: rgba(255, 255, 255, 0.9);
 }
 
 .textarea {
@@ -182,7 +186,7 @@
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
@@ -211,7 +215,7 @@
 }
 
 .toggleOn {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .toggleOn::after {
@@ -234,7 +238,7 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 12px;
   margin-bottom: 0;
@@ -307,14 +311,14 @@
 }
 
 .inlineInput::placeholder {
-  color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .serialInput {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* ── Status select (inside unit rows) ────────────────────────────────────── */
@@ -350,7 +354,7 @@
 .deleteRowBtn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.3);
   cursor: pointer;
   padding: 2px;
   line-height: 1;
@@ -374,7 +378,7 @@
   gap: 6px;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
   font-family: inherit;
   font-size: 9px;
   font-weight: 700;
@@ -386,11 +390,114 @@
 }
 
 .addUnitBtn:hover {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .addUnitBtn .material-symbols-outlined {
   font-size: 14px;
+}
+
+/* ── Tracking type toggle ─────────────────────────────────────────────────── */
+
+.trackingToggleGroup {
+  display: flex;
+  gap: 0;
+  margin-top: 6px;
+}
+
+.trackingToggleBtn {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.trackingToggleBtn:first-child {
+  border-right: none;
+}
+
+.trackingToggleBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.trackingToggleBtnActive {
+  background: var(--white);
+  color: var(--on-primary);
+}
+
+/* Field with top margin (used after tracking toggle) */
+.fieldMt {
+  margin-top: 16px;
+}
+
+/* ── Custom fields ────────────────────────────────────────────────────────── */
+
+.customFieldsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.addFieldBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: inherit;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.addFieldBtn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.customFieldRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.customFieldRow .input,
+.customFieldRow .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.customFieldRangeSep {
+  color: rgba(255, 255, 255, 0.3);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.removeFieldBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 14px;
+  padding: 0 0 8px 0;
+  font-family: inherit;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+
+.removeFieldBtn:hover {
+  color: var(--error);
 }
 
 /* ── Error ────────────────────────────────────────────────────────────────── */
@@ -450,7 +557,7 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 0;
   transition: color 0.1s;
