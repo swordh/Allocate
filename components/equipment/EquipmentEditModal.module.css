@@ -59,7 +59,7 @@
 .closeBtn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
   padding: 2px;
   line-height: 1;
@@ -453,14 +453,14 @@
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
   font-family: inherit;
   padding: 0;
   transition: color 0.1s;
 }
 
 .addFieldBtn:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .customFieldRow {
@@ -557,7 +557,7 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 0;
   transition: color 0.1s;
