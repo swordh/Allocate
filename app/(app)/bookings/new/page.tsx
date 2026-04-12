@@ -2,12 +2,8 @@ import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
 import BookingForm from '@/components/bookings/BookingForm'
 import { redirect } from 'next/navigation'
+import styles from './page.module.css'
 
-/**
- * New booking page — Server Component shell.
- * Fetches session, verifies the user can create bookings, then passes
- * equipment list to the BookingForm Client Component.
- */
 export default async function NewBookingPage() {
   const session = await getVerifiedSession()
 
@@ -21,11 +17,19 @@ export default async function NewBookingPage() {
   const equipment = await getEquipment(session.activeCompanyId)
 
   return (
-    <BookingForm
-      companyId={session.activeCompanyId}
-      equipment={equipment}
-      defaultStartDate={todayStr}
-      defaultEndDate={todayStr}
-    />
+    <main className={styles.main}>
+      <div className={styles.contentWidth}>
+        <header className={styles.header}>
+          <h1 className={styles.h1}>NEW BOOKING</h1>
+          <div className={styles.divider} />
+        </header>
+        <BookingForm
+          companyId={session.activeCompanyId}
+          equipment={equipment}
+          defaultStartDate={todayStr}
+          defaultEndDate={todayStr}
+        />
+      </div>
+    </main>
   )
 }

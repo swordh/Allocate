@@ -384,6 +384,8 @@ export async function createBooking(
 
   const rawStartDate = (formData.get('startDate') as string | null)?.trim() ?? ''
   const rawEndDate = (formData.get('endDate') as string | null)?.trim() ?? ''
+  const startTime = (formData.get('startTime') as string | null)?.trim() || null
+  const endTime = (formData.get('endTime') as string | null)?.trim() || null
 
   let startDate: string
   let endDate: string
@@ -515,6 +517,8 @@ export async function createBooking(
         unitIds,
         startDate,
         endDate,
+        startTime,
+        endTime,
         userId: session.uid,
         userName: resolvedUserName,
         status: bookingStatus,

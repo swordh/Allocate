@@ -78,18 +78,16 @@
 </div>
 
 <!-- Top Nav -->
-<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+<nav class="bg-[#080808] text-white top-0 z-50 border-b border-white/5 flex justify-between items-center w-full px-8 py-5 sticky">
   <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
-  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
-    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="bookings.html">BOOKINGS</a>
-    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
-    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
+  <div class="hidden md:flex items-center gap-10 absolute left-1/2 -translate-x-1/2">
+    <a class="text-xs font-bold uppercase tracking-widest text-white border-b-2 border-white pb-1" href="bookings.html">BOOKINGS</a>
+    <a class="text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white transition-colors duration-100" href="settings-company.html">SETTINGS</a>
   </div>
   <div class="flex items-center gap-6">
-    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
-      <span class="material-symbols-outlined">notifications</span>
-    </button>
-    <a href="booking-new.html" class="border border-white text-white px-5 py-2 text-xs font-bold tracking-wider hover:bg-white hover:text-[#080808] transition-all duration-100">NEW BOOKING</a>
+    <span class="material-symbols-outlined text-white/50 cursor-pointer hover:text-white">notifications</span>
+    <a href="booking-new.html" class="bg-white text-on-primary px-5 py-2 text-xs font-bold tracking-widest uppercase hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
   </div>
 </nav>
 
@@ -107,29 +105,29 @@
     <div class="flex flex-col md:flex-row gap-0 items-start">
 
       <!-- Form -->
-      <div class="flex-1 md:pr-12 md:border-r md:border-outline-variant/20 pb-12">
+      <div class="flex-1 md:pr-12 md:border-r md:border-white/10 pb-12">
 
         <!-- Project / Title -->
         <div class="mb-10">
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="title">Project / Title</label>
-          <div class="border-b border-outline-variant/30">
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 pt-4 pb-1" for="title">Project / Title</label>
+          <div class="border-b border-white/10">
             <input class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" type="text" id="title" placeholder="e.g. Nordic Noir EP5 — Camera Package">
           </div>
         </div>
 
         <!-- Date -->
         <div class="mb-10">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Date</div>
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-4">Date</div>
           <div class="grid grid-cols-2 gap-6">
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">Start Date</label>
-              <div class="border-b border-outline-variant/30">
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 pb-1">Start Date</label>
+              <div class="border-b border-white/10">
                 <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="date" value="2026-03-26">
               </div>
             </div>
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">End Date</label>
-              <div class="border-b border-outline-variant/30">
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 pb-1">End Date</label>
+              <div class="border-b border-white/10">
                 <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="date" value="2026-03-26">
               </div>
             </div>
@@ -138,17 +136,17 @@
 
         <!-- Time -->
         <div class="mb-10">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Time</div>
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-4">Time</div>
           <div class="grid grid-cols-2 gap-6">
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">Start Time</label>
-              <div class="border-b border-outline-variant/30">
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 pb-1">Start Time</label>
+              <div class="border-b border-white/10">
                 <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="time" value="07:00">
               </div>
             </div>
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pb-1">End Time</label>
-              <div class="border-b border-outline-variant/30">
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 pb-1">End Time</label>
+              <div class="border-b border-white/10">
                 <input class="block w-full bg-transparent border-none outline-none text-white text-lg font-medium pb-4 caret-tertiary" type="time" value="22:00">
               </div>
             </div>
@@ -157,148 +155,161 @@
 
         <!-- Equipment -->
         <div class="mb-10">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Equipment</div>
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-4">Equipment</div>
 
           <!-- Category: Camera -->
-          <div class="flex items-center gap-4 py-2 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Camera</span>
-            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-          </div>
+          <section class="mb-8">
+            <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">CAMERA</h2>
 
-          <!-- ARRI Alexa Mini LF — checked -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
-                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+            <!-- ARRI Alexa Mini LF — checked -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <label class="bg-surface-container-low px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+                <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+                </div>
+                <div class="flex items-center gap-3 flex-1">
+                  <span class="text-base font-bold">ARRI Alexa Mini LF</span>
+                  <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+                </div>
+              </label>
+              <div class="border-t border-white/5 bg-surface-container-low px-6 py-3 flex items-center gap-4">
+                <span class="text-[9px] font-bold uppercase tracking-widest text-white/40 flex-shrink-0">Which unit?</span>
+                <select class="bg-surface-container-high border border-white/10 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
+                  <option>Alexa #1 — S/N K1.0012345 (available)</option>
+                  <option>Alexa #2 — S/N K1.0012346 (checked out)</option>
+                </select>
               </div>
-              <span class="flex-1 text-sm font-medium text-white">ARRI Alexa Mini LF</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
-            </label>
-            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">Which unit?</span>
-              <select class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
-                <option>Alexa #1 — S/N K1.0012345 (available)</option>
-                <option>Alexa #2 — S/N K1.0012346 (checked out)</option>
-              </select>
             </div>
-          </div>
 
-          <!-- Sony FX9 — unchecked -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
-              <span class="flex-1 text-sm font-medium text-white">Sony FX9</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
-            </label>
-          </div>
+            <!-- Sony FX9 — unchecked -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <label class="bg-surface-container-low px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+                <div class="w-4 h-4 border border-white/20 flex-shrink-0"></div>
+                <div class="flex items-center gap-3 flex-1">
+                  <span class="text-base font-bold">Sony FX9</span>
+                  <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+                </div>
+              </label>
+            </div>
+          </section>
 
           <!-- Category: Lenses -->
-          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Lenses</span>
-            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-          </div>
+          <section class="mb-8">
+            <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">LENSES</h2>
 
-          <!-- Zeiss Supreme Prime Set — checked -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
-                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+            <!-- Zeiss Supreme Prime Set — checked -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <label class="bg-surface-container-low px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+                <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+                </div>
+                <div class="flex items-center gap-3 flex-1">
+                  <span class="text-base font-bold">Zeiss Supreme Prime Set</span>
+                  <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+                </div>
+              </label>
+              <div class="border-t border-white/5 bg-surface-container-low px-6 py-3 flex items-center gap-4">
+                <span class="text-[9px] font-bold uppercase tracking-widest text-white/40 flex-shrink-0">Which unit?</span>
+                <select class="bg-surface-container-high border border-white/10 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
+                  <option>25mm T1.5 — S/N ZS-001 (available)</option>
+                  <option>50mm T1.5 — S/N ZS-002 (available)</option>
+                </select>
               </div>
-              <span class="flex-1 text-sm font-medium text-white">Zeiss Supreme Prime Set</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
-            </label>
-            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">Which unit?</span>
-              <select class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 cursor-pointer flex-1 max-w-xs" style="-webkit-appearance:none;appearance:none;">
-                <option>25mm T1.5 — S/N ZS-001 (available)</option>
-                <option>50mm T1.5 — S/N ZS-002 (available)</option>
-              </select>
             </div>
-          </div>
+          </section>
 
           <!-- Category: Grip -->
-          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Grip</span>
-            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-          </div>
+          <section class="mb-8">
+            <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">GRIP</h2>
 
-          <!-- C-Stand — checked, quantity -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
-                <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+            <!-- C-Stand — checked, quantity -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <div class="bg-surface-container-low px-6 py-4 flex items-center gap-4">
+                <label class="flex items-center gap-4 cursor-pointer flex-1 select-none hover:opacity-80 transition-opacity">
+                  <div class="w-4 h-4 bg-tertiary border-tertiary border flex-shrink-0 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[11px] text-on-tertiary" style="font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-base font-bold">C-Stand</span>
+                    <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">QTY</span>
+                  </div>
+                </label>
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <div class="flex items-center border border-white/10">
+                    <button class="px-3 py-1.5 text-white/40 hover:text-white hover:bg-white/5 transition-colors text-sm font-bold leading-none">−</button>
+                    <span class="px-3 py-1.5 text-sm font-bold text-white border-x border-white/10 min-w-[2.5rem] text-center">4</span>
+                    <button class="px-3 py-1.5 text-white/40 hover:text-white hover:bg-white/5 transition-colors text-sm font-bold leading-none">+</button>
+                  </div>
+                  <span class="text-[9px] text-white/30">of 10</span>
+                </div>
               </div>
-              <span class="flex-1 text-sm font-medium text-white">C-Stand</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Qty</span>
-            </label>
-            <div class="flex items-center gap-4 pb-3 px-1 pl-9">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-outline flex-shrink-0">How many?</span>
-              <input type="number" class="bg-surface-container-low border border-outline/30 outline-none text-white text-sm py-1.5 px-2 w-20 text-center caret-tertiary" value="4" min="1" max="10">
-              <span class="text-[10px] text-outline">max 10 available</span>
             </div>
-          </div>
 
-          <!-- Sandbag — unchecked -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
-              <span class="flex-1 text-sm font-medium text-white">Sandbag</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Qty</span>
-            </label>
-          </div>
+            <!-- Sandbag — unchecked -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <label class="bg-surface-container-low px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+                <div class="w-4 h-4 border border-white/20 flex-shrink-0"></div>
+                <div class="flex items-center gap-3 flex-1">
+                  <span class="text-base font-bold">Sandbag</span>
+                  <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">QTY</span>
+                </div>
+              </label>
+            </div>
+          </section>
 
           <!-- Category: Audio -->
-          <div class="flex items-center gap-4 py-2 mt-4 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Audio</span>
-            <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-          </div>
+          <section class="mb-8">
+            <h2 class="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase mb-4 border-b border-white/10 pb-2">AUDIO</h2>
 
-          <!-- Sennheiser MKH 416 — unchecked -->
-          <div class="border-b border-outline-variant/20">
-            <label class="flex items-center gap-4 py-3 cursor-pointer hover:bg-surface-container-low px-1">
-              <div class="w-4 h-4 border border-outline/40 flex-shrink-0"></div>
-              <span class="flex-1 text-sm font-medium text-white">Sennheiser MKH 416</span>
-              <span class="text-[8px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-1.5 py-0.5">Units</span>
-            </label>
-          </div>
+            <!-- Sennheiser MKH 416 — unchecked -->
+            <div class="mb-2 border border-white/10 overflow-hidden">
+              <label class="bg-surface-container-low px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+                <div class="w-4 h-4 border border-white/20 flex-shrink-0"></div>
+                <div class="flex items-center gap-3 flex-1">
+                  <span class="text-base font-bold">Sennheiser MKH 416</span>
+                  <span class="bg-white/5 text-[8px] px-1.5 py-0.5 font-bold text-white/30 uppercase tracking-widest">UNITS</span>
+                </div>
+              </label>
+            </div>
+          </section>
         </div>
 
         <!-- Notes -->
         <div class="mb-10">
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-3" for="notes">Notes</label>
-          <textarea class="block w-full bg-transparent border border-outline-variant/30 outline-none text-white text-sm font-light p-4 resize-y min-h-24 caret-tertiary" id="notes" rows="4" placeholder="Any additional notes or special requirements…" style="caret-color:#EECC02;"></textarea>
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-3" for="notes">Notes</label>
+          <textarea class="block w-full bg-transparent border border-white/10 outline-none text-white text-sm font-light p-4 resize-y min-h-24 caret-tertiary" id="notes" rows="4" placeholder="Any additional notes or special requirements…" style="caret-color:#EECC02;"></textarea>
         </div>
       </div>
 
       <!-- Summary panel -->
       <div class="md:pl-12 md:w-80 md:sticky md:top-24 pb-12">
-        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-6 pb-3 border-b border-outline-variant/20">Booking Summary</div>
+        <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-6 pb-3 border-b border-white/10">Booking Summary</div>
 
         <!-- Selected items -->
         <div class="space-y-0">
-          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+          <div class="flex justify-between items-center py-3 border-b border-white/10">
             <span class="text-sm font-medium">ARRI Alexa Mini LF</span>
-            <span class="text-[10px] text-outline">Alexa #1</span>
+            <span class="text-[10px] text-white/40">Alexa #1</span>
           </div>
-          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+          <div class="flex justify-between items-center py-3 border-b border-white/10">
             <span class="text-sm font-medium">Zeiss Supreme Prime Set</span>
-            <span class="text-[10px] text-outline">25mm T1.5</span>
+            <span class="text-[10px] text-white/40">25mm T1.5</span>
           </div>
-          <div class="flex justify-between items-center py-3 border-b border-outline-variant/20">
+          <div class="flex justify-between items-center py-3 border-b border-white/10">
             <span class="text-sm font-medium">C-Stand</span>
-            <span class="text-[10px] text-outline">×4</span>
+            <span class="text-[10px] text-white/40">×4</span>
           </div>
         </div>
 
         <div class="text-[10px] font-bold uppercase tracking-widest text-tertiary mt-3 mb-6">3 items selected</div>
 
         <!-- Date / Time -->
-        <div class="py-4 border-b border-outline-variant/20 mb-2">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-1">Date</div>
+        <div class="py-4 border-b border-white/10 mb-2">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">Date</div>
           <div class="text-base font-medium">Thu 26 Mar 2026</div>
         </div>
-        <div class="py-4 border-b border-outline-variant/20 mb-6">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-1">Time</div>
+        <div class="py-4 border-b border-white/10 mb-6">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">Time</div>
           <div class="text-base font-medium">07:00 → 22:00</div>
         </div>
 
@@ -310,16 +321,16 @@
 </main>
 
 <!-- Mobile Bottom Nav -->
-<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
-  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="bookings.html">
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-white/5 z-50">
+  <a class="flex flex-col items-center justify-center text-tertiary" href="bookings.html">
     <span class="material-symbols-outlined text-[20px]">calendar_today</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
   </a>
-  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+  <a class="flex flex-col items-center justify-center text-white/40 hover:text-white" href="equipment.html">
     <span class="material-symbols-outlined text-[20px]">construction</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
   </a>
-  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="settings-company.html">
+  <a class="flex flex-col items-center justify-center text-white/40 hover:text-white" href="settings-company.html">
     <span class="material-symbols-outlined text-[20px]">settings</span>
     <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
   </a>
