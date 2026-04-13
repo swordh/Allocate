@@ -899,6 +899,77 @@ export async function approveBooking(
   }
 }
 
+// ── getBookedSummary (availability pre-check for all equipment) ──────────────
+
+/**
+ * Summary of what is already booked for one equipment item in a date range.
+ * Used by BookingForm to display proactive availability before items are selected.
+ */
+export interface BookedSummary {
+  /** Total quantity already booked (for quantity-tracked equipment). */
+  quantity: number
+  /** Unit IDs already booked (for serialized equipment). */
+  unitIds: string[]
+}
+
+/**
+ * Returns a map of equipmentId → BookedSummary for all equipment that has
+ * at least one booking overlapping [startDate, endDate].
+ * Advisory only — never blocks the UI. Returns {} on any error.
+ */
+export async function getBookedSummary(
+  companyId: string,
+  startDate: string,
+  endDate: string,
+): Promise<Record<string, BookedSummary>> {
+  const session = await getVerifiedSession()
+  if (companyId !== session.activeCompanyId) return {}
+
+  let validatedStart: string
+  let validatedEnd: string
+  try {
+    validatedStart = validateDateString(startDate, 'startDate')
+    validatedEnd   = validateDateString(endDate, 'endDate')
+  } catch {
+    return {}
+  }
+  if (validatedEnd < validatedStart) return {}
+
+  try {
+    // Single query: all non-cancelled bookings whose endDate >= our startDate.
+    const snap = await adminDb
+      .collection(`companies/${session.activeCompanyId}/bookings`)
+      .where('endDate', '>=', validatedStart)
+      .get()
+
+    const summary: Record<string, BookedSummary> = {}
+
+    for (const doc of snap.docs) {
+      const data = doc.data() as StoredBookingForConflict
+      if (data.status === 'cancelled') continue
+      if (data.approvalStatus === 'rejected') continue
+      if (data.startDate > validatedEnd) continue  // no overlap
+
+      for (const item of data.items ?? []) {
+        if (!summary[item.equipmentId]) {
+          summary[item.equipmentId] = { quantity: 0, unitIds: [] }
+        }
+        summary[item.equipmentId].quantity += item.quantity ?? 0
+        if (item.unitId) {
+          summary[item.equipmentId].unitIds.push(item.unitId)
+        }
+      }
+    }
+
+    return summary
+  } catch (err) {
+    console.error('[actions/bookings] getBookedSummary failed', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return {}
+  }
+}
+
 // ── checkConflict (read-only pre-check) ─────────────────────────────────────
 
 export async function checkConflict(
