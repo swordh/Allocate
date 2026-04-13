@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
@@ -105,6 +105,23 @@ export default function BookingWeekView({
   const days     = useMemo(() => getDaysOfWeek(weekStart), [weekStart])
   const today    = todayString()
 
+  // Mobile: single-day navigation
+  const [selectedDay, setSelectedDay] = useState(
+    days.includes(today) ? today : days[0],
+  )
+
+  function prevDay() {
+    const d = new Date(selectedDay + 'T00:00:00')
+    d.setDate(d.getDate() - 1)
+    setSelectedDay(toDateString(d))
+  }
+
+  function nextDay() {
+    const d = new Date(selectedDay + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    setSelectedDay(toDateString(d))
+  }
+
   // Group bookings by which days they span
   function bookingsForDay(dayStr: string): Booking[] {
     return bookings.filter(
@@ -151,7 +168,38 @@ export default function BookingWeekView({
         </button>
       </div>
 
-      {/* Grid */}
+      {/* Mobile: single-day view */}
+      <div className={styles.mobileView}>
+        <div className={styles.mobileDayNav}>
+          <button className={styles.navBtn} onClick={prevDay}>←</button>
+          <div className={styles.mobileDayTitle}>
+            {(() => {
+              const h = formatDayHeader(selectedDay)
+              const isSelectedToday = selectedDay === today
+              return (
+                <>
+                  <span className={styles.mobileDayWeekday}>{h.weekday}</span>
+                  <span className={`${styles.mobileDayDate} ${isSelectedToday ? styles.mobileDayDateToday : ''}`}>
+                    {h.date}
+                  </span>
+                </>
+              )
+            })()}
+          </div>
+          <button className={styles.navBtn} onClick={nextDay}>→</button>
+        </div>
+        <div className={styles.mobileDayBody}>
+          {bookingsForDay(selectedDay).length === 0 ? (
+            <div className={styles.mobileDayEmpty}>No bookings</div>
+          ) : (
+            bookingsForDay(selectedDay).map((booking) => (
+              <BookingBlock key={booking.id} booking={booking} />
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Desktop: 7-column week grid */}
       <div className={styles.grid}>
         {days.map((day) => {
           const isToday   = day === today

@@ -85,12 +85,18 @@
   margin-bottom: 24px;
 }
 
-/* Body: 2-column layout */
+/* Body: stacked on mobile, 2-column on desktop */
 .body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 24px;
   min-height: calc(100vh - 300px);
+}
+
+@media (min-width: 768px) {
+  .body {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* Details column */

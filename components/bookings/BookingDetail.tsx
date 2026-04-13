@@ -232,7 +232,7 @@ export default function BookingDetail({
 
         {/* Actions panel */}
         <div className={styles.actions}>
-          {/* Approve / Reject */}
+          {/* Approve / Reject — hidden for MVP, re-enable in Phase 5
           {canApprove && (
             <div className={styles.approvalSection}>
               <div className={styles.approvalLabel}>Approval Required</div>
@@ -276,7 +276,7 @@ export default function BookingDetail({
                 </div>
               )}
             </div>
-          )}
+          )} */}
 
           {/* Cancel booking */}
           {canCancel && (

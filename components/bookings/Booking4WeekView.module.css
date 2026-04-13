@@ -1,0 +1,175 @@
+/* -----------------------------------------------------------------------
+   Booking 4-Week View — compact 4-row × 7-column grid
+   ----------------------------------------------------------------------- */
+
+.container {
+  width: 100%;
+}
+
+/* Nav bar */
+.navBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px var(--booking-pad-h);
+  border-bottom: 1px solid var(--rule);
+}
+
+.navBtn {
+  background: none;
+  border: 1px solid var(--dim);
+  color: var(--mid);
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.navBtn:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+.periodLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--white);
+  min-width: 260px;
+}
+
+.todayBtn {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  background: none;
+  border: 1px solid var(--dim);
+  padding: 4px 12px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.todayBtn:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+/* 7-column grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-left: 1px solid var(--rule);
+  border-top: 1px solid var(--rule);
+}
+
+/* Weekday header */
+.dayHeader {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mid);
+  padding: 6px 10px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* Day cell — compact */
+.day {
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 8px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dayToday {
+  background: rgba(238, 204, 2, 0.04);
+}
+
+.dayMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.dayWeekday {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--dim);
+}
+
+.dayDate {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mid);
+}
+
+.dayDateToday {
+  color: var(--accent);
+}
+
+/* Bookings inside a day cell */
+.dayBookings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Booking pill */
+.block {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.1s;
+}
+
+.block:hover {
+  opacity: 0.8;
+}
+
+/* Status-specific pill colours */
+.blockCheckedOut {
+  background: rgba(238, 204, 2, 0.15);
+  color: var(--accent);
+}
+
+.blockConfirmed {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--white);
+}
+
+.blockPending {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mid);
+}
+
+.blockReturned {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dim);
+}
+
+.moreBookings {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+}

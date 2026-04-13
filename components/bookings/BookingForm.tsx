@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBooking, checkConflict } from '@/actions/bookings'
+import { createBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
 import { useToast } from '@/lib/toast-context'
 import type { Equipment } from '@/types'
-import type { ConflictResult } from '@/actions/bookings'
+import type { ConflictResult, BookedSummary } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
 
 interface BookingFormProps {
@@ -49,7 +49,19 @@ export default function BookingForm({
   const [error, setError]               = useState<string | null>(null)
   const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null)
   const [isCheckingConflict, setIsCheckingConflict] = useState(false)
+  const [bookedSummary, setBookedSummary] = useState<Record<string, BookedSummary> | null>(null)
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
   const [isPending, startTransition]    = useTransition()
+
+  // Load availability on mount (default dates are already set)
+  useEffect(() => {
+    if (!defaultStartDate || !defaultEndDate) return
+    setIsLoadingAvailability(true)
+    getBookedSummary(companyId, defaultStartDate, defaultEndDate)
+      .then(setBookedSummary)
+      .finally(() => setIsLoadingAvailability(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const bookableEquipment = equipment.filter((e) => e.availableForBooking !== false)
   const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
@@ -92,14 +104,22 @@ export default function BookingForm({
     setConflictResult(null)
   }
 
+  function sortedSerializedUnits(eq: Equipment): typeof eq.units {
+    const bookable = (eq.units ?? []).filter(u => u.availableForBooking !== false)
+    const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
+    const available   = bookable.filter(u => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
+    const unavailable = bookable.filter(u =>  booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
+    return [...available, ...unavailable]
+  }
+
   function toggleSerializedItem(eq: Equipment) {
-    const units = (eq.units ?? []).filter(u => u.availableForBooking !== false)
+    const sorted = sortedSerializedUnits(eq)
     setSelectedItems((prev) => {
       const hasSelection = prev.some((i) => i.equipmentId === eq.id && i.unitId)
       if (hasSelection) {
         return prev.filter((i) => i.equipmentId !== eq.id || !i.unitId)
       }
-      const firstUnit = units[0]
+      const firstUnit = sorted[0]
       if (!firstUnit) return prev
       const without = prev.filter((i) => i.equipmentId !== eq.id || !i.unitId)
       return [...without, { equipmentId: eq.id, unitId: firstUnit.id, quantity: 1 }]
@@ -132,17 +152,25 @@ export default function BookingForm({
       setEndDate(value)
     }
 
-    if (selectedItems.length === 0) return
     if (!newStart || !newEnd) return
 
     const effectiveEnd = newEnd < newStart ? newStart : newEnd
 
-    setIsCheckingConflict(true)
-    try {
-      const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems)
-      setConflictResult(result)
-    } finally {
-      setIsCheckingConflict(false)
+    // Always refresh availability for all equipment when dates change
+    setIsLoadingAvailability(true)
+    getBookedSummary(companyId, newStart, effectiveEnd)
+      .then(setBookedSummary)
+      .finally(() => setIsLoadingAvailability(false))
+
+    // Also re-check conflicts for already-selected items
+    if (selectedItems.length > 0) {
+      setIsCheckingConflict(true)
+      try {
+        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems)
+        setConflictResult(result)
+      } finally {
+        setIsCheckingConflict(false)
+      }
     }
   }
 
@@ -309,7 +337,7 @@ export default function BookingForm({
           {/* Equipment */}
           <div className={styles.field}>
             <div className={styles.sectionLabel}>Equipment</div>
-            {isCheckingConflict && (
+            {(isCheckingConflict || isLoadingAvailability) && (
               <div className={styles.conflictChecking}>Checking availability…</div>
             )}
             {bookableEquipment.length === 0 ? (
@@ -327,9 +355,14 @@ export default function BookingForm({
                       const hasConflict = conflictIds.has(eq.id)
 
                       if (eq.trackingType === 'serialized') {
-                        const units = (eq.units ?? []).filter(u => u.availableForBooking !== false)
+                        const units = sortedSerializedUnits(eq)
                         const selectedUnitId = getSelectedUnitId(eq.id)
                         const isChecked = !!selectedUnitId
+
+                        // Proactive availability from bookedSummary
+                        const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
+                        const availableUnits = units.filter(u => !bookedUnitIds.has(u.id))
+                        const proactiveUnavailable = bookedSummary !== null && availableUnits.length === 0
 
                         return (
                           <div key={eq.id} className={`${styles.equipmentBox} ${hasConflict ? styles.equipmentBoxConflict : ''}`}>
@@ -346,6 +379,13 @@ export default function BookingForm({
                               <div className={styles.equipmentMeta}>
                                 <span className={styles.equipmentName}>{eq.name}</span>
                                 <span className={styles.typeTag}>UNITS</span>
+                                {bookedSummary !== null && !hasConflict && (
+                                  proactiveUnavailable
+                                    ? <span className={styles.availabilityNone}>Unavailable</span>
+                                    : availableUnits.length < units.length
+                                      ? <span className={styles.availabilityCount}>{availableUnits.length} of {units.length} free</span>
+                                      : null
+                                )}
                               </div>
                               {eq.requiresApproval && (
                                 <span className={styles.approvalTag}>Approval required</span>
@@ -362,11 +402,14 @@ export default function BookingForm({
                                   value={selectedUnitId ?? ''}
                                   onChange={(e) => selectUnit(eq.id, e.target.value)}
                                 >
-                                  {units.map((unit) => (
-                                    <option key={unit.id} value={unit.id}>
-                                      {unit.label}{unit.serialNumber ? ` — S/N ${unit.serialNumber}` : ''}
-                                    </option>
-                                  ))}
+                                  {units.map((unit) => {
+                                    const isUnitBooked = bookedUnitIds.has(unit.id)
+                                    return (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.label}{unit.serialNumber ? ` — S/N ${unit.serialNumber}` : ''}{isUnitBooked ? ' (Unavailable)' : ''}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
                               </div>
                             )}
@@ -382,6 +425,12 @@ export default function BookingForm({
                       // quantity equipment
                       const selected = isSelected(eq.id)
                       const qty = selected ? getQuantity(eq.id) : 0
+
+                      // Proactive availability from bookedSummary
+                      const qtyBooked = bookedSummary?.[eq.id]?.quantity ?? 0
+                      const qtyAvailable = eq.totalQuantity - qtyBooked
+                      const proactiveUnavailable = bookedSummary !== null && qtyAvailable <= 0
+
                       return (
                         <div key={eq.id} className={`${styles.equipmentBox} ${hasConflict ? styles.equipmentBoxConflict : ''}`}>
                           <div className={`${styles.equipmentRow} ${selected ? styles.equipmentRowSelected : ''}`}>
@@ -398,6 +447,13 @@ export default function BookingForm({
                               <div className={styles.equipmentMeta}>
                                 <span className={styles.equipmentName}>{eq.name}</span>
                                 <span className={styles.typeTag}>QTY</span>
+                                {bookedSummary !== null && !hasConflict && (
+                                  proactiveUnavailable
+                                    ? <span className={styles.availabilityNone}>Unavailable</span>
+                                    : qtyBooked > 0
+                                      ? <span className={styles.availabilityCount}>{qtyAvailable} of {eq.totalQuantity} available</span>
+                                      : null
+                                )}
                                 {eq.requiresApproval && (
                                   <span className={styles.approvalTag}>Approval required</span>
                                 )}

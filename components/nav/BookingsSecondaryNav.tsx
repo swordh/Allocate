@@ -13,8 +13,8 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { label: 'List',    href: '/bookings' },
   { label: 'Week',    href: '/bookings/week' },
-  { label: 'Month',   href: '/bookings/month',   disabled: true },
-  { label: '4 Weeks', href: '/bookings/4weeks',  disabled: true },
+  { label: 'Month',   href: '/bookings/month' },
+  { label: '4 Weeks', href: '/bookings/4weeks' },
 ]
 
 /**
