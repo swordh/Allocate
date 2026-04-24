@@ -88,6 +88,13 @@
   padding: 10px 14px;
 }
 
+.status {
+  font-size: var(--font-body);
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline);
+  padding: 10px 14px;
+}
+
 .submitBtn {
   font-family: inherit;
   font-size: 0.75rem;

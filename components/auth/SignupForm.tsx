@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { setupNewCompany, createSession } from '@/actions/auth'
 import styles from './Auth.module.css'
@@ -57,6 +57,10 @@ export default function SignupForm() {
       return
     }
 
+    try {
+      await sendEmailVerification(credential.user)
+    } catch {/* best-effort */}
+
     // ── Step 2: Create company server-side (no CORS) ──────────────────────
     // Pass the initial token only for identity verification. Claims are set
     // inside setupNewCompany; we must refresh the token AFTER this call.
@@ -88,7 +92,7 @@ export default function SignupForm() {
       return
     }
 
-    router.push('/bookings')
+    router.push('/verify-email')
   }
 
   return (

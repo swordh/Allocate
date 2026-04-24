@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { createSession } from '@/actions/auth'
 import styles from './Auth.module.css'
@@ -23,9 +23,16 @@ export default function LoginForm() {
 
     try {
       const credential = await signInWithEmailAndPassword(auth, email.trim(), password)
-      const idToken = await credential.user.getIdToken()
-      await createSession(idToken)
-      router.push('/bookings')
+      await credential.user.reload()
+      const idToken = await credential.user.getIdToken(true)
+      if (!credential.user.emailVerified) {
+        sendEmailVerification(credential.user).catch(() => {})
+        await createSession(idToken)
+        router.push('/verify-email')
+      } else {
+        await createSession(idToken)
+        router.push('/bookings')
+      }
     } catch (err) {
       // auth/wrong-password and auth/user-not-found are legacy SDK v8 codes;
       // SDK v9+ unifies them into auth/invalid-credential to prevent enumeration.

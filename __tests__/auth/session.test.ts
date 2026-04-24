@@ -122,17 +122,85 @@ describe('getVerifiedSession', () => {
       email:           'user@example.com',
       activeCompanyId: 'company-abc',
       role:            'admin',
+      email_verified:  true,
     })
 
-    // React.cache memoises the first resolved value per module lifetime.
-    // Earlier tests all threw (rejected), so no resolved value is cached yet.
-    // This call populates the cache and returns the claims.
+    // React.cache is a pass-through in tests (see __mocks__/next-cache.ts),
+    // so every call hits the mock directly with no memoisation.
     const claims = await getVerifiedSession()
 
     expect(claims.uid).toBe('user-1')
     expect(claims.email).toBe('user@example.com')
     expect(claims.activeCompanyId).toBe('company-abc')
     expect(claims.role).toBe('admin')
+  })
+
+  // ── email_verified checks (issue #70) ─────────────────────────────────────
+
+  it('redirects to /verify-email when email_verified is false', async () => {
+    mockCookieGet.mockReturnValue({ value: 'unverified-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-2',
+      email:           'unverified@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'admin',
+      email_verified:  false,
+    })
+
+    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/verify-email')
+  })
+
+  it('does NOT redirect to /login when email_verified is false (route is /verify-email)', async () => {
+    mockCookieGet.mockReturnValue({ value: 'unverified-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-2',
+      email:           'unverified@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'admin',
+      email_verified:  false,
+    })
+
+    // The redirect must go to /verify-email, not /login — they are distinct
+    // routes with different UI. Asserting the wrong target would silently pass.
+    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/verify-email')
+    await expect(getVerifiedSession()).rejects.not.toThrow('REDIRECT:/login')
+  })
+
+  it('returns SessionClaims when email_verified is true', async () => {
+    mockCookieGet.mockReturnValue({ value: 'verified-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-3',
+      email:           'verified@example.com',
+      activeCompanyId: 'company-xyz',
+      role:            'crew',
+      email_verified:  true,
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.uid).toBe('user-3')
+    expect(claims.email).toBe('verified@example.com')
+    expect(claims.activeCompanyId).toBe('company-xyz')
+    expect(claims.role).toBe('crew')
+  })
+
+  it('does not redirect to /verify-email when email_verified is undefined (legacy sessions)', async () => {
+    // Defensive: existing sessions minted before issue #70 may not carry the
+    // email_verified claim. They must continue to work — only an explicit
+    // false should gate access.
+    mockCookieGet.mockReturnValue({ value: 'legacy-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-4',
+      email:           'legacy@example.com',
+      activeCompanyId: 'company-legacy',
+      role:            'admin',
+      // email_verified intentionally absent
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.uid).toBe('user-4')
+    expect(claims.activeCompanyId).toBe('company-legacy')
   })
 })
 
