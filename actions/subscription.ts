@@ -1,22 +1,22 @@
 'use server'
 
-import type { Plan } from '@/types'
 import { getVerifiedSession } from '@/lib/dal'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
-import { getPriceId } from '@/lib/plans'
 
 export async function createCheckoutSession(
   interval: 'month' | 'year',
-  plan: Plan,
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
   console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session' })
 
-  const priceId = getPriceId(plan, interval)
+  const priceId =
+    interval === 'month'
+      ? process.env.STRIPE_PRICE_STARTER_MONTHLY
+      : process.env.STRIPE_PRICE_STARTER_YEARLY
 
-  if (!priceId) return { error: `Stripe price not configured for ${plan} plan` }
+  if (!priceId) return { error: 'Stripe price not configured' }
 
   try {
     const companyId = session.activeCompanyId
