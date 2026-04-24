@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import styles from './auth-layout.module.css'
 
 // Minimal shell for unauthenticated routes — auth header/footer, no nav, no auth check.
@@ -9,11 +10,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       </header>
       <main className={styles.authMain}>{children}</main>
       <footer className={styles.authFooter}>
-        <p>© 2024 ALLOCATE. ALL RIGHTS RESERVED.</p>
+        <p>© 2026 ALLOCATE. ALL RIGHTS RESERVED.</p>
         <div className={styles.authFooterLinks}>
-          <a href="#">LEGAL</a>
-          <a href="#">PRIVACY</a>
-          <a href="#">TERMS</a>
+          <Link href="/privacy">PRIVACY</Link>
+          <Link href="/terms">TERMS</Link>
         </div>
       </footer>
     </div>
