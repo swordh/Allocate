@@ -9,8 +9,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getVerifiedSession()
 
   const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
-  const subStatus = companyDoc.data()?.subscription?.status
-  if (subStatus === 'canceled') redirect('/subscribe')
+  const companyData = companyDoc.data()
+  const subStatus = companyData?.subscription?.status
+  const stripeCustomerId = companyData?.stripeCustomerId ?? ''
+
+  // Block access if canceled, or if trialing without a real Stripe subscription
+  // (trialing + no stripeCustomerId = auto-trial from signup, never converted)
+  const needsSubscription =
+    subStatus === 'canceled' ||
+    (subStatus === 'trialing' && !stripeCustomerId)
+
+  if (needsSubscription) redirect('/subscribe')
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
