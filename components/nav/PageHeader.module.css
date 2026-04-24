@@ -28,3 +28,7 @@
   align-items: center;
   gap: 8px;
 }
+
+.headerWithNav {
+  margin-bottom: 0;
+}

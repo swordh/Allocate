@@ -7,7 +7,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
 
   return (
     <div style={{ maxWidth: '800px', marginLeft: 'auto', marginRight: 'auto' }}>
-      <PageHeader title="SETTINGS" actions={<SettingsSecondaryNav role={session.role} />} />
+      <PageHeader title="SETTINGS" nav={<SettingsSecondaryNav role={session.role} />} />
       {children}
     </div>
   )
