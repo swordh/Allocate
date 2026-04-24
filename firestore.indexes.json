@@ -56,13 +56,6 @@
         { "fieldPath": "companyId", "order": "ASCENDING" },
         { "fieldPath": "role", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "bookings",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
