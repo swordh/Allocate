@@ -16,6 +16,7 @@ export interface PlanLimits {
 }
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
+  free: { equipment: 0, users: 0 },
   starter: { equipment: 25, users: 10 },
 };
 
