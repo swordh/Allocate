@@ -3,6 +3,7 @@
 import { getVerifiedSession } from '@/lib/dal'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
+import Stripe from 'stripe'
 
 export async function createCheckoutSession(
   interval: 'month' | 'year',
@@ -35,17 +36,38 @@ export async function createCheckoutSession(
       await companyRef.update({ stripeCustomerId })
     }
 
-    const checkoutSession = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       customer: stripeCustomerId,
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       metadata: { companyId },
       allow_promotion_codes: true,
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=success`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=canceled`,
-    })
+    }
 
-    return { url: checkoutSession.url! }
+    try {
+      const checkoutSession = await stripe.checkout.sessions.create(sessionParams)
+      return { url: checkoutSession.url! }
+    } catch (err) {
+      if (
+        err instanceof Stripe.errors.StripeInvalidRequestError &&
+        err.code === 'resource_missing' &&
+        err.param === 'customer'
+      ) {
+        const newCustomer = await stripe.customers.create({
+          email: session.email,
+          metadata: { companyId },
+        })
+        await companyRef.update({ stripeCustomerId: newCustomer.id })
+        const retrySession = await stripe.checkout.sessions.create({
+          ...sessionParams,
+          customer: newCustomer.id,
+        })
+        return { url: retrySession.url! }
+      }
+      throw err
+    }
   } catch (err) {
     console.error('[actions/subscription] create_checkout_session_error', err)
     return { error: 'Could not create checkout session' }
