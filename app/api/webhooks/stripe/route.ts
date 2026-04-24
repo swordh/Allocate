@@ -54,6 +54,37 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     stripeCustomerId: customerId,
   })
 
+  // Fetch subscription immediately to ensure status is available when user lands on /payment-success
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      limit: 1,
+    })
+    const subscription = subscriptions.data[0]
+    if (subscription) {
+      const mappedStatus = mapStripeStatus(subscription.status)
+      const item = subscription.items.data[0]
+      await adminDb.doc(`companies/${companyId}`).update({
+        'subscription.status': mappedStatus,
+        'subscription.currentPeriodEnd': item?.current_period_end
+          ? new Date(item.current_period_end * 1000).toISOString()
+          : null,
+        'subscription.cancelAtPeriodEnd': subscription.cancel_at_period_end,
+        'subscription.trialEnd': subscription.trial_end
+          ? new Date(subscription.trial_end * 1000).toISOString()
+          : null,
+        'subscription.interval': item?.plan.interval ?? null,
+      })
+    }
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      action: 'checkout_session_completed_subscription_fetch_failed',
+      companyId,
+      customerId,
+      err,
+    })
+  }
+
   console.log('[webhooks/stripe]', {
     action: 'checkout_session_completed',
     companyId,
