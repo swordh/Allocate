@@ -3,14 +3,11 @@
 import { useState } from 'react'
 import { createPortalSession, createCheckoutSession } from '@/actions/subscription'
 import type { Subscription } from '@/types'
+import { PLANS } from '@/lib/plans'
 import styles from './SubscriptionView.module.css'
 
 interface SubscriptionViewProps {
   subscription: Subscription | null
-}
-
-const PLAN_LABELS: Record<string, string> = {
-  starter: 'Starter',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -37,9 +34,10 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
   }
 
   async function handleSubscribe(interval: 'month' | 'year') {
+    if (!subscription || subscription.plan === 'basic') return
     setLoading(true)
     setError(null)
-    const result = await createCheckoutSession(interval)
+    const result = await createCheckoutSession(interval, subscription.plan)
     if ('url' in result) {
       window.location.href = result.url
     } else {
@@ -83,7 +81,7 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
           {/* Current plan block */}
           <div className={styles.currentPlanBlock}>
             <span className={styles.planBadge}>
-              {PLAN_LABELS[subscription.plan] ?? subscription.plan}
+              {PLANS[subscription.plan]?.name ?? subscription.plan}
             </span>
 
             <div className={styles.planStatus}>

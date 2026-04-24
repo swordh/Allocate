@@ -1,23 +1,22 @@
 'use server'
 
+import type { Plan } from '@/types'
 import { getVerifiedSession } from '@/lib/dal'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
+import { getPriceId } from '@/lib/plans'
 
 export async function createCheckoutSession(
   interval: 'month' | 'year',
-  coupon?: string,
+  plan: Plan,
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
   console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session' })
 
-  const priceId =
-    interval === 'month'
-      ? process.env.STRIPE_PRICE_STARTER_MONTHLY
-      : process.env.STRIPE_PRICE_STARTER_YEARLY
+  const priceId = getPriceId(plan, interval)
 
-  if (!priceId) return { error: 'Stripe price not configured' }
+  if (!priceId) return { error: `Stripe price not configured for ${plan} plan` }
 
   try {
     const companyId = session.activeCompanyId
@@ -41,13 +40,14 @@ export async function createCheckoutSession(
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       metadata: { companyId },
-      discounts: coupon ? [{ coupon }] : undefined,
+      allow_promotion_codes: true,
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=canceled`,
     })
 
     return { url: checkoutSession.url! }
-  } catch {
+  } catch (err) {
+    console.error('[actions/subscription] create_checkout_session_error', err)
     return { error: 'Could not create checkout session' }
   }
 }
