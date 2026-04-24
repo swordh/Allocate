@@ -195,7 +195,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
 
                 {/* Serialized items — collapsible group with unified edit modal */}
                 {serializedItems.map((eq) => (
-                  <details key={eq.id} className={styles.group} open>
+                  <details key={eq.id} className={styles.group}>
                     <summary className={styles.groupHeader}>
                       <div className={styles.rowLeft}>
                         <span className={`material-symbols-outlined ${styles.chevron}`}>

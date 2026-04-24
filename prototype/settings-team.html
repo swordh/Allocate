@@ -75,6 +75,8 @@
   <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
   <a href="settings-team.html" style="color:#EECC02;text-decoration:none;">settings-team</a>
   <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
+  <a href="settings-preferences.html" style="color:#666;text-decoration:none;">settings-preferences</a>
+  <a href="settings-account.html" style="color:#666;text-decoration:none;">settings-account</a>
 </div>
 
 <!-- Top Nav -->
@@ -93,91 +95,145 @@
   </div>
 </nav>
 
-<!-- Settings sub-nav -->
-<div class="border-b border-[#474747]/20 px-6 flex gap-8">
-  <a href="settings-company.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">COMPANY</a>
-  <a href="settings-team.html" class="text-white border-b-2 border-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase">TEAM</a>
-  <a href="settings-subscription.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
-</div>
-
 <!-- Main Canvas -->
 <main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
   <div class="content-width">
 
     <header class="mb-12">
-      <h1 class="font-bold uppercase tracking-tight leading-none mb-1 text-5xl md:text-6xl">SETTINGS</h1>
-      <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-6">Team</div>
-      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+      <h1 class="font-bold uppercase tracking-tight leading-none mb-8 text-5xl md:text-6xl">SETTINGS</h1>
     </header>
 
-    <!-- Error banner — shown when remove fails -->
-    <!-- <div class="border border-error/40 bg-error/10 text-error text-sm px-4 py-3 mb-6">Failed to remove member. Please try again.</div> -->
+    <!-- Settings sub-nav -->
+    <div class="flex gap-6 mb-12 border-b border-outline-variant/20">
+      <a href="settings-company.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">COMPANY</a>
+      <a href="settings-team.html" class="text-white border-b-2 border-white pb-3 text-xs font-bold tracking-widest uppercase">TEAM</a>
+      <a href="settings-subscription.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
+      <a href="settings-preferences.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">PREFERENCES</a>
+      <a href="settings-account.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">ACCOUNT</a>
+    </div>
 
     <!-- Members section -->
-    <div class="mb-12">
-      <div class="flex items-center gap-4 mb-0">
+    <div class="mb-6">
+      <div class="flex items-center gap-4 mb-3">
         <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Members</span>
         <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
       </div>
+      <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
 
-      <!-- Table header -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-3">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Name</span>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Role</span>
-        <span></span>
-      </div>
-
-      <!-- Erik Lindström -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container-low transition-colors items-center">
-        <span class="text-sm font-medium">Erik Lindström</span>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Admin</span>
-        <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
-      </div>
-
-      <!-- Anna Bergström -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container-low transition-colors items-center">
-        <span class="text-sm font-medium">Anna Bergström</span>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Crew</span>
-        <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
-      </div>
-
-      <!-- Jonas Pettersson -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container-low transition-colors items-center">
-        <span class="text-sm font-medium">Jonas Pettersson</span>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Crew</span>
-        <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
-      </div>
-
-      <!-- Sara Nilsson -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container-low transition-colors items-center">
-        <span class="text-sm font-medium">Sara Nilsson</span>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Viewer</span>
-        <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
-      </div>
-
-      <!-- Joakim Svardh — current user -->
-      <div class="grid grid-cols-[1fr_120px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container-low transition-colors items-center">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium">Joakim Svardh</span>
-          <span class="text-[9px] font-bold uppercase tracking-widest text-tertiary border border-tertiary/30 px-1.5 py-0.5">You</span>
+        <!-- Table header -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Name</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Role</span>
+          <span></span>
         </div>
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Admin</span>
-        <span></span>
+
+        <!-- Erik Lindström -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container transition-colors items-center">
+          <span class="text-sm font-medium">Erik Lindström</span>
+          <select class="bg-surface-container border border-outline-variant/30 text-[10px] font-bold uppercase tracking-widest text-outline px-2 py-1 outline-none">
+            <option selected>Admin</option>
+            <option>Crew</option>
+            <option>Viewer</option>
+          </select>
+          <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
+        </div>
+
+        <!-- Anna Bergström -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container transition-colors items-center">
+          <span class="text-sm font-medium">Anna Bergström</span>
+          <select class="bg-surface-container border border-outline-variant/30 text-[10px] font-bold uppercase tracking-widest text-outline px-2 py-1 outline-none">
+            <option>Admin</option>
+            <option selected>Crew</option>
+            <option>Viewer</option>
+          </select>
+          <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
+        </div>
+
+        <!-- Jonas Pettersson -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container transition-colors items-center">
+          <span class="text-sm font-medium">Jonas Pettersson</span>
+          <select class="bg-surface-container border border-outline-variant/30 text-[10px] font-bold uppercase tracking-widest text-outline px-2 py-1 outline-none">
+            <option>Admin</option>
+            <option selected>Crew</option>
+            <option>Viewer</option>
+          </select>
+          <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
+        </div>
+
+        <!-- Sara Nilsson -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container transition-colors items-center">
+          <span class="text-sm font-medium">Sara Nilsson</span>
+          <select class="bg-surface-container border border-outline-variant/30 text-[10px] font-bold uppercase tracking-widest text-outline px-2 py-1 outline-none">
+            <option>Admin</option>
+            <option>Crew</option>
+            <option selected>Viewer</option>
+          </select>
+          <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors text-left">Remove</button>
+        </div>
+
+        <!-- Joakim Svardh — current user -->
+        <div class="grid grid-cols-[1fr_160px_80px] border-b border-outline-variant/20 py-4 hover:bg-surface-container transition-colors items-center">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">Joakim Svardh</span>
+            <span class="text-[9px] font-bold uppercase tracking-widest text-tertiary border border-tertiary/30 px-1.5 py-0.5">You</span>
+          </div>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Admin</span>
+          <span></span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Pending Invitations section -->
+    <div class="mb-6">
+      <div class="flex items-center gap-4 mb-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Pending Invitations</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      </div>
+      <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+
+        <!-- henrik@example.com -->
+        <div class="flex items-center justify-between border-b border-outline-variant/20 py-4">
+          <div>
+            <span class="text-sm font-medium">henrik@example.com</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline ml-4">Sent 3 days ago</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-white transition-colors">Resend</button>
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors">Revoke</button>
+          </div>
+        </div>
+
+        <!-- lisa@example.com -->
+        <div class="flex items-center justify-between border-b border-outline-variant/20 py-4">
+          <div>
+            <span class="text-sm font-medium">lisa@example.com</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest text-outline ml-4">Sent 1 day ago</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-white transition-colors">Resend</button>
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline/40 hover:text-error transition-colors">Revoke</button>
+          </div>
+        </div>
+
       </div>
     </div>
 
     <!-- Invite section -->
-    <div class="border-t border-outline-variant/20 pt-10">
-      <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-4">Invite by Email</label>
-
-      <!-- Invite error banner — shown when invite fails -->
-      <!-- <div class="border border-error/40 bg-error/10 text-error text-sm px-4 py-3 mb-4">This email is already a member.</div> -->
-
-      <div class="flex border border-outline-variant/30 mb-3 max-w-lg">
-        <input class="flex-1 bg-transparent border-none outline-none text-white text-sm px-4 py-3 caret-tertiary" type="email" placeholder="colleague@example.com" style="caret-color:#EECC02;">
-        <button class="bg-surface-container-high border-l border-outline-variant/30 px-5 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-surface-container-highest transition-colors whitespace-nowrap">Send Invite</button>
+    <div class="mb-6">
+      <div class="flex items-center gap-4 mb-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Invite by Email</span>
+        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
       </div>
-      <p class="text-xs text-outline">Invited members will join as Crew by default.</p>
+      <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+
+        <div class="flex border border-outline-variant/30 mb-3 max-w-lg">
+          <input class="flex-1 bg-transparent border-none outline-none text-white text-sm px-4 py-3 caret-tertiary" type="email" placeholder="colleague@example.com" style="caret-color:#EECC02;">
+          <button class="bg-surface-container-high border-l border-outline-variant/30 px-5 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-surface-container-highest transition-colors whitespace-nowrap">Send Invite</button>
+        </div>
+        <p class="text-xs text-outline">Invited members will join as Crew by default.</p>
+
+      </div>
     </div>
 
   </div>

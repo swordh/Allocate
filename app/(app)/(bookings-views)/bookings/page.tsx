@@ -1,22 +1,18 @@
 import { getVerifiedSession } from '@/lib/dal'
-import { getBookings } from '@/lib/queries/bookings'
-import BookingList from '@/components/bookings/BookingList'
+import { getUserProfile } from '@/lib/queries/users'
+import { redirect } from 'next/navigation'
+import { BOOKING_VIEW_PATHS } from '@/constants/company'
+import type { BookingViewOption } from '@/constants/company'
 
 /**
- * Bookings list page — Server Component.
- * Fetches session and initial bookings server-side for first-paint data.
- * BookingList is a Client Component that switches to a real-time listener.
+ * Pure router — redirects to the user's preferred default view.
+ * The actual list view lives at /bookings/list.
  */
-export default async function BookingsListPage() {
-  const session         = await getVerifiedSession()
-  const initialBookings = await getBookings(session.activeCompanyId)
+export default async function BookingsRouterPage() {
+  const session = await getVerifiedSession()
 
-  return (
-    <BookingList
-      companyId={session.activeCompanyId}
-      userId={session.uid}
-      role={session.role}
-      initialBookings={initialBookings}
-    />
-  )
+  const userProfile = await getUserProfile(session.uid)
+  const defaultView = (userProfile?.defaultBookingView ?? 'list') as BookingViewOption
+
+  redirect(BOOKING_VIEW_PATHS[defaultView])
 }

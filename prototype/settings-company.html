@@ -75,6 +75,8 @@
   <a href="settings-company.html" style="color:#EECC02;text-decoration:none;">settings-company</a>
   <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
   <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
+  <a href="settings-preferences.html" style="color:#666;text-decoration:none;">settings-preferences</a>
+  <a href="settings-account.html" style="color:#666;text-decoration:none;">settings-account</a>
 </div>
 
 <!-- Top Nav -->
@@ -93,41 +95,130 @@
   </div>
 </nav>
 
-<!-- Settings sub-nav -->
-<div class="border-b border-[#474747]/20 px-6 flex gap-8">
-  <a href="settings-company.html" class="text-white border-b-2 border-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase">COMPANY</a>
-  <a href="settings-team.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">TEAM</a>
-  <a href="settings-subscription.html" class="text-[#F0EDE8]/40 hover:text-white pb-3 pt-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
-</div>
-
 <!-- Main Canvas -->
 <main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
   <div class="content-width">
 
     <header class="mb-12">
-      <h1 class="font-bold uppercase tracking-tight leading-none mb-1 text-5xl md:text-6xl">SETTINGS</h1>
-      <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-6">Company</div>
-      <div class="h-[1px] w-full bg-outline-variant/30"></div>
+      <h1 class="font-bold uppercase tracking-tight leading-none mb-8 text-5xl md:text-6xl">SETTINGS</h1>
     </header>
+
+    <!-- Settings sub-nav -->
+    <div class="flex gap-6 mb-12 border-b border-outline-variant/20">
+      <a href="settings-company.html" class="text-white border-b-2 border-white pb-3 text-xs font-bold tracking-widest uppercase">COMPANY</a>
+      <a href="settings-team.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">TEAM</a>
+      <a href="settings-subscription.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
+      <a href="settings-preferences.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">PREFERENCES</a>
+      <a href="settings-account.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">ACCOUNT</a>
+    </div>
 
     <div class="max-w-lg">
 
       <!-- Company Name -->
-      <div class="mb-8">
+      <div class="mb-10">
         <div class="border-b border-outline-variant/30">
           <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="company-name">Company Name</label>
           <input class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" type="text" id="company-name" value="Nordic Film Productions" maxlength="100">
         </div>
       </div>
 
-      <!-- Logo -->
+      <!-- Custom Fields -->
       <div class="mb-10">
-        <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-3">Logo</label>
-        <div class="border border-dashed border-outline-variant/30 px-5 py-5 text-sm text-outline/60 cursor-not-allowed">Logo upload coming soon</div>
-      </div>
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Custom Fields</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <p class="text-xs text-outline mb-6">Define custom fields per equipment category. These fields appear when adding or editing equipment in that category.</p>
 
-      <!-- Error banner — shown when save fails -->
-      <!-- <div class="border border-error/40 bg-error/10 text-error text-sm px-4 py-3 mb-4">Failed to save changes. Please try again.</div> -->
+        <!-- Category: CAMERA -->
+        <details class="mb-2 border border-white/10 overflow-hidden" open>
+          <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-white">CAMERA</span>
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-all" onclick="event.preventDefault()">× REMOVE CATEGORY</button>
+          </summary>
+          <div class="bg-surface-container-low border-t border-white/5">
+            <!-- Field row: Sensor Format -->
+            <div class="flex items-center gap-3 px-6 py-3 border-b border-white/5">
+              <input type="text" value="Sensor Format" class="bg-transparent border-none outline-none text-white text-xs font-bold caret-tertiary flex-1 min-w-0">
+              <input type="text" value="Full Frame" class="bg-transparent border-none outline-none text-white/50 text-xs caret-tertiary flex-1 min-w-0 text-right">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors ml-2">×</button>
+            </div>
+            <!-- Field row: Resolution -->
+            <div class="flex items-center gap-3 px-6 py-3 border-b border-white/5">
+              <input type="text" value="Resolution" class="bg-transparent border-none outline-none text-white text-xs font-bold caret-tertiary flex-1 min-w-0">
+              <input type="text" value="6K" class="bg-transparent border-none outline-none text-white/50 text-xs caret-tertiary flex-1 min-w-0 text-right">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors ml-2">×</button>
+            </div>
+            <!-- Add field -->
+            <div class="px-6 py-3">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD CUSTOM FIELD</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Category: LENSES -->
+        <details class="mb-2 border border-white/10 overflow-hidden" open>
+          <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-white">LENSES</span>
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-all" onclick="event.preventDefault()">× REMOVE CATEGORY</button>
+          </summary>
+          <div class="bg-surface-container-low border-t border-white/5">
+            <!-- Field row: Focal Length -->
+            <div class="flex items-center gap-3 px-6 py-3 border-b border-white/5">
+              <input type="text" value="Focal Length" class="bg-transparent border-none outline-none text-white text-xs font-bold caret-tertiary flex-1 min-w-0">
+              <input type="text" value="24-70mm" class="bg-transparent border-none outline-none text-white/50 text-xs caret-tertiary flex-1 min-w-0 text-right">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors ml-2">×</button>
+            </div>
+            <!-- Field row: Mount -->
+            <div class="flex items-center gap-3 px-6 py-3 border-b border-white/5">
+              <input type="text" value="Mount" class="bg-transparent border-none outline-none text-white text-xs font-bold caret-tertiary flex-1 min-w-0">
+              <input type="text" value="PL" class="bg-transparent border-none outline-none text-white/50 text-xs caret-tertiary flex-1 min-w-0 text-right">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors ml-2">×</button>
+            </div>
+            <!-- Add field -->
+            <div class="px-6 py-3">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD CUSTOM FIELD</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Category: GRIP -->
+        <details class="mb-2 border border-white/10 overflow-hidden" open>
+          <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-white">GRIP</span>
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-all" onclick="event.preventDefault()">× REMOVE CATEGORY</button>
+          </summary>
+          <div class="bg-surface-container-low border-t border-white/5">
+            <!-- Add field -->
+            <div class="px-6 py-3">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD CUSTOM FIELD</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Category: AUDIO -->
+        <details class="mb-2 border border-white/10 overflow-hidden" open>
+          <summary class="bg-surface-container-low px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-white">AUDIO</span>
+            <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-all" onclick="event.preventDefault()">× REMOVE CATEGORY</button>
+          </summary>
+          <div class="bg-surface-container-low border-t border-white/5">
+            <!-- Field row: Frequency Range -->
+            <div class="flex items-center gap-3 px-6 py-3 border-b border-white/5">
+              <input type="text" value="Frequency Range" class="bg-transparent border-none outline-none text-white text-xs font-bold caret-tertiary flex-1 min-w-0">
+              <input type="text" value="40Hz-20kHz" class="bg-transparent border-none outline-none text-white/50 text-xs caret-tertiary flex-1 min-w-0 text-right">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors ml-2">×</button>
+            </div>
+            <!-- Add field -->
+            <div class="px-6 py-3">
+              <button class="text-[9px] font-bold text-white/20 hover:text-white/60 uppercase tracking-widest transition-colors">+ ADD CUSTOM FIELD</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Add Category -->
+        <button class="border border-white/10 px-6 py-2.5 text-[10px] font-bold uppercase tracking-widest hover:bg-white/5 transition-colors mt-2">+ ADD CATEGORY</button>
+      </div>
 
       <!-- Success banner -->
       <div class="border border-green-500/40 bg-green-500/10 text-green-400 text-sm px-4 py-3 mb-6">Changes saved.</div>

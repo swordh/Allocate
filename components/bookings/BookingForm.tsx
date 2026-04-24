@@ -13,12 +13,26 @@ interface BookingFormProps {
   equipment: Equipment[]
   defaultStartDate: string
   defaultEndDate: string
+  timeSlotMinutes: number
 }
 
 interface SelectedItem {
   equipmentId: string
   unitId?: string
   quantity: number
+}
+
+function generateHourOptions(): string[] {
+  return Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+}
+
+function generateMinuteOptions(slotMinutes: number): string[] {
+  const step = slotMinutes >= 60 ? 60 : slotMinutes
+  const options: string[] = []
+  for (let m = 0; m < 60; m += step) {
+    options.push(String(m).padStart(2, '0'))
+  }
+  return options
 }
 
 function groupByCategory(equipment: Equipment[]): Map<string, Equipment[]> {
@@ -35,6 +49,7 @@ export default function BookingForm({
   equipment,
   defaultStartDate,
   defaultEndDate,
+  timeSlotMinutes,
 }: BookingFormProps) {
   const router = useRouter()
   const { showToast, dismissToast } = useToast()
@@ -62,6 +77,29 @@ export default function BookingForm({
       .finally(() => setIsLoadingAvailability(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const hourOptions   = useMemo(() => generateHourOptions(), [])
+  const minuteOptions = useMemo(() => generateMinuteOptions(timeSlotMinutes), [timeSlotMinutes])
+
+  const startHour   = startTime ? startTime.split(':')[0] : ''
+  const startMinute = startTime ? startTime.split(':')[1] : '00'
+  const endHour     = endTime   ? endTime.split(':')[0]   : ''
+  const endMinute   = endTime   ? endTime.split(':')[1]   : '00'
+
+  function handleStartHour(hh: string) {
+    if (!hh) { setStartTime(''); return }
+    setStartTime(`${hh}:${startMinute}`)
+  }
+  function handleStartMinute(mm: string) {
+    setStartTime(`${startHour || '00'}:${mm}`)
+  }
+  function handleEndHour(hh: string) {
+    if (!hh) { setEndTime(''); return }
+    setEndTime(`${hh}:${endMinute}`)
+  }
+  function handleEndMinute(mm: string) {
+    setEndTime(`${endHour || '00'}:${mm}`)
+  }
 
   const bookableEquipment = equipment.filter((e) => e.availableForBooking !== false)
   const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
@@ -303,36 +341,64 @@ export default function BookingForm({
             </div>
           </div>
 
-          {/* Times */}
-          <div className={styles.field}>
-            <div className={styles.sectionLabel}>Time</div>
-            <div className={styles.dateRow}>
-              <div>
-                <label className={styles.label} htmlFor="startTime">Start Time</label>
-                <div className={styles.inputWrap}>
-                  <input
-                    id="startTime"
-                    className={styles.input}
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                  />
+          {/* Times — hidden when Full Day (-1) */}
+          {timeSlotMinutes !== -1 && (
+            <div className={styles.field}>
+              <div className={styles.sectionLabel}>Time</div>
+              <div className={styles.dateRow}>
+                <div>
+                  <label className={styles.label} htmlFor="startHour">Start Time</label>
+                  <div className={styles.inputWrap}>
+                    <div className={styles.timeRow}>
+                      <select
+                        id="startHour"
+                        className={styles.timeSelect}
+                        value={startHour}
+                        onChange={(e) => handleStartHour(e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                      <span className={styles.timeSeparator}>:</span>
+                      <select
+                        className={styles.timeSelect}
+                        value={startMinute}
+                        onChange={(e) => handleStartMinute(e.target.value)}
+                        disabled={!startHour}
+                      >
+                        {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className={styles.label} htmlFor="endTime">End Time</label>
-                <div className={styles.inputWrap}>
-                  <input
-                    id="endTime"
-                    className={styles.input}
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
+                <div>
+                  <label className={styles.label} htmlFor="endHour">End Time</label>
+                  <div className={styles.inputWrap}>
+                    <div className={styles.timeRow}>
+                      <select
+                        id="endHour"
+                        className={styles.timeSelect}
+                        value={endHour}
+                        onChange={(e) => handleEndHour(e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                      <span className={styles.timeSeparator}>:</span>
+                      <select
+                        className={styles.timeSelect}
+                        value={endMinute}
+                        onChange={(e) => handleEndMinute(e.target.value)}
+                        disabled={!endHour}
+                      >
+                        {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Equipment */}
           <div className={styles.field}>

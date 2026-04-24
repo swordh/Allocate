@@ -121,6 +121,38 @@
   gap: 24px;
 }
 
+.timeRow {
+  display: flex;
+  align-items: center;
+}
+
+.timeSelect {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  padding-bottom: 16px;
+  color-scheme: dark;
+  width: auto;
+  cursor: pointer;
+}
+
+.timeSelect:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.timeSeparator {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--white);
+  padding: 0 2px 16px;
+  user-select: none;
+}
+
 /* -----------------------------------------------------------------------
    Equipment selector
    ----------------------------------------------------------------------- */

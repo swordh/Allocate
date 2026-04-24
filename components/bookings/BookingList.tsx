@@ -244,12 +244,12 @@ function BookingRow({ booking }: { booking: Booking }) {
   const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
   const statusClass = getStatusRowClass(booking)
 
-  const timeOrDate =
-    booking.startTime && booking.endTime
-      ? `${booking.startTime} — ${booking.endTime}`
-      : booking.startDate === booking.endDate
-        ? formatShortDate(booking.startDate)
-        : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`
+  const timeOrDate = formatBookingDateTime(
+    booking.startDate,
+    booking.endDate,
+    booking.startTime,
+    booking.endTime,
+  )
 
   return (
     <Link
@@ -291,4 +291,52 @@ function formatShortDate(dateStr: string): string {
     day: 'numeric',
     month: 'short',
   })
+}
+
+function formatBookingDateTime(
+  startDate: string,
+  endDate: string,
+  startTime: string | null | undefined,
+  endTime: string | null | undefined,
+): string {
+  const months = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
+
+  const parseDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-')
+    return { year: parseInt(year), month: parseInt(month) - 1, day: parseInt(day) }
+  }
+
+  const formatMonthDay = (dateStr: string): string => {
+    const d = parseDate(dateStr)
+    return `${d.day} ${months[d.month]}`
+  }
+
+  const sameDay = startDate === endDate
+  const start = parseDate(startDate)
+  const end = parseDate(endDate)
+  const sameMonth = start.month === end.month && start.year === end.year
+  const hasTime = startTime && endTime
+
+  if (hasTime) {
+    // With time: show start date/time - end date/time
+    if (sameDay) {
+      // Same day: "23 apr 12:03-13:45"
+      return `${formatMonthDay(startDate)} ${startTime}-${endTime}`
+    } else {
+      // Multiple days: "23 apr 12:03 - 25 maj 14:32"
+      return `${formatMonthDay(startDate)} ${startTime} - ${formatMonthDay(endDate)} ${endTime}`
+    }
+  } else {
+    // All day: show date only
+    if (sameDay) {
+      // Same day: "23 apr"
+      return formatMonthDay(startDate)
+    } else if (sameMonth) {
+      // Same month: "23 - 25 apr"
+      return `${start.day} - ${formatMonthDay(endDate)}`
+    } else {
+      // Different months: "23 apr - 25 maj"
+      return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`
+    }
+  }
 }

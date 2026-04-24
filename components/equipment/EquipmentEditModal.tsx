@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { updateEquipmentWithUnits, deactivateEquipment, createEquipmentWithUnits } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
-import type { Equipment, EquipmentStatus, TrackingType, CustomField, CustomFieldType } from '@/types'
+import type { Equipment, EquipmentStatus, TrackingType, CustomField } from '@/types'
 import type { UnitUpdate, UnitCreate, EquipmentFields } from '@/actions/equipment'
 import styles from './EquipmentEditModal.module.css'
 
@@ -46,6 +46,23 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
   const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'serialized')
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
   const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
+
+  // When category changes in create mode, populate custom fields from templates
+  function handleCategoryChange(newCategory: string) {
+    setCategory(newCategory)
+    if (!isEditMode) {
+      const cat = categories.find((c) => c.name === newCategory)
+      const templates = cat?.customFieldTemplates ?? []
+      setCustomFields(
+        templates.map((t) => ({
+          id: t.id,
+          label: t.label,
+          type: 'text' as const,
+          value: t.defaultValue,
+        }))
+      )
+    }
+  }
 
   // Unit rows
   const [unitRows, setUnitRows] = useState<UnitRow[]>([])
@@ -97,31 +114,10 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
 
   // ── Custom field helpers ───────────────────────────────────────────────────
 
-  function addField() {
-    setCustomFields((prev) => [
-      ...prev,
-      {
-        id: Math.random().toString(36).slice(2, 8),
-        label: '',
-        type: 'text',
-        value: '',
-      },
-    ])
-  }
-
-  function removeField(id: string) {
-    setCustomFields((prev) => prev.filter((f) => f.id !== id))
-  }
-
   function updateField(id: string, patch: Partial<CustomField>) {
     setCustomFields((prev) =>
       prev.map((f) => (f.id === id ? ({ ...f, ...patch } as CustomField) : f)),
     )
-  }
-
-  function handleTypeChange(id: string, newType: CustomFieldType) {
-    const value = newType === 'text' ? '' : { min: 0, max: null }
-    updateField(id, { type: newType, value } as Partial<CustomField>)
   }
 
   // ── Unit row helpers ───────────────────────────────────────────────────────
@@ -302,7 +298,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                 <label className={styles.fieldLabel}>Category</label>
                 <select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   className={styles.select}
                 >
                   <option value="">Select category</option>
@@ -398,85 +394,24 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             )}
           </div>
 
-          {/* Section C: Custom fields */}
-          <div className={styles.section}>
-            <div className={styles.customFieldsHeader}>
+          {/* Section C: Custom fields (driven by category templates from Settings) */}
+          {customFields.length > 0 && (
+            <div className={styles.section}>
               <p className={styles.sectionLabel}>Custom Fields</p>
-              <button type="button" onClick={addField} className={styles.addFieldBtn}>
-                + Add field
-              </button>
-            </div>
-            {customFields.map((field) => (
-              <div key={field.id} className={styles.customFieldRow}>
-                <input
-                  type="text"
-                  value={field.label}
-                  onChange={(e) => updateField(field.id, { label: e.target.value })}
-                  placeholder="Label"
-                  className={styles.input}
-                />
-                <select
-                  value={field.type}
-                  onChange={(e) => handleTypeChange(field.id, e.target.value as CustomFieldType)}
-                  className={styles.select}
-                >
-                  <option value="text">Text</option>
-                  <option value="value">Value</option>
-                </select>
-                {field.type === 'text' && (
+              {customFields.map((field) => (
+                <div key={field.id} className={styles.customFieldRow}>
+                  <span className={styles.customFieldLabel}>{field.label}</span>
                   <input
                     type="text"
-                    value={field.value as string}
+                    value={field.type === 'text' ? (field.value as string) : ''}
                     onChange={(e) => updateField(field.id, { value: e.target.value })}
                     placeholder="Value"
                     className={styles.input}
                   />
-                )}
-                {field.type === 'value' && (
-                  <>
-                    <input
-                      type="number"
-                      value={(field.value as { min: number; max: number | null }).min}
-                      onChange={(e) =>
-                        updateField(field.id, {
-                          value: {
-                            ...(field.value as { min: number; max: number | null }),
-                            min: parseFloat(e.target.value) || 0,
-                          },
-                        })
-                      }
-                      placeholder="Min"
-                      className={styles.input}
-                    />
-                    <span className={styles.customFieldRangeSep}>–</span>
-                    <input
-                      type="number"
-                      value={(field.value as { min: number; max: number | null }).max ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        updateField(field.id, {
-                          value: {
-                            ...(field.value as { min: number; max: number | null }),
-                            max: raw === '' ? null : parseFloat(raw) || 0,
-                          },
-                        })
-                      }}
-                      placeholder="Max (optional)"
-                      className={styles.input}
-                    />
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeField(field.id)}
-                  className={styles.removeFieldBtn}
-                  aria-label="Remove field"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Section D: Units — serialized only */}
           {trackingType === 'serialized' && (

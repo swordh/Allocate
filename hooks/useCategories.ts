@@ -3,11 +3,7 @@
 import { useEffect, useState } from 'react'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-
-export interface Category {
-  id: string
-  name: string
-}
+import type { Category } from '@/types'
 
 export function useCategories(companyId: string) {
   const [categories, setCategories] = useState<Category[]>([])
@@ -21,6 +17,9 @@ export function useCategories(companyId: string) {
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name as string,
+          isDefault: doc.data().isDefault ?? false,
+          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
+          customFieldTemplates: doc.data().customFieldTemplates ?? [],
         }))
         setCategories(data)
       })

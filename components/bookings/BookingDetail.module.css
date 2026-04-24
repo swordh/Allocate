@@ -344,3 +344,53 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Check Out button — filled accent (primary action) */
+.checkOutBtn {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: var(--accent);
+  color: var(--on-primary);
+  border: none;
+  padding: 12px 24px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.checkOutBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.checkOutBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Check In button — filled accent (same weight as check-out) */
+.checkInBtn {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: var(--accent);
+  color: var(--on-primary);
+  border: none;
+  padding: 12px 24px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.checkInBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.checkInBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

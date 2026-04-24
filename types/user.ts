@@ -5,6 +5,7 @@ export interface UserProfile {
   name: string
   email: string
   activeCompanyId: string
+  defaultBookingView?: 'list' | 'week' | 'month' | '4weeks'
 }
 
 export interface Membership {

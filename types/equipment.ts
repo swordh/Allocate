@@ -43,6 +43,20 @@ export interface Equipment {
   units?: EquipmentUnit[]     // hydrated at query time, never stored in Firestore
 }
 
+export interface CategoryFieldTemplate {
+  id: string
+  label: string
+  defaultValue: string
+}
+
+export interface Category {
+  id: string
+  name: string
+  isDefault: boolean
+  createdAt: string | null
+  customFieldTemplates: CategoryFieldTemplate[]
+}
+
 export interface EquipmentUnit {
   id: string
   equipmentId: string   // denormalized parent ref

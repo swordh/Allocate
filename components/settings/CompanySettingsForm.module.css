@@ -1,53 +1,32 @@
 .container {
-  max-width: 640px;
-}
-
-/* Internal heading removed — now handled by PageHeader */
-.heading {
-  display: none;
-}
-
-.subHeading {
-  display: none;
+  max-width: 512px;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 40px;
 }
 
-/* Section wrapper */
-.formSection {
-  background: var(--surface-container-lowest);
-  padding: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+/* ── Company Name ─────────────────────────────────── */
+
+.companyNameSection {
+  margin-bottom: 0;
 }
 
-.sectionLabel {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-  margin-bottom: 8px;
-}
-
-.fieldGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.companyNameField {
+  border-bottom: 1px solid rgba(71, 71, 71, 0.30);
 }
 
 .fieldLabel {
   display: block;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--on-surface-variant);
+  color: var(--outline);
+  padding-top: 16px;
+  padding-bottom: 4px;
 }
 
 .fieldInput {
@@ -55,36 +34,293 @@
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
+  outline: none;
   color: var(--white);
   font-family: inherit;
   font-size: 20px;
-  font-weight: 400;
-  padding: 8px 0;
-  border-radius: 0;
-  outline: none;
-  transition: border-bottom-color 0.1s;
+  font-weight: 500;
+  padding-bottom: 16px;
+  caret-color: var(--tertiary);
 }
 
-.fieldInput:focus {
-  border-bottom-color: var(--white);
-}
+/* ── Section header (label + horizontal rule) ─────── */
 
-/* Logo upload placeholder */
-.logoUploadDisabled {
+.sectionHeader {
   display: flex;
   align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.3);
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
-.logoUploadText {
-  font-size: var(--font-body);
-  font-weight: 300;
-  color: var(--on-surface-variant);
+.sectionHeaderLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--outline);
+  white-space: nowrap;
 }
 
-/* Error banner */
+.sectionHeaderLine {
+  height: 1px;
+  flex-grow: 1;
+  background: rgba(71, 71, 71, 0.20);
+}
+
+/* ── Custom Fields ────────────────────────────────── */
+
+.customFieldsSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.customFieldsDescription {
+  font-size: 0.75rem;
+  color: var(--outline);
+  margin: 0 0 24px;
+}
+
+/* Category <details> */
+
+.categoryDetails {
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.categorySummary {
+  background: var(--surface-container-low);
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background 0.1s;
+}
+
+.categorySummary::-webkit-details-marker {
+  display: none;
+}
+
+.categorySummary:hover {
+  background: var(--surface-container-high);
+}
+
+.categoryName {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.btnRemoveCategory {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+
+.btnRemoveCategory:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Category body (inside <details>) */
+
+.categoryBody {
+  background: var(--surface-container-low);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Field rows */
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fieldNameInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  caret-color: var(--tertiary);
+}
+
+.fieldNameInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.fieldDefaultInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.50);
+  font-family: inherit;
+  font-size: 0.75rem;
+  text-align: right;
+  caret-color: var(--tertiary);
+}
+
+.fieldDefaultInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.btnRemoveField {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+  font-family: inherit;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+
+.btnRemoveField:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Add field row */
+
+.addFieldRow {
+  padding: 12px 24px;
+}
+
+.btnAddField {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+
+.btnAddField:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Add category button */
+
+.btnAddCategory {
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 10px 24px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--white);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  align-self: flex-start;
+}
+
+.btnAddCategory:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Inline add-category form */
+
+.addCategoryInline {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.addCategoryInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.40);
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 4px 0 8px;
+  caret-color: var(--tertiary);
+}
+
+.addCategoryInput::placeholder {
+  color: rgba(255, 255, 255, 0.30);
+}
+
+.btnAddCategoryConfirm {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-tertiary);
+  background: var(--tertiary);
+  border: none;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  flex-shrink: 0;
+}
+
+.btnAddCategoryConfirm:hover:not(:disabled) {
+  background: #a88f00;
+}
+
+.btnAddCategoryConfirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnAddCategoryCancel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.40);
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+
+.btnAddCategoryCancel:hover {
+  color: var(--white);
+}
+
+/* ── Error / success banners ──────────────────────── */
+
 .errorBanner {
   font-size: var(--font-body);
   color: var(--error);
@@ -92,34 +328,34 @@
   padding: 12px 16px;
 }
 
-/* Success banner */
 .successBanner {
   font-size: var(--font-body);
   color: var(--tertiary);
-  border: 1px solid rgba(238, 204, 2, 0.3);
+  border: 1px solid rgba(238, 204, 2, 0.30);
   padding: 12px 16px;
 }
 
-/* Save button — white primary */
+/* ── Save button ──────────────────────────────────── */
+
 .btnSave {
   display: inline-block;
   align-self: flex-start;
-  background: var(--white);
-  color: var(--on-primary);
+  background: var(--tertiary);
+  color: #221b00;
   border: none;
   border-radius: 0;
-  padding: 12px 32px;
+  padding: 16px 32px;
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .btnSave:hover:not(:disabled) {
-  background: var(--secondary);
+  background: #a88f00;
 }
 
 .btnSave:disabled {

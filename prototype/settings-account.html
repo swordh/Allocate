@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>ALLOCATE — Settings: Subscription</title>
+<title>ALLOCATE — Settings: Account</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
@@ -74,9 +74,9 @@
   <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
   <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
   <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
-  <a href="settings-subscription.html" style="color:#EECC02;text-decoration:none;">settings-subscription</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
   <a href="settings-preferences.html" style="color:#666;text-decoration:none;">settings-preferences</a>
-  <a href="settings-account.html" style="color:#666;text-decoration:none;">settings-account</a>
+  <a href="settings-account.html" style="color:#EECC02;text-decoration:none;">settings-account</a>
 </div>
 
 <!-- Top Nav -->
@@ -107,103 +107,97 @@
     <div class="flex gap-6 mb-12 border-b border-outline-variant/20">
       <a href="settings-company.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">COMPANY</a>
       <a href="settings-team.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">TEAM</a>
-      <a href="settings-subscription.html" class="text-white border-b-2 border-white pb-3 text-xs font-bold tracking-widest uppercase">SUBSCRIPTION</a>
+      <a href="settings-subscription.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
       <a href="settings-preferences.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">PREFERENCES</a>
-      <a href="settings-account.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">ACCOUNT</a>
+      <a href="settings-account.html" class="text-white border-b-2 border-white pb-3 text-xs font-bold tracking-widest uppercase">ACCOUNT</a>
     </div>
 
-    <!-- Current plan block -->
-    <div class="border border-tertiary/30 px-6 py-6 mb-10 flex flex-wrap items-center gap-6">
-      <span class="bg-tertiary text-on-tertiary text-[11px] font-bold uppercase tracking-widest px-3 py-1.5">Small</span>
+    <div class="max-w-lg">
 
-      <div class="flex items-center gap-2">
-        <span class="rounded-full w-2 h-2 bg-tertiary"></span>
-        <span class="text-[11px] font-bold uppercase tracking-widest text-outline">Trial</span>
-      </div>
-
-      <div class="flex items-center gap-2 text-sm text-outline">
-        <span>25 equipment items</span>
-        <span class="text-outline-variant">·</span>
-        <span>10 members</span>
-      </div>
-
-      <div class="ml-auto bg-tertiary/8 border border-tertiary/20 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-tertiary/80">Trial ends 2 Apr 2026</div>
-    </div>
-
-    <!-- Usage section -->
-    <div class="mb-6 max-w-lg">
-      <div class="flex items-center gap-4 mb-3">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Usage</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
-      </div>
-      <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
-
-        <!-- Equipment usage -->
-        <div class="mb-5">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-outline">18 of 25 equipment items</span>
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">72%</span>
-          </div>
-          <div class="h-1 bg-outline-variant/20 w-full">
-            <div class="h-1 bg-tertiary" style="width: 72%"></div>
+      <!-- Default Booking View -->
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Default Booking View</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+          <p class="text-xs text-outline mb-5">Choose which view opens by default when you navigate to Bookings.</p>
+          <div class="flex">
+            <button class="border border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">List</button>
+            <button class="border-t border-b border-r border-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-white bg-surface-container-high cursor-pointer">Week</button>
+            <button class="border-t border-b border-r border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">Month</button>
           </div>
         </div>
+      </div>
 
-        <!-- Members usage -->
-        <div class="mb-5">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-outline">4 of 10 members</span>
-            <span class="text-[10px] font-bold uppercase tracking-widest text-outline">40%</span>
+      <!-- Profile fields -->
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Profile</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+
+          <!-- Display Name -->
+          <div class="mb-8">
+            <div class="border-b border-outline-variant/30">
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-outline pt-4 pb-1" for="display-name">Display Name</label>
+              <input class="block w-full bg-transparent border-none outline-none text-white text-xl font-medium pb-4 caret-tertiary" type="text" id="display-name" value="Joakim Svardh" maxlength="100">
+            </div>
           </div>
-          <div class="h-1 bg-outline-variant/20 w-full">
-            <div class="h-1 bg-tertiary" style="width: 40%"></div>
+
+          <!-- Email -->
+          <div class="mb-8">
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-2">Email</label>
+            <p class="text-sm text-outline mb-2">joakim@nordicfilm.com</p>
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors">Change Email →</button>
           </div>
-        </div>
 
+          <!-- Password -->
+          <div class="mb-2">
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-outline mb-2">Password</label>
+            <p class="text-sm text-outline mb-2">••••••••••••</p>
+            <button class="text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white transition-colors">Change Password →</button>
+          </div>
+
+        </div>
       </div>
-    </div>
 
-    <!-- Upgrade CTA -->
-    <div class="border border-tertiary/20 bg-tertiary/5 px-5 py-4 flex items-center justify-between mb-10 max-w-lg">
-      <span class="text-sm text-outline">You're at 72% of your equipment limit.</span>
-      <button class="bg-tertiary text-on-tertiary px-5 py-2 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">Upgrade Plan</button>
-    </div>
+      <button class="bg-tertiary text-on-tertiary px-8 py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">Save Changes</button>
 
-    <!-- Billing History -->
-    <div class="mb-6 max-w-lg">
-      <div class="flex items-center gap-4 mb-3">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Billing History</span>
-        <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+      <!-- Divider -->
+      <div class="h-[1px] w-full bg-outline-variant/20 my-12"></div>
+
+      <!-- Danger Zone -->
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-error/60">Danger Zone</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <div class="border border-error/20 bg-surface-container-low px-6 py-5 mb-6">
+
+          <!-- Sign Out row -->
+          <div class="flex items-center justify-between py-4 border-b border-outline-variant/20">
+            <div>
+              <p class="text-sm font-medium mb-1">Sign Out</p>
+              <p class="text-xs text-outline">Sign out of your account on this device.</p>
+            </div>
+            <button class="border border-outline-variant/30 px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white hover:border-outline transition-colors flex-shrink-0 ml-6">Sign Out</button>
+          </div>
+
+          <!-- Delete Account row -->
+          <div class="flex items-center justify-between py-4 border-b border-outline-variant/20">
+            <div>
+              <p class="text-sm font-medium mb-1 text-error/80">Delete Account</p>
+              <p class="text-xs text-error/50">Permanently delete your account and all associated data. This cannot be undone.</p>
+            </div>
+            <button class="border border-error/30 px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-error/60 hover:text-error hover:border-error transition-colors flex-shrink-0 ml-6">Delete Account</button>
+          </div>
+
+        </div>
       </div>
-      <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
 
-        <!-- Invoice rows -->
-        <div class="grid grid-cols-[1fr_120px_80px_auto] items-center border-b border-outline-variant/20 py-3 gap-4">
-          <span class="text-sm text-outline">1 Mar 2026</span>
-          <span class="text-xs text-outline">Small Plan</span>
-          <span class="text-sm font-medium">$49.00</span>
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/60 hover:text-white transition-colors whitespace-nowrap">Download PDF →</a>
-        </div>
-        <div class="grid grid-cols-[1fr_120px_80px_auto] items-center border-b border-outline-variant/20 py-3 gap-4">
-          <span class="text-sm text-outline">1 Feb 2026</span>
-          <span class="text-xs text-outline">Small Plan</span>
-          <span class="text-sm font-medium">$49.00</span>
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/60 hover:text-white transition-colors whitespace-nowrap">Download PDF →</a>
-        </div>
-        <div class="grid grid-cols-[1fr_120px_80px_auto] items-center border-b border-outline-variant/20 py-3 gap-4">
-          <span class="text-sm text-outline">1 Jan 2026</span>
-          <span class="text-xs text-outline">Small Plan</span>
-          <span class="text-sm font-medium">$49.00</span>
-          <a href="#" class="text-[10px] font-bold uppercase tracking-widest text-outline/60 hover:text-white transition-colors whitespace-nowrap">Download PDF →</a>
-        </div>
-
-      </div>
     </div>
-
-    <!-- Error banner — shown when portal redirect fails -->
-    <!-- <div class="border border-error/40 bg-error/10 text-error text-sm px-4 py-3 mb-6">Something went wrong. Please try again.</div> -->
-
-    <button class="bg-tertiary text-on-tertiary px-8 py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">Manage Subscription</button>
 
   </div>
 </main>

@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { getCompany } from '@/lib/queries/company'
-import SubscriptionView from '@/components/settings/SubscriptionView'
+import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
+import PreferencesForm from '@/components/settings/PreferencesForm'
 
-export default async function SubscriptionSettingsPage() {
+export default async function PreferencesSettingsPage() {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') redirect('/settings/account')
+
   const company = await getCompany(session.activeCompanyId)
 
-  return <SubscriptionView subscription={company?.subscription ?? null} />
+  return <PreferencesForm preferences={company?.preferences ?? DEFAULT_COMPANY_PREFERENCES} />
 }

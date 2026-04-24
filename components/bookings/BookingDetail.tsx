@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { cancelBooking, approveBooking } from '@/actions/bookings'
+import { cancelBooking, approveBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
 import BookingStatusBadge from './BookingStatusBadge'
 import type { Booking, Equipment, Role } from '@/types'
 import styles from './BookingDetail.module.css'
@@ -36,6 +36,8 @@ export default function BookingDetail({
   const canCancel =
     (isOwner || isAdmin) &&
     (booking.status === 'pending' || booking.status === 'confirmed')
+  const canCheckOut = isAdmin && booking.status === 'confirmed'
+  const canCheckIn  = isAdmin && booking.status === 'checked_out'
   const canEdit =
     (isOwner || isAdmin) &&
     (booking.status === 'pending' || booking.status === 'confirmed')
@@ -56,6 +58,30 @@ export default function BookingDetail({
         setActionError(result.error)
       } else {
         router.push('/bookings')
+      }
+    })
+  }
+
+  function handleCheckOut() {
+    setActionError(null)
+    startTransition(async () => {
+      const result = await checkOutBooking(booking.id)
+      if (result.error) {
+        setActionError(result.error)
+      } else {
+        router.refresh()
+      }
+    })
+  }
+
+  function handleCheckIn() {
+    setActionError(null)
+    startTransition(async () => {
+      const result = await checkInBooking(booking.id)
+      if (result.error) {
+        setActionError(result.error)
+      } else {
+        router.refresh()
       }
     })
   }
@@ -277,6 +303,28 @@ export default function BookingDetail({
               )}
             </div>
           )} */}
+
+          {/* Check out */}
+          {canCheckOut && (
+            <button
+              className={styles.checkOutBtn}
+              onClick={handleCheckOut}
+              disabled={isPending}
+            >
+              Check Out
+            </button>
+          )}
+
+          {/* Check in */}
+          {canCheckIn && (
+            <button
+              className={styles.checkInBtn}
+              onClick={handleCheckIn}
+              disabled={isPending}
+            >
+              Check In
+            </button>
+          )}
 
           {/* Cancel booking */}
           {canCancel && (

@@ -802,6 +802,112 @@ export async function cancelBooking(bookingId: string): Promise<{ error?: string
   }
 }
 
+// ── checkOutBooking ──────────────────────────────────────────────────────────
+
+export async function checkOutBooking(bookingId: string): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+
+  if (!bookingId?.trim()) return { error: 'bookingId is required' }
+
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
+      const bookingSnap = await tx.get(bookingRef)
+
+      if (!bookingSnap.exists) {
+        throw new Error('Booking not found.')
+      }
+
+      const booking = bookingSnap.data() as BookingDocumentInternal & { startTime?: string | null }
+
+      if (booking.status !== 'confirmed') {
+        throw new Error('Only confirmed bookings can be checked out.')
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const updatePayload: Record<string, unknown> = {
+        status: 'checked_out',
+        updatedAt: FieldValue.serverTimestamp(),
+      }
+
+      if (todayStr < booking.startDate) {
+        // Early checkout — verify no conflicts in the adjusted period
+        const result = await detectConflictsReadOnly(
+          adminDb,
+          companyId,
+          booking.items,
+          todayStr,
+          booking.endDate,
+          bookingId,
+        )
+        if (result.hasConflict) {
+          throw new Error(
+            'Cannot check out early: equipment is already booked by another booking during this period.',
+          )
+        }
+        updatePayload.startDate = todayStr
+        if (booking.startTime) {
+          updatePayload.startTime = new Date().toTimeString().slice(0, 5)
+        }
+      }
+
+      tx.update(bookingRef, updatePayload)
+    })
+
+    revalidatePath('/bookings')
+    revalidatePath(`/bookings/${bookingId}`)
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to check out booking'
+    console.error('[actions/bookings] checkOutBooking failed', { message })
+    return { error: message }
+  }
+}
+
+// ── checkInBooking ───────────────────────────────────────────────────────────
+
+export async function checkInBooking(bookingId: string): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const companyId = session.activeCompanyId
+
+  if (!bookingId?.trim()) return { error: 'bookingId is required' }
+
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
+      const bookingSnap = await tx.get(bookingRef)
+
+      if (!bookingSnap.exists) {
+        throw new Error('Booking not found.')
+      }
+
+      const booking = bookingSnap.data() as BookingDocumentInternal
+
+      if (booking.status !== 'checked_out') {
+        throw new Error('Only checked-out bookings can be checked in.')
+      }
+
+      tx.update(bookingRef, {
+        status: 'returned',
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    })
+
+    revalidatePath('/bookings')
+    revalidatePath(`/bookings/${bookingId}`)
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to check in booking'
+    console.error('[actions/bookings] checkInBooking failed', { message })
+    return { error: message }
+  }
+}
+
 // ── approveBooking (wraps both approve and reject) ───────────────────────────
 
 export async function approveBooking(
