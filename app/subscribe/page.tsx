@@ -8,10 +8,11 @@ export default async function SubscribeRoute() {
   const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
   const companyData = companyDoc.data()
   const subStatus = companyData?.subscription?.status
-  const stripeCustomerId = companyData?.stripeCustomerId ?? ''
+  const trialEnd = companyData?.subscription?.trialEnd ?? null
 
-  // Only redirect to settings if they have a real Stripe subscription
-  if ((subStatus === 'active' || subStatus === 'trialing') && stripeCustomerId) {
+  // Mirror the layout gate: redirect away only if they have an active subscription or a real Stripe trial
+  const isRealTrial = subStatus === 'trialing' && trialEnd !== null
+  if (subStatus === 'active' || isRealTrial) {
     redirect('/settings/subscription')
   }
 

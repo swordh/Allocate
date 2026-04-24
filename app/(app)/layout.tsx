@@ -9,17 +9,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getVerifiedSession()
 
   const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
+  if (!companyDoc.exists) {
+    console.error('[layout] company document not found', { companyId: session.activeCompanyId })
+    redirect('/subscribe')
+  }
+
   const companyData = companyDoc.data()
   const subStatus = companyData?.subscription?.status
-  const stripeCustomerId = companyData?.stripeCustomerId ?? ''
+  const trialEnd = companyData?.subscription?.trialEnd ?? null
 
-  // Block access if canceled, or if trialing without a real Stripe subscription
-  // (trialing + no stripeCustomerId = auto-trial from signup, never converted)
-  const needsSubscription =
-    subStatus === 'canceled' ||
-    (subStatus === 'trialing' && !stripeCustomerId)
-
-  if (needsSubscription) redirect('/subscribe')
+  // Allow: active subscription, or a real Stripe trial (trialEnd is set by webhook on subscription.created)
+  // Block: initial auto-trial (trialEnd=null), abandoned checkout, past_due, canceled
+  const isRealTrial = subStatus === 'trialing' && trialEnd !== null
+  if (subStatus !== 'active' && !isRealTrial) redirect('/subscribe')
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
