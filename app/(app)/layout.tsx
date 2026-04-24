@@ -1,15 +1,16 @@
+import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
+import { adminDb } from '@/lib/firebase-admin'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileBottomNav } from '@/components/nav/MobileBottomNav'
 import styles from './app-layout.module.css'
 
-/**
- * Authenticated layout — Server Component.
- * Verifies session on every render; redirects to /login if invalid.
- * PrimaryNav is a Client Component and handles active-link detection itself.
- */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getVerifiedSession()
+
+  const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
+  const subStatus = companyDoc.data()?.subscription?.status
+  if (subStatus === 'canceled') redirect('/subscribe')
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
