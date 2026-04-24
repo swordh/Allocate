@@ -68,4 +68,7 @@ export interface EquipmentUnit {
   active: boolean
   availableForBooking: boolean
   createdAt: string | null
+  createdBy?: string | null
+  updatedBy?: string | null
+  deactivatedBy?: string | null
 }
