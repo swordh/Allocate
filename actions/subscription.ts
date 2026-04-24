@@ -6,6 +6,7 @@ import { adminDb } from '@/lib/firebase-admin'
 
 export async function createCheckoutSession(
   interval: 'month' | 'year',
+  coupon?: string,
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
@@ -40,6 +41,7 @@ export async function createCheckoutSession(
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       metadata: { companyId },
+      discounts: coupon ? [{ coupon }] : undefined,
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=canceled`,
     })

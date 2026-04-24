@@ -5,13 +5,14 @@ import { createCheckoutSession } from '@/actions/subscription'
 
 export default function SubscribePage() {
   const [interval, setInterval] = useState<'month' | 'year'>('month')
+  const [coupon, setCoupon] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubscribe() {
     setLoading(true)
     setError(null)
-    const result = await createCheckoutSession(interval)
+    const result = await createCheckoutSession(interval, coupon || undefined)
     if ('url' in result) {
       window.location.href = result.url
     } else {
@@ -59,6 +60,27 @@ export default function SubscribePage() {
       {error && (
         <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>
       )}
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'block', fontSize: 14, marginBottom: 6, fontWeight: 500 }}>
+          Discount code (optional)
+        </label>
+        <input
+          type="text"
+          value={coupon}
+          onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+          placeholder="Enter coupon code"
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 6,
+            border: '1px solid #ddd',
+            fontSize: 14,
+            fontFamily: 'monospace',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
 
       <button
         onClick={handleSubscribe}
