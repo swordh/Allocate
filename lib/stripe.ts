@@ -8,7 +8,6 @@ if (!stripeSecretKey) {
 }
 
 export const stripe = new Stripe(stripeSecretKey, {
-  // Pinned to the latest stable Stripe API version.
-  apiVersion: '2025-03-31.basil',
+  apiVersion: '2026-02-25.clover',
   typescript: true,
 })
