@@ -94,8 +94,8 @@ export async function setupNewCompany(
     hadTrial:         false,
     subscription: {
       status:            'trialing',
-      plan:              'basic',
-      limits:            { maxEquipment: 50, maxMembers: 5 },
+      plan:              'starter',
+      limits:            { equipment: 25, users: 10 },
       currentPeriodEnd:  null,
       trialEnd:          null,
       cancelAtPeriodEnd: false,

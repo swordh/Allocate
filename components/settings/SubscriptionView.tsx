@@ -10,11 +10,7 @@ interface SubscriptionViewProps {
 }
 
 const PLAN_LABELS: Record<string, string> = {
-  basic:      'Basic',
-  small:      'Small',
-  mid:        'Mid',
-  large:      'Large',
-  enterprise: 'Enterprise',
+  starter: 'Starter',
 }
 
 const STATUS_LABELS: Record<string, string> = {

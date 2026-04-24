@@ -10,7 +10,7 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
   const subscription = data.subscription ?? {}
   const mappedSubscription = {
     status:             subscription.status             ?? 'trialing',
-    plan:               subscription.plan               ?? 'basic',
+    plan:               subscription.plan               ?? 'starter',
     currentPeriodEnd:   subscription.currentPeriodEnd?.toDate?.()?.toISOString()
                           ?? subscription.currentPeriodEnd
                           ?? '',
@@ -22,6 +22,17 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
     interval:           subscription.interval           ?? undefined,
   }
 
+  const prefs = data.preferences
+  const preferences = prefs
+    ? {
+        bookingTimeSlotMinutes: prefs.bookingTimeSlotMinutes ?? 15,
+        autoCheckout:           prefs.autoCheckout           ?? false,
+        autoCheckin:            prefs.autoCheckin            ?? false,
+        defaultBookingView:     prefs.defaultBookingView     ?? 'list',
+        timezone:               typeof prefs.timezone === 'string' ? prefs.timezone : 'UTC',
+      }
+    : undefined
+
   return {
     id:               doc.id,
     name:             data.name             ?? '',
@@ -29,6 +40,7 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
     createdBy:        data.createdBy        ?? '',
     stripeCustomerId: data.stripeCustomerId ?? '',
     subscription:     mappedSubscription,
+    preferences,
   }
 }
 

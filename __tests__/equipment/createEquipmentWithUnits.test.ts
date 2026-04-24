@@ -209,7 +209,7 @@ describe('input validation', () => {
     })
 
     it('accepts a name of exactly 100 characters (boundary)', async () => {
-      wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+      wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
       const result = await createEquipmentWithUnits(
         { ...VALID_FIELDS, name: 'x'.repeat(100) },
@@ -286,7 +286,7 @@ describe('input validation', () => {
         vi.clearAllMocks()
         vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
         wireBatch()
-        wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+        wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
         const result = await createEquipmentWithUnits(VALID_FIELDS, [
           { ...VALID_UNIT, status },
@@ -305,18 +305,18 @@ describe('input validation', () => {
 
 describe('plan limit enforcement', () => {
   it('blocks creation when current count equals the plan limit', async () => {
-    wireCreateEquipmentTransaction('active', 'small', 5, 5)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 25)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')
-    expect((result as { error: string }).error).toContain('small')
-    expect((result as { error: string }).error).toContain('5')
+    expect((result as { error: string }).error).toContain('starter')
+    expect((result as { error: string }).error).toContain('25')
   })
 
   it('blocks creation when current count exceeds the plan limit', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 51)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 26)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -325,7 +325,7 @@ describe('plan limit enforcement', () => {
   })
 
   it('blocks creation when subscription is past_due', async () => {
-    wireCreateEquipmentTransaction('past_due', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('past_due', 'starter', 25, 0)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -334,7 +334,7 @@ describe('plan limit enforcement', () => {
   })
 
   it('blocks creation when subscription is canceled', async () => {
-    wireCreateEquipmentTransaction('canceled', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('canceled', 'starter', 25, 0)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -343,7 +343,7 @@ describe('plan limit enforcement', () => {
   })
 
   it('allows creation when subscription is trialing and under limit', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('trialing', 'basic', 50, 0)
+    const { newDocId } = wireCreateEquipmentTransaction('trialing', 'starter', 25, 0)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -355,7 +355,7 @@ describe('plan limit enforcement', () => {
 
 describe('happy path — no units', () => {
   it('runs the transaction and returns { id: newEquipmentId }', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'basic', 50, 10)
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 10)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -364,7 +364,7 @@ describe('happy path — no units', () => {
   })
 
   it('does not call batch.set when no units are provided', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 10)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 10)
     const getBatch = wireBatch()
 
     await createEquipmentWithUnits(VALID_FIELDS, [])
@@ -373,7 +373,7 @@ describe('happy path — no units', () => {
   })
 
   it('writes equipment fields inside the transaction', async () => {
-    const { tx } = wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -390,7 +390,7 @@ describe('happy path — no units', () => {
 
   it('allows creation at exactly one below the plan limit (boundary)', async () => {
     // limit = 5, current = 4 — should succeed
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'small', 5, 4)
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 
@@ -402,7 +402,7 @@ describe('happy path — no units', () => {
 
 describe('happy path — with units', () => {
   it('returns { id } after transaction and batch complete', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
     const getBatch = wireBatch()
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
@@ -412,7 +412,7 @@ describe('happy path — with units', () => {
   })
 
   it('calls batch.set once per unit with denormalized equipmentId and companyId', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
     const getBatch = wireBatch()
 
     await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
@@ -431,7 +431,7 @@ describe('happy path — with units', () => {
   })
 
   it('calls batch.set once per unit when multiple units are provided', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
     const getBatch = wireBatch()
 
     const units = [
@@ -446,7 +446,7 @@ describe('happy path — with units', () => {
   })
 
   it('persists the correct label and status for each unit in the batch', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
     const getBatch = wireBatch()
 
     const units = [
@@ -467,7 +467,7 @@ describe('happy path — with units', () => {
   })
 
   it('does not call batch.commit when no units are created', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
     const getBatch = wireBatch()
 
     await createEquipmentWithUnits(VALID_FIELDS, [])
@@ -480,7 +480,7 @@ describe('happy path — with units', () => {
 
 describe('error handling', () => {
   it('returns { error } when batch.commit throws and does not leak internal details', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     const leakyBatch = {
       set: vi.fn(),
@@ -501,7 +501,7 @@ describe('error handling', () => {
   })
 
   it('handles non-Error rejection from batch.commit gracefully', async () => {
-    wireCreateEquipmentTransaction('active', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     const leakyBatch = {
       set: vi.fn(),

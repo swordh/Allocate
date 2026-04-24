@@ -75,8 +75,8 @@ export const createCompany = onCall({ region: 'europe-west1', cors: true, invoke
     hadTrial: false,
     subscription: {
       status: 'trialing',
-      plan: 'basic',
-      limits: PLAN_LIMITS.basic,
+      plan: 'starter',
+      limits: PLAN_LIMITS.starter,
       currentPeriodEnd: null,
       trialEnd: null,
       cancelAtPeriodEnd: false,

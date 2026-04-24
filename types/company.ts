@@ -1,5 +1,12 @@
+export interface CompanyPreferences {
+  bookingTimeSlotMinutes: number
+  autoCheckout: boolean
+  autoCheckin: boolean
+  timezone: string
+}
+
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled'
-export type Plan = 'basic' | 'small' | 'mid' | 'large' | 'enterprise'
+export type Plan = 'starter'
 export type BillingInterval = 'month' | 'year'
 
 export interface Subscription {
@@ -19,4 +26,5 @@ export interface Company {
   createdBy: string
   stripeCustomerId: string
   subscription: Subscription
+  preferences?: CompanyPreferences
 }

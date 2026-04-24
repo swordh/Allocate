@@ -8,24 +8,15 @@ export type UserRole = 'admin' | 'crew' | 'viewer';
 
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
 
-export type Plan = 'basic' | 'small' | 'mid' | 'large' | 'enterprise';
+export type Plan = 'free' | 'starter';
 
 export interface PlanLimits {
   equipment: number;
   users: number;
 }
 
-/**
- * Plan limits keyed by plan name.
- * Enterprise limits are set manually per customer — these are placeholder values
- * that should never be used programmatically for enforcement.
- */
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  basic:      { equipment: 10,  users: 3  },
-  small:      { equipment: 25,  users: 10 },
-  mid:        { equipment: 60,  users: 25 },
-  large:      { equipment: 150, users: 75 },
-  enterprise: { equipment: 9999, users: 9999 }, // provisioned manually
+  starter: { equipment: 25, users: 10 },
 };
 
 export interface CompanySubscription {

@@ -134,7 +134,7 @@ describe('createEquipment — plan limit enforcement', () => {
   // ── Under limit ────────────────────────────────────────────────────────────
 
   it('creates equipment when current count is below the plan limit', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'basic', 50, 10)
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 10)
 
     const result = await createEquipment(makeFormData())
 
@@ -142,8 +142,8 @@ describe('createEquipment — plan limit enforcement', () => {
   })
 
   it('creates equipment when current count is exactly one below the limit (boundary)', async () => {
-    // limit = 5, current = 4 → allowed
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'small', 5, 4)
+    // limit = 25, current = 24 → allowed
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
     const result = await createEquipment(makeFormData())
 
@@ -153,20 +153,20 @@ describe('createEquipment — plan limit enforcement', () => {
   // ── At limit ───────────────────────────────────────────────────────────────
 
   it('blocks creation when current count equals the plan limit', async () => {
-    // limit = 5, current = 5 → blocked
-    wireCreateEquipmentTransaction('active', 'small', 5, 5)
+    // limit = 25, current = 25 → blocked
+    wireCreateEquipmentTransaction('active', 'starter', 25, 25)
 
     const result = await createEquipment(makeFormData())
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')
-    expect((result as { error: string }).error).toContain('small')
-    expect((result as { error: string }).error).toContain('5')
+    expect((result as { error: string }).error).toContain('starter')
+    expect((result as { error: string }).error).toContain('25')
   })
 
   it('blocks creation when current count exceeds the plan limit', async () => {
     // Defensive: count somehow exceeds limit (data migration scenario)
-    wireCreateEquipmentTransaction('active', 'basic', 50, 51)
+    wireCreateEquipmentTransaction('active', 'starter', 25, 26)
 
     const result = await createEquipment(makeFormData())
 
@@ -177,7 +177,7 @@ describe('createEquipment — plan limit enforcement', () => {
   // ── Trialing subscription ──────────────────────────────────────────────────
 
   it('allows creation when subscription is trialing and under limit', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('trialing', 'basic', 50, 0)
+    const { newDocId } = wireCreateEquipmentTransaction('trialing', 'starter', 25, 0)
 
     const result = await createEquipment(makeFormData())
 
@@ -187,7 +187,7 @@ describe('createEquipment — plan limit enforcement', () => {
   // ── Inactive subscription ──────────────────────────────────────────────────
 
   it('blocks creation when subscription is past_due', async () => {
-    wireCreateEquipmentTransaction('past_due', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('past_due', 'starter', 25, 0)
 
     const result = await createEquipment(makeFormData())
 
@@ -196,7 +196,7 @@ describe('createEquipment — plan limit enforcement', () => {
   })
 
   it('blocks creation when subscription is canceled', async () => {
-    wireCreateEquipmentTransaction('canceled', 'basic', 50, 0)
+    wireCreateEquipmentTransaction('canceled', 'starter', 25, 0)
 
     const result = await createEquipment(makeFormData())
 

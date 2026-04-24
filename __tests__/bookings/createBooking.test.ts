@@ -74,7 +74,7 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 const ACTIVE_COMPANY_DATA = {
   subscription: {
     status: 'active',
-    plan: 'basic',
+    plan: 'starter',
     limits: { equipment: 50, users: 5 },
   },
 }
@@ -359,7 +359,7 @@ describe('createBooking', () => {
         [`companies/${COMPANY_ID}`]: {
           subscription: {
             status: 'canceled',
-            plan: 'basic',
+            plan: 'starter',
             limits: { equipment: 50, users: 5 },
           },
         },
@@ -376,7 +376,7 @@ describe('createBooking', () => {
         [`companies/${COMPANY_ID}`]: {
           subscription: {
             status: 'trialing',
-            plan: 'basic',
+            plan: 'starter',
             limits: { equipment: 50, users: 5 },
           },
         },
