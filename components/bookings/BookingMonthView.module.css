@@ -12,33 +12,34 @@
   align-items: center;
   gap: 16px;
   padding: 12px var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
 }
 
 .navBtn {
   background: none;
-  border: 1px solid var(--dim);
-  color: var(--mid);
+  border: 1px solid #2A2A2A;
+  color: #919191;
   font-size: 16px;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .navBtn:hover {
-  color: var(--white);
-  border-color: var(--white);
+  color: #fff;
+  border-color: #fff;
 }
 
 .monthLabel {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: var(--white);
+  color: #919191;
   min-width: 200px;
 }
 
@@ -48,24 +49,26 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: var(--mid);
+  color: #919191;
   background: none;
-  border: 1px solid var(--dim);
-  padding: 4px 12px;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .todayBtn:hover {
-  color: var(--white);
-  border-color: var(--white);
+  color: #fff;
 }
 
-/* 7-column calendar grid */
+/* -----------------------------------------------------------------------
+   7-column calendar grid
+   ----------------------------------------------------------------------- */
+
 .grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  border-left: 1px solid var(--rule);
-  border-top: 1px solid var(--rule);
+  border-left: 1px solid rgba(71, 71, 71, 0.2);
+  border-top: 1px solid rgba(71, 71, 71, 0.2);
 }
 
 /* Weekday header row */
@@ -74,109 +77,124 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: var(--mid);
-  padding: 8px 12px;
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
+  color: #919191;
+  padding: 8px 10px;
+  border-right: 1px solid rgba(71, 71, 71, 0.2);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+  text-align: center;
 }
 
-/* Empty padding cell (before/after month) */
-.dayEmpty {
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  background: rgba(255, 255, 255, 0.01);
-  min-height: 100px;
+.dayHeaderWeekend {
+  opacity: 0.4;
 }
 
-/* Day cell */
+/* -----------------------------------------------------------------------
+   Day cells
+   ----------------------------------------------------------------------- */
+
 .day {
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  padding: 8px;
+  border-right: 1px solid rgba(71, 71, 71, 0.2);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+  padding: 10px;
   min-height: 100px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.dayToday {
-  background: rgba(238, 204, 2, 0.04);
+.dayWeekend {
+  background: rgba(255, 255, 255, 0.015);
 }
 
+.dayOutOfMonth {
+  opacity: 0.25;
+}
+
+/* Date number */
 .dayNum {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--mid);
-  line-height: 1;
-  margin-bottom: 4px;
+  color: #919191;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  text-align: center;
+  line-height: 24px;
+  flex-shrink: 0;
 }
 
 .dayNumToday {
-  color: var(--accent);
+  background: #EECC02;
+  color: #221b00;
 }
 
-/* Bookings inside a day cell */
+/* -----------------------------------------------------------------------
+   Booking rows (dot + name)
+   ----------------------------------------------------------------------- */
+
 .dayBookings {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  margin-top: 2px;
 }
 
-/* Booking pill */
-.block {
-  display: block;
+.bookingRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.bookingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bookingName {
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
+  letter-spacing: 0.125em;
+  color: #919191;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: opacity 0.1s;
+  transition: color 0.1s;
 }
 
-.block:hover {
-  opacity: 0.8;
+.bookingRow:hover .bookingName {
+  color: #fff;
 }
 
-/* Status-specific pill colours */
-.blockCheckedOut {
-  background: rgba(238, 204, 2, 0.15);
-  color: var(--accent);
-}
-
-.blockConfirmed {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--white);
-}
-
-.blockPending {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--mid);
-}
-
-.blockReturned {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--dim);
-}
+/* Status dot colours */
+.dotCheckedOut { background: #EECC02; }
+.dotConfirmed  { background: #ffffff; }
+.dotPending    { background: rgba(145, 145, 145, 0.5); }
+.dotReturned   { background: #474747; }
 
 .moreBookings {
   font-size: 8px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mid);
-  padding: 1px 4px;
+  color: #919191;
+  padding: 1px 0;
 }
 
-/* Empty state */
+/* -----------------------------------------------------------------------
+   Empty state
+   ----------------------------------------------------------------------- */
+
 .emptyState {
   padding: 60px var(--booking-pad-h);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  color: var(--mid);
+  color: #919191;
   font-size: 14px;
 }
 
@@ -186,13 +204,14 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--white);
-  border: 1px solid var(--white);
+  color: #fff;
+  border: 1px solid #fff;
   padding: 8px 20px;
+  text-decoration: none;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .emptyAction:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: #EECC02;
+  border-color: #EECC02;
 }

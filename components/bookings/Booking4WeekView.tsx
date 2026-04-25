@@ -19,15 +19,13 @@ function todayString(): string {
   return toDateString(new Date())
 }
 
-/** Returns the Monday of the ISO week containing the given date. */
 function getMondayOf(dateStr: string): Date {
-  const d = new Date(dateStr + 'T00:00:00')
-  const day = (d.getDay() + 6) % 7  // Mon=0 … Sun=6
+  const d   = new Date(dateStr + 'T00:00:00')
+  const day = (d.getDay() + 6) % 7
   d.setDate(d.getDate() - day)
   return d
 }
 
-/** Returns 28 consecutive date strings starting from a Monday. */
 function get28Days(startMonday: string): string[] {
   const days: string[] = []
   const start = new Date(startMonday + 'T00:00:00')
@@ -39,14 +37,6 @@ function get28Days(startMonday: string): string[] {
   return days
 }
 
-function formatDayHeader(dateStr: string): { weekday: string; date: string } {
-  const d = new Date(dateStr + 'T00:00:00')
-  return {
-    weekday: d.toLocaleDateString('en-GB', { weekday: 'short' }).toUpperCase(),
-    date:    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-  }
-}
-
 function formatPeriodLabel(startStr: string, endStr: string): string {
   const s = new Date(startStr + 'T00:00:00')
   const e = new Date(endStr   + 'T00:00:00')
@@ -55,13 +45,17 @@ function formatPeriodLabel(startStr: string, endStr: string): string {
   return `${startLabel} — ${endLabel}`.toUpperCase()
 }
 
-function statusClass(status: string): string {
+function isWeekend(dateStr: string): boolean {
+  const d = new Date(dateStr + 'T00:00:00').getDay()
+  return d === 0 || d === 6
+}
+
+function statusDotClass(status: string): string {
   switch (status) {
-    case 'checked_out': return styles.blockCheckedOut
-    case 'confirmed':   return styles.blockConfirmed
-    case 'pending':     return styles.blockPending
-    case 'returned':    return styles.blockReturned
-    default:            return styles.blockPending
+    case 'checked_out': return styles.dotCheckedOut
+    case 'confirmed':   return styles.dotConfirmed
+    case 'returned':    return styles.dotReturned
+    default:            return styles.dotPending
   }
 }
 
@@ -72,7 +66,6 @@ function statusClass(status: string): string {
 interface Booking4WeekViewProps {
   companyId: string
   initialBookings: Booking[]
-  /** Monday that starts the 4-week period — "YYYY-MM-DD" */
   periodStart: string
 }
 
@@ -104,7 +97,6 @@ export default function Booking4WeekView({
     )
   }
 
-  // Navigation: shift by 28 days
   function prevPeriod(): string {
     const d = new Date(periodStart + 'T00:00:00')
     d.setDate(d.getDate() - 28)
@@ -122,14 +114,7 @@ export default function Booking4WeekView({
   }
 
   function goToToday() {
-    const monday = getMondayOf(todayString())
-    navigate(toDateString(monday))
-  }
-
-  // Split 28 days into 4 rows of 7
-  const weeks: string[][] = []
-  for (let i = 0; i < 4; i++) {
-    weeks.push(days.slice(i * 7, i * 7 + 7))
+    navigate(toDateString(getMondayOf(todayString())))
   }
 
   const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
@@ -144,42 +129,47 @@ export default function Booking4WeekView({
         <button className={styles.todayBtn} onClick={goToToday}>Today</button>
       </div>
 
-      {/* Grid: header row + 4 week rows */}
+      {/* Grid */}
       <div className={styles.grid}>
         {/* Weekday headers */}
-        {WEEKDAYS.map((wd) => (
-          <div key={wd} className={styles.dayHeader}>{wd}</div>
+        {WEEKDAYS.map((wd, i) => (
+          <div key={wd} className={`${styles.dayHeader} ${i >= 5 ? styles.dayHeaderWeekend : ''}`}>
+            {wd}
+          </div>
         ))}
 
-        {/* Day cells — 4 rows */}
+        {/* Day cells */}
         {days.map((dayStr) => {
           const isToday     = dayStr === today
+          const weekend     = isWeekend(dayStr)
+          const dayNum      = new Date(dayStr + 'T00:00:00').getDate()
           const dayBookings = bookingsForDay(dayStr)
-          const h           = formatDayHeader(dayStr)
 
           return (
             <div
               key={dayStr}
-              className={`${styles.day} ${isToday ? styles.dayToday : ''}`}
+              className={[
+                styles.day,
+                weekend ? styles.dayWeekend : '',
+                isToday ? styles.dayToday   : '',
+              ].filter(Boolean).join(' ')}
             >
-              <div className={styles.dayMeta}>
-                <span className={styles.dayWeekday}>{h.weekday}</span>
-                <span className={`${styles.dayDate} ${isToday ? styles.dayDateToday : ''}`}>
-                  {h.date}
-                </span>
-              </div>
+              <span className={`${styles.dayNum} ${isToday ? styles.dayNumToday : ''}`}>
+                {dayNum}
+              </span>
               <div className={styles.dayBookings}>
                 {dayBookings.slice(0, 2).map((booking) => (
                   <Link
                     key={booking.id}
                     href={`/bookings/${booking.id}`}
-                    className={`${styles.block} ${statusClass(booking.status)}`}
+                    className={styles.bookingRow}
                   >
-                    {booking.projectName}
+                    <span className={`${styles.bookingDot} ${statusDotClass(booking.status)}`} />
+                    <span className={styles.bookingName}>{booking.projectName}</span>
                   </Link>
                 ))}
                 {dayBookings.length > 2 && (
-                  <span className={styles.moreBookings}>+{dayBookings.length - 2}</span>
+                  <span className={styles.moreBookings}>+{dayBookings.length - 2} more</span>
                 )}
               </div>
             </div>

@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
-import BookingStatusBadge from './BookingStatusBadge'
 import type { Booking } from '@/types'
 import styles from './BookingMonthView.module.css'
 
@@ -26,19 +25,38 @@ function getMonthBounds(year: number, month: number): { start: string; end: stri
   return { start: toDateString(start), end: toDateString(end) }
 }
 
-/** Returns an array of 35 or 42 slots (some null = padding days outside month). */
-function getMonthGrid(year: number, month: number): (string | null)[] {
+interface GridDay {
+  dateStr: string
+  isCurrentMonth: boolean
+}
+
+function getMonthGrid(year: number, month: number): GridDay[] {
   const firstDay     = new Date(year, month - 1, 1)
   const lastDay      = new Date(year, month, 0)
   const startPadding = (firstDay.getDay() + 6) % 7  // Mon=0 … Sun=6
 
-  const days: (string | null)[] = []
-  for (let i = 0; i < startPadding; i++) days.push(null)
-  for (let d = 1; d <= lastDay.getDate(); d++) {
-    days.push(toDateString(new Date(year, month - 1, d)))
+  const result: GridDay[] = []
+
+  // Prev month fill
+  const prevLastDay = new Date(year, month - 1, 0)
+  for (let i = startPadding - 1; i >= 0; i--) {
+    const d = new Date(prevLastDay)
+    d.setDate(prevLastDay.getDate() - i)
+    result.push({ dateStr: toDateString(d), isCurrentMonth: false })
   }
-  while (days.length % 7 !== 0) days.push(null)
-  return days
+
+  // Current month
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    result.push({ dateStr: toDateString(new Date(year, month - 1, d)), isCurrentMonth: true })
+  }
+
+  // Next month fill
+  let n = 1
+  while (result.length % 7 !== 0) {
+    result.push({ dateStr: toDateString(new Date(year, month, n++)), isCurrentMonth: false })
+  }
+
+  return result
 }
 
 function formatMonthYear(year: number, month: number): string {
@@ -46,13 +64,17 @@ function formatMonthYear(year: number, month: number): string {
   return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase()
 }
 
-function statusClass(status: string): string {
+function isWeekend(dateStr: string): boolean {
+  const d = new Date(dateStr + 'T00:00:00').getDay()
+  return d === 0 || d === 6
+}
+
+function statusDotClass(status: string): string {
   switch (status) {
-    case 'checked_out': return styles.blockCheckedOut
-    case 'confirmed':   return styles.blockConfirmed
-    case 'pending':     return styles.blockPending
-    case 'returned':    return styles.blockReturned
-    default:            return styles.blockPending
+    case 'checked_out': return styles.dotCheckedOut
+    case 'confirmed':   return styles.dotConfirmed
+    case 'returned':    return styles.dotReturned
+    default:            return styles.dotPending
   }
 }
 
@@ -95,7 +117,6 @@ export default function BookingMonthView({
     )
   }
 
-  // Navigation
   const prevYear  = month === 1 ? year - 1 : year
   const prevMonth = month === 1 ? 12 : month - 1
   const nextYear  = month === 12 ? year + 1 : year
@@ -111,19 +132,9 @@ export default function BookingMonthView({
     <div className={styles.container}>
       {/* Nav bar */}
       <div className={styles.navBar}>
-        <button
-          className={styles.navBtn}
-          onClick={() => navigate(prevYear, prevMonth)}
-        >
-          ←
-        </button>
+        <button className={styles.navBtn} onClick={() => navigate(prevYear, prevMonth)}>←</button>
         <span className={styles.monthLabel}>{formatMonthYear(year, month)}</span>
-        <button
-          className={styles.navBtn}
-          onClick={() => navigate(nextYear, nextMonth)}
-        >
-          →
-        </button>
+        <button className={styles.navBtn} onClick={() => navigate(nextYear, nextMonth)}>→</button>
         <button
           className={styles.todayBtn}
           onClick={() => {
@@ -135,44 +146,52 @@ export default function BookingMonthView({
         </button>
       </div>
 
-      {/* Weekday header row */}
+      {/* Calendar grid */}
       <div className={styles.grid}>
-        {WEEKDAYS.map((wd) => (
-          <div key={wd} className={styles.dayHeader}>{wd}</div>
+        {/* Weekday header row */}
+        {WEEKDAYS.map((wd, i) => (
+          <div key={wd} className={`${styles.dayHeader} ${i >= 5 ? styles.dayHeaderWeekend : ''}`}>
+            {wd}
+          </div>
         ))}
 
         {/* Day cells */}
-        {grid.map((dayStr, i) => {
-          if (!dayStr) {
-            return <div key={`pad-${i}`} className={styles.dayEmpty} />
-          }
-
-          const isToday     = dayStr === today
-          const dayBookings = bookingsForDay(dayStr)
-          const dayNum      = new Date(dayStr + 'T00:00:00').getDate()
+        {grid.map((item, i) => {
+          const isToday     = item.dateStr === today
+          const weekend     = isWeekend(item.dateStr)
+          const dayNum      = new Date(item.dateStr + 'T00:00:00').getDate()
+          const dayBookings = item.isCurrentMonth ? bookingsForDay(item.dateStr) : []
 
           return (
             <div
-              key={dayStr}
-              className={`${styles.day} ${isToday ? styles.dayToday : ''}`}
+              key={`${item.dateStr}-${i}`}
+              className={[
+                styles.day,
+                weekend               ? styles.dayWeekend    : '',
+                !item.isCurrentMonth  ? styles.dayOutOfMonth : '',
+                isToday               ? styles.dayToday      : '',
+              ].filter(Boolean).join(' ')}
             >
               <span className={`${styles.dayNum} ${isToday ? styles.dayNumToday : ''}`}>
                 {dayNum}
               </span>
-              <div className={styles.dayBookings}>
-                {dayBookings.slice(0, 3).map((booking) => (
-                  <Link
-                    key={booking.id}
-                    href={`/bookings/${booking.id}`}
-                    className={`${styles.block} ${statusClass(booking.status)}`}
-                  >
-                    {booking.projectName}
-                  </Link>
-                ))}
-                {dayBookings.length > 3 && (
-                  <span className={styles.moreBookings}>+{dayBookings.length - 3} more</span>
-                )}
-              </div>
+              {item.isCurrentMonth && (
+                <div className={styles.dayBookings}>
+                  {dayBookings.slice(0, 3).map((booking) => (
+                    <Link
+                      key={booking.id}
+                      href={`/bookings/${booking.id}`}
+                      className={styles.bookingRow}
+                    >
+                      <span className={`${styles.bookingDot} ${statusDotClass(booking.status)}`} />
+                      <span className={styles.bookingName}>{booking.projectName}</span>
+                    </Link>
+                  ))}
+                  {dayBookings.length > 3 && (
+                    <span className={styles.moreBookings}>+{dayBookings.length - 3} more</span>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -182,9 +201,7 @@ export default function BookingMonthView({
       {bookings.filter((b) => b.status !== 'cancelled').length === 0 && (
         <div className={styles.emptyState}>
           <p>No bookings this month.</p>
-          <Link href="/bookings/new" className={styles.emptyAction}>
-            New Booking
-          </Link>
+          <Link href="/bookings/new" className={styles.emptyAction}>New Booking</Link>
         </div>
       )}
     </div>
