@@ -3,27 +3,22 @@ import Stripe from 'stripe'
 import { FieldValue } from 'firebase-admin/firestore'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
+import type { SubscriptionStatus } from '@/types/company'
+import { PRICE_ID_TO_PLAN, PLAN_LIMITS } from '@/lib/subscription'
 
 export const dynamic = 'force-dynamic'
 
-type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled'
-
 function mapStripeStatus(stripeStatus: Stripe.Subscription.Status): SubscriptionStatus {
   switch (stripeStatus) {
-    case 'trialing':
-      return 'trialing'
-    case 'active':
-      return 'active'
+    case 'trialing':            return 'trialing'
+    case 'active':              return 'active'
+    case 'incomplete':          return 'incomplete'
     case 'past_due':
     case 'unpaid':
-    case 'paused':
-    case 'incomplete':
-      return 'past_due'
+    case 'paused':              return 'past_due'
     case 'canceled':
-    case 'incomplete_expired':
-      return 'canceled'
-    default:
-      return 'past_due'
+    case 'incomplete_expired':  return 'canceled'
+    default:                    return 'past_due'
   }
 }
 
@@ -38,9 +33,11 @@ async function getCompanyDocByCustomerId(customerId: string) {
   return snap.docs[0]
 }
 
+// #96: Only writes stripeCustomerId — subscription fields are the sole responsibility
+// of handleSubscriptionUpsert (triggered by customer.subscription.created/updated).
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
   const customerId = session.customer as string | null
-  const companyId = session.metadata?.companyId
+  const companyId  = session.metadata?.companyId
 
   if (!companyId || !customerId) {
     console.error('[webhooks/stripe]', {
@@ -55,38 +52,6 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     stripeCustomerId: customerId,
   })
 
-  // Fetch subscription immediately to ensure status is available when user lands on /payment-success
-  try {
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      limit: 1,
-    })
-    const subscription = subscriptions.data[0]
-    if (subscription) {
-      const mappedStatus = mapStripeStatus(subscription.status)
-      const item = subscription.items.data[0]
-      await adminDb.doc(`companies/${companyId}`).update({
-        'subscription.status': mappedStatus,
-        'subscription.stripeUpdatedAt': subscription.created,
-        'subscription.currentPeriodEnd': item?.current_period_end
-          ? new Date(item.current_period_end * 1000).toISOString()
-          : null,
-        'subscription.cancelAtPeriodEnd': subscription.cancel_at_period_end,
-        'subscription.trialEnd': subscription.trial_end
-          ? new Date(subscription.trial_end * 1000).toISOString()
-          : null,
-        'subscription.interval': item?.plan.interval ?? null,
-      })
-    }
-  } catch (err) {
-    console.error('[webhooks/stripe]', {
-      action: 'checkout_session_completed_subscription_fetch_failed',
-      companyId,
-      customerId,
-      message: err instanceof Error ? err.message : String(err),
-    })
-  }
-
   console.log('[webhooks/stripe]', {
     action: 'checkout_session_completed',
     companyId,
@@ -94,7 +59,9 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   })
 }
 
-async function handleSubscriptionUpsert(subscription: Stripe.Subscription, eventCreated: number) {
+// #85: Canonical writer for all subscription fields.
+// Returns true if it wrote, false if the event was stale-skipped (#98).
+async function handleSubscriptionUpsert(subscription: Stripe.Subscription, eventCreated: number): Promise<boolean> {
   const customerId = subscription.customer as string
   const companyDoc = await getCompanyDocByCustomerId(customerId)
 
@@ -104,7 +71,7 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
       customerId,
       subscriptionId: subscription.id,
     })
-    return
+    return false
   }
 
   const companyId = companyDoc.id
@@ -119,23 +86,37 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
       eventCreated,
       storedTs,
     })
-    return
+    return false
   }
 
   const mappedStatus = mapStripeStatus(subscription.status)
-  const item = subscription.items.data[0]
+  const item    = subscription.items.data[0]
+  const priceId = item?.price?.id ?? ''
+  const plan    = PRICE_ID_TO_PLAN[priceId] ?? 'starter'
+  const limits  = PLAN_LIMITS[plan]
+
+  if (!PRICE_ID_TO_PLAN[priceId]) {
+    console.warn('[webhooks/stripe]', {
+      action: 'subscription_upsert_unknown_price_id',
+      priceId,
+      subscriptionId: subscription.id,
+    })
+  }
 
   await adminDb.doc(`companies/${companyId}`).update({
-    'subscription.status': mappedStatus,
-    'subscription.stripeUpdatedAt': eventCreated,
-    'subscription.currentPeriodEnd': item?.current_period_end
+    'subscription.status':               mappedStatus,
+    'subscription.stripeUpdatedAt':      eventCreated,
+    'subscription.stripeSubscriptionId': subscription.id,
+    'subscription.plan':                 plan,
+    'subscription.limits':               limits,
+    'subscription.currentPeriodEnd':     item?.current_period_end
       ? new Date(item.current_period_end * 1000).toISOString()
       : null,
-    'subscription.cancelAtPeriodEnd': subscription.cancel_at_period_end,
-    'subscription.trialEnd': subscription.trial_end
+    'subscription.cancelAtPeriodEnd':    subscription.cancel_at_period_end,
+    'subscription.trialEnd':             subscription.trial_end
       ? new Date(subscription.trial_end * 1000).toISOString()
       : null,
-    'subscription.interval': item?.plan.interval ?? null,
+    'subscription.interval':             item?.plan.interval ?? null,
   })
 
   console.log('[webhooks/stripe]', {
@@ -144,6 +125,25 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
     subscriptionId: subscription.id,
     status: mappedStatus,
   })
+
+  return true
+}
+
+// #118: Wraps upsert for subscription.created events to also set hadTrial.
+async function handleSubscriptionCreated(subscription: Stripe.Subscription, eventCreated: number) {
+  const wrote = await handleSubscriptionUpsert(subscription, eventCreated)
+
+  if (wrote && subscription.status === 'trialing') {
+    const companyDoc = await getCompanyDocByCustomerId(subscription.customer as string)
+    if (companyDoc) {
+      await adminDb.doc(`companies/${companyDoc.id}`).update({ hadTrial: true })
+      console.log('[webhooks/stripe]', {
+        action: 'had_trial_set',
+        companyId: companyDoc.id,
+        subscriptionId: subscription.id,
+      })
+    }
+  }
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
@@ -172,6 +172,36 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   })
 }
 
+// #87: Log failed payment attempts for future dunning logic.
+async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+  const invoiceId = invoice.id
+  if (!invoiceId) return
+
+  const customerId = invoice.customer as string | null
+  const companyDoc = customerId ? await getCompanyDocByCustomerId(customerId) : null
+
+  await adminDb.doc(`stripeEvents/failedPayments/${invoiceId}`).set({
+    invoiceId,
+    companyId:        companyDoc?.id ?? null,
+    customerId,
+    amount:           invoice.amount_due,
+    currency:         invoice.currency,
+    attemptCount:     invoice.attempt_count,
+    nextAttempt:      invoice.next_payment_attempt
+      ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+      : null,
+    invoiceCreatedAt: new Date(invoice.created * 1000).toISOString(),
+    recordedAt:       new Date().toISOString(),
+  })
+
+  console.log('[webhooks/stripe]', {
+    action: 'invoice_payment_failed',
+    invoiceId,
+    companyId:    companyDoc?.id ?? null,
+    attemptCount: invoice.attempt_count,
+  })
+}
+
 // #83: Event processing isolated so errors surface clearly in logs
 async function processStripeEvent(event: Stripe.Event) {
   try {
@@ -181,12 +211,19 @@ async function processStripeEvent(event: Stripe.Event) {
         break
 
       case 'customer.subscription.created':
+        await handleSubscriptionCreated(event.data.object as Stripe.Subscription, event.created)
+        break
+
       case 'customer.subscription.updated':
         await handleSubscriptionUpsert(event.data.object as Stripe.Subscription, event.created)
         break
 
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+        break
+
+      case 'invoice.payment_failed':
+        await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice)
         break
 
       default:

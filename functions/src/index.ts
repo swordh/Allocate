@@ -10,7 +10,6 @@ setGlobalOptions({ region: 'europe-west1' });
 // they rely on this default app being initialized first.
 initializeApp();
 
-export { createCompany } from './auth/createCompany';
 export { setActiveClaim } from './auth/setActiveClaim';
 export { deleteAccount } from './auth/deleteAccount';
 export { addEquipment } from './equipment/addEquipment';

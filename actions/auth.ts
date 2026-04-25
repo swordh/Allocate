@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { PLAN_LIMITS } from '@/lib/subscription'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
 
@@ -95,7 +96,7 @@ export async function setupNewCompany(
     subscription: {
       status:            'trialing',
       plan:              'starter',
-      limits:            { equipment: 25, users: 10 },
+      limits:            PLAN_LIMITS.starter,
       currentPeriodEnd:  null,
       trialEnd:          null,
       cancelAtPeriodEnd: false,
