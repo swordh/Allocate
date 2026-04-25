@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { updateEquipmentWithUnits, deactivateEquipment, createEquipmentWithUnits } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
-import type { Equipment, EquipmentStatus, TrackingType, CustomField } from '@/types'
+import type { Equipment, EquipmentStatus, TrackingType, CustomField, CustomFieldList } from '@/types'
 import type { UnitUpdate, UnitCreate, EquipmentFields } from '@/actions/equipment'
 import styles from './EquipmentEditModal.module.css'
 
@@ -54,12 +54,33 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
       const cat = categories.find((c) => c.name === newCategory)
       const templates = cat?.customFieldTemplates ?? []
       setCustomFields(
-        templates.map((t) => ({
-          id: t.id,
-          label: t.label,
-          type: 'text' as const,
-          value: t.defaultValue,
-        }))
+        templates.map((t) => {
+          const baseField = {
+            id: t.id,
+            label: t.label,
+            type: t.type as any,
+          }
+
+          switch (t.type) {
+            case 'text':
+              return { ...baseField, value: t.defaultValue || '' }
+            case 'boolean':
+              return { ...baseField, value: t.defaultValue === true || t.defaultValue === 'true' }
+            case 'list':
+              return {
+                ...baseField,
+                options: t.options || [],
+                value: t.defaultValue || (t.options?.[0] || '')
+              }
+            case 'value':
+              return {
+                ...baseField,
+                value: { min: parseInt(String(t.defaultValue) || '0') || 0, max: null }
+              }
+            default:
+              return { ...baseField, value: '' }
+          }
+        })
       )
     }
   }
@@ -401,13 +422,75 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
               {customFields.map((field) => (
                 <div key={field.id} className={styles.customFieldRow}>
                   <span className={styles.customFieldLabel}>{field.label}</span>
-                  <input
-                    type="text"
-                    value={field.type === 'text' ? (field.value as string) : ''}
-                    onChange={(e) => updateField(field.id, { value: e.target.value })}
-                    placeholder="Value"
-                    className={styles.input}
-                  />
+
+                  {field.type === 'text' && (
+                    <input
+                      type="text"
+                      value={field.value as string}
+                      onChange={(e) => updateField(field.id, { value: e.target.value })}
+                      placeholder="Value"
+                      className={styles.input}
+                    />
+                  )}
+
+                  {field.type === 'boolean' && (
+                    <div className={styles.approvalRow}>
+                      <button
+                        type="button"
+                        className={`${styles.toggle} ${field.value ? styles.toggleOn : ''}`}
+                        onClick={() => updateField(field.id, { value: !(field.value as boolean) })}
+                        role="switch"
+                        aria-checked={field.value as boolean}
+                      />
+                    </div>
+                  )}
+
+                  {field.type === 'list' && (
+                    <select
+                      value={field.value as string}
+                      onChange={(e) => updateField(field.id, { value: e.target.value })}
+                      className={styles.select}
+                    >
+                      {(field as CustomFieldList).options.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {field.type === 'value' && (
+                    <div className={styles.valueFieldRow}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={(field.value as { min: number; max: number | null }).min}
+                        onChange={(e) =>
+                          updateField(field.id, {
+                            value: {
+                              min: parseInt(e.target.value, 10),
+                              max: (field.value as { min: number; max: number | null }).max,
+                            },
+                          })
+                        }
+                        placeholder="Min"
+                        className={styles.input}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={(field.value as { min: number; max: number | null }).max || ''}
+                        onChange={(e) =>
+                          updateField(field.id, {
+                            value: {
+                              min: (field.value as { min: number; max: number | null }).min,
+                              max: e.target.value ? parseInt(e.target.value, 10) : null,
+                            },
+                          })
+                        }
+                        placeholder="Max (optional)"
+                        className={styles.input}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

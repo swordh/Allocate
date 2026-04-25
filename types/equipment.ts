@@ -23,7 +23,22 @@ export interface CustomFieldValue {
   value: { min: number; max: number | null }
 }
 
-export type CustomField = CustomFieldText | CustomFieldValue
+export interface CustomFieldBoolean {
+  id: string
+  label: string
+  type: 'boolean'
+  value: boolean
+}
+
+export interface CustomFieldList {
+  id: string
+  label: string
+  type: 'list'
+  options: string[]
+  value: string
+}
+
+export type CustomField = CustomFieldText | CustomFieldValue | CustomFieldBoolean | CustomFieldList
 export type CustomFieldType = CustomField['type']
 
 export interface Equipment {
@@ -46,7 +61,9 @@ export interface Equipment {
 export interface CategoryFieldTemplate {
   id: string
   label: string
-  defaultValue: string
+  type: 'text' | 'boolean' | 'value' | 'list'
+  defaultValue: string | boolean | null
+  options?: string[]
 }
 
 export interface Category {

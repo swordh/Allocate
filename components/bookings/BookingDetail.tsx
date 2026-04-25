@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cancelBooking, approveBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
 import BookingStatusBadge from './BookingStatusBadge'
-import type { Booking, Equipment, Role } from '@/types'
+import type { Booking, Equipment, Role, UserProfile } from '@/types'
 import styles from './BookingDetail.module.css'
 
 interface BookingDetailProps {
@@ -13,6 +13,7 @@ interface BookingDetailProps {
   equipment: Equipment[]
   sessionUid: string
   role: Role
+  userProfile?: UserProfile | null
 }
 
 /**
@@ -24,6 +25,7 @@ export default function BookingDetail({
   equipment,
   sessionUid,
   role,
+  userProfile,
 }: BookingDetailProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -156,7 +158,9 @@ export default function BookingDetail({
               status={booking.status}
               approvalStatus={booking.approvalStatus}
             />
-            <span className={styles.bookedBy}>Booked by {booking.userName}</span>
+            <span className={styles.bookedBy}>
+              Booked by {userProfile?.name ?? booking.userName}
+            </span>
           </div>
         </div>
         <div className={styles.headerRight}>

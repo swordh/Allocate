@@ -362,3 +362,92 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── Field type selector ──────────────────────────── */
+
+.fieldTypeSelect {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.fieldTypeSelect:hover {
+  border-color: rgba(255, 255, 255, 0.40);
+}
+
+.fieldTypeSelect:focus {
+  border-color: var(--tertiary);
+}
+
+/* ── Boolean default toggle ──────────────────────── */
+
+.booleanToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.booleanToggleLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.50);
+  user-select: none;
+}
+
+.toggle {
+  width: 32px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.1s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.toggleOn {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.toggleOn::after {
+  transform: translateX(16px);
+  background: var(--white);
+}
+
+/* ── List options input ──────────────────────────── */
+
+.fieldOptionsInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.50);
+  font-family: inherit;
+  font-size: 0.75rem;
+  text-align: right;
+  caret-color: var(--tertiary);
+}
+
+.fieldOptionsInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
+}

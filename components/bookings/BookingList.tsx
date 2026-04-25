@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
-import type { Booking, Role } from '@/types'
+import type { Booking, Role, UserProfile } from '@/types'
 import styles from './BookingList.module.css'
 
 interface BookingListProps {
@@ -12,6 +12,8 @@ interface BookingListProps {
   role: Role
   /** Bookings pre-fetched on the server for initial paint. */
   initialBookings: Booking[]
+  /** UserProfile data for each userId in bookings */
+  userProfiles: Record<string, UserProfile | null>
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +85,7 @@ export default function BookingList({
   userId,
   role,
   initialBookings,
+  userProfiles,
 }: BookingListProps) {
   const [showCancelled, setShowCancelled] = useState(false)
 
@@ -188,7 +191,11 @@ export default function BookingList({
             </div>
             <div className={styles.bookingCards}>
               {dateBookings.map((booking) => (
-                <BookingRow key={booking.id} booking={booking} />
+                <BookingRow
+                  key={booking.id}
+                  booking={booking}
+                  userProfiles={userProfiles}
+                />
               ))}
             </div>
           </div>
@@ -240,9 +247,18 @@ function getStatusTextClass(booking: Booking): string {
   }
 }
 
-function BookingRow({ booking }: { booking: Booking }) {
+function BookingRow({
+  booking,
+  userProfiles,
+}: {
+  booking: Booking
+  userProfiles: Record<string, UserProfile | null>
+}) {
   const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
   const statusClass = getStatusRowClass(booking)
+  const displayName = booking.userId
+    ? (userProfiles[booking.userId]?.name ?? booking.userName)
+    : booking.userName
 
   const timeOrDate = formatBookingDateTime(
     booking.startDate,
@@ -266,10 +282,10 @@ function BookingRow({ booking }: { booking: Booking }) {
             <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
             <span className={styles.rowMetaItem}>{timeOrDate}</span>
           </div>
-          {booking.userName && (
+          {displayName && (
             <div className={styles.rowMetaWithIcon}>
               <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
-              <span className={styles.rowMetaItem}>{booking.userName}</span>
+              <span className={styles.rowMetaItem}>{displayName}</span>
             </div>
           )}
           <div className={styles.rowMetaWithIcon}>

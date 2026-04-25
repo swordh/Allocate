@@ -2,7 +2,9 @@ import { notFound } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { getBooking } from '@/lib/queries/bookings'
 import { getEquipment } from '@/lib/queries/equipment'
+import { getUserProfile } from '@/lib/queries/users'
 import BookingDetail from '@/components/bookings/BookingDetail'
+import type { UserProfile } from '@/types'
 
 interface BookingDetailPageProps {
   params: Promise<{ bookingId: string }>
@@ -24,12 +26,19 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
 
   if (!booking) notFound()
 
+  // Fetch UserProfile for this booking
+  let userProfile: UserProfile | null = null
+  if (booking.userId) {
+    userProfile = await getUserProfile(booking.userId)
+  }
+
   return (
     <BookingDetail
       booking={booking}
       equipment={equipment}
       sessionUid={session.uid}
       role={session.role}
+      userProfile={userProfile}
     />
   )
 }

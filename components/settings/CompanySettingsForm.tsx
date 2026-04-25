@@ -92,7 +92,7 @@ export default function CompanySettingsForm({
               ...cat,
               customFieldTemplates: [
                 ...cat.customFieldTemplates,
-                { id: crypto.randomUUID(), label: '', defaultValue: '' },
+                { id: crypto.randomUUID(), label: '', type: 'text', defaultValue: '', options: [] },
               ],
             }
           : cat
@@ -119,7 +119,7 @@ export default function CompanySettingsForm({
     categoryId: string,
     fieldId: string,
     key: keyof CategoryFieldTemplate,
-    value: string
+    value: string | boolean | string[]
   ) {
     setCategories((prev) =>
       prev.map((cat) =>
@@ -189,24 +189,83 @@ export default function CompanySettingsForm({
               <div className={styles.categoryBody}>
                 {cat.customFieldTemplates.map((field) => (
                   <div key={field.id} className={styles.fieldRow}>
+                    <select
+                      value={field.type}
+                      onChange={(e) =>
+                        handleFieldChange(cat.id, field.id, 'type', e.target.value)
+                      }
+                      className={styles.fieldTypeSelect}
+                    >
+                      <option value="text">Text</option>
+                      <option value="boolean">Boolean</option>
+                      <option value="list">List/Dropdown</option>
+                      <option value="value">Numeric Range</option>
+                    </select>
+
                     <input
                       type="text"
                       className={styles.fieldNameInput}
-                      placeholder="Field name"
+                      placeholder="Field label"
                       value={field.label}
                       onChange={(e) =>
                         handleFieldChange(cat.id, field.id, 'label', e.target.value)
                       }
                     />
-                    <input
-                      type="text"
-                      className={styles.fieldDefaultInput}
-                      placeholder="Default value"
-                      value={field.defaultValue}
-                      onChange={(e) =>
-                        handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
-                      }
-                    />
+
+                    {field.type === 'text' && (
+                      <input
+                        type="text"
+                        className={styles.fieldDefaultInput}
+                        placeholder="Default value"
+                        value={field.defaultValue || ''}
+                        onChange={(e) =>
+                          handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
+                        }
+                      />
+                    )}
+
+                    {field.type === 'boolean' && (
+                      <div className={styles.booleanToggleRow}>
+                        <button
+                          type="button"
+                          className={`${styles.toggle} ${field.defaultValue === true ? styles.toggleOn : ''}`}
+                          onClick={() =>
+                            handleFieldChange(cat.id, field.id, 'defaultValue', field.defaultValue !== true)
+                          }
+                          role="switch"
+                          aria-checked={field.defaultValue === true}
+                        />
+                      </div>
+                    )}
+
+                    {field.type === 'list' && (
+                      <input
+                        type="text"
+                        className={styles.fieldOptionsInput}
+                        placeholder="Options (comma or space-separated)"
+                        value={field.options?.join(', ') || ''}
+                        onChange={(e) => {
+                          const opts = e.target.value
+                            .split(/[,\s]+/)
+                            .map(s => s.trim())
+                            .filter(s => s.length > 0);
+                          handleFieldChange(cat.id, field.id, 'options', opts);
+                        }}
+                      />
+                    )}
+
+                    {field.type === 'value' && (
+                      <input
+                        type="text"
+                        className={styles.fieldDefaultInput}
+                        placeholder="Min value (e.g., 0)"
+                        value={field.defaultValue || ''}
+                        onChange={(e) =>
+                          handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
+                        }
+                      />
+                    )}
+
                     <button
                       type="button"
                       className={styles.btnRemoveField}

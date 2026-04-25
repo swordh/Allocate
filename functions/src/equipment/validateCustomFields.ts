@@ -2,12 +2,14 @@ import { HttpsError } from 'firebase-functions/v2/https';
 
 const MAX_CUSTOM_FIELDS = 20;
 const MAX_LABEL_LENGTH = 100;
-const VALID_TYPES = ['text', 'value'] as const;
+const VALID_TYPES = ['text', 'value', 'boolean', 'list'] as const;
 type FieldType = typeof VALID_TYPES[number];
 
 interface CustomFieldText { id: string; label: string; type: 'text'; value: string }
 interface CustomFieldValue { id: string; label: string; type: 'value'; value: { min: number; max: number | null } }
-type CustomField = CustomFieldText | CustomFieldValue;
+interface CustomFieldBoolean { id: string; label: string; type: 'boolean'; value: boolean }
+interface CustomFieldList { id: string; label: string; type: 'list'; options: string[]; value: string }
+type CustomField = CustomFieldText | CustomFieldValue | CustomFieldBoolean | CustomFieldList;
 
 export function validateCustomFields(raw: unknown): CustomField[] {
   if (raw === undefined || raw === null) return [];
@@ -22,7 +24,7 @@ export function validateCustomFields(raw: unknown): CustomField[] {
     if (typeof field !== 'object' || field === null) {
       throw new HttpsError('invalid-argument', `customFields[${i}] must be an object.`);
     }
-    const { id, label, type, value } = field as Record<string, unknown>;
+    const { id, label, type, value, options } = field as Record<string, unknown>;
 
     if (typeof id !== 'string' || id.trim().length === 0) {
       throw new HttpsError('invalid-argument', `customFields[${i}].id must be a non-empty string.`);
@@ -44,7 +46,24 @@ export function validateCustomFields(raw: unknown): CustomField[] {
       return { id: id.trim(), label: label.trim(), type: 'text', value };
     }
 
-    // value (single number or range)
+    if (type === 'boolean') {
+      if (typeof value !== 'boolean') {
+        throw new HttpsError('invalid-argument', `customFields[${i}].value must be a boolean for type "boolean".`);
+      }
+      return { id: id.trim(), label: label.trim(), type: 'boolean', value };
+    }
+
+    if (type === 'list') {
+      if (!Array.isArray(options) || options.length === 0) {
+        throw new HttpsError('invalid-argument', `customFields[${i}].options must be a non-empty array for type "list".`);
+      }
+      if (typeof value !== 'string' || !options.includes(value)) {
+        throw new HttpsError('invalid-argument', `customFields[${i}].value must be one of the defined options for type "list".`);
+      }
+      return { id: id.trim(), label: label.trim(), type: 'list', options: options as string[], value };
+    }
+
+    // value (numeric range)
     if (typeof value !== 'object' || value === null) {
       throw new HttpsError('invalid-argument', `customFields[${i}].value must be an object {min, max} for type "value".`);
     }
