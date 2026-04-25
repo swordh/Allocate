@@ -4,6 +4,8 @@
 
 .container {
   width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 /* Header — no border-bottom per spec */
@@ -85,33 +87,38 @@
   margin-bottom: 24px;
 }
 
-/* Body: stacked on mobile, 2-column on desktop */
+/* Body: column on mobile, row on desktop */
 .body {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  min-height: calc(100vh - 300px);
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
 }
 
 @media (min-width: 768px) {
   .body {
-    grid-template-columns: 1fr 1fr;
+    flex-direction: row;
+    align-items: flex-start;
   }
 }
 
-/* Details column */
+/* -----------------------------------------------------------------------
+   Left column: pick list + ancillary info
+   ----------------------------------------------------------------------- */
+
 .details {
-  background: var(--surface-container-lowest);
-  padding: 32px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 32px;
+  padding-bottom: 48px;
 }
 
-/* Equipment list section */
-.equipmentSection {
-  background: var(--surface-container);
-  padding: 32px;
+@media (min-width: 768px) {
+  .details {
+    padding-right: 48px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0;
+  }
 }
 
 .section {
@@ -138,58 +145,155 @@
   color: var(--error);
 }
 
-/* Equipment items list */
-.itemList {
+/* -----------------------------------------------------------------------
+   Pick List
+   ----------------------------------------------------------------------- */
+
+.pickListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.pickListProgress {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.pickList {
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-.item {
+.pickItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pickItem:first-child {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pickItemInteractive {
+  cursor: pointer;
+}
+
+.pickItemInteractive:hover .pickCheckbox {
+  border-color: rgba(145, 145, 145, 0.7);
+}
+
+/* Custom checkbox */
+.pickCheckbox {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1px solid rgba(145, 145, 145, 0.4);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--surface-container);
-  border-bottom: 1px solid rgba(71, 71, 71, 0.15);
+  justify-content: center;
+  margin-top: 2px;
+  transition: background 0.1s, border-color 0.1s;
 }
 
-.item:last-child {
-  border-bottom: none;
+.pickCheckboxChecked {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
-.itemName {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--white);
+.pickCheckIcon {
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--on-primary);
+  line-height: 1;
+}
+
+.pickItemContent {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   flex: 1;
 }
 
-.itemQty {
-  font-size: 12px;
-  font-weight: 700;
+.pickItemName {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--white);
+  line-height: 1.2;
+  transition: opacity 0.1s;
+}
+
+.pickItemNamePicked {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.pickItemMeta {
+  font-size: 11px;
   color: var(--on-surface-variant);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.approvalTag {
-  font-size: 9px;
+.pickItemQty {
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--outline);
-  border: 1px solid rgba(145, 145, 145, 0.3);
-  padding: 2px 6px;
 }
 
-/* Actions column */
+.pickItemUnit {
+  /* inherits meta styles */
+}
+
+/* -----------------------------------------------------------------------
+   Right column: summary + actions
+   ----------------------------------------------------------------------- */
+
 .actions {
-  padding: 32px;
-  background: var(--surface-container-lowest);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
+  padding-bottom: 48px;
 }
+
+@media (min-width: 768px) {
+  .actions {
+    width: 320px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 96px;
+    padding-bottom: 0;
+  }
+}
+
+.actionSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.actionSection:first-child {
+  padding-top: 0;
+}
+
+.actionDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 8px 0 16px;
+}
+
+/* -----------------------------------------------------------------------
+   Action buttons (unchanged styles, moved to right column)
+   ----------------------------------------------------------------------- */
 
 /* Approval section */
 .approvalSection {
@@ -333,6 +437,7 @@
   width: 100%;
   text-align: left;
   transition: color 0.1s, border-color 0.1s;
+  margin-top: 8px;
 }
 
 .cancelBtn:not(:disabled):hover {
@@ -359,6 +464,7 @@
   text-align: left;
   cursor: pointer;
   transition: opacity 0.1s;
+  margin-top: 8px;
 }
 
 .checkOutBtn:not(:disabled):hover {
@@ -384,6 +490,7 @@
   text-align: left;
   cursor: pointer;
   transition: opacity 0.1s;
+  margin-top: 8px;
 }
 
 .checkInBtn:not(:disabled):hover {
@@ -393,4 +500,15 @@
 .checkInBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Legacy — kept for backward compat with approval tag in pick list area */
+.approvalTag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--outline);
+  border: 1px solid rgba(145, 145, 145, 0.3);
+  padding: 2px 6px;
 }
