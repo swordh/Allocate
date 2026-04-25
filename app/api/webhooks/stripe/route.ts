@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import Stripe from 'stripe'
+import { FieldValue } from 'firebase-admin/firestore'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
 
@@ -66,6 +67,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
       const item = subscription.items.data[0]
       await adminDb.doc(`companies/${companyId}`).update({
         'subscription.status': mappedStatus,
+        'subscription.stripeUpdatedAt': subscription.created,
         'subscription.currentPeriodEnd': item?.current_period_end
           ? new Date(item.current_period_end * 1000).toISOString()
           : null,
@@ -81,7 +83,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
       action: 'checkout_session_completed_subscription_fetch_failed',
       companyId,
       customerId,
-      err,
+      message: err instanceof Error ? err.message : String(err),
     })
   }
 
@@ -92,7 +94,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   })
 }
 
-async function handleSubscriptionUpsert(subscription: Stripe.Subscription) {
+async function handleSubscriptionUpsert(subscription: Stripe.Subscription, eventCreated: number) {
   const customerId = subscription.customer as string
   const companyDoc = await getCompanyDocByCustomerId(customerId)
 
@@ -106,11 +108,26 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription) {
   }
 
   const companyId = companyDoc.id
-  const mappedStatus = mapStripeStatus(subscription.status)
 
+  // #98: Skip stale events — Stripe does not guarantee delivery order
+  const storedTs = companyDoc.data()?.subscription?.stripeUpdatedAt ?? 0
+  if (eventCreated <= storedTs) {
+    console.log('[webhooks/stripe]', {
+      action: 'subscription_upsert_stale_skipped',
+      companyId,
+      subscriptionId: subscription.id,
+      eventCreated,
+      storedTs,
+    })
+    return
+  }
+
+  const mappedStatus = mapStripeStatus(subscription.status)
   const item = subscription.items.data[0]
+
   await adminDb.doc(`companies/${companyId}`).update({
     'subscription.status': mappedStatus,
+    'subscription.stripeUpdatedAt': eventCreated,
     'subscription.currentPeriodEnd': item?.current_period_end
       ? new Date(item.current_period_end * 1000).toISOString()
       : null,
@@ -155,11 +172,42 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   })
 }
 
+// #83: Event processing isolated so errors surface clearly in logs
+async function processStripeEvent(event: Stripe.Event) {
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session)
+        break
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpsert(event.data.object as Stripe.Subscription, event.created)
+        break
+
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+        break
+
+      default:
+        console.log('[webhooks/stripe]', { action: 'unhandled_event', type: event.type })
+    }
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      error: 'Event handler failed',
+      type: event.type,
+      eventId: event.id,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
   const signature = request.headers.get('stripe-signature')
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
+  // #82: Reject unauthenticated requests — returning 200 would silence Stripe retries
   if (!signature || !webhookSecret) {
     console.error('[webhooks/stripe]', {
       error: 'Missing stripe-signature or STRIPE_WEBHOOK_SECRET',
@@ -175,27 +223,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
   }
 
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session)
-        break
-
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        await handleSubscriptionUpsert(event.data.object as Stripe.Subscription)
-        break
-
-      case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
-        break
-
-      default:
-        console.log('[webhooks/stripe]', { action: 'unhandled_event', type: event.type })
-    }
-  } catch (err) {
-    console.error('[webhooks/stripe]', { error: 'Event handler failed', type: event.type, err })
+  // #84: Deduplicate — Stripe delivers at-least-once; skip already-processed events
+  const eventRef = adminDb.doc(`_stripeEvents/${event.id}`)
+  const existing = await eventRef.get()
+  if (existing.exists) {
+    console.log('[webhooks/stripe]', {
+      action: 'duplicate_event_skipped',
+      eventId: event.id,
+      type: event.type,
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
   }
+  await eventRef.set({ processedAt: FieldValue.serverTimestamp(), type: event.type })
+
+  // #97: Return 200 before processing — prevents Vercel timeout on slow Stripe API calls
+  after(() => processStripeEvent(event))
 
   return NextResponse.json({ received: true }, { status: 200 })
 }
