@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     console.error('[webhooks/stripe]', {
       error: 'Missing stripe-signature or STRIPE_WEBHOOK_SECRET',
     })
-    return NextResponse.json({ received: true }, { status: 200 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let event: Stripe.Event
