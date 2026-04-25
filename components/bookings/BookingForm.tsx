@@ -2,9 +2,9 @@
 
 import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
+import { createBooking, updateBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
 import { useToast } from '@/lib/toast-context'
-import type { Equipment } from '@/types'
+import type { Booking, Equipment } from '@/types'
 import type { ConflictResult, BookedSummary } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
 
@@ -14,6 +14,8 @@ interface BookingFormProps {
   defaultStartDate: string
   defaultEndDate: string
   timeSlotMinutes: number
+  booking?: Booking
+  bookingId?: string
 }
 
 interface SelectedItem {
@@ -50,17 +52,23 @@ export default function BookingForm({
   defaultStartDate,
   defaultEndDate,
   timeSlotMinutes,
+  booking,
+  bookingId,
 }: BookingFormProps) {
   const router = useRouter()
   const { showToast, dismissToast } = useToast()
 
-  const [projectName, setProjectName]   = useState('')
-  const [startDate, setStartDate]       = useState(defaultStartDate)
-  const [endDate, setEndDate]           = useState(defaultEndDate)
-  const [startTime, setStartTime]       = useState('')
-  const [endTime, setEndTime]           = useState('')
-  const [notes, setNotes]               = useState('')
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
+  const initialItems: SelectedItem[] = booking
+    ? booking.items.map((i) => ({ equipmentId: i.equipmentId, unitId: i.unitId, quantity: i.quantity }))
+    : []
+
+  const [projectName, setProjectName]   = useState(booking?.projectName ?? '')
+  const [startDate, setStartDate]       = useState(booking?.startDate ?? defaultStartDate)
+  const [endDate, setEndDate]           = useState(booking?.endDate ?? defaultEndDate)
+  const [startTime, setStartTime]       = useState(booking?.startTime ?? '')
+  const [endTime, setEndTime]           = useState(booking?.endTime ?? '')
+  const [notes, setNotes]               = useState(booking?.notes ?? '')
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(initialItems)
   const [error, setError]               = useState<string | null>(null)
   const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null)
   const [isCheckingConflict, setIsCheckingConflict] = useState(false)
@@ -68,11 +76,14 @@ export default function BookingForm({
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
   const [isPending, startTransition]    = useTransition()
 
+  const effectiveStart = booking?.startDate ?? defaultStartDate
+  const effectiveEnd   = booking?.endDate   ?? defaultEndDate
+
   // Load availability on mount (default dates are already set)
   useEffect(() => {
-    if (!defaultStartDate || !defaultEndDate) return
+    if (!effectiveStart || !effectiveEnd) return
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, defaultStartDate, defaultEndDate)
+    getBookedSummary(companyId, effectiveStart, effectiveEnd, bookingId)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +207,7 @@ export default function BookingForm({
 
     // Always refresh availability for all equipment when dates change
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, newStart, effectiveEnd)
+    getBookedSummary(companyId, newStart, effectiveEnd, bookingId)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
 
@@ -204,7 +215,7 @@ export default function BookingForm({
     if (selectedItems.length > 0) {
       setIsCheckingConflict(true)
       try {
-        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems)
+        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems, bookingId)
         setConflictResult(result)
       } finally {
         setIsCheckingConflict(false)
@@ -238,7 +249,7 @@ export default function BookingForm({
     }
 
     if (startDate && endDate) {
-      const result = await checkConflict(companyId, startDate, endDate, selectedItems)
+      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId)
       setConflictResult(result)
       if (result.hasConflict) {
         setError('Some equipment is unavailable for the selected dates. Review conflicts below.')
@@ -255,18 +266,33 @@ export default function BookingForm({
     formData.set('notes', notes)
     formData.set('items', JSON.stringify(selectedItems))
 
-    const toastId = showToast('saving', 'Saving booking...')
-    startTransition(async () => {
-      const result = await createBooking(formData)
-      dismissToast(toastId)
-      if ('error' in result) {
-        setError(result.error)
-        showToast('error', result.error, 5000)
-      } else {
-        showToast('success', 'Booking created', 3000)
-        router.push(`/bookings/${result.bookingId}`)
-      }
-    })
+    if (bookingId) {
+      const toastId = showToast('saving', 'Saving changes...')
+      startTransition(async () => {
+        const result = await updateBooking(bookingId, formData)
+        dismissToast(toastId)
+        if (result.error) {
+          setError(result.error)
+          showToast('error', result.error, 5000)
+        } else {
+          showToast('success', 'Booking updated', 3000)
+          router.push(`/bookings/${bookingId}`)
+        }
+      })
+    } else {
+      const toastId = showToast('saving', 'Saving booking...')
+      startTransition(async () => {
+        const result = await createBooking(formData)
+        dismissToast(toastId)
+        if ('error' in result) {
+          setError(result.error)
+          showToast('error', result.error, 5000)
+        } else {
+          showToast('success', 'Booking created', 3000)
+          router.push(`/bookings/${result.bookingId}`)
+        }
+      })
+    }
   }
 
   const dateRangeLabel =
@@ -643,7 +669,7 @@ export default function BookingForm({
             className={styles.submitBtn}
             disabled={isPending || isCheckingConflict}
           >
-            {isPending ? 'Saving\u2026' : 'CONFIRM BOOKING'}
+            {isPending ? 'Saving\u2026' : bookingId ? 'UPDATE BOOKING' : 'CONFIRM BOOKING'}
           </button>
         </div>
       </div>

@@ -1,10 +1,9 @@
 import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
 import { getCompany } from '@/lib/queries/company'
-import BookingForm from '@/components/bookings/BookingForm'
+import BookingFormPage from '@/components/bookings/BookingFormPage'
 import { redirect } from 'next/navigation'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
-import styles from './page.module.css'
 
 export default async function NewBookingPage() {
   const session = await getVerifiedSession()
@@ -24,20 +23,12 @@ export default async function NewBookingPage() {
   const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
 
   return (
-    <main className={styles.main}>
-      <div className={styles.contentWidth}>
-        <header className={styles.header}>
-          <h1 className={styles.h1}>NEW BOOKING</h1>
-          <div className={styles.divider} />
-        </header>
-        <BookingForm
-          companyId={session.activeCompanyId}
-          equipment={equipment}
-          defaultStartDate={todayStr}
-          defaultEndDate={todayStr}
-          timeSlotMinutes={timeSlotMinutes}
-        />
-      </div>
-    </main>
+    <BookingFormPage
+      companyId={session.activeCompanyId}
+      equipment={equipment}
+      defaultStartDate={todayStr}
+      defaultEndDate={todayStr}
+      timeSlotMinutes={timeSlotMinutes}
+    />
   )
 }

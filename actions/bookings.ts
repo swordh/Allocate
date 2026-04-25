@@ -1027,6 +1027,7 @@ export async function getBookedSummary(
   companyId: string,
   startDate: string,
   endDate: string,
+  excludeBookingId?: string,
 ): Promise<Record<string, BookedSummary>> {
   const session = await getVerifiedSession()
   if (companyId !== session.activeCompanyId) return {}
@@ -1051,6 +1052,7 @@ export async function getBookedSummary(
     const summary: Record<string, BookedSummary> = {}
 
     for (const doc of snap.docs) {
+      if (doc.id === excludeBookingId) continue
       const data = doc.data() as StoredBookingForConflict
       if (data.status === 'cancelled') continue
       if (data.approvalStatus === 'rejected') continue
