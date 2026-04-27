@@ -203,3 +203,68 @@ export async function deleteAccount(): Promise<{ error?: string }> {
 
   return {}
 }
+
+export async function exportUserData(): Promise<{ json?: string; error?: string }> {
+  const session = await getVerifiedSession()
+  const uid = session.uid
+
+  try {
+    const userSnap = await adminDb.collection('users').doc(uid).get()
+    const userData = userSnap.data() ?? {}
+
+    const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
+
+    const companies = await Promise.all(
+      membershipsSnap.docs.map(async (membershipDoc) => {
+        const membership = membershipDoc.data()
+        const companyId = membership.companyId as string
+
+        const companySnap = await adminDb.collection('companies').doc(companyId).get()
+        const companyData = companySnap.data() ?? {}
+
+        const bookingsSnap = await adminDb
+          .collection(`companies/${companyId}/bookings`)
+          .where('userId', '==', uid)
+          .get()
+
+        const bookings = bookingsSnap.docs.map((d) => {
+          const b = d.data()
+          return {
+            projectName: b.projectName ?? null,
+            startDate:   b.startDate ?? null,
+            endDate:     b.endDate ?? null,
+            status:      b.status ?? null,
+            createdAt:   b.createdAt ?? null,
+          }
+        })
+
+        return {
+          companyId,
+          companyName: companyData.name ?? null,
+          plan:        companyData.subscription?.plan ?? null,
+          role:        membership.role ?? null,
+          joinedAt:    membership.joinedAt ?? null,
+          bookings,
+        }
+      })
+    )
+
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      user: {
+        name:            userData.name ?? null,
+        email:           userData.email ?? null,
+        activeCompanyId: userData.activeCompanyId ?? null,
+        createdAt:       userData.createdAt ?? null,
+      },
+      companies,
+    }
+
+    console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'data_exported' })
+    return { json: JSON.stringify(exportPayload, null, 2) }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { error: message, action: 'export_data_failed' })
+    return { error: 'Failed to export data' }
+  }
+}
