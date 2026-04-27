@@ -180,7 +180,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const customerId = invoice.customer as string | null
   const companyDoc = customerId ? await getCompanyDocByCustomerId(customerId) : null
 
-  await adminDb.doc(`stripeEvents/failedPayments/${invoiceId}`).set({
+  await adminDb.doc(`stripeFailedPayments/${invoiceId}`).set({
     invoiceId,
     companyId:        companyDoc?.id ?? null,
     customerId,
