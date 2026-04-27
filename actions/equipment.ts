@@ -79,16 +79,18 @@ export async function createEquipment(
         )
       }
 
-      // Count active equipment. Aggregation queries cannot run inside
-      // runTransaction, so we query outside and accept the negligible TOCTOU
-      // window — this is a soft cap, not a security boundary.
-      const countSnap = await adminDb
-        .collection(`companies/${companyId}/equipment`)
-        .where('active', '==', true)
-        .count()
-        .get()
-      const currentCount = countSnap.data().count
+      // Read the atomic counter document — ALL reads must come before writes.
+      const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
+      const counterSnap = await tx.get(counterRef)
 
+      if (!counterSnap.exists) {
+        throw Object.assign(
+          new Error('Equipment counter not initialized. Run the backfill migration first.'),
+          { code: 'failed-precondition' },
+        )
+      }
+
+      const currentCount = counterSnap.data()!.count as number
       const limit = subscription.limits.equipment
       const plan = subscription.plan
 
@@ -103,6 +105,12 @@ export async function createEquipment(
 
       const newRef = adminDb.collection(`companies/${companyId}/equipment`).doc()
       newEquipmentId = newRef.id
+
+      // Increment counter atomically with the equipment write.
+      tx.update(counterRef, {
+        count: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      })
 
       tx.set(newRef, {
         name,
@@ -248,19 +256,12 @@ export async function deactivateEquipment(
 
   if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
 
-  const equipmentRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
-  const equipmentSnap = await equipmentRef.get()
-
-  if (!equipmentSnap.exists) {
-    return { error: 'Equipment not found.' }
-  }
-
-  const existingData = equipmentSnap.data() as EquipmentDocumentInternal
-
   // ── Active/upcoming booking check ──────────────────────────────────────────
   // Query by equipmentIds array-contains + endDate range; filter by status in memory.
   // (Firestore does not support array-contains combined with 'in' in one query.)
-  const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked_out'])
+  // This check runs outside the transaction — it's a UX guard, not a security
+  // boundary, so the TOCTOU window here is acceptable.
+  const ACTIVE_STATUSES = new Set(['pending', 'ready', 'checked_out'])
   const todayStr = new Date().toISOString().slice(0, 10)
 
   const bookingsSnap = await adminDb
@@ -282,23 +283,65 @@ export async function deactivateEquipment(
   }
 
   try {
-    const batch = adminDb.batch()
-    batch.update(equipmentRef, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+    const equipmentRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
+    const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
 
-    if (existingData.trackingType === 'serialized') {
+    let trackingType: string | undefined
+
+    await adminDb.runTransaction(async (tx) => {
+      // ── Read phase (all reads before any writes) ─────────────────────────────
+      const equipmentSnap = await tx.get(equipmentRef)
+
+      if (!equipmentSnap.exists) {
+        throw Object.assign(new Error('Equipment not found.'), { code: 'not-found' })
+      }
+
+      const existingData = equipmentSnap.data() as EquipmentDocumentInternal
+      trackingType = existingData.trackingType
+      const wasActive = existingData.active
+
+      const counterSnap = await tx.get(counterRef)
+
+      // ── Write phase ──────────────────────────────────────────────────────────
+      tx.update(equipmentRef, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+
+      if (!counterSnap.exists) {
+        throw new Error('Equipment counter not initialized. Run the backfill migration first.')
+      }
+
+      // Decrement the counter only when the equipment was truly active.
+      // If it was already inactive this is a no-op (idempotency guard).
+      if (wasActive) {
+        tx.update(counterRef, {
+          count: FieldValue.increment(-1),
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+      }
+    })
+
+    // Units are deactivated in a separate batch after the transaction. If this batch fails,
+    // the parent equipment is already deactivated and the counter is correct, but child units
+    // remain active=true. A cleanup job or retry is needed in that case.
+    if (trackingType === 'serialized') {
       const unitsSnap = await equipmentRef.collection('units').where('active', '==', true).get()
-      for (const unitDoc of unitsSnap.docs) {
-        batch.update(unitDoc.ref, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+      if (unitsSnap.size > 0) {
+        const batch = adminDb.batch()
+        for (const unitDoc of unitsSnap.docs) {
+          batch.update(unitDoc.ref, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
+        }
+        await batch.commit()
       }
     }
-
-    await batch.commit()
 
     revalidatePath('/equipment')
     revalidatePath('/settings/equipment')
 
     return { success: true }
   } catch (err) {
+    const code = (err as { code?: string }).code
+    if (code === 'not-found') {
+      return { error: 'Equipment not found.' }
+    }
     const message = err instanceof Error ? err.message : 'Failed to deactivate equipment'
     console.error('[actions/equipment] deactivateEquipment failed', { message })
     return { error: message }
@@ -721,16 +764,18 @@ export async function createEquipmentWithUnits(
         )
       }
 
-      // Count active equipment. Aggregation queries cannot run inside
-      // runTransaction, so we query outside and accept the negligible TOCTOU
-      // window — this is a soft cap, not a security boundary.
-      const countSnap = await adminDb
-        .collection(`companies/${companyId}/equipment`)
-        .where('active', '==', true)
-        .count()
-        .get()
-      const currentCount = countSnap.data().count
+      // Read the atomic counter document — ALL reads must come before writes.
+      const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
+      const counterSnap = await tx.get(counterRef)
 
+      if (!counterSnap.exists) {
+        throw Object.assign(
+          new Error('Equipment counter not initialized. Run the backfill migration first.'),
+          { code: 'failed-precondition' },
+        )
+      }
+
+      const currentCount = counterSnap.data()!.count as number
       const limit = subscription.limits.equipment
       const plan = subscription.plan
 
@@ -745,6 +790,12 @@ export async function createEquipmentWithUnits(
 
       const newRef = adminDb.collection(`companies/${companyId}/equipment`).doc()
       newEquipmentId = newRef.id
+
+      // Increment counter atomically with the equipment write.
+      tx.update(counterRef, {
+        count: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      })
 
       tx.set(newRef, {
         name,

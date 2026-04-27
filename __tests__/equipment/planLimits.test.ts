@@ -59,8 +59,12 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 }
 
 /**
- * Wire adminDb.runTransaction with a company snapshot and a count value for
- * the active equipment aggregation query.
+ * Wire adminDb.runTransaction with a company snapshot and a counter document
+ * for the atomic equipment count check.
+ *
+ * The implementation reads two documents inside the transaction:
+ *   1. The company doc (subscription / plan limits)
+ *   2. The counter doc at companies/{companyId}/_meta/equipmentCount
  */
 function wireCreateEquipmentTransaction(
   subscriptionStatus: string,
@@ -69,19 +73,32 @@ function wireCreateEquipmentTransaction(
   currentEquipmentCount: number,
 ) {
   const newDocId = 'new-equip-id'
+  const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
 
   const tx = {
-    get: vi.fn().mockResolvedValue({
-      exists: true,
-      data: () => ({
-        subscription: {
-          status: subscriptionStatus,
-          plan,
-          limits: { equipment: equipmentLimit, users: 5 },
-        },
-      }),
+    get: vi.fn().mockImplementation(async (ref: { path: string }) => {
+      if (ref.path === `companies/${COMPANY_ID}`) {
+        return {
+          exists: true,
+          data: () => ({
+            subscription: {
+              status: subscriptionStatus,
+              plan,
+              limits: { equipment: equipmentLimit, users: 5 },
+            },
+          }),
+        }
+      }
+      if (ref.path === counterPath) {
+        return {
+          exists: true,
+          data: () => ({ count: currentEquipmentCount }),
+        }
+      }
+      return { exists: false, data: () => ({}) }
     }),
     set: vi.fn(),
+    update: vi.fn(),
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
@@ -95,18 +112,9 @@ function wireCreateEquipmentTransaction(
     id: path.split('/').pop(),
   } as never))
 
-  // The equipment collection is used for:
-  //   1. The count query (outside the transaction, chained: .where().count().get())
-  //   2. .doc() to create the new equipment ref
+  // The equipment collection is used only to obtain a new doc ref for the write.
   vi.mocked(adminDb.collection).mockImplementation(() => ({
-    where: vi.fn().mockReturnValue({
-      count: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({
-          data: () => ({ count: currentEquipmentCount }),
-        }),
-      }),
-    }),
-    doc: vi.fn().mockReturnValue({ id: newDocId }),
+    doc: vi.fn().mockReturnValue({ id: newDocId, path: `companies/${COMPANY_ID}/equipment/${newDocId}` }),
   } as never))
 
   return { tx, newDocId }

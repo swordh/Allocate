@@ -151,13 +151,19 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       );
     }
 
-    // Count active equipment — called outside the transaction because Firestore
-    // aggregation queries cannot run inside runTransaction. The plan limit is a
-    // soft cap so the negligible TOCTOU window is acceptable.
-    const equipmentRef = db.collection(`companies/${companyId}/equipment`);
-    const countSnap = await equipmentRef.where('active', '==', true).count().get();
-    const currentCount = countSnap.data().count;
+    // Read the atomic counter document inside the transaction — ALL reads
+    // must come before ANY writes.
+    const counterRef = db.doc(`companies/${companyId}/_meta/equipmentCount`);
+    const counterSnap = await tx.get(counterRef);
 
+    if (!counterSnap.exists) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Equipment counter not initialized. Run the backfill migration first.',
+      );
+    }
+
+    const currentCount = counterSnap.data()!.count as number;
     const limit = subscription.limits.equipment;
     const plan = subscription.plan;
 
@@ -169,8 +175,15 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
     }
 
     // All checks passed — create the document inside the transaction.
+    const equipmentRef = db.collection(`companies/${companyId}/equipment`);
     const newRef = equipmentRef.doc();
     newEquipmentId = newRef.id;
+
+    // Increment counter atomically with the equipment write.
+    tx.update(counterRef, {
+      count: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     tx.set(newRef, {
       name,
