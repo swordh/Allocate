@@ -43,26 +43,25 @@ export const deleteAccount = onCall({ region: 'europe-west1', cors: true, invoke
   const companyIds = membershipsSnap.docs.map((d) => d.data().companyId as string).filter(Boolean);
 
   // ── 2. Sole-admin check ────────────────────────────────────────────────────
-  // Block if the user is the only admin in any company. Must be done before
-  // any writes so the state is consistent if we throw.
-  for (const companyId of companyIds) {
-    const isAdmin = request.auth.token.role === 'admin' &&
-      request.auth.token.activeCompanyId === companyId;
+  // Block if the user is the only admin in ANY company they belong to. Must be
+  // done before any writes so the state is consistent if we throw.
+  // Uses the membershipsSnap already fetched above — no second fetch needed.
+  for (const membershipDoc of membershipsSnap.docs) {
+    const companyId = membershipDoc.data().companyId as string;
+    const role = membershipDoc.data().role as string;
+    if (role !== 'admin') continue;
 
-    if (!isAdmin) continue;
-
-    const companyAdminsSnap = await db
+    const adminCountSnap = await db
       .collectionGroup('memberships')
       .where('companyId', '==', companyId)
       .where('role', '==', 'admin')
+      .count()
       .get();
 
-    if (companyAdminsSnap.size === 1 && companyAdminsSnap.docs[0].ref.path.startsWith(`users/${uid}/`)) {
-      const companySnap = await db.doc(`companies/${companyId}`).get();
-      const companyName = (companySnap.data()?.name as string | undefined) ?? companyId;
+    if (adminCountSnap.data().count <= 1) {
       throw new HttpsError(
         'failed-precondition',
-        `You are the only admin of "${companyName}". Transfer the admin role or delete the company before deleting your account.`,
+        'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.',
       );
     }
   }

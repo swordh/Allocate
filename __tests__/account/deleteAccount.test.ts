@@ -54,14 +54,22 @@ vi.mock('@/lib/firebase-admin', () => {
   //   Current code:  collectionGroup(...).where(...).where(...).get()
   //   Planned fix:   collectionGroup(...).where(...).where(...).count().get()
   //
-  // Both patterns resolve through mockCollectionGroupGet so the same spy
-  // covers the current implementation and the fixed one.
-  const countQuery = { get: mockCollectionGroupGet }
-  const whereChain: Record<string, unknown> = {}
-  whereChain['where'] = () => whereChain
-  whereChain['get']   = mockCollectionGroupGet          // for current .where().where().get()
-  whereChain['count'] = () => countQuery                // for fixed   .where().where().count().get()
-  const collectionGroupMock = vi.fn(() => whereChain)
+  // Each collectionGroup() call returns a fresh chain that captures the
+  // companyId from the first .where('companyId', '==', <id>) call. The
+  // captured id is forwarded to mockCollectionGroupGet({ _companyId }) so
+  // tests can route the response based on which company is being queried —
+  // without relying on brittle call-order assumptions.
+  const collectionGroupMock = vi.fn(() => {
+    let _companyId: string | undefined
+    const chain: Record<string, unknown> = {}
+    chain['where'] = (field: string, _op: string, value: unknown) => {
+      if (field === 'companyId') _companyId = value as string
+      return chain
+    }
+    chain['get']   = () => mockCollectionGroupGet({ _companyId })   // current .where().where().get()
+    chain['count'] = () => ({ get: () => mockCollectionGroupGet({ _companyId }) }) // fixed .count().get()
+    return chain
+  })
 
   // Build a chainable collection mock.
   //
@@ -181,6 +189,8 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     mockUserDocDelete.mockResolvedValue(undefined)
     mockDeleteUser.mockResolvedValue(undefined)
     // Default collectionGroup count: 2 admins (safe, does not block).
+    // mockCollectionGroupGet receives { _companyId } — default ignores it and
+    // always returns 2 so single-company tests stay simple.
     mockCollectionGroupGet.mockResolvedValue(makeCountSnap(2))
     // Default memberships: empty (no companies — no count queries issued).
     mockMembershipsGet.mockResolvedValue(makeMembershipsSnap([]))
@@ -238,11 +248,10 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
       ]),
     )
 
-    // company-A → 2 admins; company-B → 1 admin.
-    // The fix must query each admin membership; return counts in call order.
-    mockCollectionGroupGet
-      .mockResolvedValueOnce(makeCountSnap(2)) // company-A
-      .mockResolvedValueOnce(makeCountSnap(1)) // company-B
+    // Route by companyId — avoids brittle call-order assumptions.
+    mockCollectionGroupGet.mockImplementation(({ _companyId }: { _companyId?: string }) =>
+      Promise.resolve(makeCountSnap(_companyId === 'company-B' ? 1 : 2)),
+    )
 
     const result = await deleteAccount()
 
@@ -265,9 +274,7 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     )
 
     // Both companies have 2 admins — deletion is safe.
-    mockCollectionGroupGet
-      .mockResolvedValueOnce(makeCountSnap(2)) // company-A
-      .mockResolvedValueOnce(makeCountSnap(2)) // company-B
+    // Default mock already returns makeCountSnap(2) for all companies.
 
     const result = await deleteAccount()
 
@@ -311,5 +318,22 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     expect(mockDeleteUser).toHaveBeenCalledOnce()
     // No admin membership means no count queries should be issued.
     expect(mockCollectionGroupGet).not.toHaveBeenCalled()
+  })
+
+  // ── Network error resilience ────────────────────────────────────────────────
+
+  it('returns { error } and does not throw when the memberships fetch fails', async () => {
+    stubSession()
+
+    // Simulate a Firestore network error during the sole-admin guard.
+    mockMembershipsGet.mockRejectedValue(new Error('Firestore unavailable'))
+
+    // deleteAccount must catch the error and return gracefully — never throw.
+    const result = await deleteAccount()
+
+    expect(result.error).toBeDefined()
+    // Session must not be deleted when the guard itself failed.
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 })

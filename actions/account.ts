@@ -28,27 +28,33 @@ export async function deleteAccount(): Promise<{ error?: string }> {
 
   // Last-admin guard: block deletion if this user is the sole admin of ANY company
   // they belong to — not just the active one (fixes issue #90).
-  const membershipsSnap = await adminDb.collection('users').doc(session.uid).collection('memberships').get()
-  const adminMemberships = membershipsSnap.docs.filter(m => m.data().role === 'admin')
+  try {
+    const membershipsSnap = await adminDb.collection('users').doc(session.uid).collection('memberships').get()
+    const adminMemberships = membershipsSnap.docs.filter(m => m.data().role === 'admin')
 
-  if (adminMemberships.length > 0) {
-    const adminCounts = await Promise.all(
-      adminMemberships.map(async (m) => {
-        const companyId = m.data().companyId as string
-        const countSnap = await adminDb
-          .collectionGroup('memberships')
-          .where('companyId', '==', companyId)
-          .where('role', '==', 'admin')
-          .count()
-          .get()
-        return { companyId, count: countSnap.data().count }
-      })
-    )
-    const blocking = adminCounts.find(c => c.count <= 1)
-    if (blocking) {
-      console.error('[actions/account] deleteAccount blocked: sole admin', { uid: session.uid.slice(0, 8) + '...', companyId: blocking.companyId })
-      return { error: 'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.' }
+    if (adminMemberships.length > 0) {
+      const adminCounts = await Promise.all(
+        adminMemberships.map(async (m) => {
+          const companyId = m.data().companyId as string
+          const countSnap = await adminDb
+            .collectionGroup('memberships')
+            .where('companyId', '==', companyId)
+            .where('role', '==', 'admin')
+            .count()
+            .get()
+          return { companyId, count: countSnap.data().count }
+        })
+      )
+      const blocking = adminCounts.find(c => c.count <= 1)
+      if (blocking) {
+        console.error('[actions/account] deleteAccount blocked: sole admin', { uid: session.uid.slice(0, 8) + '...' })
+        return { error: 'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.' }
+      }
     }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { error: message, action: 'delete_account_guard_failed' })
+    return { error: 'Failed to delete account' }
   }
 
   // Step 1: clear the session cookie — user is logged out regardless of what follows.
