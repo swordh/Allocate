@@ -7,6 +7,8 @@
  *     from the decoded claims.
  *   - createSession (actions/auth.ts): throws when verifyIdToken rejects,
  *     and sets the __session cookie on a valid token.
+ *   - switchCompany (actions/auth.ts): revokes refresh tokens after a
+ *     successful switch; does NOT revoke when membership is missing.
  *
  * Firebase Admin and Next.js cookies/redirect are fully mocked.
  * All spies are created via vi.hoisted() so they are available inside
@@ -21,6 +23,9 @@ const {
   mockVerifySessionCookie,
   mockVerifyIdToken,
   mockCreateSessionCookie,
+  mockSetCustomUserClaims,
+  mockRevokeRefreshTokens,
+  mockMembershipGet,
   mockCookieGet,
   mockCookieSet,
   mockCookieDelete,
@@ -28,6 +33,9 @@ const {
   mockVerifySessionCookie:  vi.fn(),
   mockVerifyIdToken:        vi.fn(),
   mockCreateSessionCookie:  vi.fn(),
+  mockSetCustomUserClaims:  vi.fn(),
+  mockRevokeRefreshTokens:  vi.fn(),
+  mockMembershipGet:        vi.fn(),
   mockCookieGet:            vi.fn(),
   mockCookieSet:            vi.fn(),
   mockCookieDelete:         vi.fn(),
@@ -35,17 +43,27 @@ const {
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-vi.mock('@/lib/firebase-admin', () => ({
-  adminAuth: {
-    verifySessionCookie: mockVerifySessionCookie,
-    verifyIdToken:       mockVerifyIdToken,
-    createSessionCookie: mockCreateSessionCookie,
-  },
-  adminDb: {
-    doc:        vi.fn(),
-    collection: vi.fn(),
-  },
-}))
+vi.mock('@/lib/firebase-admin', () => {
+  // Chainable Firestore stub: collection().doc().collection().doc().get()
+  const membershipDocRef   = { get: mockMembershipGet }
+  const membershipColRef   = { doc: vi.fn().mockReturnValue(membershipDocRef) }
+  const userDocRef         = { collection: vi.fn().mockReturnValue(membershipColRef) }
+  const usersCollectionRef = { doc: vi.fn().mockReturnValue(userDocRef) }
+
+  return {
+    adminAuth: {
+      verifySessionCookie:  mockVerifySessionCookie,
+      verifyIdToken:        mockVerifyIdToken,
+      createSessionCookie:  mockCreateSessionCookie,
+      setCustomUserClaims:  mockSetCustomUserClaims,
+      revokeRefreshTokens:  mockRevokeRefreshTokens,
+    },
+    adminDb: {
+      doc:        vi.fn(),
+      collection: vi.fn().mockReturnValue(usersCollectionRef),
+    },
+  }
+})
 
 vi.mock('next/headers', () => {
   const store = {
@@ -65,7 +83,7 @@ vi.mock('next/navigation', () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { getVerifiedSession } from '@/lib/dal'
-import { createSession } from '@/actions/auth'
+import { createSession, switchCompany } from '@/actions/auth'
 
 // ── Tests: getVerifiedSession ─────────────────────────────────────────────────
 //
@@ -293,5 +311,59 @@ describe('createSession', () => {
 
     const cookieOptions = mockCookieSet.mock.calls[0][2] as Record<string, unknown>
     expect(cookieOptions.secure).toBe(false)
+  })
+})
+
+// ── Tests: switchCompany ──────────────────────────────────────────────────────
+//
+// switchCompany sets new custom claims and revokes all refresh tokens so that
+// any outstanding session cookie carrying the old activeCompanyId is immediately
+// invalidated (issue #103).
+
+describe('switchCompany', () => {
+  // Wire getVerifiedSession to return a valid session by default.
+  const VALID_SESSION_COOKIE = 'valid-switch-session-token'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockCookieGet.mockReturnValue({ value: VALID_SESSION_COOKIE })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-switch',
+      email:           'switch@example.com',
+      activeCompanyId: 'company-old',
+      role:            'admin',
+      email_verified:  true,
+    })
+
+    mockSetCustomUserClaims.mockResolvedValue(undefined)
+    mockRevokeRefreshTokens.mockResolvedValue(undefined)
+  })
+
+  it('calls revokeRefreshTokens with the correct uid after a successful company switch', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({ role: 'admin' }),
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'admin',
+    })
+    expect(mockRevokeRefreshTokens).toHaveBeenCalledOnce()
+    expect(mockRevokeRefreshTokens).toHaveBeenCalledWith('user-switch')
+  })
+
+  it('does NOT call revokeRefreshTokens when the membership document does not exist', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: false,
+      data:   () => undefined,
+    })
+
+    await expect(switchCompany('company-nonexistent')).rejects.toThrow('Failed to switch company')
+
+    expect(mockRevokeRefreshTokens).not.toHaveBeenCalled()
   })
 })
