@@ -90,7 +90,11 @@ export async function createCheckoutSession(
       throw err
     }
   } catch (err) {
-    console.error('[actions/subscription] create_checkout_session_error', err)
+    console.error('[actions/subscription]', {
+      action: 'create_checkout_session_error',
+      message: err instanceof Error ? err.message : String(err),
+      code: err instanceof Stripe.errors.StripeError ? err.code : undefined,
+    })
     return { error: 'Could not create checkout session' }
   }
 }
