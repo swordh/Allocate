@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       <main className={styles.main}>
         <p className={styles.label}>Legal</p>
         <h1 className={styles.title}>Privacy Policy</h1>
-        <p className={styles.updated}>Last updated: 25 April 2026</p>
+        <p className={styles.updated}>Last updated: 27 April 2026</p>
 
         <div className={styles.section}>
           <h2>Data Controller</h2>
@@ -54,17 +54,21 @@ export default function PrivacyPage() {
             <li><strong>Vercel</strong> — application hosting.</li>
           </ul>
           <p>We do not sell your data or share it with advertisers.</p>
+          <p>
+            Some processors operate outside the European Economic Area. All such transfers
+            are governed by Standard Contractual Clauses (SCCs) as approved by the
+            European Commission, ensuring an equivalent level of data protection.
+          </p>
         </div>
 
         <div className={styles.section}>
           <h2>Data Retention</h2>
-          <p>
-            Your personal data is retained for as long as your account is active.
-            When you delete your account, your name, email, and all personal identifiers
-            are permanently removed. Booking records are retained in anonymized form
-            so companies can preserve their operational history — they cannot be
-            traced back to you.
-          </p>
+          <ul>
+            <li><strong>Account data</strong> (name, email): retained until you delete your account.</li>
+            <li><strong>Booking records:</strong> retained in anonymized form for the duration of the company&apos;s subscription. Records cannot be traced back to you after account deletion.</li>
+            <li><strong>Invoice and payment records:</strong> retained for 7 years in accordance with Swedish accounting law (Bokföringslagen).</li>
+            <li><strong>Server logs:</strong> retained for 30 days, then automatically deleted.</li>
+          </ul>
         </div>
 
         <div className={styles.section}>
@@ -74,7 +78,7 @@ export default function PrivacyPage() {
             <li><strong>Access</strong> your personal data — contact us at <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a> and we will provide a copy.</li>
             <li><strong>Erasure</strong> — delete your account directly from Settings. Deletion is immediate and permanent.</li>
             <li><strong>Correction</strong> — update your name and email from your profile settings.</li>
-            <li><strong>Portability</strong> — request a copy of your data by emailing us.</li>
+            <li><strong>Portability</strong> — download your data directly from your{' '}<Link href="/settings/account">Account Settings</Link>.</li>
             <li><strong>Complaint</strong> — you may lodge a complaint with the Swedish supervisory authority, <a href="https://www.imy.se" target="_blank" rel="noopener noreferrer">IMY (Integritetsskyddsmyndigheten)</a>.</li>
           </ul>
         </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateUserProfile, deleteAccount } from '@/actions/account'
+import { updateUserProfile, deleteAccount, exportUserData } from '@/actions/account'
 import { deleteSession } from '@/actions/auth'
 import styles from './AccountSettingsForm.module.css'
 
@@ -33,6 +33,9 @@ export default function AccountSettingsForm({
 
   const [signingOut, setSigningOut] = useState(false)
 
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSubmitting(true)
@@ -54,6 +57,24 @@ export default function AccountSettingsForm({
     setSigningOut(true)
     await deleteSession()
     router.push('/login')
+  }
+
+  async function handleExportData() {
+    setExporting(true)
+    setExportError(null)
+    const result = await exportUserData()
+    setExporting(false)
+    if (result.error) {
+      setExportError(result.error)
+      return
+    }
+    const blob = new Blob([result.json!], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'allocate-my-data.json'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleDeleteAccount() {
@@ -187,6 +208,31 @@ export default function AccountSettingsForm({
           {submitting ? 'Saving…' : 'Save Changes'}
         </button>
       </form>
+
+      <div className={styles.divider} />
+
+      {/* Your Data */}
+      <div>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionHeaderLabel}>Your Data</span>
+          <div className={styles.sectionHeaderLine} />
+        </div>
+        <div className={styles.box}>
+          <p className={styles.boxDescription}>
+            Download a copy of all personal data we hold for your account,
+            including your profile, company memberships, and bookings.
+          </p>
+          <button
+            type="button"
+            className={styles.btnSignOut}
+            onClick={handleExportData}
+            disabled={exporting}
+          >
+            {exporting ? 'Preparing…' : 'Download my data'}
+          </button>
+          {exportError && <div className={styles.errorBanner} style={{ marginTop: 16 }}>{exportError}</div>}
+        </div>
+      </div>
 
       <div className={styles.divider} />
 
