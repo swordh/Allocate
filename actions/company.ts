@@ -60,6 +60,10 @@ export async function updateCompanySettings(data: {
   try {
     const batch = adminDb.batch()
 
+    // ALLOWED from Server Actions: name, preferences.*, displayLogoUrl
+    // FORBIDDEN from Server Actions: subscription.*, stripeCustomerId, hadTrial
+    // Subscription fields are written ONLY by Cloud Functions/webhooks — never from here.
+
     // Update company name
     const companyRef = adminDb.collection('companies').doc(session.activeCompanyId)
     batch.update(companyRef, { name: data.name.trim() })

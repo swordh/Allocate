@@ -128,6 +128,9 @@ export async function setupNewCompany(
   }
 
   try {
+    // ALLOWED from Server Actions: activeCompanyId, role (from verified membership)
+    // FORBIDDEN from Server Actions: subscription.*, stripeCustomerId, hadTrial
+    // Subscription fields are written ONLY by Cloud Functions/webhooks.
     await adminAuth.setCustomUserClaims(uid, { activeCompanyId: companyId, role: 'admin' })
   } catch {
     throw new Error('Claims failed')
