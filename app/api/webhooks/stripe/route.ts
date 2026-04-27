@@ -48,9 +48,21 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     return
   }
 
-  await adminDb.doc(`companies/${companyId}`).update({
-    stripeCustomerId: customerId,
-  })
+  const companyRef = adminDb.doc(`companies/${companyId}`)
+  const companySnap = await companyRef.get()
+  const existingCustomerId = companySnap.data()?.stripeCustomerId as string | undefined
+
+  if (existingCustomerId && existingCustomerId !== customerId) {
+    console.error('[webhooks/stripe]', {
+      action: 'checkout_session_customer_id_mismatch',
+      companyId,
+      existingCustomerId,
+      incomingCustomerId: customerId,
+    })
+    return
+  }
+
+  await companyRef.update({ stripeCustomerId: customerId })
 
   console.log('[webhooks/stripe]', {
     action: 'checkout_session_completed',

@@ -28,12 +28,21 @@ export async function createCheckoutSession(
     let stripeCustomerId: string = companyData.stripeCustomerId ?? ''
 
     if (!stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        email: session.email,
-        metadata: { companyId },
+      const existing = await stripe.customers.search({
+        query: `metadata['companyId']:'${companyId}'`,
+        limit: 1,
       })
-      stripeCustomerId = customer.id
-      await companyRef.update({ stripeCustomerId })
+      if (existing.data.length > 0) {
+        stripeCustomerId = existing.data[0].id
+        await companyRef.update({ stripeCustomerId })
+      } else {
+        const customer = await stripe.customers.create(
+          { email: session.email, name: companyData.name as string | undefined, metadata: { companyId } },
+          { idempotencyKey: `create-customer-${companyId}` },
+        )
+        stripeCustomerId = customer.id
+        await companyRef.update({ stripeCustomerId })
+      }
     }
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
@@ -44,10 +53,22 @@ export async function createCheckoutSession(
       allow_promotion_codes: true,
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription?checkout=canceled`,
+      subscription_data: companyData.hadTrial
+        ? undefined
+        : { trial_period_days: 14 },
+      payment_method_collection: 'always',
+      // TODO(#91): Requires Stripe Tax activated in Dashboard + Swedish VAT registration before launch
+      automatic_tax:             { enabled: true },
+      tax_id_collection:         { enabled: true },
+      billing_address_collection: 'required',
+      customer_update:           { address: 'auto', name: 'auto' },
     }
 
     try {
-      const checkoutSession = await stripe.checkout.sessions.create(sessionParams)
+      const checkoutSession = await stripe.checkout.sessions.create(
+        sessionParams,
+        { idempotencyKey: `checkout-${companyId}-${interval}-${Math.floor(Date.now() / 60000)}` },
+      )
       return { url: checkoutSession.url! }
     } catch (err) {
       if (
@@ -55,15 +76,15 @@ export async function createCheckoutSession(
         err.code === 'resource_missing' &&
         err.param === 'customer'
       ) {
-        const newCustomer = await stripe.customers.create({
-          email: session.email,
-          metadata: { companyId },
-        })
+        const newCustomer = await stripe.customers.create(
+          { email: session.email, name: companyData.name as string | undefined, metadata: { companyId } },
+          { idempotencyKey: `create-customer-${companyId}` },
+        )
         await companyRef.update({ stripeCustomerId: newCustomer.id })
-        const retrySession = await stripe.checkout.sessions.create({
-          ...sessionParams,
-          customer: newCustomer.id,
-        })
+        const retrySession = await stripe.checkout.sessions.create(
+          { ...sessionParams, customer: newCustomer.id },
+          { idempotencyKey: `checkout-${companyId}-${interval}-${Math.floor(Date.now() / 60000)}` },
+        )
         return { url: retrySession.url! }
       }
       throw err
