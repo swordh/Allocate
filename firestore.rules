@@ -41,6 +41,9 @@ service cloud.firestore {
     // This wildcard rule enables client-side real-time listeners while keeping
     // tenant isolation via the denormalized companyId field on each unit doc.
     match /{path=**}/units/{unitId} {
+      // companyId MUST be present on every unit document.
+      // If absent (e.g. bad migration), this rule safely denies access (undefined != activeCompanyId).
+      // createUnit (actions/equipment.ts ~407) and createEquipmentWithUnits (~620) both always set it.
       allow read: if request.auth != null
                   && request.auth.token.activeCompanyId == resource.data.companyId;
       allow write: if false;

@@ -70,7 +70,9 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
     throw new HttpsError('not-found', 'Equipment not found.');
   }
 
-  // trackingType may be undefined on legacy documents created before Phase 2.
+  // trackingType is treated as immutable. Legacy documents created before Phase 2
+  // may have it as undefined — the guards below intentionally fire in that case too,
+  // preventing any mutation attempt on documents that lack a known tracking type.
   const existingData = equipmentSnap.data() as { trackingType?: string };
 
   // ── Optional field validation ──────────────────────────────────────────────
@@ -124,17 +126,15 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
 
   // ── totalQuantity — only valid for quantity items ──────────────────────────
   if (request.data.totalQuantity !== undefined) {
-    if (existingData.trackingType !== undefined && existingData.trackingType !== 'quantity') {
+    if (existingData.trackingType !== 'quantity') {
       throw new HttpsError('invalid-argument', 'totalQuantity can only be updated on quantity-tracked items.');
     }
-    if (existingData.trackingType !== undefined) {
-      const rawQty: unknown = request.data.totalQuantity;
-      if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
-        throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer.');
-      }
-      // TODO Phase 3: reject if rawQty < max concurrently booked quantity
-      updates['totalQuantity'] = rawQty;
+    const rawQty: unknown = request.data.totalQuantity;
+    if (typeof rawQty !== 'number' || !Number.isInteger(rawQty) || rawQty < 1) {
+      throw new HttpsError('invalid-argument', 'totalQuantity must be a positive integer.');
     }
+    // TODO Phase 3: reject if rawQty < max concurrently booked quantity
+    updates['totalQuantity'] = rawQty;
   }
 
   if (request.data.customFields !== undefined) {
@@ -143,14 +143,12 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
 
   // ── serialNumber — only valid for serialized items ────────────────────────
   if (request.data.serialNumber !== undefined) {
-    if (existingData.trackingType !== undefined && existingData.trackingType !== 'serialized') {
+    if (existingData.trackingType !== 'serialized') {
       throw new HttpsError('invalid-argument', 'serialNumber is not allowed on quantity-tracked items.');
     }
-    if (existingData.trackingType !== undefined) {
-      updates['serialNumber'] = request.data.serialNumber
-        ? String(request.data.serialNumber).trim() || null
-        : null;
-    }
+    updates['serialNumber'] = request.data.serialNumber
+      ? String(request.data.serialNumber).trim() || null
+      : null;
   }
 
   // ── Write ──────────────────────────────────────────────────────────────────
