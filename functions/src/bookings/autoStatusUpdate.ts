@@ -28,18 +28,17 @@ export const autoBookingStatusUpdate = onSchedule(
       return prefs;
     }
 
-    // UTC date string used as an upper-bound filter on both queries.
-    // Bookings whose start/end date is strictly in the future (UTC) cannot be
-    // due in any timezone, so we can safely exclude them at the query level.
-    // Per-company timezone logic in the loop below remains the source of truth
-    // for the exact transition time.
-    const utcTodayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'UTC' });
+    // Conservative pre-filter: UTC tomorrow covers all timezones (max offset is UTC+14).
+    // The per-company timezone check inside the loop is the authoritative gate.
+    const tomorrow = new Date()
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+    const tomorrowUTCStr = tomorrow.toISOString().slice(0, 10) // 'YYYY-MM-DD'
 
     // ── Auto Checkout: confirmed → checked_out at startDate/startTime ──────────
     const confirmedSnap = await db
       .collectionGroup('bookings')
       .where('status', '==', 'confirmed')
-      .where('startDate', '<=', utcTodayStr)
+      .where('startDate', '<=', tomorrowUTCStr)
       .get();
 
     const checkoutUpdates: Promise<unknown>[] = [];
@@ -72,7 +71,7 @@ export const autoBookingStatusUpdate = onSchedule(
     const checkedOutSnap = await db
       .collectionGroup('bookings')
       .where('status', '==', 'checked_out')
-      .where('endDate', '<=', utcTodayStr)
+      .where('endDate', '<=', tomorrowUTCStr)
       .get();
 
     const checkinUpdates: Promise<unknown>[] = [];
