@@ -156,11 +156,16 @@ export async function deleteSession(): Promise<void> {
  * Validates that a membership document exists for the target companyId before
  * updating claims.
  *
+ * After setting new custom claims, all existing refresh tokens are revoked so
+ * that any outstanding session cookie carrying the old activeCompanyId cannot
+ * be used to verify sessions server-side. Without revocation the stale cookie
+ * remains valid for up to 14 days.
+ *
  * IMPORTANT: After calling this action the caller MUST:
  *   1. Call `auth.currentUser.getIdToken(true)` to force a token refresh
  *   2. Call `createSession(freshIdToken)` to re-issue the session cookie
- * Skipping these steps leaves the session cookie carrying stale claims
- * (old activeCompanyId) until it expires — which is a security defect.
+ * Skipping these steps leaves the client with no valid session cookie and the
+ * user will be redirected to /login on the next server request.
  */
 export async function switchCompany(companyId: string): Promise<void> {
   const session = await getVerifiedSession()
@@ -186,6 +191,12 @@ export async function switchCompany(companyId: string): Promise<void> {
       activeCompanyId: companyId,
       role,
     })
+
+    // Revoke all existing refresh tokens so the old session cookie (which
+    // carries the previous activeCompanyId) is immediately invalidated.
+    // Client must call getIdToken(true) then createSession() after this to
+    // get a valid session cookie.
+    await adminAuth.revokeRefreshTokens(uid)
 
     console.log('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, role, action: 'company_switched' })
 
