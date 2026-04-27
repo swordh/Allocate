@@ -3,7 +3,7 @@
 import { FieldValue } from 'firebase-admin/firestore'
 import type { Firestore, Transaction } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
-import { adminDb, adminAuth } from '@/lib/firebase-admin'
+import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import type { BookingItem, Subscription } from '@/types'
 
@@ -367,13 +367,9 @@ export async function createBooking(
   const session = await getVerifiedSession()
   if (session.role === 'viewer') return { error: 'Unauthorized' }
 
-  let resolvedUserName: string | null = null
-  try {
-    const authUser = await adminAuth.getUser(session.uid)
-    resolvedUserName = authUser.displayName ?? authUser.email ?? null
-  } catch {
-    // Best-effort — userName field stays null if Auth lookup fails
-  }
+  // userName is not stored on bookings — read from user profile at display time
+  // (GDPR Art. 5(1)(c) data minimisation; anonymised on account deletion).
+  const resolvedUserName: string | null = null
 
   const companyId = session.activeCompanyId
 

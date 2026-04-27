@@ -11,7 +11,7 @@ setGlobalOptions({ region: 'europe-west1' });
 initializeApp();
 
 export { setActiveClaim } from './auth/setActiveClaim';
-export { deleteAccount } from './auth/deleteAccount';
+export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
 export { addEquipment } from './equipment/addEquipment';
 export { updateEquipment } from './equipment/updateEquipment';
 export { deactivateEquipment } from './equipment/deactivateEquipment';
