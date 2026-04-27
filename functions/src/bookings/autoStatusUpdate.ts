@@ -28,10 +28,17 @@ export const autoBookingStatusUpdate = onSchedule(
       return prefs;
     }
 
+    // Conservative pre-filter: UTC tomorrow covers all timezones (max offset is UTC+14).
+    // The per-company timezone check inside the loop is the authoritative gate.
+    const tomorrow = new Date()
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+    const tomorrowUTCStr = tomorrow.toISOString().slice(0, 10) // 'YYYY-MM-DD'
+
     // ── Auto Checkout: confirmed → checked_out at startDate/startTime ──────────
     const confirmedSnap = await db
       .collectionGroup('bookings')
       .where('status', '==', 'confirmed')
+      .where('startDate', '<=', tomorrowUTCStr)
       .get();
 
     const checkoutUpdates: Promise<unknown>[] = [];
@@ -64,6 +71,7 @@ export const autoBookingStatusUpdate = onSchedule(
     const checkedOutSnap = await db
       .collectionGroup('bookings')
       .where('status', '==', 'checked_out')
+      .where('endDate', '<=', tomorrowUTCStr)
       .get();
 
     const checkinUpdates: Promise<unknown>[] = [];
