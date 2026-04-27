@@ -261,7 +261,7 @@ export async function deactivateEquipment(
   // (Firestore does not support array-contains combined with 'in' in one query.)
   // This check runs outside the transaction — it's a UX guard, not a security
   // boundary, so the TOCTOU window here is acceptable.
-  const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked_out'])
+  const ACTIVE_STATUSES = new Set(['pending', 'ready', 'checked_out'])
   const todayStr = new Date().toISOString().slice(0, 10)
 
   const bookingsSnap = await adminDb
@@ -305,9 +305,13 @@ export async function deactivateEquipment(
       // ── Write phase ──────────────────────────────────────────────────────────
       tx.update(equipmentRef, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
 
+      if (!counterSnap.exists) {
+        throw new Error('Equipment counter not initialized. Run the backfill migration first.')
+      }
+
       // Decrement the counter only when the equipment was truly active.
       // If it was already inactive this is a no-op (idempotency guard).
-      if (wasActive && counterSnap.exists) {
+      if (wasActive) {
         tx.update(counterRef, {
           count: FieldValue.increment(-1),
           updatedAt: FieldValue.serverTimestamp(),
@@ -315,12 +319,11 @@ export async function deactivateEquipment(
       }
     })
 
-    // ── Deactivate child units outside the transaction (batch write) ──────────
-    // Unit deactivation does not affect the equipment counter — only top-level
-    // equipment documents are counted.
+    // Units are deactivated in a separate batch after the transaction. If this batch fails,
+    // the parent equipment is already deactivated and the counter is correct, but child units
+    // remain active=true. A cleanup job or retry is needed in that case.
     if (trackingType === 'serialized') {
-      const equipmentRef2 = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
-      const unitsSnap = await equipmentRef2.collection('units').where('active', '==', true).get()
+      const unitsSnap = await equipmentRef.collection('units').where('active', '==', true).get()
       if (unitsSnap.size > 0) {
         const batch = adminDb.batch()
         for (const unitDoc of unitsSnap.docs) {

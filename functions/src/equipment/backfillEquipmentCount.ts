@@ -8,9 +8,8 @@ import { getAuth } from 'firebase-admin/auth';
  * for every company. Must be run once before deploying the counter-based plan
  * limit enforcement (issue #94).
  *
- * The function is idempotent — running it multiple times produces the same
- * result. Each call overwrites the counter with the current active equipment
- * count for that company, using `set(..., { merge: true })`.
+ * ⚠️ Only run ONCE, before deploying the counter-enforced code, against a quiescent database.
+ * Re-running after live traffic starts will overwrite the transactional counter with a stale snapshot.
  *
  * @security Callable only by Firebase Auth super-admins (users whose Auth
  *           record has `customClaims.superAdmin === true`). Rejecting all

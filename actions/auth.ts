@@ -121,6 +121,11 @@ export async function setupNewCompany(
     batch.set(catRef, { name, createdAt: FieldValue.serverTimestamp(), isDefault: true })
   }
 
+  // Initialize the equipment counter so createEquipment never hard-errors on a
+  // missing counter document for new companies.
+  const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
+  batch.set(counterRef, { count: 0, updatedAt: FieldValue.serverTimestamp() })
+
   try {
     await batch.commit()
   } catch {
