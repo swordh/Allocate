@@ -82,8 +82,9 @@ const VALID_UNIT = {
 
 /**
  * Sets up adminDb.runTransaction to call the callback immediately with a mock
- * transaction, and wires adminDb.collection for both the count query and the
- * new equipment doc ref. Returns the transaction mock and the generated id.
+ * transaction that routes tx.get() by document path — returning the company doc
+ * for the company path and the counter doc for the _meta/equipmentCount path.
+ * Returns the transaction mock and the generated equipment id.
  */
 function wireCreateEquipmentTransaction(
   subscriptionStatus: string,
@@ -92,19 +93,32 @@ function wireCreateEquipmentTransaction(
   currentEquipmentCount: number,
 ) {
   const newDocId = 'new-equip-id'
+  const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
 
   const tx = {
-    get: vi.fn().mockResolvedValue({
-      exists: true,
-      data: () => ({
-        subscription: {
-          status: subscriptionStatus,
-          plan,
-          limits: { equipment: equipmentLimit, users: 5 },
-        },
-      }),
+    get: vi.fn().mockImplementation(async (ref: { path: string }) => {
+      if (ref.path === `companies/${COMPANY_ID}`) {
+        return {
+          exists: true,
+          data: () => ({
+            subscription: {
+              status: subscriptionStatus,
+              plan,
+              limits: { equipment: equipmentLimit, users: 5 },
+            },
+          }),
+        }
+      }
+      if (ref.path === counterPath) {
+        return {
+          exists: true,
+          data: () => ({ count: currentEquipmentCount }),
+        }
+      }
+      return { exists: false, data: () => ({}) }
     }),
     set: vi.fn(),
+    update: vi.fn(),
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
@@ -119,17 +133,13 @@ function wireCreateEquipmentTransaction(
   } as never))
 
   // adminDb.collection is used for:
-  //   1. The count query (.where().count().get())
-  //   2. The new equipment doc ref (.doc().id)
-  vi.mocked(adminDb.collection).mockImplementation(() => ({
-    where: vi.fn().mockReturnValue({
-      count: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({
-          data: () => ({ count: currentEquipmentCount }),
-        }),
-      }),
+  //   1. Getting the new equipment doc ref (.doc().id) inside the transaction
+  //   2. Getting unit doc refs for the post-transaction batch write
+  vi.mocked(adminDb.collection).mockImplementation((path: string) => ({
+    doc: vi.fn().mockReturnValue({
+      id: newDocId,
+      path: `${path}/${newDocId}`,
     }),
-    doc: vi.fn().mockReturnValue({ id: newDocId }),
   } as never))
 
   return { tx, newDocId }

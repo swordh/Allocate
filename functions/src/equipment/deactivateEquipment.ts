@@ -100,10 +100,38 @@ export const deactivateEquipment = onCall({ region: 'europe-west1', cors: true, 
     };
   }
 
-  // ── Soft delete ────────────────────────────────────────────────────────────
-  await equipmentRef.update({
-    active: false,
-    deactivatedAt: FieldValue.serverTimestamp(),
+  // ── Soft delete with atomic counter decrement ──────────────────────────────
+  const counterRef = db.doc(`companies/${companyId}/_meta/equipmentCount`);
+
+  await db.runTransaction(async (tx) => {
+    // Read phase — read equipment doc (to get current active state) and
+    // counter doc before any writes.
+    const [equipSnap, counterSnap] = await Promise.all([
+      tx.get(equipmentRef),
+      tx.get(counterRef),
+    ]);
+
+    // Re-verify existence inside the transaction.
+    if (!equipSnap.exists) {
+      throw new HttpsError('not-found', 'Equipment not found.');
+    }
+
+    const wasActive = equipSnap.data()!.active as boolean;
+
+    // Write phase.
+    tx.update(equipmentRef, {
+      active: false,
+      deactivatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // Decrement the counter only when the equipment was truly active.
+    // If it was already inactive this is idempotent — no decrement.
+    if (wasActive && counterSnap.exists) {
+      tx.update(counterRef, {
+        count: FieldValue.increment(-1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   logger.info('deactivateEquipment: equipment deactivated', {

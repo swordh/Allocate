@@ -15,6 +15,7 @@ export { deleteAccount } from './auth/deleteAccount';
 export { addEquipment } from './equipment/addEquipment';
 export { updateEquipment } from './equipment/updateEquipment';
 export { deactivateEquipment } from './equipment/deactivateEquipment';
+export { backfillEquipmentCount } from './equipment/backfillEquipmentCount';
 export { addCategory } from './equipment/addCategory';
 export { checkBookingConflict } from './bookings/checkBookingConflict';
 export { createBooking } from './bookings/createBooking';

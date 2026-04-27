@@ -440,74 +440,78 @@ describe('createEquipment — counter document plan limit', () => {
     },
   )
 
-  // ── Demonstrate the current TOCTOU bug ───────────────────────────────────
+  // ── Confirm the TOCTOU bug is fixed ─────────────────────────────────────
   //
-  // This test does NOT use .todo — it runs against current code and documents
-  // that both concurrent callers succeed today. When the fix lands, this test
-  // should be removed (or inverted to confirm the bug no longer exists).
+  // Previously both concurrent callers would succeed (demonstrating the TOCTOU
+  // bug). With the counter document fix, Firestore serialises transactions so
+  // the second call sees count=N and is rejected.
+  //
+  // We simulate this by making runTransaction present progressively stale state:
+  // the first invocation sees count=24, the second sees count=25.
 
-  it('DEMONSTRATES BUG: current code allows both concurrent callers to succeed at count=N-1 (TOCTOU)', async () => {
-    // Both calls see count=24 via the non-transactional .count().get() query.
-    // Both pass the limit check and both commit. The correct behaviour after
-    // the fix is that only one succeeds.
+  it('FIX VERIFIED: only first concurrent caller succeeds when counter read-check-increment is atomic', async () => {
+    let callCount = 0
+    const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
 
-    const setupCall = () => {
-      const tx = {
-        get: vi.fn().mockResolvedValue({
-          exists: true,
-          data: () => ({
-            subscription: {
-              status: 'active',
-              plan: 'starter',
-              limits: { equipment: 25, users: 5 },
-            },
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      async (cb: (tx: unknown) => Promise<unknown>) => {
+        callCount++
+        const currentCount = callCount === 1 ? 24 : 25 // second call sees updated counter
+
+        const tx = {
+          get: vi.fn().mockImplementation(async (ref: { path: string }) => {
+            if (ref.path === `companies/${COMPANY_ID}`) {
+              return {
+                exists: true,
+                data: () => ({
+                  subscription: {
+                    status: 'active',
+                    plan: 'starter',
+                    limits: { equipment: 25, users: 5 },
+                  },
+                }),
+              }
+            }
+            if (ref.path === counterPath) {
+              return { exists: true, data: () => ({ count: currentCount }) }
+            }
+            return { exists: false, data: () => ({}) }
           }),
-        }),
-        set: vi.fn(),
-        update: vi.fn(),
-      }
+          set: vi.fn(),
+          update: vi.fn(),
+        }
 
-      vi.mocked(adminDb.runTransaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          await cb(tx)
-        },
-      )
+        await cb(tx)
+      },
+    )
 
-      vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
-        path,
-        id: path.split('/').pop(),
-      } as never))
+    vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
+      path,
+      id: path.split('/').pop(),
+    } as never))
 
-      // Both calls read count=24 — the stale value outside the transaction
-      vi.mocked(adminDb.collection).mockImplementation(() => ({
-        where: vi.fn().mockReturnValue({
-          count: vi.fn().mockReturnValue({
-            get: vi.fn().mockResolvedValue({ data: () => ({ count: 24 }) }),
-          }),
-        }),
-        doc: vi.fn().mockReturnValue({ id: NEW_EQUIP_ID }),
-      } as never))
+    vi.mocked(adminDb.collection).mockImplementation(() => ({
+      doc: vi.fn().mockReturnValue({ id: NEW_EQUIP_ID, path: `companies/${COMPANY_ID}/equipment/${NEW_EQUIP_ID}` }),
+    } as never))
 
-      vi.mocked(adminDb.batch).mockReturnValue({
-        set: vi.fn(),
-        update: vi.fn(),
-        commit: vi.fn().mockResolvedValue(undefined),
-      } as never)
-    }
-
-    setupCall()
+    vi.mocked(adminDb.batch).mockReturnValue({
+      set: vi.fn(),
+      update: vi.fn(),
+      commit: vi.fn().mockResolvedValue(undefined),
+    } as never)
 
     const [result1, result2] = await Promise.all([
       createEquipment(makeFormData()),
       createEquipment(makeFormData()),
     ])
 
-    // BUG: both succeed — counter was never checked atomically
-    // After the fix, only one of these should have { id } and the other { error }.
     const successes = [result1, result2].filter((r) => 'id' in r)
-    // This assertion documents the bug. It will need to be changed to
-    // expect(successes).toHaveLength(1) once the fix is in place.
-    expect(successes).toHaveLength(2)
+    const failures = [result1, result2].filter((r) => 'error' in r)
+
+    // FIX: only one succeeds, the other is rejected by the counter check
+    expect(successes).toHaveLength(1)
+    expect(failures).toHaveLength(1)
+    expect((failures[0] as { error: string }).error).toContain('Equipment limit reached')
   })
 })
 
@@ -698,61 +702,27 @@ describe('deactivateEquipment — counter document decrement', () => {
     },
   )
 
-  // ── Current code: deactivateEquipment uses batch, not runTransaction ──────
+  // ── Fixed: deactivateEquipment now uses runTransaction, not batch ─────────
   //
-  // This test documents that the current implementation uses adminDb.batch()
-  // and will therefore NOT have a tx.get() for the counter. It should pass
-  // against the current code, confirming the conversion to runTransaction is
-  // not yet done.
+  // This test confirms that the fix (issue #94) is in place: deactivateEquipment
+  // now uses runTransaction so the counter decrement is atomic.
 
-  it('DEMONSTRATES BUG: current deactivateEquipment uses batch (not transaction) — no atomic counter decrement', async () => {
-    // Bare-minimum wiring for the current batch-based implementation.
-    vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
-      path,
-      id: path.split('/').pop(),
-      get: vi.fn().mockResolvedValue({
-        exists: true,
-        data: () => ({ active: true, name: 'Camera', trackingType: 'individual' }),
-      }),
-      collection: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          get: vi.fn().mockResolvedValue({ docs: [] }),
-        }),
-      }),
-    } as never))
-
-    vi.mocked(adminDb.collection).mockImplementation(() => ({
-      where: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          get: vi.fn().mockResolvedValue({ docs: [] }),
-        }),
-        get: vi.fn().mockResolvedValue({ docs: [] }),
-      }),
-      doc: vi.fn().mockReturnValue({
-        path: `companies/${COMPANY_ID}`,
-        id: COMPANY_ID,
-        collection: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            get: vi.fn().mockResolvedValue({ docs: [] }),
-          }),
-        }),
-      }),
-    } as never))
-
-    const mockBatch = {
-      set: vi.fn(),
-      update: vi.fn(),
-      commit: vi.fn().mockResolvedValue(undefined),
-    }
-    vi.mocked(adminDb.batch).mockReturnValue(mockBatch as never)
+  it('FIX VERIFIED: deactivateEquipment now uses runTransaction (not batch) for atomic counter decrement', async () => {
+    const { tx } = wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+    })
 
     const result = await deactivateEquipment(EQUIPMENT_ID)
 
-    // Current code succeeds via batch — fine for now
     expect(result).toEqual({ success: true })
-    expect(adminDb.batch).toHaveBeenCalled()
-    // BUG: runTransaction was never called, so no atomic counter decrement is possible
-    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    // Fix: runTransaction is called, not batch
+    expect(adminDb.runTransaction).toHaveBeenCalled()
+    // Counter must be decremented inside the transaction
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
+      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
+    )
   })
 })
 
