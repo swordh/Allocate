@@ -30,6 +30,8 @@ interface BookingDocumentInternal {
   equipmentIds: string[]
   startDate: string
   endDate: string
+  startTime?: string | null
+  endTime?: string | null
   userId: string | null
   status: string
   requiresApproval: boolean
@@ -61,10 +63,27 @@ interface ConflictResultInternal {
 interface StoredBookingForConflict {
   startDate: string
   endDate: string
+  startTime?: string | null
+  endTime?: string | null
   status: string
   approvalStatus: string
   items: BookingItem[]
   equipmentIds: string[]
+}
+
+/**
+ * Returns false only when both bookings are same-day with explicit time windows
+ * that do not overlap. In all other cases returns true (conservative).
+ */
+function timesOverlap(
+  a: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
+  b: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
+): boolean {
+  // Time-based exclusion only applies to same-day bookings with explicit times
+  if (a.startDate !== a.endDate || b.startDate !== b.endDate) return true
+  if (a.startDate !== b.startDate) return true
+  if (!a.startTime || !a.endTime || !b.startTime || !b.endTime) return true
+  return a.startTime < b.endTime && b.startTime < a.endTime
 }
 
 /**
@@ -124,6 +143,8 @@ async function detectConflictsReadOnly(
   startDate: string,
   endDate: string,
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<ConflictResultInternal> {
   const conflicts: ConflictDetailInternal[] = []
   const bookingsRef = db.collection(`companies/${companyId}/bookings`)
@@ -174,12 +195,14 @@ async function detectConflictsReadOnly(
         .where('endDate', '>=', startDate)
         .get()
 
+      const requested = { startDate, endDate, startTime, endTime }
       const overlapping = unitQuery.docs.filter((doc) => {
         if (doc.id === excludeBookingId) return false
         const data = doc.data() as StoredBookingForConflict
         if (data.status === 'cancelled') return false
         if (data.approvalStatus === 'rejected') return false
-        return data.startDate <= endDate
+        if (data.startDate > endDate) return false
+        return timesOverlap(requested, data)
       })
 
       if (overlapping.length > 0) {
@@ -199,12 +222,14 @@ async function detectConflictsReadOnly(
         .where('endDate', '>=', startDate)
         .get()
 
+      const requested = { startDate, endDate, startTime, endTime }
       const overlapping = eqQuery.docs.filter((doc) => {
         if (doc.id === excludeBookingId) return false
         const data = doc.data() as StoredBookingForConflict
         if (data.status === 'cancelled') return false
         if (data.approvalStatus === 'rejected') return false
-        return data.startDate <= endDate
+        if (data.startDate > endDate) return false
+        return timesOverlap(requested, data)
       })
 
       let sumBooked = 0
@@ -242,6 +267,8 @@ async function detectConflictsInTransaction(
   startDate: string,
   endDate: string,
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<ConflictResultInternal> {
   const conflicts: ConflictDetailInternal[] = []
   const bookingsRef = db.collection(`companies/${companyId}/bookings`)
@@ -290,12 +317,14 @@ async function detectConflictsInTransaction(
 
       const unitQuerySnap = await tx.get(unitQuery)
 
+      const requestedUnit = { startDate, endDate, startTime, endTime }
       const overlapping = unitQuerySnap.docs.filter((doc) => {
         if (doc.id === excludeBookingId) return false
         const data = doc.data() as StoredBookingForConflict
         if (data.status === 'cancelled') return false
         if (data.approvalStatus === 'rejected') return false
-        return data.startDate <= endDate
+        if (data.startDate > endDate) return false
+        return timesOverlap(requestedUnit, data)
       })
 
       if (overlapping.length > 0) {
@@ -314,12 +343,14 @@ async function detectConflictsInTransaction(
 
       const querySnap = await tx.get(eqQuery)
 
+      const requestedQty = { startDate, endDate, startTime, endTime }
       const overlapping = querySnap.docs.filter((doc) => {
         if (doc.id === excludeBookingId) return false
         const data = doc.data() as StoredBookingForConflict
         if (data.status === 'cancelled') return false
         if (data.approvalStatus === 'rejected') return false
-        return data.startDate <= endDate
+        if (data.startDate > endDate) return false
+        return timesOverlap(requestedQty, data)
       })
 
       let sumBooked = 0
@@ -488,6 +519,9 @@ export async function createBooking(
         items,
         startDate,
         endDate,
+        undefined,
+        startTime,
+        endTime,
       )
 
       if (conflictResult.hasConflict) {
@@ -589,6 +623,28 @@ export async function updateBooking(
     notes = rawNotes
   }
 
+  // Three-value semantics: field absent from FormData = undefined (keep existing),
+  // field present but empty = null (clear to all-day), valid HH:MM = new value.
+  const rawStartTime = formData.get('startTime') as string | null
+  const startTime: string | null | undefined =
+    rawStartTime === null
+      ? undefined
+      : rawStartTime.trim() === ''
+        ? null
+        : /^\d{2}:\d{2}$/.test(rawStartTime.trim())
+          ? rawStartTime.trim()
+          : null
+
+  const rawEndTime = formData.get('endTime') as string | null
+  const endTime: string | null | undefined =
+    rawEndTime === null
+      ? undefined
+      : rawEndTime.trim() === ''
+        ? null
+        : /^\d{2}:\d{2}$/.test(rawEndTime.trim())
+          ? rawEndTime.trim()
+          : null
+
   const itemsRaw = formData.get('items') as string | null
   let items: BookingItem[] | undefined
   if (itemsRaw) {
@@ -627,6 +683,8 @@ export async function updateBooking(
       const effectiveItems = items ?? booking.items
       const effectiveStartDate = startDate ?? booking.startDate
       const effectiveEndDate = endDate ?? booking.endDate
+      const effectiveStartTime = startTime === undefined ? (booking.startTime ?? null) : startTime
+      const effectiveEndTime = endTime === undefined ? (booking.endTime ?? null) : endTime
 
       if (effectiveEndDate < effectiveStartDate) {
         throw new Error('endDate must be on or after startDate.')
@@ -678,8 +736,12 @@ export async function updateBooking(
         }
       }
 
-      // ── Conflict detection if dates or items changed ───────────────────────
-      const datesChanged = startDate !== undefined || endDate !== undefined
+      // ── Conflict detection if dates, times, or items changed ─────────────────
+      const datesChanged =
+        startDate !== undefined ||
+        endDate !== undefined ||
+        startTime !== undefined ||
+        endTime !== undefined
       const itemsChanged = items !== undefined
 
       if (datesChanged || itemsChanged) {
@@ -691,6 +753,8 @@ export async function updateBooking(
           effectiveStartDate,
           effectiveEndDate,
           bookingId,
+          effectiveStartTime,
+          effectiveEndTime,
         )
 
         if (conflictResult.hasConflict) {
@@ -709,6 +773,8 @@ export async function updateBooking(
       if (notes !== undefined) updateData.notes = notes
       if (startDate !== undefined) updateData.startDate = startDate
       if (endDate !== undefined) updateData.endDate = endDate
+      if (startTime !== undefined) updateData.startTime = startTime
+      if (endTime !== undefined) updateData.endTime = endTime
       if (items !== undefined) {
         updateData.items = items
         updateData.equipmentIds = extractEquipmentIds(items)
@@ -967,6 +1033,8 @@ export async function approveBooking(
           booking.startDate,
           booking.endDate,
           bookingId,
+          booking.startTime ?? null,
+          booking.endTime ?? null,
         )
 
         if (conflictResult.hasConflict) {
@@ -1024,6 +1092,8 @@ export async function getBookedSummary(
   startDate: string,
   endDate: string,
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<Record<string, BookedSummary>> {
   const session = await getVerifiedSession()
   if (companyId !== session.activeCompanyId) return {}
@@ -1046,13 +1116,15 @@ export async function getBookedSummary(
       .get()
 
     const summary: Record<string, BookedSummary> = {}
+    const requested = { startDate: validatedStart, endDate: validatedEnd, startTime, endTime }
 
     for (const doc of snap.docs) {
       if (doc.id === excludeBookingId) continue
       const data = doc.data() as StoredBookingForConflict
       if (data.status === 'cancelled') continue
       if (data.approvalStatus === 'rejected') continue
-      if (data.startDate > validatedEnd) continue  // no overlap
+      if (data.startDate > validatedEnd) continue  // no date overlap
+      if (!timesOverlap(requested, data)) continue   // same-day non-overlapping time window
 
       for (const item of data.items ?? []) {
         if (!summary[item.equipmentId]) {
@@ -1082,6 +1154,8 @@ export async function checkConflict(
   endDate: string,
   items: BookingItem[],
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<ConflictResult> {
   const session = await getVerifiedSession()
 
@@ -1115,6 +1189,8 @@ export async function checkConflict(
       validatedStart,
       validatedEnd,
       excludeBookingId,
+      startTime,
+      endTime,
     )
 
     // Map internal ConflictDetail to the exported ConflictItem shape.

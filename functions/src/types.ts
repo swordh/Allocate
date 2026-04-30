@@ -88,6 +88,8 @@ export interface BookingDocument {
   equipmentIds: string[];          // denormalized flat array for array-contains queries
   startDate: string;               // "YYYY-MM-DD"
   endDate: string;                 // "YYYY-MM-DD"
+  startTime?: string | null;       // "HH:MM" (24-hour), null means all-day
+  endTime?: string | null;         // "HH:MM" (24-hour), null means all-day
   userId: string | null;
   userName: string | null;        // null — not stored; userId is the reference. Resolving name at read time avoids storing PII on the booking document.
   status: BookingStatus;

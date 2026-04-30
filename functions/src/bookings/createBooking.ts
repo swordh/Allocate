@@ -94,6 +94,18 @@ export const createBooking = onCall({ region: 'europe-west1', cors: true, invoke
     notes = rawNotes;
   }
 
+  const rawStartTime: unknown = request.data.startTime;
+  const startTime: string | null =
+    typeof rawStartTime === 'string' && /^\d{2}:\d{2}$/.test(rawStartTime)
+      ? rawStartTime
+      : null;
+
+  const rawEndTime: unknown = request.data.endTime;
+  const endTime: string | null =
+    typeof rawEndTime === 'string' && /^\d{2}:\d{2}$/.test(rawEndTime)
+      ? rawEndTime
+      : null;
+
   // ── Transaction ────────────────────────────────────────────────────────────
   const db = getFirestore();
   const uid = request.auth.uid;
@@ -182,6 +194,9 @@ export const createBooking = onCall({ region: 'europe-west1', cors: true, invoke
       items,
       startDate,
       endDate,
+      undefined,
+      startTime,
+      endTime,
     );
 
     if (conflictResult.hasConflict) {
@@ -210,6 +225,8 @@ export const createBooking = onCall({ region: 'europe-west1', cors: true, invoke
       equipmentIds,
       startDate,
       endDate,
+      startTime,
+      endTime,
       userId: uid,
       userName: null,
       status: bookingStatus,
