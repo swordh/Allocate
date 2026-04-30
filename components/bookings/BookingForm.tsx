@@ -83,11 +83,30 @@ export default function BookingForm({
   useEffect(() => {
     if (!effectiveStart || !effectiveEnd) return
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, effectiveStart, effectiveEnd, bookingId)
+    getBookedSummary(companyId, effectiveStart, effectiveEnd, bookingId, booking?.startTime ?? null, booking?.endTime ?? null)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Refresh availability + conflicts when the time window changes
+  // (date changes are handled by handleDateChange).
+  useEffect(() => {
+    if (!startDate || !endDate) return
+    const effectiveEnd = endDate < startDate ? startDate : endDate
+    setIsLoadingAvailability(true)
+    getBookedSummary(companyId, startDate, effectiveEnd, bookingId, startTime || null, endTime || null)
+      .then(setBookedSummary)
+      .finally(() => setIsLoadingAvailability(false))
+
+    if (selectedItems.length > 0) {
+      setIsCheckingConflict(true)
+      checkConflict(companyId, startDate, effectiveEnd, selectedItems, bookingId, startTime || null, endTime || null)
+        .then(setConflictResult)
+        .finally(() => setIsCheckingConflict(false))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTime, endTime])
 
   const hourOptions   = useMemo(() => generateHourOptions(), [])
   const minuteOptions = useMemo(() => generateMinuteOptions(timeSlotMinutes), [timeSlotMinutes])
@@ -207,7 +226,7 @@ export default function BookingForm({
 
     // Always refresh availability for all equipment when dates change
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, newStart, effectiveEnd, bookingId)
+    getBookedSummary(companyId, newStart, effectiveEnd, bookingId, startTime || null, endTime || null)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
 
@@ -215,7 +234,7 @@ export default function BookingForm({
     if (selectedItems.length > 0) {
       setIsCheckingConflict(true)
       try {
-        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems, bookingId)
+        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems, bookingId, startTime || null, endTime || null)
         setConflictResult(result)
       } finally {
         setIsCheckingConflict(false)
@@ -249,7 +268,7 @@ export default function BookingForm({
     }
 
     if (startDate && endDate) {
-      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId)
+      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId, startTime || null, endTime || null)
       setConflictResult(result)
       if (result.hasConflict) {
         setError('Some equipment is unavailable for the selected dates. Review conflicts below.')
