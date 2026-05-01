@@ -83,11 +83,12 @@ function computeStats(bookings: Booking[], today: string) {
 export default function BookingList({
   companyId,
   userId,
-  role,
+  role: _role,
   initialBookings,
   userProfiles,
 }: BookingListProps) {
   const [showCancelled, setShowCancelled] = useState(false)
+  const [showOnlyMine, setShowOnlyMine] = useState(false)
 
   const { bookings: liveBookings, loading, error } = useBookings(companyId, {
     includeCancelled: showCancelled,
@@ -96,13 +97,13 @@ export default function BookingList({
   // Use live data once the listener has fired; fall back to server-fetched initial data.
   const bookings = loading ? initialBookings : liveBookings
 
-  // Crew only see their own bookings.
   const visibleBookings = useMemo(() => {
-    if (role === 'crew') {
-      return bookings.filter((b) => b.userId === userId)
+    let result = bookings
+    if (showOnlyMine && userId) {
+      result = result.filter((b) => b.userId === userId)
     }
-    return bookings
-  }, [bookings, role, userId])
+    return result
+  }, [bookings, showOnlyMine, userId])
 
   const today    = toLocalDateString(new Date())
   const tomorrow = toLocalDateString(new Date(Date.now() + 86400000))
@@ -157,6 +158,12 @@ export default function BookingList({
           onClick={() => setShowCancelled((v) => !v)}
         >
           {showCancelled ? 'Hide cancelled' : 'Show cancelled'}
+        </button>
+        <button
+          className={`${styles.toggleBtn} ${showOnlyMine ? styles.toggleActive : ''}`}
+          onClick={() => setShowOnlyMine((v) => !v)}
+        >
+          {showOnlyMine ? 'Show all' : 'Only mine'}
         </button>
       </div>
 
