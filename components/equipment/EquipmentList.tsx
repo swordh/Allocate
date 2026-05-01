@@ -19,24 +19,24 @@ interface EquipmentListProps {
 // ---------------------------------------------------------------------------
 
 const UNIT_STATUS_LABELS: Record<EquipmentStatus, string> = {
-  available:    'Available',
-  checked_out:  'Checked Out',
-  needs_repair: 'Needs Repair',
+  ok:                 'Ok',
+  needs_repair:       'Needs Repair',
+  limited_operations: 'Limited Operations',
 }
 
 function getStatusDotClass(status: EquipmentStatus): string {
   switch (status) {
-    case 'available':    return styles.statusDotAvailable
-    case 'checked_out':  return styles.statusDotCheckedOut
-    case 'needs_repair': return styles.statusDotNeedsRepair
+    case 'ok':                 return styles.statusDotOk
+    case 'needs_repair':       return styles.statusDotNeedsRepair
+    case 'limited_operations': return styles.statusDotLimitedOperations
   }
 }
 
 function getUnitStatusTextClass(status: EquipmentStatus): string {
   switch (status) {
-    case 'available':    return styles.unitStatusAvailable
-    case 'checked_out':  return styles.unitStatusCheckedOut
-    case 'needs_repair': return styles.unitStatusNeedsRepair
+    case 'ok':                 return styles.unitStatusOk
+    case 'needs_repair':       return styles.unitStatusNeedsRepair
+    case 'limited_operations': return styles.unitStatusLimitedOperations
   }
 }
 
@@ -220,17 +220,19 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {(eq.units ?? []).map((unit) => (
                       <div key={unit.id} className={styles.unitRow}>
                         <div className={styles.rowLeft}>
-                          <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} />
+                          {/* Status dot hidden for MVP — <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} /> */}
                           <span className={styles.unitName}>{unit.label}</span>
                           {unit.serialNumber && (
                             <span className={styles.serialNumber}>S/N {unit.serialNumber}</span>
                           )}
                         </div>
+                        {/* Status text hidden for MVP
                         <div className={styles.unitRowRight}>
                           <span className={`${styles.unitStatusText} ${getUnitStatusTextClass(unit.status)}`}>
                             {UNIT_STATUS_LABELS[unit.status]}
                           </span>
                         </div>
+                        */}
                       </div>
                     ))}
 

@@ -447,7 +447,7 @@ export async function createUnit(
     companyId,
     label,
     serialNumber,
-    status: 'available',
+    status: 'ok',
     notes,
     active: true,
     createdAt: FieldValue.serverTimestamp(),
@@ -476,14 +476,14 @@ export async function updateUnit(
   const label = (formData.get('label') as string | null)?.trim() ?? ''
   if (!label) return { error: 'Label is required.' }
 
-  const VALID_STATUSES: EquipmentStatus[] = ['available', 'checked_out', 'needs_repair']
+  const VALID_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair', 'limited_operations']
 
   const statusRaw = formData.get('status') as string | null
 
   await unitRef.update({
     label,
     serialNumber: (formData.get('serialNumber') as string | null)?.trim() || null,
-    status: VALID_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'available',
+    status: VALID_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'ok',
     notes: (formData.get('notes') as string | null)?.trim() || null,
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: session.uid,
@@ -536,7 +536,7 @@ export async function deactivateUnit(
 // Batch-saves equipment basic fields + all unit changes (updates, creates,
 // deletes) in a single Firestore batch write.
 
-const VALID_UNIT_STATUSES: EquipmentStatus[] = ['available', 'checked_out', 'needs_repair']
+const VALID_UNIT_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair', 'limited_operations']
 
 export interface UnitUpdate {
   id: string

@@ -279,10 +279,10 @@
   flex-shrink: 0;
 }
 
-/* Matches `dot_available`, `dot_checked_out`, `dot_needs_repair` */
-.dot_available    { background: var(--white); }
-.dot_checked_out  { background: var(--tertiary); }
-.dot_needs_repair { background: var(--error); }
+/* Matches `dot_ok`, `dot_needs_repair`, `dot_limited_operations` */
+.dot_ok                 { background: var(--white); }
+.dot_needs_repair       { background: var(--error); }
+.dot_limited_operations { background: #e6a817; }
 
 .unitInputStack {
   display: flex;
@@ -345,9 +345,9 @@
 }
 
 /* Status color variants */
-.statusColor_available    { color: rgba(255, 255, 255, 0.5); }
-.statusColor_checked_out  { color: var(--tertiary); }
-.statusColor_needs_repair { color: var(--error); }
+.statusColor_ok                 { color: rgba(255, 255, 255, 0.5); }
+.statusColor_needs_repair       { color: var(--error); }
+.statusColor_limited_operations { color: #e6a817; }
 
 /* ── Delete row button ────────────────────────────────────────────────────── */
 

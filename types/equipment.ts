@@ -1,4 +1,4 @@
-export type EquipmentStatus = 'available' | 'checked_out' | 'needs_repair'
+export type EquipmentStatus = 'ok' | 'needs_repair' | 'limited_operations'
 
 // 'serialized' = one parent doc per equipment type, one subcollection doc per physical unit
 // 'quantity'   = one document represents a pool of interchangeable items

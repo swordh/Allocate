@@ -185,16 +185,16 @@
   flex-shrink: 0;
 }
 
-.statusDotAvailable {
+.statusDotOk {
   background: var(--white);
-}
-
-.statusDotCheckedOut {
-  background: var(--tertiary);
 }
 
 .statusDotNeedsRepair {
   background: var(--error);
+}
+
+.statusDotLimitedOperations {
+  background: #e6a817;
 }
 
 /* Status text shown on the right of a unit row */
@@ -206,16 +206,16 @@
   white-space: nowrap;
 }
 
-.unitStatusAvailable {
+.unitStatusOk {
   color: rgba(145, 145, 145, 0.6);
-}
-
-.unitStatusCheckedOut {
-  color: var(--tertiary);
 }
 
 .unitStatusNeedsRepair {
   color: var(--error);
+}
+
+.unitStatusLimitedOperations {
+  color: #e6a817;
 }
 
 /* Tracking type badge: "Units" or "Qty" */
