@@ -18,7 +18,7 @@ export function useMembers(companyId: string) {
   useEffect(() => {
     if (!companyId) return
 
-    getDocs(collection(db, 'companies', companyId, 'memberships'))
+    getDocs(collection(db, 'companies', companyId, 'members'))
       .then((snapshot) => {
         const data = snapshot.docs.map((doc) => {
           const d = doc.data()

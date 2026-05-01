@@ -206,3 +206,30 @@
   font-weight: 300;
   color: var(--on-surface-variant);
 }
+
+.roleSelect {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
+  color: var(--on-surface-variant);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  outline: none;
+  padding: 4px 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.roleSelect:focus {
+  border-bottom-color: var(--white);
+  color: var(--white);
+}
+
+.roleSelect:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

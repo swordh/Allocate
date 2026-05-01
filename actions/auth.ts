@@ -116,6 +116,16 @@ export async function setupNewCompany(
     joinedAt: FieldValue.serverTimestamp(),
   })
 
+  const companyMemberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
+  batch.set(companyMemberRef, {
+    uid,
+    name:      userName,
+    email,
+    role:      'admin',
+    joinedAt:  FieldValue.serverTimestamp(),
+    companyId,
+  })
+
   for (const name of DEFAULT_CATEGORIES) {
     const catRef = adminDb.collection(`companies/${companyId}/categories`).doc()
     batch.set(catRef, { name, createdAt: FieldValue.serverTimestamp(), isDefault: true })
