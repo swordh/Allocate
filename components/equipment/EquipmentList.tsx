@@ -29,7 +29,6 @@ function getStatusDotClass(status: EquipmentStatus): string {
     case 'ok':                 return styles.statusDotOk
     case 'needs_repair':       return styles.statusDotNeedsRepair
     case 'limited_operations': return styles.statusDotLimitedOperations
-    default:                   return styles.statusDotOk
   }
 }
 
@@ -38,7 +37,6 @@ function getUnitStatusTextClass(status: EquipmentStatus): string {
     case 'ok':                 return styles.unitStatusOk
     case 'needs_repair':       return styles.unitStatusNeedsRepair
     case 'limited_operations': return styles.unitStatusLimitedOperations
-    default:                   return styles.unitStatusOk
   }
 }
 

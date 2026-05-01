@@ -12,11 +12,9 @@ const STATUS_LABELS: Record<EquipmentStatus, string> = {
 }
 
 export default function EquipmentStatusBadge({ status }: EquipmentStatusBadgeProps) {
-  const label = STATUS_LABELS[status] ?? 'Ok'
-  const cssKey = (status in STATUS_LABELS ? status : 'ok') as EquipmentStatus
   return (
-    <span className={`${styles.badge} ${styles[cssKey]}`}>
-      {label}
+    <span className={`${styles.badge} ${styles[status]}`}>
+      {STATUS_LABELS[status]}
     </span>
   )
 }
