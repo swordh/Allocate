@@ -41,6 +41,7 @@ export function UnitForm({ equipmentId, unit, onSuccess }: UnitFormProps) {
         <input name="serialNumber" className={styles.input} defaultValue={unit?.serialNumber ?? ''} />
       </div>
 
+      {/* Status field — hidden for MVP; data model and validation intact
       {isEditing && (
         <div className={styles.field}>
           <label className={styles.label}>Status</label>
@@ -51,6 +52,7 @@ export function UnitForm({ equipmentId, unit, onSuccess }: UnitFormProps) {
           </select>
         </div>
       )}
+      */}
 
       <div className={styles.field}>
         <label className={styles.label}>Notes</label>

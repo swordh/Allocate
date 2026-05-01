@@ -220,17 +220,19 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {(eq.units ?? []).map((unit) => (
                       <div key={unit.id} className={styles.unitRow}>
                         <div className={styles.rowLeft}>
-                          <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} />
+                          {/* Status dot hidden for MVP — <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} /> */}
                           <span className={styles.unitName}>{unit.label}</span>
                           {unit.serialNumber && (
                             <span className={styles.serialNumber}>S/N {unit.serialNumber}</span>
                           )}
                         </div>
+                        {/* Status text hidden for MVP
                         <div className={styles.unitRowRight}>
                           <span className={`${styles.unitStatusText} ${getUnitStatusTextClass(unit.status)}`}>
                             {UNIT_STATUS_LABELS[unit.status]}
                           </span>
                         </div>
+                        */}
                       </div>
                     ))}
 

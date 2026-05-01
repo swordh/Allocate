@@ -505,7 +505,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
               <div className={styles.unitTableHeader}>
                 <div className={styles.colUnitSerial}>Unit / Serial</div>
                 <div className={styles.colAvail}>Avail</div>
-                <div className={styles.colStatus}>Status</div>
+                {/* Status column hidden for MVP — <div className={styles.colStatus}>Status</div> */}
                 <div className={styles.colNotes}>Notes</div>
                 <div className={styles.colDelete} />
               </div>
@@ -517,7 +517,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
 
                     {/* Dot + label + S/N */}
                     <div className={`${styles.colUnitSerial} ${styles.unitIdentity}`}>
-                      <span className={`${styles.dot} ${styles[`dot_${row.status}` as keyof typeof styles]}`} />
+                      {/* Status dot hidden for MVP — <span className={`${styles.dot} ${styles[`dot_${row.status}` as keyof typeof styles]}`} /> */}
                       <div className={styles.unitInputStack}>
                         <input
                           type="text"
@@ -551,7 +551,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                       />
                     </div>
 
-                    {/* Status dropdown */}
+                    {/* Status dropdown — hidden for MVP; state variable and updateRow logic intact
                     <div className={styles.colStatus}>
                       <select
                         value={row.status}
@@ -565,6 +565,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                         <option value="limited_operations">Limited Operations</option>
                       </select>
                     </div>
+                    */}
 
                     {/* Notes */}
                     <div className={styles.colNotes}>
