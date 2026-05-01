@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMembers } from '@/hooks/useMembers'
-import { inviteUser, removeMember } from '@/actions/team'
+import { inviteUser, removeMember, updateMemberRole } from '@/actions/team'
 import type { Role } from '@/types'
 import styles from './TeamSettingsView.module.css'
 
@@ -25,6 +25,9 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
   const [inviteError, setInviteError] = useState<string | null>(null)
 
   const [removeError, setRemoveError] = useState<string | null>(null)
+
+  const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({})
+  const [roleError, setRoleError] = useState<string | null>(null)
 
   async function handleInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -53,6 +56,14 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
     }
   }
 
+  async function handleRoleChange(memberId: string, newRole: Role) {
+    setRoleChanging((prev) => ({ ...prev, [memberId]: true }))
+    setRoleError(null)
+    const result = await updateMemberRole(memberId, newRole)
+    setRoleChanging((prev) => ({ ...prev, [memberId]: false }))
+    if (result.error) setRoleError(result.error)
+  }
+
   return (
     <div className={styles.container}>
       <div className={styles.heading}>Settings</div>
@@ -62,6 +73,12 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
       {removeError && (
         <div className={styles.errorBanner}>
           {removeError}
+        </div>
+      )}
+
+      {roleError && (
+        <div className={styles.errorBanner}>
+          {roleError}
         </div>
       )}
 
@@ -93,9 +110,22 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
                     )}
                   </td>
                   <td className={styles.td}>
-                    <span className={member.role === 'admin' ? styles.roleText : styles.roleTextMember}>
-                      {ROLE_LABELS[member.role] ?? member.role}
-                    </span>
+                    {isCurrentUser ? (
+                      <span className={member.role === 'admin' ? styles.roleText : styles.roleTextMember}>
+                        {ROLE_LABELS[member.role] ?? member.role}
+                      </span>
+                    ) : (
+                      <select
+                        className={styles.roleSelect}
+                        value={member.role}
+                        disabled={roleChanging[member.uid]}
+                        onChange={(e) => handleRoleChange(member.uid, e.target.value as Role)}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="crew">Crew</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    )}
                   </td>
                   <td className={styles.tdAction}>
                     {!isCurrentUser && (
