@@ -35,14 +35,12 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
           >
             EQUIPMENT
           </Link>
-          {role === 'admin' && (
-            <Link
-              href="/settings"
-              className={`${styles.link} ${isActive('/settings') ? styles.linkActive : ''}`}
-            >
-              SETTINGS
-            </Link>
-          )}
+          <Link
+            href="/settings"
+            className={`${styles.link} ${isActive('/settings') ? styles.linkActive : ''}`}
+          >
+            SETTINGS
+          </Link>
         </div>
 
         <div className={styles.actions}>
