@@ -45,9 +45,9 @@ export function UnitForm({ equipmentId, unit, onSuccess }: UnitFormProps) {
         <div className={styles.field}>
           <label className={styles.label}>Status</label>
           <select name="status" className={styles.input} defaultValue={unit.status}>
-            <option value="available">Available</option>
-            <option value="checked_out">Checked Out</option>
+            <option value="ok">Ok</option>
             <option value="needs_repair">Needs Repair</option>
+            <option value="limited_operations">Limited Operations</option>
           </select>
         </div>
       )}

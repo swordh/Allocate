@@ -19,24 +19,26 @@ interface EquipmentListProps {
 // ---------------------------------------------------------------------------
 
 const UNIT_STATUS_LABELS: Record<EquipmentStatus, string> = {
-  available:    'Available',
-  checked_out:  'Checked Out',
-  needs_repair: 'Needs Repair',
+  ok:                 'Ok',
+  needs_repair:       'Needs Repair',
+  limited_operations: 'Limited Operations',
 }
 
 function getStatusDotClass(status: EquipmentStatus): string {
   switch (status) {
-    case 'available':    return styles.statusDotAvailable
-    case 'checked_out':  return styles.statusDotCheckedOut
-    case 'needs_repair': return styles.statusDotNeedsRepair
+    case 'ok':                 return styles.statusDotOk
+    case 'needs_repair':       return styles.statusDotNeedsRepair
+    case 'limited_operations': return styles.statusDotLimitedOperations
+    default:                   return styles.statusDotOk
   }
 }
 
 function getUnitStatusTextClass(status: EquipmentStatus): string {
   switch (status) {
-    case 'available':    return styles.unitStatusAvailable
-    case 'checked_out':  return styles.unitStatusCheckedOut
-    case 'needs_repair': return styles.unitStatusNeedsRepair
+    case 'ok':                 return styles.unitStatusOk
+    case 'needs_repair':       return styles.unitStatusNeedsRepair
+    case 'limited_operations': return styles.unitStatusLimitedOperations
+    default:                   return styles.unitStatusOk
   }
 }
 

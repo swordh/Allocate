@@ -6,22 +6,17 @@
   white-space: nowrap;
 }
 
-/* available — dim text only */
-.available {
+/* ok — dim text only */
+.ok {
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* checked_out — tertiary accent */
-.checked_out {
-  color: var(--tertiary);
-}
-
-/* needs_repair — very dim */
+/* needs_repair — red/error */
 .needs_repair {
-  color: rgba(145, 145, 145, 0.4);
+  color: var(--error);
 }
 
-/* in_service — very dim */
-.in_service {
-  color: rgba(145, 145, 145, 0.4);
+/* limited_operations — amber/warning */
+.limited_operations {
+  color: #e6a817;
 }

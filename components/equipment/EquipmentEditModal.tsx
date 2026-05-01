@@ -151,7 +151,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
         id: null,
         label: '',
         serialNumber: null,
-        status: 'available',
+        status: 'ok',
         notes: null,
         availableForBooking: true,
       },
@@ -560,9 +560,9 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                         }
                         className={`${styles.statusSelect} ${styles[`statusColor_${row.status}` as keyof typeof styles]}`}
                       >
-                        <option value="available">Available</option>
-                        <option value="checked_out">Checked Out</option>
+                        <option value="ok">Ok</option>
                         <option value="needs_repair">Needs Repair</option>
+                        <option value="limited_operations">Limited Operations</option>
                       </select>
                     </div>
 

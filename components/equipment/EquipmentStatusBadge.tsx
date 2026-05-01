@@ -6,15 +6,17 @@ interface EquipmentStatusBadgeProps {
 }
 
 const STATUS_LABELS: Record<EquipmentStatus, string> = {
-  available:    'Available',
-  checked_out:  'Checked Out',
-  needs_repair: 'Needs Repair',
+  ok:                 'Ok',
+  needs_repair:       'Needs Repair',
+  limited_operations: 'Limited Operations',
 }
 
 export default function EquipmentStatusBadge({ status }: EquipmentStatusBadgeProps) {
+  const label = STATUS_LABELS[status] ?? 'Ok'
+  const cssKey = (status in STATUS_LABELS ? status : 'ok') as EquipmentStatus
   return (
-    <span className={`${styles.badge} ${styles[status]}`}>
-      {STATUS_LABELS[status]}
+    <span className={`${styles.badge} ${styles[cssKey]}`}>
+      {label}
     </span>
   )
 }
