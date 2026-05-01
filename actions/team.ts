@@ -128,18 +128,18 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   const byEquipmentApprover = await equipmentRef.where('approverId', '==', memberId).get()
   for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
 
-  // Units: read all units in company, filter in-code for user references
-  const unitsSnap = await adminDb
-    .collectionGroup('units')
-    .where('companyId', '==', cid)
-    .get()
-  for (const doc of unitsSnap.docs) {
-    const data = doc.data()
-    const updates: Record<string, null> = {}
-    if (data.createdBy === memberId)     updates.createdBy = null
-    if (data.updatedBy === memberId)     updates.updatedBy = null
-    if (data.deactivatedBy === memberId) updates.deactivatedBy = null
-    if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+  // Units: iterate equipment subcollections directly — avoids collectionGroup index requirement
+  const allEquipmentSnap = await equipmentRef.get()
+  for (const eqDoc of allEquipmentSnap.docs) {
+    const unitsSnap = await eqDoc.ref.collection('units').get()
+    for (const doc of unitsSnap.docs) {
+      const data = doc.data()
+      const updates: Record<string, null> = {}
+      if (data.createdBy === memberId)     updates.createdBy = null
+      if (data.updatedBy === memberId)     updates.updatedBy = null
+      if (data.deactivatedBy === memberId) updates.deactivatedBy = null
+      if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+    }
   }
 
   // Company doc: createdBy
