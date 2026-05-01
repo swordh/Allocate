@@ -498,9 +498,11 @@ export default function BookingForm({
                                       : null
                                 )}
                               </div>
+                              {/* Approval required tag — hidden for MVP
                               {eq.requiresApproval && (
                                 <span className={styles.approvalTag}>Approval required</span>
                               )}
+                              */}
                               {hasConflict && (
                                 <span className={styles.conflictTag}>Unavailable</span>
                               )}
@@ -565,9 +567,11 @@ export default function BookingForm({
                                       ? <span className={styles.availabilityCount}>{qtyAvailable} of {eq.totalQuantity} available</span>
                                       : null
                                 )}
+                                {/* Approval required tag — hidden for MVP
                                 {eq.requiresApproval && (
                                   <span className={styles.approvalTag}>Approval required</span>
                                 )}
+                                */}
                                 {hasConflict && (
                                   <span className={styles.conflictTag}>Unavailable</span>
                                 )}
@@ -657,11 +661,13 @@ export default function BookingForm({
             <div className={styles.summaryValue}>{timeRangeLabel ?? '—'}</div>
           </div>
 
+          {/* Approval notice — hidden for MVP
           {requiresApproval && (
             <div className={styles.approvalNotice}>
               One or more items require approval. Your booking will be submitted as Pending and reviewed before confirmation.
             </div>
           )}
+          */}
 
           {conflictResult?.hasConflict && (
             <div className={styles.conflictNotice}>

@@ -343,6 +343,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
               />
             </div>
 
+            {/* Requires approval toggle — hidden for MVP, data model intact
             <div className={styles.approvalRow}>
               <button
                 type="button"
@@ -374,6 +375,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                 </select>
               </div>
             )}
+            */}
           </div>
 
           {/* Section B: Tracking type */}

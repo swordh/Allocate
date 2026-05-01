@@ -254,7 +254,7 @@ export default function BookingDetail({
             </ul>
           </div>
 
-          {/* Rejection reason */}
+          {/* Rejection reason — hidden for MVP
           {booking.approvalStatus === 'rejected' && booking.rejectionReason && (
             <div className={styles.section}>
               <div className={styles.sectionLabel}>Rejection Reason</div>
@@ -263,6 +263,7 @@ export default function BookingDetail({
               </div>
             </div>
           )}
+          */}
 
           {/* Cancellation info */}
           {booking.status === 'cancelled' && booking.cancelledAt && (
