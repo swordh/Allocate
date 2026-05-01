@@ -20,12 +20,10 @@ export function MobileBottomNav({ role }: MobileBottomNavProps) {
         <span className="material-symbols-outlined">construction</span>
         <span className={styles.label}>EQUIPMENT</span>
       </Link>
-      {role === 'admin' && (
-        <Link href="/settings" className={`${styles.item} ${isActive('/settings') ? styles.itemActive : ''}`}>
-          <span className="material-symbols-outlined">settings</span>
-          <span className={styles.label}>SETTINGS</span>
-        </Link>
-      )}
+      <Link href="/settings" className={`${styles.item} ${isActive('/settings') ? styles.itemActive : ''}`}>
+        <span className="material-symbols-outlined">settings</span>
+        <span className={styles.label}>SETTINGS</span>
+      </Link>
     </nav>
   )
 }
