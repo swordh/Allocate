@@ -48,11 +48,11 @@ env:
 
   # Stripe price IDs — non-secret, runtime only. Replace placeholders with real price IDs from Stripe Dashboard before enabling checkout.
   - variable: STRIPE_PRICE_STARTER_MONTHLY
-    value: "price_REPLACE_ME_MONTHLY"
+    value: "price_1Q0r0X06TtFrNVu39VXac7MQ"
     availability:
       - RUNTIME
   - variable: STRIPE_PRICE_STARTER_YEARLY
-    value: "price_REPLACE_ME_YEARLY"
+    value: "price_1Q0N5206TtFrNVu3B1rlpJYi"
     availability:
       - RUNTIME
 
