@@ -9,7 +9,7 @@ export default async function BookingsListPage() {
   const initialBookings = await getBookings(session.activeCompanyId)
 
   // Fetch UserProfile for each unique userId in the bookings
-  const uniqueUserIds = Array.from(new Set(initialBookings.map(b => b.userId).filter(Boolean)))
+  const uniqueUserIds = Array.from(new Set(initialBookings.map(b => b.userId).filter((id): id is string => id !== null && id !== undefined)))
   const userProfilesArray = await Promise.all(
     uniqueUserIds.map(uid => getUserProfile(uid)),
   )
