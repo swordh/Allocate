@@ -1,12 +1,10 @@
+import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import TeamSettingsView from '@/components/settings/TeamSettingsView'
 
-/**
- * Settings › Team — Server Component.
- * Passes companyId and currentUserId from the verified session to the client view.
- */
 export default async function TeamSettingsPage() {
   const session = await getVerifiedSession()
+  if (session.role !== 'admin') redirect('/settings/account')
 
   return (
     <TeamSettingsView

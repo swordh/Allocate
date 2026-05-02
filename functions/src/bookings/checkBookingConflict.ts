@@ -65,6 +65,18 @@ export const checkBookingConflict = onCall({ region: 'europe-west1', cors: true,
       ? rawExclude.trim()
       : undefined;
 
+  const rawStartTime: unknown = request.data.startTime;
+  const startTime: string | null =
+    typeof rawStartTime === 'string' && /^\d{2}:\d{2}$/.test(rawStartTime)
+      ? rawStartTime
+      : null;
+
+  const rawEndTime: unknown = request.data.endTime;
+  const endTime: string | null =
+    typeof rawEndTime === 'string' && /^\d{2}:\d{2}$/.test(rawEndTime)
+      ? rawEndTime
+      : null;
+
   // ── Conflict detection ─────────────────────────────────────────────────────
   const db = getFirestore();
   const result = await detectConflictsReadOnly(
@@ -74,6 +86,8 @@ export const checkBookingConflict = onCall({ region: 'europe-west1', cors: true,
     startDate,
     endDate,
     excludeBookingId,
+    startTime,
+    endTime,
   );
 
   return result;

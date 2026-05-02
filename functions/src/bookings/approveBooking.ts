@@ -88,6 +88,8 @@ export const approveBooking = onCall({ region: 'europe-west1', cors: true, invok
       booking.startDate,
       booking.endDate,
       bookingId,
+      booking.startTime ?? null,
+      booking.endTime ?? null,
     );
 
     if (conflictResult.hasConflict) {

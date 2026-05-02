@@ -1,31 +1,91 @@
-export type EquipmentStatus = 'available' | 'checked_out' | 'needs_repair'
+export type EquipmentStatus = 'ok' | 'needs_repair' | 'limited_operations'
 
-// Immutable after creation.
-// 'individual' = one document per physical unit (serial number optional)
+// 'serialized' = one parent doc per equipment type, one subcollection doc per physical unit
 // 'quantity'   = one document represents a pool of interchangeable items
-export type TrackingType = 'individual' | 'quantity'
+export type TrackingType = 'serialized' | 'quantity'
 
 // Default categories seeded for every new company
 export const DEFAULT_EQUIPMENT_CATEGORIES = [
-  'Camera',
-  'Lenses',
-  'Audio',
-  'Lighting',
-  'Grip',
-  'Accessories',
+  'Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories',
 ] as const
+
+export interface CustomFieldText {
+  id: string
+  label: string
+  type: 'text'
+  value: string
+}
+
+export interface CustomFieldValue {
+  id: string
+  label: string
+  type: 'value'
+  value: { min: number; max: number | null }
+}
+
+export interface CustomFieldBoolean {
+  id: string
+  label: string
+  type: 'boolean'
+  value: boolean
+}
+
+export interface CustomFieldList {
+  id: string
+  label: string
+  type: 'list'
+  options: string[]
+  value: string
+}
+
+export type CustomField = CustomFieldText | CustomFieldValue | CustomFieldBoolean | CustomFieldList
+export type CustomFieldType = CustomField['type']
 
 export interface Equipment {
   id: string
   name: string
+  description: string | null
   category: string            // from company's category list
   icon?: string
   active: boolean
-  status: EquipmentStatus
   trackingType: TrackingType  // immutable after creation
-  totalQuantity: number       // always 1 for individual; >= 1 for quantity
-  serialNumber: string | null // optional for individual; always null for quantity
+  totalQuantity: number       // always 1 for serialized; >= 1 for quantity
   requiresApproval: boolean   // triggers approval flow when booked
   approverId: string | null   // specific user who must approve; Admin if null
+  availableForBooking: boolean // when false, hidden from the booking form picker
   createdAt: string | null    // ISO string (converted from Timestamp at read boundary)
+  customFields: CustomField[] // defaults to []
+  units?: EquipmentUnit[]     // hydrated at query time, never stored in Firestore
+}
+
+export interface CategoryFieldTemplate {
+  id: string
+  label: string
+  type: 'text' | 'boolean' | 'value' | 'list'
+  defaultValue: string | boolean | null
+  options?: string[]
+}
+
+export interface Category {
+  id: string
+  name: string
+  isDefault: boolean
+  createdAt: string | null
+  customFieldTemplates: CategoryFieldTemplate[]
+}
+
+export interface EquipmentUnit {
+  id: string
+  equipmentId: string   // denormalized parent ref
+  companyId: string     // denormalized for collectionGroup queries
+  label: string         // e.g. "Kamera 1"
+  serialNumber: string | null
+  status: EquipmentStatus
+  notes: string | null
+  active: boolean
+  availableForBooking: boolean
+  createdAt: string | null
+  createdBy?: string | null
+  updatedBy?: string | null
+  deactivatedBy?: string | null
 }

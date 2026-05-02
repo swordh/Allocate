@@ -55,7 +55,7 @@ export const setActiveClaim = onCall({ region: 'europe-west1', cors: true, invok
   // server-side reads can use it without decoding the JWT.
   await db.doc(`users/${uid}`).update({ activeCompanyId: companyId });
 
-  logger.info('setActiveClaim: claim updated', { uid, companyId, role });
+  logger.info('setActiveClaim: claim updated', { uid: uid.slice(0, 8) + '...', companyId, role });
 
   return { success: true };
 });

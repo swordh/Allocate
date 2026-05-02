@@ -1,39 +1,59 @@
 'use client'
-
-import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import { useEffect, useMemo, useState } from 'react'
+import { collection, collectionGroup, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import type { Equipment } from '@/types'
+import type { Equipment, EquipmentUnit } from '@/types'
 
 export function useEquipment(companyId: string) {
-  const [equipment, setEquipment] = useState<Equipment[]>([])
-  const [loading, setLoading] = useState(true)
+  const [equipmentMap, setEquipmentMap] = useState<Map<string, Equipment>>(new Map())
+  const [unitsMap, setUnitsMap] = useState<Map<string, EquipmentUnit[]>>(new Map())
+  const [loadingEquipment, setLoadingEquipment] = useState(true)
+  const [loadingUnits, setLoadingUnits] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
     if (!companyId) return
 
-    const q = query(
+    const eqQuery = query(
       collection(db, 'companies', companyId, 'equipment'),
       where('active', '==', true),
     )
+    const unsubEquipment = onSnapshot(eqQuery, (snapshot) => {
+      const map = new Map<string, Equipment>()
+      snapshot.docs.forEach((doc) => map.set(doc.id, { id: doc.id, ...doc.data() } as Equipment))
+      setEquipmentMap(map)
+      setLoadingEquipment(false)
+    }, (err) => { setError(err as Error); setLoadingEquipment(false) })
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Equipment))
-        setEquipment(data)
-        setLoading(false)
-      },
-      (err) => {
-        console.error('[useEquipment] Firestore listener error:', err)
-        setError(err)
-        setLoading(false)
-      },
+    const unitsQuery = query(
+      collectionGroup(db, 'units'),
+      where('companyId', '==', companyId),
+      where('active', '==', true),
     )
+    const unsubUnits = onSnapshot(unitsQuery, (snapshot) => {
+      const map = new Map<string, EquipmentUnit[]>()
+      snapshot.docs.forEach((doc) => {
+        const unit = { id: doc.id, ...doc.data() } as EquipmentUnit
+        if (!map.has(unit.equipmentId)) map.set(unit.equipmentId, [])
+        map.get(unit.equipmentId)!.push(unit)
+      })
+      setUnitsMap(map)
+      setLoadingUnits(false)
+    }, (err) => { setError(err as Error); setLoadingUnits(false) })
 
-    return unsubscribe
+    return () => { unsubEquipment(); unsubUnits() }
   }, [companyId])
 
-  return { equipment, loading, error }
+  const equipment = useMemo(() => {
+    const result: Equipment[] = []
+    for (const eq of equipmentMap.values()) {
+      result.push({
+        ...eq,
+        units: eq.trackingType === 'serialized' ? (unitsMap.get(eq.id) ?? []) : undefined,
+      })
+    }
+    return result.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
+  }, [equipmentMap, unitsMap])
+
+  return { equipment, loading: loadingEquipment || loadingUnits, error }
 }

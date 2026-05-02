@@ -1,0 +1,147 @@
+.wrapper {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.heading {
+  font-size: var(--font-booking-title);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 4px;
+  color: var(--white);
+}
+
+.subHeading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+  margin-bottom: 40px;
+}
+
+.planCard {
+  border: 1px solid rgba(238, 204, 2, 0.3);
+  padding: 24px 28px;
+  margin-bottom: 32px;
+}
+
+.planBadge {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--on-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+}
+
+.planFeatures {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.featureSep {
+  color: var(--dim);
+}
+
+.sectionLabel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--mid);
+}
+
+.rule {
+  flex-grow: 1;
+  height: 1px;
+  background: rgba(71, 71, 71, 0.2);
+}
+
+.intervalToggle {
+  display: flex;
+}
+
+.intervalBtn {
+  flex: 1;
+  padding: 14px 0;
+  border: 1px solid rgba(71, 71, 71, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--mid);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.intervalBtn + .intervalBtn {
+  border-left: none;
+}
+
+.intervalBtnActive {
+  border-color: rgba(238, 204, 2, 0.6);
+  color: var(--white);
+}
+
+.intervalBtnActive + .intervalBtn {
+  border-left: 1px solid rgba(71, 71, 71, 0.3);
+}
+
+.yearlyLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.savingsBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #c8a800;
+}
+
+.errorBanner {
+  font-size: 14px;
+  color: var(--repair);
+  border: 1px solid var(--repair);
+  padding: 12px 16px;
+  margin-top: 16px;
+}
+
+.btnSubscribe {
+  width: 100%;
+  padding: 16px 0;
+  margin-top: 24px;
+  background: var(--accent);
+  color: var(--on-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s ease;
+}
+
+.btnSubscribe:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

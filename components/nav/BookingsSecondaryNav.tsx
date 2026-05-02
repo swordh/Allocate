@@ -11,10 +11,10 @@ interface NavItem {
 }
 
 const ITEMS: NavItem[] = [
-  { label: 'List',    href: '/bookings' },
+  { label: 'List',    href: '/bookings/list' },
   { label: 'Week',    href: '/bookings/week' },
-  { label: 'Month',   href: '/bookings/month',   disabled: true },
-  { label: '4 Weeks', href: '/bookings/4weeks',  disabled: true },
+  { label: 'Month',   href: '/bookings/month' },
+  { label: '4 Weeks', href: '/bookings/4weeks' },
 ]
 
 /**
@@ -25,10 +25,7 @@ export default function BookingsSecondaryNav() {
   const pathname = usePathname()
 
   function isActive(href: string): boolean {
-    if (href === '/bookings') {
-      return pathname === '/bookings'
-    }
-    return pathname.startsWith(href)
+    return pathname === href || pathname.startsWith(href + '/')
   }
 
   return (

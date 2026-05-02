@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Settings: Preferences</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  .content-width { max-width: 800px; margin-left: auto; margin-right: auto; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
+</style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
+</head>
+<body class="bg-surface text-on-surface">
+
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <a href="index.html" style="color:#666;text-decoration:none;">← index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
+  <a href="settings-preferences.html" style="color:#EECC02;text-decoration:none;">settings-preferences</a>
+  <a href="settings-account.html" style="color:#666;text-decoration:none;">settings-account</a>
+</div>
+
+<!-- Top Nav -->
+<nav class="bg-[#080808]/90 backdrop-blur-md text-white uppercase font-bold top-0 z-50 border-b border-[#474747]/20 flex justify-between items-center w-full px-6 py-4 sticky">
+  <div class="text-xl font-black tracking-tighter text-white uppercase">ALLOCATE</div>
+  <div class="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="bookings.html">BOOKINGS</a>
+    <a class="text-[#F0EDE8]/60 hover:text-white transition-colors duration-100" href="equipment.html">EQUIPMENT</a>
+    <a class="text-white border-b-2 border-white pb-1 transition-all duration-100" href="settings-company.html">SETTINGS</a>
+  </div>
+  <div class="flex items-center gap-6">
+    <button class="hover:bg-[#F0EDE8] hover:text-[#080808] transition-all duration-100 p-1">
+      <span class="material-symbols-outlined">notifications</span>
+    </button>
+    <a href="booking-new.html" class="bg-primary text-on-primary px-5 py-2 text-xs font-bold tracking-wider hover:bg-secondary transition-all duration-100">NEW BOOKING</a>
+  </div>
+</nav>
+
+<!-- Main Canvas -->
+<main class="px-6 py-12 md:py-16 min-h-screen pb-24 md:pb-16">
+  <div class="content-width">
+
+    <header class="mb-12">
+      <h1 class="font-bold uppercase tracking-tight leading-none mb-8 text-5xl md:text-6xl">SETTINGS</h1>
+    </header>
+
+    <!-- Settings sub-nav -->
+    <div class="flex gap-6 mb-12 border-b border-outline-variant/20">
+      <a href="settings-company.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">COMPANY</a>
+      <a href="settings-team.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">TEAM</a>
+      <a href="settings-subscription.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">SUBSCRIPTION</a>
+      <a href="settings-preferences.html" class="text-white border-b-2 border-white pb-3 text-xs font-bold tracking-widest uppercase">PREFERENCES</a>
+      <a href="settings-account.html" class="text-white/40 hover:text-white pb-3 text-xs font-bold tracking-widest uppercase transition-colors">ACCOUNT</a>
+    </div>
+
+    <div class="max-w-lg">
+
+      <!-- Booking Time Slots -->
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Booking Time Slots</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+          <p class="text-xs text-outline mb-5">Set the minimum time increment used when creating bookings.</p>
+          <div class="flex flex-wrap">
+            <button class="border border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">1 min</button>
+            <button class="border-t border-b border-r border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">5 min</button>
+            <button class="border-t border-b border-r border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">10 min</button>
+            <button class="border-t border-b border-r border-white px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-white bg-surface-container-high cursor-pointer">15 min</button>
+            <button class="border-t border-b border-r border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">1 hour</button>
+            <button class="border-t border-b border-r border-outline-variant/30 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-outline hover:text-white cursor-pointer transition-colors">Full Day</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Automatic Status Changes -->
+      <div class="mb-10">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Automatic Status Changes</span>
+          <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+        </div>
+        <div class="border border-white/10 bg-surface-container-low px-6 py-5 mb-6">
+          <p class="text-xs text-outline mb-2">When enabled, bookings are automatically marked as Checked Out / Checked In at their scheduled start and end time.</p>
+
+          <!-- Auto Checkout — ON -->
+          <div class="flex items-center justify-between py-4 border-b border-outline-variant/20">
+            <span class="text-sm font-medium">Auto Checkout</span>
+            <div class="w-10 h-5 bg-tertiary relative cursor-pointer flex-shrink-0">
+              <div class="absolute right-1 top-1 w-3 h-3 bg-on-tertiary"></div>
+            </div>
+          </div>
+
+          <!-- Auto Checkin — OFF -->
+          <div class="flex items-center justify-between py-4 border-b border-outline-variant/20">
+            <span class="text-sm font-medium">Auto Checkin</span>
+            <div class="w-10 h-5 bg-surface-container-high border border-outline-variant/30 relative cursor-pointer flex-shrink-0">
+              <div class="absolute left-1 top-1 w-3 h-3 bg-outline"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="bg-tertiary text-on-tertiary px-8 py-4 text-xs font-bold tracking-widest uppercase hover:bg-tertiary-container transition-colors">Save Changes</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center py-3 md:hidden bg-[#080808]/80 backdrop-blur-xl border-t border-[#474747]/20 z-50">
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="bookings.html">
+    <span class="material-symbols-outlined text-[20px]">calendar_today</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">BOOKINGS</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#F0EDE8]/40 hover:text-white" href="equipment.html">
+    <span class="material-symbols-outlined text-[20px]">construction</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">EQUIPMENT</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-[#EECC02]" href="settings-company.html">
+    <span class="material-symbols-outlined text-[20px]">settings</span>
+    <span class="uppercase text-[10px] tracking-[5%] font-medium mt-1">SETTINGS</span>
+  </a>
+</nav>
+
+</body>
+</html>

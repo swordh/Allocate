@@ -6,9 +6,9 @@ interface EquipmentStatusBadgeProps {
 }
 
 const STATUS_LABELS: Record<EquipmentStatus, string> = {
-  available:    'Available',
-  checked_out:  'Checked Out',
-  needs_repair: 'Needs Repair',
+  ok:                 'Ok',
+  needs_repair:       'Needs Repair',
+  limited_operations: 'Limited Operations',
 }
 
 export default function EquipmentStatusBadge({ status }: EquipmentStatusBadgeProps) {

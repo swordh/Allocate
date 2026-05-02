@@ -1,11 +1,50 @@
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('/fonts/material-symbols-outlined.woff2') format('woff2');
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+}
+
 :root {
   --black:  #080808;
-  --white:  #F0EDE8;
+  --white:  #FFFFFF;
+  --secondary: #F0EDE8;
   --dim:    #2A2A2A;
   --mid:    #4A4A4A;
-  --rule:   #161616;
+  --rule:   #474747;
   --accent: #EECC02;
   --repair: #cc3333;
+
+  --surface-container-lowest: #0E0E0E;
+  --surface-container-low: #1C1B1B;
+  --surface-container: #201F1F;
+  --surface-container-high: #2A2A2A;
+  --surface-container-highest: #353534;
+  --surface-bright: #3A3939;
+  --outline: #919191;
+  --outline-variant: #474747;
+  --on-surface: #FFFFFF;
+  --on-surface-variant: #C6C6C6;
+  --on-primary: #1a1c1c;
+  --tertiary: #EECC02;
+  --error: #CC3333;
 
   --font-nav:           28px;
   --font-logo:          clamp(90px, 11vw, 148px);
@@ -73,3 +112,10 @@ img {
   display: block;
   max-width: 100%;
 }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #080808; }
+::-webkit-scrollbar-thumb { background: #474747; }
+
+.contentWidth { max-width: 800px; margin-left: auto; margin-right: auto; }
+.contentWidthWide { max-width: 1200px; margin-left: auto; margin-right: auto; }

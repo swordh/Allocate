@@ -21,7 +21,7 @@ export interface BookingItemInput {
 }
 
 export interface EquipmentData {
-  trackingType: 'individual' | 'quantity';
+  trackingType: 'serialized' | 'quantity';
   totalQuantity: number;
   name: string;
   active: boolean;
@@ -48,10 +48,27 @@ export interface ConflictResult {
 interface StoredBookingForConflict {
   startDate: string;
   endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
   status: string;
   approvalStatus: string;
   items: BookingItemInput[];
   equipmentIds: string[];
+}
+
+/**
+ * Returns false only when both bookings are same-day with explicit time windows
+ * that do not overlap. In all other cases returns true (conservative).
+ */
+function timesOverlap(
+  a: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
+  b: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
+): boolean {
+  // Time-based exclusion only applies to same-day bookings with explicit times
+  if (a.startDate !== a.endDate || b.startDate !== b.endDate) return true;
+  if (a.startDate !== b.startDate) return true;
+  if (!a.startTime || !a.endTime || !b.startTime || !b.endTime) return true;
+  return a.startTime < b.endTime && b.startTime < a.endTime;
 }
 
 /**
@@ -67,6 +84,8 @@ export async function detectConflictsReadOnly(
   startDate: string,
   endDate: string,
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<ConflictResult> {
   const conflicts: ConflictDetail[] = [];
   const bookingsRef = db.collection(`companies/${companyId}/bookings`);
@@ -97,6 +116,7 @@ export async function detectConflictsReadOnly(
       .where('endDate', '>=', startDate)
       .get();
 
+    const requested = { startDate, endDate, startTime, endTime };
     const overlapping = query.docs.filter((doc) => {
       if (doc.id === excludeBookingId) return false;
       const data = doc.data() as StoredBookingForConflict;
@@ -105,10 +125,11 @@ export async function detectConflictsReadOnly(
       if (data.approvalStatus === 'rejected') return false;
       // The query gives us bookings whose endDate >= requestedStartDate.
       // We also need: booking.startDate <= requestedEndDate.
-      return data.startDate <= endDate;
+      if (data.startDate > endDate) return false;
+      return timesOverlap(requested, data);
     });
 
-    if (equipment.trackingType === 'individual') {
+    if (equipment.trackingType === 'serialized') {
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,
@@ -157,6 +178,8 @@ export async function detectConflictsInTransaction(
   startDate: string,
   endDate: string,
   excludeBookingId?: string,
+  startTime?: string | null,
+  endTime?: string | null,
 ): Promise<ConflictResult> {
   const conflicts: ConflictDetail[] = [];
   const bookingsRef = db.collection(`companies/${companyId}/bookings`);
@@ -183,16 +206,18 @@ export async function detectConflictsInTransaction(
 
     const querySnap = await tx.get(query);
 
+    const requested = { startDate, endDate, startTime, endTime };
     const overlapping = querySnap.docs.filter((doc) => {
       if (doc.id === excludeBookingId) return false;
       const data = doc.data() as StoredBookingForConflict;
       // Cancelled and rejected bookings do not hold equipment — exclude them.
       if (data.status === 'cancelled') return false;
       if (data.approvalStatus === 'rejected') return false;
-      return data.startDate <= endDate;
+      if (data.startDate > endDate) return false;
+      return timesOverlap(requested, data);
     });
 
-    if (equipment.trackingType === 'individual') {
+    if (equipment.trackingType === 'serialized') {
       if (overlapping.length > 0) {
         conflicts.push({
           equipmentId: item.equipmentId,

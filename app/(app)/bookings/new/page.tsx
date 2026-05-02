@@ -1,13 +1,10 @@
 import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
-import BookingForm from '@/components/bookings/BookingForm'
+import { getCompany } from '@/lib/queries/company'
+import BookingFormPage from '@/components/bookings/BookingFormPage'
 import { redirect } from 'next/navigation'
+import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 
-/**
- * New booking page — Server Component shell.
- * Fetches session, verifies the user can create bookings, then passes
- * equipment list to the BookingForm Client Component.
- */
 export default async function NewBookingPage() {
   const session = await getVerifiedSession()
 
@@ -18,14 +15,20 @@ export default async function NewBookingPage() {
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
-  const equipment = await getEquipment(session.activeCompanyId)
+  const [equipment, company] = await Promise.all([
+    getEquipment(session.activeCompanyId),
+    getCompany(session.activeCompanyId),
+  ])
+
+  const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
 
   return (
-    <BookingForm
+    <BookingFormPage
       companyId={session.activeCompanyId}
       equipment={equipment}
       defaultStartDate={todayStr}
       defaultEndDate={todayStr}
+      timeSlotMinutes={timeSlotMinutes}
     />
   )
 }

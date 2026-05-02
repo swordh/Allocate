@@ -1,0 +1,67 @@
+# Firebase App Hosting configuration
+# Docs: https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  # Public Firebase client config — needed at build time so it ends up in the client bundle.
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Stripe price IDs — non-secret, runtime only.
+  - variable: STRIPE_PRICE_STARTER_MONTHLY
+    value: ""
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_STARTER_YEARLY
+    value: ""
+    availability:
+      - RUNTIME
+
+  # Secrets — managed in Google Secret Manager.
+  # Create with: firebase apphosting:secrets:set <NAME>
+  - variable: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
+    secret: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
+    availability:
+      - RUNTIME
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME

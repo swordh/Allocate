@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import type { Role } from '@/types'
 import styles from './SettingsSecondaryNav.module.css'
 
 interface NavItem {
@@ -9,26 +10,31 @@ interface NavItem {
   href: string
 }
 
-const ITEMS: NavItem[] = [
+const ADMIN_ITEMS: NavItem[] = [
   { label: 'Company',      href: '/settings/company' },
   { label: 'Team',         href: '/settings/team' },
   { label: 'Subscription', href: '/settings/subscription' },
+  { label: 'Preferences',  href: '/settings/preferences' },
 ]
 
-/**
- * Secondary nav for the settings section.
- * Company, Team, and Subscription tabs.
- */
-export default function SettingsSecondaryNav() {
+const ACCOUNT_ITEM: NavItem = { label: 'Account', href: '/settings/account' }
+
+interface SettingsSecondaryNavProps {
+  role: Role
+}
+
+export default function SettingsSecondaryNav({ role }: SettingsSecondaryNavProps) {
   const pathname = usePathname()
 
   function isActive(href: string): boolean {
-    return pathname.startsWith(href)
+    return pathname === href || pathname.startsWith(href + '/')
   }
+
+  const items = role === 'admin' ? [...ADMIN_ITEMS, ACCOUNT_ITEM] : [ACCOUNT_ITEM]
 
   return (
     <nav className={styles.nav}>
-      {ITEMS.map((item) => (
+      {items.map((item) => (
         <Link
           key={item.href}
           href={item.href}

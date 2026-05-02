@@ -6,21 +6,17 @@
   white-space: nowrap;
 }
 
-/* available — no border, dim color */
-.available {
-  color: var(--mid);
+/* ok — dim text only */
+.ok {
+  color: rgba(255, 255, 255, 0.5);
 }
 
-/* checked_out — accent background */
-.checked_out {
-  background: var(--accent);
-  color: var(--black);
-  padding: 2px 8px;
-}
-
-/* needs_repair — red text + red border */
+/* needs_repair — red/error */
 .needs_repair {
-  color: var(--repair);
-  border: 1px solid var(--repair);
-  padding: 2px 8px;
+  color: var(--error);
+}
+
+/* limited_operations — amber/warning */
+.limited_operations {
+  color: #e6a817;
 }

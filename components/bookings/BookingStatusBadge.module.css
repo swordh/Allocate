@@ -1,48 +1,39 @@
 .badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  padding: 3px 8px;
   white-space: nowrap;
 }
 
-/* pending — dim border, mid text */
+/* pending — muted grey */
 .pending {
-  color: var(--mid);
-  border: 1px solid var(--dim);
+  color: rgba(145, 145, 145, 0.6);
 }
 
-/* confirmed — white border */
+/* confirmed — white, slightly dimmed */
 .confirmed {
-  color: var(--white);
-  border: 1px solid var(--white);
+  color: rgba(255, 255, 255, 0.7);
 }
 
-/* checked_out — accent background */
+/* checked_out — tertiary accent */
 .checked_out {
-  background: var(--accent);
-  color: var(--black);
-  border: 1px solid var(--accent);
+  color: var(--tertiary);
 }
 
 /* returned — very dim */
 .returned {
-  color: var(--dim);
-  border: 1px solid transparent;
+  color: rgba(145, 145, 145, 0.4);
 }
 
-/* cancelled — muted */
+/* cancelled — strikethrough, very dim */
 .cancelled {
-  color: var(--mid);
-  border: 1px solid transparent;
+  color: rgba(145, 145, 145, 0.4);
   text-decoration: line-through;
-  opacity: 0.5;
 }
 
-/* rejected (pending + approvalStatus=rejected) */
+/* rejected — error red */
 .rejected {
-  color: var(--repair);
-  border: 1px solid var(--repair);
+  color: var(--error);
 }

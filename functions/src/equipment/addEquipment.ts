@@ -2,6 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { CompanyDocument } from '../types';
+import { validateCustomFields } from './validateCustomFields';
 
 /**
  * Adds a new equipment item to a company's inventory.
@@ -11,7 +12,7 @@ import { CompanyDocument } from '../types';
  * @param data.companyId         - Company to add equipment to
  * @param data.name              - Display name (required, max 100 chars)
  * @param data.category          - Category label (required)
- * @param data.trackingType      - 'individual' or 'quantity' (required, immutable after creation)
+ * @param data.trackingType      - 'serialized' or 'quantity' (required, immutable after creation)
  * @param data.totalQuantity     - Pool size for quantity items; forced to 1 for individual items
  * @param data.serialNumber      - Optional serial number for individual items; rejected on quantity items
  * @param data.status            - Initial status; defaults to 'available'
@@ -92,8 +93,10 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       ? null
       : String(rawApproverId);
 
+  const customFields = validateCustomFields(request.data.customFields);
+
   // ── trackingType validation ────────────────────────────────────────────────
-  const VALID_TRACKING_TYPES = ['individual', 'quantity'] as const;
+  const VALID_TRACKING_TYPES = ['serialized', 'quantity'] as const;
   type TrackingType = typeof VALID_TRACKING_TYPES[number];
 
   const rawTrackingType: unknown = request.data.trackingType;
@@ -114,14 +117,14 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
     }
     totalQuantity = rawQty;
   }
-  // For individual items totalQuantity is always 1, regardless of what the client sends.
+  // For serialized items totalQuantity is always 1, regardless of what the client sends.
 
   // ── serialNumber validation ────────────────────────────────────────────────
   let serialNumber: string | null = null;
   if (trackingType === 'quantity' && request.data.serialNumber !== undefined && request.data.serialNumber !== null) {
     throw new HttpsError('invalid-argument', 'serialNumber is not allowed for quantity-tracked items.');
   }
-  if (trackingType === 'individual' && request.data.serialNumber) {
+  if (trackingType === 'serialized' && request.data.serialNumber) {
     serialNumber = String(request.data.serialNumber).trim() || null;
   }
 
@@ -148,13 +151,19 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       );
     }
 
-    // Count active equipment — called outside the transaction because Firestore
-    // aggregation queries cannot run inside runTransaction. The plan limit is a
-    // soft cap so the negligible TOCTOU window is acceptable.
-    const equipmentRef = db.collection(`companies/${companyId}/equipment`);
-    const countSnap = await equipmentRef.where('active', '==', true).count().get();
-    const currentCount = countSnap.data().count;
+    // Read the atomic counter document inside the transaction — ALL reads
+    // must come before ANY writes.
+    const counterRef = db.doc(`companies/${companyId}/_meta/equipmentCount`);
+    const counterSnap = await tx.get(counterRef);
 
+    if (!counterSnap.exists) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Equipment counter not initialized. Run the backfill migration first.',
+      );
+    }
+
+    const currentCount = counterSnap.data()!.count as number;
     const limit = subscription.limits.equipment;
     const plan = subscription.plan;
 
@@ -166,8 +175,15 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
     }
 
     // All checks passed — create the document inside the transaction.
+    const equipmentRef = db.collection(`companies/${companyId}/equipment`);
     const newRef = equipmentRef.doc();
     newEquipmentId = newRef.id;
+
+    // Increment counter atomically with the equipment write.
+    tx.update(counterRef, {
+      count: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     tx.set(newRef, {
       name,
@@ -179,6 +195,7 @@ export const addEquipment = onCall({ region: 'europe-west1', cors: true, invoker
       active: true,
       requiresApproval,
       approverId,
+      customFields,
       createdAt: FieldValue.serverTimestamp(),
       createdBy: request.auth!.uid,
     });

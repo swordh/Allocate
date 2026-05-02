@@ -34,6 +34,8 @@ function docToBooking(id: string, data: Record<string, unknown>): Booking {
     equipmentIds:     (data.equipmentIds as string[])   ?? [],
     startDate:        (data.startDate as string)        ?? '',
     endDate:          (data.endDate as string)          ?? '',
+    startTime:        (data.startTime as string | null) ?? null,
+    endTime:          (data.endTime as string | null)   ?? null,
     userId:           (data.userId as string | null)    ?? null,
     userName:         (data.userName as string)         ?? '',
     status:           (data.status as BookingStatus)    ?? 'pending',

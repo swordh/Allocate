@@ -3,8 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
-import BookingStatusBadge from './BookingStatusBadge'
-import type { Booking, Role } from '@/types'
+import type { Booking, Role, UserProfile } from '@/types'
 import styles from './BookingList.module.css'
 
 interface BookingListProps {
@@ -13,6 +12,8 @@ interface BookingListProps {
   role: Role
   /** Bookings pre-fetched on the server for initial paint. */
   initialBookings: Booking[]
+  /** UserProfile data for each userId in bookings */
+  userProfiles: Record<string, UserProfile | null>
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,15 @@ function formatDateLabel(dateStr: string, today: string, tomorrow: string): stri
   })
 }
 
+function formatFullDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).toUpperCase()
+}
+
 // ---------------------------------------------------------------------------
 // Stats computation
 // ---------------------------------------------------------------------------
@@ -73,10 +83,12 @@ function computeStats(bookings: Booking[], today: string) {
 export default function BookingList({
   companyId,
   userId,
-  role,
+  role: _role,
   initialBookings,
+  userProfiles,
 }: BookingListProps) {
   const [showCancelled, setShowCancelled] = useState(false)
+  const [showOnlyMine, setShowOnlyMine] = useState(false)
 
   const { bookings: liveBookings, loading, error } = useBookings(companyId, {
     includeCancelled: showCancelled,
@@ -85,18 +97,20 @@ export default function BookingList({
   // Use live data once the listener has fired; fall back to server-fetched initial data.
   const bookings = loading ? initialBookings : liveBookings
 
-  // Crew only see their own bookings.
   const visibleBookings = useMemo(() => {
-    if (role === 'crew') {
-      return bookings.filter((b) => b.userId === userId)
+    let result = bookings
+    if (showOnlyMine && userId) {
+      result = result.filter((b) => b.userId === userId)
     }
-    return bookings
-  }, [bookings, role, userId])
+    return result
+  }, [bookings, showOnlyMine, userId])
 
   const today    = toLocalDateString(new Date())
   const tomorrow = toLocalDateString(new Date(Date.now() + 86400000))
 
+  // Stats are computed but stats bar is commented out per spec
   const stats = useMemo(() => computeStats(visibleBookings, today), [visibleBookings, today])
+  void stats // prevent unused variable warning
 
   // Group non-cancelled bookings by startDate, sorted newest first.
   const grouped = useMemo(() => {
@@ -121,8 +135,8 @@ export default function BookingList({
 
   return (
     <div className={styles.container}>
-      {/* Stats bar */}
-      <div className={styles.statsBar}>
+      {/* Stats bar — logic preserved, UI hidden per redesign spec */}
+      {/* <div className={styles.statsBar}>
         <div className={styles.stat}>
           <span className={styles.statValue}>{stats.bookingsToday}</span>
           <span className={styles.statLabel}>Bookings today</span>
@@ -135,7 +149,7 @@ export default function BookingList({
           <span className={styles.statValue}>{stats.pendingApprovals}</span>
           <span className={styles.statLabel}>Pending approvals</span>
         </div>
-      </div>
+      </div> */}
 
       {/* Controls */}
       <div className={styles.controls}>
@@ -144,6 +158,12 @@ export default function BookingList({
           onClick={() => setShowCancelled((v) => !v)}
         >
           {showCancelled ? 'Hide cancelled' : 'Show cancelled'}
+        </button>
+        <button
+          className={`${styles.toggleBtn} ${showOnlyMine ? styles.toggleActive : ''}`}
+          onClick={() => setShowOnlyMine((v) => !v)}
+        >
+          {showOnlyMine ? 'Show all' : 'Only mine'}
         </button>
       </div>
 
@@ -165,17 +185,26 @@ export default function BookingList({
         const dateBookings = grouped.get(dateStr) ?? []
         const label = formatDateLabel(dateStr, today, tomorrow)
         const isToday = dateStr === today
+        const fullDate = formatFullDate(dateStr)
 
         return (
           <div key={dateStr} className={styles.group}>
             <div className={styles.groupHeader}>
               <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
-                {label}
+                {label.toUpperCase()}
               </span>
+              <div className={styles.groupRule} />
+              <span className={styles.groupDate}>{fullDate}</span>
             </div>
-            {dateBookings.map((booking) => (
-              <BookingRow key={booking.id} booking={booking} />
-            ))}
+            <div className={styles.bookingCards}>
+              {dateBookings.map((booking) => (
+                <BookingRow
+                  key={booking.id}
+                  booking={booking}
+                  userProfiles={userProfiles}
+                />
+              ))}
+            </div>
           </div>
         )
       })}
@@ -187,30 +216,94 @@ export default function BookingList({
 // Booking row
 // ---------------------------------------------------------------------------
 
-function BookingRow({ booking }: { booking: Booking }) {
-  const isCancelled = booking.status === 'cancelled'
+// Status display helpers
+const STATUS_LABELS: Record<string, string> = {
+  checked_out: 'CHECKED OUT',
+  confirmed:   'CONFIRMED',
+  pending:     'PENDING',
+  returned:    'RETURNED',
+  cancelled:   'CANCELLED',
+}
+
+function getStatusLabel(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return 'REJECTED'
+  return STATUS_LABELS[booking.status] ?? booking.status.toUpperCase()
+}
+
+function getStatusRowClass(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.rowRejected
+  switch (booking.status) {
+    case 'checked_out': return styles.rowCheckedOut
+    case 'confirmed':   return styles.rowConfirmed
+    case 'pending':     return styles.rowPending
+    case 'returned':    return styles.rowReturned
+    case 'cancelled':   return styles.rowCancelled
+    default:            return styles.rowPending
+  }
+}
+
+function getStatusTextClass(booking: Booking): string {
+  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.statusRejected
+  switch (booking.status) {
+    case 'checked_out': return styles.statusCheckedOut
+    case 'confirmed':   return styles.statusConfirmed
+    case 'pending':     return styles.statusPending
+    case 'returned':    return styles.statusReturned
+    case 'cancelled':   return styles.statusCancelled
+    default:            return styles.statusPending
+  }
+}
+
+function BookingRow({
+  booking,
+  userProfiles,
+}: {
+  booking: Booking
+  userProfiles: Record<string, UserProfile | null>
+}) {
   const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
+  const statusClass = getStatusRowClass(booking)
+  const displayName = booking.userId
+    ? (userProfiles[booking.userId]?.name ?? booking.userName)
+    : booking.userName
+
+  const timeOrDate = formatBookingDateTime(
+    booking.startDate,
+    booking.endDate,
+    booking.startTime,
+    booking.endTime,
+  )
 
   return (
     <Link
       href={`/bookings/${booking.id}`}
-      className={`${styles.row} ${isCancelled ? styles.rowCancelled : ''}`}
+      className={`${styles.row} ${statusClass}`}
     >
-      <span className={styles.rowDate}>
-        {booking.startDate === booking.endDate
-          ? formatShortDate(booking.startDate)
-          : `${formatShortDate(booking.startDate)} – ${formatShortDate(booking.endDate)}`}
-      </span>
-      <span className={styles.rowProject}>{booking.projectName}</span>
-      <span className={styles.rowMeta}>
-        <span className={styles.rowItemCount}>
-          {itemCount} {itemCount === 1 ? 'item' : 'items'}
-        </span>
-        <BookingStatusBadge
-          status={booking.status}
-          approvalStatus={booking.approvalStatus}
-        />
-      </span>
+      <div className={styles.rowLeft}>
+        <span className={styles.rowProject}>{booking.projectName}</span>
+        <div className={styles.rowMeta}>
+          <span className={`${styles.rowMetaItem} ${getStatusTextClass(booking)}`}>
+            {getStatusLabel(booking)}
+          </span>
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
+            <span className={styles.rowMetaItem}>{timeOrDate}</span>
+          </div>
+          {displayName && (
+            <div className={styles.rowMetaWithIcon}>
+              <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
+              <span className={styles.rowMetaItem}>{displayName}</span>
+            </div>
+          )}
+          <div className={styles.rowMetaWithIcon}>
+            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>inventory_2</span>
+            <span className={styles.rowMetaItem}>
+              {itemCount} {itemCount === 1 ? 'item' : 'items'}
+            </span>
+          </div>
+        </div>
+      </div>
+      <span className={styles.rowChevron}>›</span>
     </Link>
   )
 }
@@ -221,4 +314,52 @@ function formatShortDate(dateStr: string): string {
     day: 'numeric',
     month: 'short',
   })
+}
+
+function formatBookingDateTime(
+  startDate: string,
+  endDate: string,
+  startTime: string | null | undefined,
+  endTime: string | null | undefined,
+): string {
+  const months = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
+
+  const parseDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-')
+    return { year: parseInt(year), month: parseInt(month) - 1, day: parseInt(day) }
+  }
+
+  const formatMonthDay = (dateStr: string): string => {
+    const d = parseDate(dateStr)
+    return `${d.day} ${months[d.month]}`
+  }
+
+  const sameDay = startDate === endDate
+  const start = parseDate(startDate)
+  const end = parseDate(endDate)
+  const sameMonth = start.month === end.month && start.year === end.year
+  const hasTime = startTime && endTime
+
+  if (hasTime) {
+    // With time: show start date/time - end date/time
+    if (sameDay) {
+      // Same day: "23 apr 12:03-13:45"
+      return `${formatMonthDay(startDate)} ${startTime}-${endTime}`
+    } else {
+      // Multiple days: "23 apr 12:03 - 25 maj 14:32"
+      return `${formatMonthDay(startDate)} ${startTime} - ${formatMonthDay(endDate)} ${endTime}`
+    }
+  } else {
+    // All day: show date only
+    if (sameDay) {
+      // Same day: "23 apr"
+      return formatMonthDay(startDate)
+    } else if (sameMonth) {
+      // Same month: "23 - 25 apr"
+      return `${start.day} - ${formatMonthDay(endDate)}`
+    } else {
+      // Different months: "23 apr - 25 maj"
+      return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`
+    }
+  }
 }

@@ -6,26 +6,18 @@ export type UserRole = 'admin' | 'crew' | 'viewer';
 
 // ─── Subscription ─────────────────────────────────────────────────────────────
 
-export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'incomplete' | 'canceled';
 
-export type Plan = 'basic' | 'small' | 'mid' | 'large' | 'enterprise';
+export type Plan = 'free' | 'starter';
 
 export interface PlanLimits {
   equipment: number;
   users: number;
 }
 
-/**
- * Plan limits keyed by plan name.
- * Enterprise limits are set manually per customer — these are placeholder values
- * that should never be used programmatically for enforcement.
- */
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  basic:      { equipment: 10,  users: 3  },
-  small:      { equipment: 25,  users: 10 },
-  mid:        { equipment: 60,  users: 25 },
-  large:      { equipment: 150, users: 75 },
-  enterprise: { equipment: 9999, users: 9999 }, // provisioned manually
+  free: { equipment: 0, users: 0 },
+  starter: { equipment: 25, users: 10 },
 };
 
 export interface CompanySubscription {
@@ -96,6 +88,8 @@ export interface BookingDocument {
   equipmentIds: string[];          // denormalized flat array for array-contains queries
   startDate: string;               // "YYYY-MM-DD"
   endDate: string;                 // "YYYY-MM-DD"
+  startTime?: string | null;       // "HH:MM" (24-hour), null means all-day
+  endTime?: string | null;         // "HH:MM" (24-hour), null means all-day
   userId: string | null;
   userName: string | null;        // null — not stored; userId is the reference. Resolving name at read time avoids storing PII on the booking document.
   status: BookingStatus;
@@ -111,7 +105,7 @@ export interface BookingDocument {
 
 // ─── Equipment documents ───────────────────────────────────────────────────────
 
-export type TrackingType = 'individual' | 'quantity';
+export type TrackingType = 'serialized' | 'quantity';
 
 export interface EquipmentDocument {
   name: string;

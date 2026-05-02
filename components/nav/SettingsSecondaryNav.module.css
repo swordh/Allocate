@@ -1,18 +1,21 @@
 .nav {
   display: flex;
-  align-items: baseline;
-  gap: 32px;
-  padding: 10px var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
+  gap: 24px;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.20);
+  margin-bottom: 48px;
 }
 
 .item {
-  font-size: 12px;
-  font-weight: 700;
+  padding-bottom: 12px;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--mid);
-  transition: color 0.15s ease;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.40);
+  text-decoration: none;
+  transition: color 0.1s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
 .item:hover {
@@ -21,4 +24,5 @@
 
 .itemActive {
   color: var(--white);
+  border-bottom: 2px solid #fff;
 }

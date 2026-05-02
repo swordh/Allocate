@@ -1,19 +1,19 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { getCompany } from '@/lib/queries/company'
+import { getCategories } from '@/lib/queries/categories'
 import CompanySettingsForm from '@/components/settings/CompanySettingsForm'
 
-/**
- * Settings › Company — Server Component.
- * Fetches company data server-side and passes it to the client form.
- */
 export default async function CompanySettingsPage() {
   const session = await getVerifiedSession()
+  if (session.role !== 'admin') redirect('/settings/account')
   const company = await getCompany(session.activeCompanyId)
 
   if (!company) {
     notFound()
   }
 
-  return <CompanySettingsForm name={company.name} />
+  const categories = await getCategories(session.activeCompanyId)
+
+  return <CompanySettingsForm name={company.name} categories={categories} />
 }

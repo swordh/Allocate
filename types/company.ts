@@ -1,10 +1,18 @@
-export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled'
-export type Plan = 'basic' | 'small' | 'mid' | 'large' | 'enterprise'
+export interface CompanyPreferences {
+  bookingTimeSlotMinutes: number
+  autoCheckout: boolean
+  autoCheckin: boolean
+  timezone: string
+}
+
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'incomplete' | 'canceled'
+export type Plan = 'starter'
 export type BillingInterval = 'month' | 'year'
 
 export interface Subscription {
   status: SubscriptionStatus
   plan: Plan
+  stripeSubscriptionId?: string
   currentPeriodEnd: string        // ISO string
   limits: { equipment: number; users: number }
   trialEnd?: string               // ISO string
@@ -19,4 +27,5 @@ export interface Company {
   createdBy: string
   stripeCustomerId: string
   subscription: Subscription
+  preferences?: CompanyPreferences
 }

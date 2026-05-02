@@ -10,7 +10,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
  * would corrupt historical booking records.
  *
  * Before deactivating, this function queries for active or upcoming bookings
- * that reference this equipment (endDate >= today, status in pending/confirmed/checked_out).
+ * that reference this equipment (endDate >= today, status in pending/ready/checked_out).
  * The array-contains + in filter combination is unsupported by Firestore, so we
  * filter by equipmentIds array-contains + endDate range and filter status in memory.
  *
@@ -77,7 +77,7 @@ export const deactivateEquipment = onCall({ region: 'europe-west1', cors: true, 
   // Firestore does not support array-contains combined with 'in' in the same query,
   // so we query by equipmentIds array-contains + endDate range, then filter
   // by status in memory.
-  const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked_out']);
+  const ACTIVE_STATUSES = new Set(['pending', 'ready', 'checked_out']);
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const bookingsSnap = await db
@@ -100,10 +100,45 @@ export const deactivateEquipment = onCall({ region: 'europe-west1', cors: true, 
     };
   }
 
-  // ── Soft delete ────────────────────────────────────────────────────────────
-  await equipmentRef.update({
-    active: false,
-    deactivatedAt: FieldValue.serverTimestamp(),
+  // ── Soft delete with atomic counter decrement ──────────────────────────────
+  const counterRef = db.doc(`companies/${companyId}/_meta/equipmentCount`);
+
+  await db.runTransaction(async (tx) => {
+    // Read phase — read equipment doc (to get current active state) and
+    // counter doc before any writes.
+    const [equipSnap, counterSnap] = await Promise.all([
+      tx.get(equipmentRef),
+      tx.get(counterRef),
+    ]);
+
+    // Re-verify existence inside the transaction.
+    if (!equipSnap.exists) {
+      throw new HttpsError('not-found', 'Equipment not found.');
+    }
+
+    const wasActive = equipSnap.data()!.active as boolean;
+
+    // Write phase.
+    tx.update(equipmentRef, {
+      active: false,
+      deactivatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (!counterSnap.exists) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Equipment counter not initialized. Run the backfill migration first.',
+      );
+    }
+
+    // Decrement the counter only when the equipment was truly active.
+    // If it was already inactive this is idempotent — no decrement.
+    if (wasActive) {
+      tx.update(counterRef, {
+        count: FieldValue.increment(-1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   logger.info('deactivateEquipment: equipment deactivated', {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createPortalSession } from '@/actions/subscription'
+import { createPortalSession, createCheckoutSession } from '@/actions/subscription'
 import type { Subscription } from '@/types'
 import styles from './SubscriptionView.module.css'
 
@@ -10,11 +10,7 @@ interface SubscriptionViewProps {
 }
 
 const PLAN_LABELS: Record<string, string> = {
-  basic:      'Basic',
-  small:      'Small',
-  mid:        'Mid',
-  large:      'Large',
-  enterprise: 'Enterprise',
+  starter: 'Starter',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,9 +27,19 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
   async function handleManage() {
     setLoading(true)
     setError(null)
-
     const result = await createPortalSession()
+    if ('url' in result) {
+      window.location.href = result.url
+    } else {
+      setError(result.error)
+      setLoading(false)
+    }
+  }
 
+  async function handleSubscribe(interval: 'month' | 'year') {
+    setLoading(true)
+    setError(null)
+    const result = await createCheckoutSession(interval)
     if ('url' in result) {
       window.location.href = result.url
     } else {
@@ -47,9 +53,30 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
       <div className={styles.heading}>Settings</div>
       <div className={styles.subHeading}>Subscription</div>
 
-      {subscription === null ? (
+      {subscription === null || subscription.status === 'canceled' ? (
         <div className={styles.noSubscription}>
-          <p className={styles.noSubText}>No active subscription.</p>
+          <p className={styles.noSubText}>
+            {subscription?.status === 'canceled' ? 'Your subscription has been canceled.' : 'No active subscription.'}
+          </p>
+          {error && <div className={styles.errorBanner}>{error}</div>}
+          <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+            <button
+              className={styles.btnManage}
+              onClick={() => handleSubscribe('month')}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? 'Redirecting…' : 'Subscribe Monthly'}
+            </button>
+            <button
+              className={styles.btnManage}
+              onClick={() => handleSubscribe('year')}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? 'Redirecting…' : 'Subscribe Yearly'}
+            </button>
+          </div>
         </div>
       ) : (
         <>

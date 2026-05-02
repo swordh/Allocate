@@ -107,6 +107,28 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
     notes = rawNotes;
   }
 
+  // Three-value semantics: undefined = not sent (keep existing), null = clear to
+  // all-day, string matching HH:MM = new value. Invalid strings are treated as null.
+  const rawStartTime = request.data.startTime;
+  const startTime: string | null | undefined =
+    rawStartTime === undefined
+      ? undefined
+      : rawStartTime === null
+        ? null
+        : typeof rawStartTime === 'string' && /^\d{2}:\d{2}$/.test(rawStartTime)
+          ? rawStartTime
+          : null;
+
+  const rawEndTime = request.data.endTime;
+  const endTime: string | null | undefined =
+    rawEndTime === undefined
+      ? undefined
+      : rawEndTime === null
+        ? null
+        : typeof rawEndTime === 'string' && /^\d{2}:\d{2}$/.test(rawEndTime)
+          ? rawEndTime
+          : null;
+
   const uid = request.auth.uid;
   const isAdmin = request.auth.token.role === 'admin';
   const db = getFirestore();
@@ -138,6 +160,8 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
     const effectiveItems = items ?? booking.items;
     const effectiveStartDate = startDate ?? booking.startDate;
     const effectiveEndDate = endDate ?? booking.endDate;
+    const effectiveStartTime = startTime === undefined ? (booking.startTime ?? null) : startTime;
+    const effectiveEndTime = endTime === undefined ? (booking.endTime ?? null) : endTime;
 
     // Cross-validate final date pair.
     if (effectiveEndDate < effectiveStartDate) {
@@ -169,10 +193,10 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
           );
         }
 
-        if (equipment.trackingType === 'individual' && item.quantity !== 1) {
+        if (equipment.trackingType === 'serialized' && item.quantity !== 1) {
           throw new HttpsError(
             'invalid-argument',
-            `Equipment "${equipment.name}" is individually tracked; quantity must be 1.`,
+            `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
           );
         }
 
@@ -195,8 +219,12 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
       }
     }
 
-    // ── Conflict detection if dates or items changed ───────────────────────
-    const datesChanged = startDate !== undefined || endDate !== undefined;
+    // ── Conflict detection if dates, times, or items changed ─────────────────
+    const datesChanged =
+      startDate !== undefined ||
+      endDate !== undefined ||
+      startTime !== undefined ||
+      endTime !== undefined;
     const itemsChanged = items !== undefined;
 
     if (datesChanged || itemsChanged) {
@@ -208,6 +236,8 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
         effectiveStartDate,
         effectiveEndDate,
         bookingId, // exclude this booking from its own conflict check
+        effectiveStartTime,
+        effectiveEndTime,
       );
 
       if (conflictResult.hasConflict) {
@@ -231,6 +261,8 @@ export const updateBooking = onCall({ region: 'europe-west1', cors: true, invoke
     if (notes !== undefined) updateData.notes = notes;
     if (startDate !== undefined) updateData.startDate = startDate;
     if (endDate !== undefined) updateData.endDate = endDate;
+    if (startTime !== undefined) updateData.startTime = startTime;
+    if (endTime !== undefined) updateData.endTime = endTime;
     if (items !== undefined) {
       updateData.items = items;
       updateData.equipmentIds = extractEquipmentIds(items);

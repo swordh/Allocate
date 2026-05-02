@@ -1,0 +1,125 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--black);
+  color: var(--on-surface);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.wordmark {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--white);
+  text-decoration: none;
+}
+
+.main {
+  flex: 1;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 64px 24px 96px;
+}
+
+.label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--outline);
+  margin-bottom: 12px;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--white);
+  margin-bottom: 8px;
+}
+
+.updated {
+  font-size: 0.75rem;
+  color: var(--outline);
+  margin-bottom: 56px;
+}
+
+.section {
+  margin-bottom: 48px;
+}
+
+.section h2 {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--outline);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.section p,
+.section li {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--on-surface-variant);
+}
+
+.section p + p {
+  margin-top: 12px;
+}
+
+.section ul {
+  padding-left: 20px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.section a:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-top: 1px solid var(--outline-variant);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(145, 145, 145, 0.5);
+}
+
+.footerLinks {
+  display: flex;
+  gap: 24px;
+}
+
+.footerLinks a {
+  color: rgba(145, 145, 145, 0.5);
+  text-decoration: none;
+  transition: color 0.1s;
+}
+
+.footerLinks a:hover {
+  color: var(--white);
+}

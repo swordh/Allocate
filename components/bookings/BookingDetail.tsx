@@ -3,9 +3,9 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { cancelBooking, approveBooking } from '@/actions/bookings'
+import { cancelBooking, approveBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
 import BookingStatusBadge from './BookingStatusBadge'
-import type { Booking, Equipment, Role } from '@/types'
+import type { Booking, Equipment, Role, UserProfile } from '@/types'
 import styles from './BookingDetail.module.css'
 
 interface BookingDetailProps {
@@ -13,6 +13,7 @@ interface BookingDetailProps {
   equipment: Equipment[]
   sessionUid: string
   role: Role
+  userProfile?: UserProfile | null
 }
 
 /**
@@ -24,18 +25,22 @@ export default function BookingDetail({
   equipment,
   sessionUid,
   role,
+  userProfile,
 }: BookingDetailProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [actionError, setActionError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
+  const [pickedItems, setPickedItems] = useState<Set<string>>(new Set())
 
   const isOwner  = booking.userId === sessionUid
   const isAdmin  = role === 'admin'
   const canCancel =
     (isOwner || isAdmin) &&
     (booking.status === 'pending' || booking.status === 'confirmed')
+  const canCheckOut = isAdmin && booking.status === 'confirmed'
+  const canCheckIn  = isAdmin && booking.status === 'checked_out'
   const canEdit =
     (isOwner || isAdmin) &&
     (booking.status === 'pending' || booking.status === 'confirmed')
@@ -43,6 +48,9 @@ export default function BookingDetail({
     (isAdmin || booking.approverId === sessionUid) &&
     booking.status === 'pending' &&
     booking.approvalStatus === 'pending'
+
+  const canPickList =
+    booking.status === 'confirmed' || booking.status === 'checked_out'
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -56,6 +64,30 @@ export default function BookingDetail({
         setActionError(result.error)
       } else {
         router.push('/bookings')
+      }
+    })
+  }
+
+  function handleCheckOut() {
+    setActionError(null)
+    startTransition(async () => {
+      const result = await checkOutBooking(booking.id)
+      if (result.error) {
+        setActionError(result.error)
+      } else {
+        router.refresh()
+      }
+    })
+  }
+
+  function handleCheckIn() {
+    setActionError(null)
+    startTransition(async () => {
+      const result = await checkInBooking(booking.id)
+      if (result.error) {
+        setActionError(result.error)
+      } else {
+        router.refresh()
       }
     })
   }
@@ -82,6 +114,18 @@ export default function BookingDetail({
         setShowRejectForm(false)
         router.refresh()
       }
+    })
+  }
+
+  function togglePickedItem(key: string) {
+    setPickedItems((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
     })
   }
 
@@ -122,7 +166,7 @@ export default function BookingDetail({
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <Link href="/bookings" className={styles.backLink}>
-            ← Bookings
+            &larr; Bookings
           </Link>
           <h1 className={styles.title}>{booking.projectName}</h1>
           <div className={styles.meta}>
@@ -130,13 +174,15 @@ export default function BookingDetail({
               status={booking.status}
               approvalStatus={booking.approvalStatus}
             />
-            <span className={styles.bookedBy}>Booked by {booking.userName}</span>
+            <span className={styles.bookedBy}>
+              Booked by {userProfile?.name ?? booking.userName}
+            </span>
           </div>
         </div>
         <div className={styles.headerRight}>
           {canEdit && (
             <Link
-              href={`/bookings/${booking.id}/edit`}
+              href={`/bookings/${booking.id}?edit=1`}
               className={styles.editLink}
             >
               Edit
@@ -150,48 +196,65 @@ export default function BookingDetail({
       )}
 
       <div className={styles.body}>
-        {/* Details */}
+        {/* Left column: pick list + ancillary info */}
         <div className={styles.details}>
-          {/* Dates */}
+          {/* Pick List */}
           <div className={styles.section}>
-            <div className={styles.sectionLabel}>Date Range</div>
-            <div className={styles.sectionValue}>{dateRange}</div>
-          </div>
-
-          {/* Equipment list */}
-          <div className={styles.section}>
-            <div className={styles.sectionLabel}>
-              Equipment ({booking.items.length})
+            <div className={styles.pickListHeader}>
+              <div className={styles.sectionLabel}>Pick List</div>
+              {canPickList && (
+                <div className={styles.pickListProgress}>
+                  {pickedItems.size} / {booking.items.length} items
+                </div>
+              )}
             </div>
-            <ul className={styles.itemList}>
-              {booking.items.map((item) => {
+            <ul className={styles.pickList}>
+              {booking.items.map((item, index) => {
+                const key = `${item.equipmentId}-${index}`
                 const eq = findEquipment(item.equipmentId)
+                const isPicked = pickedItems.has(key)
+                const unit = eq?.units?.find((u) => u.id === item.unitId) ?? null
+
                 return (
-                  <li key={item.equipmentId} className={styles.item}>
-                    <span className={styles.itemName}>
-                      {eq?.name ?? item.equipmentId}
+                  <li
+                    key={key}
+                    className={`${styles.pickItem} ${canPickList ? styles.pickItemInteractive : ''}`}
+                    onClick={() => canPickList && togglePickedItem(key)}
+                  >
+                    <span
+                      className={`${styles.pickCheckbox} ${isPicked ? styles.pickCheckboxChecked : ''}`}
+                      aria-hidden="true"
+                    >
+                      {isPicked && <span className={styles.pickCheckIcon}>&#10003;</span>}
                     </span>
-                    <span className={styles.itemQty}>
-                      {item.quantity > 1 ? `×${item.quantity}` : ''}
+                    <span className={styles.pickItemContent}>
+                      <span
+                        className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
+                      >
+                        {eq?.name ?? item.equipmentId}
+                      </span>
+                      <span className={styles.pickItemMeta}>
+                        {eq?.category ?? ''}
+                        {eq?.trackingType === 'quantity' && item.quantity > 1
+                          ? <span className={styles.pickItemQty}>&times;{item.quantity}</span>
+                          : null}
+                        {eq?.trackingType === 'serialized' && unit
+                          ? (
+                            <span className={styles.pickItemUnit}>
+                              {unit.label}
+                              {unit.serialNumber ? ` · ${unit.serialNumber}` : ''}
+                            </span>
+                          )
+                          : null}
+                      </span>
                     </span>
-                    {eq?.requiresApproval && (
-                      <span className={styles.approvalTag}>Requires approval</span>
-                    )}
                   </li>
                 )
               })}
             </ul>
           </div>
 
-          {/* Notes */}
-          {booking.notes && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Notes</div>
-              <div className={styles.sectionValue}>{booking.notes}</div>
-            </div>
-          )}
-
-          {/* Rejection reason */}
+          {/* Rejection reason — hidden for MVP
           {booking.approvalStatus === 'rejected' && booking.rejectionReason && (
             <div className={styles.section}>
               <div className={styles.sectionLabel}>Rejection Reason</div>
@@ -200,6 +263,7 @@ export default function BookingDetail({
               </div>
             </div>
           )}
+          */}
 
           {/* Cancellation info */}
           {booking.status === 'cancelled' && booking.cancelledAt && (
@@ -230,9 +294,35 @@ export default function BookingDetail({
           </div>
         </div>
 
-        {/* Actions panel */}
+        {/* Right column: summary + actions */}
         <div className={styles.actions}>
-          {/* Approve / Reject */}
+          {/* Date range */}
+          <div className={styles.actionSection}>
+            <div className={styles.sectionLabel}>Date Range</div>
+            <div className={styles.sectionValue}>{dateRange}</div>
+          </div>
+
+          {/* Time */}
+          {(booking.startTime || booking.endTime) && (
+            <div className={styles.actionSection}>
+              <div className={styles.sectionLabel}>Time</div>
+              <div className={styles.sectionValue}>
+                {booking.startTime ?? '—'} &rarr; {booking.endTime ?? '—'}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {booking.notes && (
+            <div className={styles.actionSection}>
+              <div className={styles.sectionLabel}>Notes</div>
+              <div className={styles.sectionValue}>{booking.notes}</div>
+            </div>
+          )}
+
+          <div className={styles.actionDivider} />
+
+          {/* Approve / Reject — hidden for MVP, re-enable in Phase 5
           {canApprove && (
             <div className={styles.approvalSection}>
               <div className={styles.approvalLabel}>Approval Required</div>
@@ -276,6 +366,28 @@ export default function BookingDetail({
                 </div>
               )}
             </div>
+          )} */}
+
+          {/* Check out */}
+          {canCheckOut && (
+            <button
+              className={styles.checkOutBtn}
+              onClick={handleCheckOut}
+              disabled={isPending}
+            >
+              Check Out
+            </button>
+          )}
+
+          {/* Check in */}
+          {canCheckIn && (
+            <button
+              className={styles.checkInBtn}
+              onClick={handleCheckIn}
+              disabled={isPending}
+            >
+              Check In
+            </button>
           )}
 
           {/* Cancel booking */}

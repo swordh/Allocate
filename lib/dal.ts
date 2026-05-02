@@ -34,6 +34,11 @@ export const getVerifiedSession = cache(async (): Promise<SessionClaims> => {
       redirect('/login')
     }
 
+    if (decoded['email_verified'] === false) {
+      console.error('[dal] session_email_unverified')
+      redirect('/verify-email')
+    }
+
     const claims: SessionClaims = {
       uid:             decoded.uid,
       email:           decoded.email ?? '',
@@ -42,7 +47,13 @@ export const getVerifiedSession = cache(async (): Promise<SessionClaims> => {
     }
 
     return claims
-  } catch {
+  } catch (err) {
+    // Re-throw Next.js redirect errors so they propagate to the framework.
+    // In production, redirect() throws an error with a NEXT_REDIRECT digest.
+    // In test, the mock throws Error('REDIRECT:…'). Both must pass through.
+    const digest = (err as { digest?: string }).digest ?? ''
+    const msg    = err instanceof Error ? err.message : ''
+    if (digest.startsWith('NEXT_REDIRECT') || msg.startsWith('REDIRECT:')) throw err
     // Do not log the raw error — Firebase session errors can contain tokens or emails.
     console.error('[dal] session_cookie_invalid')
     redirect('/login')

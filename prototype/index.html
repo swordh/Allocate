@@ -1,173 +1,210 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Allocate — Prototype Index</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALLOCATE — Prototype Index</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  @font-face {
-    font-family: 'General Sans';
-    src: url('../public/fonts/GeneralSans-Variable.woff2') format('woff2-variations');
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --black: #080808;
-    --white: #F0EDE8;
-    --dim: #2A2A2A;
-    --mid: #4A4A4A;
-    --rule: #161616;
-    --accent: #EECC02;
-    --repair: #cc3333;
-  }
-  body {
-    font-family: 'General Sans', system-ui, sans-serif;
-    background: var(--black);
-    color: var(--white);
-    font-size: 16px;
-    font-weight: 300;
-    min-height: 100vh;
-  }
-  .proto-bar {
-    background: #111;
-    padding: 8px 16px;
-    font-size: 11px;
-    color: #666;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .proto-bar a { color: #666; text-decoration: none; }
-  .proto-bar a:hover { color: var(--white); }
-  .proto-bar a.active { color: var(--accent); }
-  .wrapper {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 80px 48px;
-  }
-  .logo {
-    font-size: clamp(90px, 11vw, 148px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 0.88;
-    margin-bottom: 16px;
-  }
-  .sub {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 80px;
-  }
-  .section-label {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 24px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-    margin-bottom: 1px;
-  }
-  .card {
-    background: var(--black);
-    padding: 32px;
-    text-decoration: none;
-    color: var(--white);
-    display: block;
-    transition: background 0.1s;
-  }
-  .card:hover {
-    background: var(--dim);
-  }
-  .card:hover .card-arrow { color: var(--accent); }
-  .card-num {
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 16px;
-  }
-  .card-title {
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    text-transform: uppercase;
-    margin-bottom: 8px;
-    line-height: 1.1;
-  }
-  .card-desc {
-    font-size: 13px;
-    color: var(--mid);
-    line-height: 1.5;
-    font-weight: 300;
-    margin-bottom: 24px;
-  }
-  .card-arrow {
-    font-size: 18px;
-    color: var(--mid);
-    font-weight: 700;
-  }
-  .card-tag {
-    display: inline-block;
-    font-size: 9px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    border: 1px solid var(--dim);
-    padding: 3px 8px;
-    color: var(--mid);
-    margin-bottom: 12px;
-  }
+  @import url('https://fonts.cdnfonts.com/css/general-sans');
+  body { font-family: 'General Sans', sans-serif; background-color: #080808; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #080808; }
+  ::-webkit-scrollbar-thumb { background: #474747; }
 </style>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#ffffff",
+          "primary-container": "#d4d4d4",
+          "secondary": "#F0EDE8",
+          "tertiary": "#EECC02",
+          "error": "#ffb4ab",
+          "background": "#080808",
+          "surface": "#080808",
+          "surface-container-lowest": "#0E0E0E",
+          "surface-container-low": "#1C1B1B",
+          "surface-container": "#201f1f",
+          "surface-container-high": "#262525",
+          "surface-container-highest": "#353534",
+          "on-surface": "#FFFFFF",
+          "on-surface-variant": "#c6c6c6",
+          "outline": "#919191",
+          "outline-variant": "#474747",
+          "tertiary-container": "#a88f00",
+          "error-container": "#93000a",
+          "on-primary": "#1a1c1c",
+          "on-secondary": "#1c1c19",
+          "on-tertiary": "#221b00",
+          "on-background": "#e5e2e1",
+          "surface-variant": "#353534",
+          "inverse-surface": "#e5e2e1",
+          "surface-bright": "#3a3939",
+        },
+        fontFamily: {
+          "headline": ["General Sans", "sans-serif"],
+          "body": ["General Sans", "sans-serif"],
+          "label": ["General Sans", "sans-serif"]
+        },
+        borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
+      },
+    },
+  }
+</script>
 </head>
-<body>
-<div class="proto-bar">
-  <span>ALLOCATE PROTOTYPE</span>
-  <a href="index.html" class="active">index</a>
-  <a href="login.html">login</a>
-  <a href="signup.html">signup</a>
-  <a href="trial-started.html">trial-started</a>
-  <a href="bookings.html">bookings</a>
-  <a href="bookings-week.html">week</a>
-  <a href="bookings-month.html">month</a>
-  <a href="equipment.html">equipment</a>
-  <a href="booking-new.html">new-booking</a>
-  <a href="booking-detail.html">booking-detail</a>
-  <a href="settings-company.html">settings-company</a>
-  <a href="settings-team.html">settings-team</a>
-  <a href="settings-subscription.html">settings-subscription</a>
-</div>
-<div class="wrapper">
-  <div class="logo">ALLOCATE</div>
-  <div class="sub">Prototype Index — All Screens</div>
+<body class="bg-surface text-on-surface">
 
-  <div class="section-label">Authentication</div>
-  <div class="grid" style="margin-bottom:32px;">
-    <a href="login.html" class="card">
-      <div class="card-num">01</div>
-      <div class="card-tag">Auth</div>
-      <div class="card-title">Login</div>
-      <div class="card-desc">Sign in to your Allocate workspace. Email + password form with accent CTA.</div>
-      <div class="card-arrow">→</div>
-    </a>
-    <a href="signup.html" class="card">
-      <div class="card-num">02</div>
-      <div class="card-tag">Auth</div>
-      <div class="card-title">Create Account</div>
-      <div class="card-desc">New workspace signup. Company name, your name, email and password fields. 14-day free trial starts immediately.</div>
-      <div class="card-arrow">→</div>
-    </a>
+<!-- Proto bar -->
+<div style="background:#111;padding:8px 16px;font-size:11px;color:#666;border-bottom:1px solid #1a1a1a;display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;">
+  <span style="color:#474747;">ALLOCATE PROTOTYPE</span>
+  <a href="index.html" style="color:#EECC02;text-decoration:none;">index</a>
+  <a href="login.html" style="color:#666;text-decoration:none;">login</a>
+  <a href="signup.html" style="color:#666;text-decoration:none;">signup</a>
+  <a href="trial-started.html" style="color:#666;text-decoration:none;">trial-started</a>
+  <a href="bookings.html" style="color:#666;text-decoration:none;">bookings</a>
+  <a href="bookings-week.html" style="color:#666;text-decoration:none;">week</a>
+  <a href="bookings-month.html" style="color:#666;text-decoration:none;">month</a>
+  <a href="equipment.html" style="color:#666;text-decoration:none;">equipment</a>
+  <a href="booking-new.html" style="color:#666;text-decoration:none;">new-booking</a>
+  <a href="booking-detail.html" style="color:#666;text-decoration:none;">booking-detail</a>
+  <a href="settings-company.html" style="color:#666;text-decoration:none;">settings-company</a>
+  <a href="settings-team.html" style="color:#666;text-decoration:none;">settings-team</a>
+  <a href="settings-subscription.html" style="color:#666;text-decoration:none;">settings-subscription</a>
+</div>
+
+<div class="px-6 py-16 md:py-24 max-w-5xl mx-auto">
+
+  <!-- Logo -->
+  <div class="font-bold tracking-tight leading-none text-white uppercase mb-4" style="font-size:clamp(80px,11vw,140px);letter-spacing:-0.04em;line-height:0.88;">ALLOCATE</div>
+  <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-20">Prototype Index — All Screens</div>
+
+  <!-- Authentication -->
+  <div class="mb-2">
+    <div class="flex items-center gap-4 mb-6">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Authentication</span>
+      <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-[1px] bg-outline-variant/20 border border-outline-variant/20 mb-8">
+      <a href="login.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">01</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">Auth</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Login</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Sign in to your Allocate workspace. Email + password form with accent CTA.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="signup.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">02</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">Auth</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Create Account</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">New workspace signup. Company name, your name, email and password. 14-day free trial starts immediately.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="trial-started.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">03</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">Auth</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Trial Started</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Success state after signup. Shows trial expiry and CTA to enter the app.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Bookings -->
+  <div class="mb-2">
+    <div class="flex items-center gap-4 mb-6">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Bookings</span>
+      <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-[1px] bg-outline-variant/20 border border-outline-variant/20 mb-8">
+      <a href="bookings.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">04</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Bookings List</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Main bookings view. Grouped by date with status indicators and stats row.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="bookings-week.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">05</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Week View</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">7-day calendar grid with time-positioned booking blocks and current time indicator.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="bookings-month.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">06</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Month View</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Monthly calendar with booking dots per day. Today highlighted in tertiary.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="booking-new.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">07</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">New Booking</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Booking form with equipment checklist (unit + qty tracking) and sticky summary panel.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="booking-detail.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">08</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Booking Detail</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Single booking view with equipment checklist, notes, and admin approve/reject actions.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Equipment -->
+  <div class="mb-2">
+    <div class="flex items-center gap-4 mb-6">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Equipment</span>
+      <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-[1px] bg-outline-variant/20 border border-outline-variant/20 mb-8">
+      <a href="equipment.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">09</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Equipment</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Equipment list by category. Unit tracking (with status dots) and quantity tracking. Add/edit/deactivate actions.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="mb-2">
+    <div class="flex items-center gap-4 mb-6">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-outline">Settings</span>
+      <div class="h-[1px] flex-grow bg-outline-variant/20"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-[1px] bg-outline-variant/20 border border-outline-variant/20 mb-8">
+      <a href="settings-company.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">10</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Settings — Company</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Company name and logo settings. Save with success/error banners.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="settings-team.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">11</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Settings — Team</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Team member list with roles. Invite by email. "You" badge on current user row.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+      <a href="settings-subscription.html" class="bg-surface p-8 block hover:bg-surface-container-low transition-colors group">
+        <div class="text-[10px] font-bold uppercase tracking-widest text-outline mb-4">12</div>
+        <div class="text-[9px] font-bold uppercase tracking-widest text-outline border border-outline/30 px-2 py-0.5 inline-block mb-3">App</div>
+        <div class="text-2xl font-bold uppercase tracking-tight mb-2">Settings — Subscription</div>
+        <div class="text-sm text-outline font-light leading-relaxed mb-6">Current plan, trial status and manage subscription CTA.</div>
+        <div class="text-lg font-bold text-outline group-hover:text-tertiary transition-colors">→</div>
+      </a>
+    </div>
   </div>
 
 </div>

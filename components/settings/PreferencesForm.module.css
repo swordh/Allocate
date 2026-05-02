@@ -1,0 +1,215 @@
+.container {
+  max-width: 512px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Section header (label + line) ─────────────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.sectionHeaderLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--outline);
+  white-space: nowrap;
+}
+
+.sectionHeaderLine {
+  height: 1px;
+  flex-grow: 1;
+  background: rgba(71, 71, 71, 0.20);
+}
+
+/* ── Box ─────────────────────────────────────────── */
+
+.box {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--surface-container-low);
+  padding: 24px;
+}
+
+.boxDescription {
+  font-size: 0.75rem;
+  color: var(--outline);
+  margin: 0 0 20px;
+}
+
+/* ── Time slot radio group ───────────────────────── */
+
+.radioGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radioGroup {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.radioOption {
+  border: 1px solid rgba(71, 71, 71, 0.30);
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--outline);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+  border-radius: 0;
+}
+
+.radioOptionNoLeftBorder {
+  border-left: none;
+}
+
+.radioOption:hover {
+  color: var(--white);
+}
+
+.radioOptionActive {
+  border-color: var(--white) !important;
+  color: var(--white);
+  background: var(--surface-container-high);
+}
+
+/* ── Timezone select ─────────────────────────────── */
+
+.timezoneSelect {
+  width: 100%;
+  background: var(--surface-container-high);
+  border: 1px solid rgba(71, 71, 71, 0.30);
+  border-radius: 0;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 10px 12px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.timezoneSelect:hover,
+.timezoneSelect:focus {
+  border-color: rgba(255, 255, 255, 0.30);
+}
+
+.timezoneSelect option {
+  background: var(--surface-container-high);
+  color: var(--white);
+}
+
+/* ── Toggle rows ─────────────────────────────────── */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.20);
+}
+
+.toggleRowLast {
+  border-bottom: none;
+}
+
+.toggleLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ── Toggle switch ───────────────────────────────── */
+
+.toggle {
+  width: 40px;
+  height: 20px;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: var(--surface-container-high);
+  border: 1px solid rgba(71, 71, 71, 0.30);
+  border-radius: 0;
+  padding: 0;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.toggleOn {
+  background: var(--tertiary);
+  border-color: var(--tertiary);
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  background: var(--outline);
+  transition: left 0.1s, background 0.1s;
+}
+
+.toggleOn .toggleThumb {
+  left: 23px;
+  background: #221b00;
+}
+
+/* ── Error / success banners ──────────────────────── */
+
+.errorBanner {
+  font-size: var(--font-body);
+  color: var(--error);
+  border: 1px solid var(--error);
+  padding: 12px 16px;
+}
+
+.successBanner {
+  font-size: var(--font-body);
+  color: var(--tertiary);
+  border: 1px solid rgba(238, 204, 2, 0.30);
+  padding: 12px 16px;
+}
+
+/* ── Save button ──────────────────────────────────── */
+
+.btnSave {
+  display: inline-block;
+  align-self: flex-start;
+  background: var(--tertiary);
+  color: #221b00;
+  border: none;
+  border-radius: 0;
+  padding: 16px 32px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btnSave:hover:not(:disabled) {
+  background: #a88f00;
+}
+
+.btnSave:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

@@ -1,26 +1,35 @@
-import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
+import { adminDb } from '@/lib/firebase-admin'
 import PrimaryNav from '@/components/nav/PrimaryNav'
-import LogoRow from '@/components/nav/LogoRow'
+import { MobileBottomNav } from '@/components/nav/MobileBottomNav'
+import styles from './app-layout.module.css'
 
-/**
- * Authenticated layout — Server Component.
- * Verifies session on every render; redirects to /login if invalid.
- * Renders PrimaryNav and LogoRow, passing serializable role and activePath.
- */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getVerifiedSession()
 
-  // Read the current pathname from request headers so we can pass it as a
-  // serializable prop to the Server Component PrimaryNav (no usePathname needed).
-  const headersList = await headers()
-  const activePath = headersList.get('x-pathname') ?? '/'
+  const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
+  if (!companyDoc.exists) {
+    console.error('[layout] company document not found', { companyId: session.activeCompanyId })
+    redirect('/subscribe')
+  }
+
+  const companyData = companyDoc.data()
+  const subStatus = companyData?.subscription?.status
+  const trialEnd = companyData?.subscription?.trialEnd ?? null
+
+  // Allow: active subscription, or a real Stripe trial (trialEnd is set by webhook on subscription.created)
+  // Block: initial auto-trial (trialEnd=null), abandoned checkout, past_due, canceled
+  const isRealTrial = subStatus === 'trialing' && trialEnd !== null
+  if (subStatus !== 'active' && !isRealTrial) redirect('/subscribe')
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
-      <PrimaryNav role={session.role} activePath={activePath} />
-      <LogoRow />
-      {children}
+      <PrimaryNav role={session.role} />
+      <main className={styles.main}>
+        {children}
+      </main>
+      <MobileBottomNav role={session.role} />
     </div>
   )
 }

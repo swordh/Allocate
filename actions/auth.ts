@@ -1,9 +1,11 @@
 'use server'
 
 import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { PLAN_LIMITS } from '@/lib/subscription'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
 
@@ -20,15 +22,6 @@ export async function createSession(idToken: string): Promise<void> {
   try {
     const decodedToken = await adminAuth.verifyIdToken(idToken)
     uid = decodedToken.uid
-
-    // Refuse to issue a session for tokens that are missing custom claims.
-    // This catches the window between user creation and setupNewCompany completing,
-    // and also catches a force-refresh that hasn't picked up new claims yet.
-    const activeCompanyId = decodedToken['activeCompanyId']
-    if (typeof activeCompanyId !== 'string' || activeCompanyId === '') {
-      console.error('[actions/auth]', { uid: uid.slice(0, 8) + '...', action: 'create_session_rejected_missing_claims' })
-      throw new Error('Token is missing activeCompanyId claim')
-    }
 
     const sessionCookie = await adminAuth.createSessionCookie(idToken, {
       expiresIn: SESSION_DURATION_MS,
@@ -102,8 +95,8 @@ export async function setupNewCompany(
     hadTrial:         false,
     subscription: {
       status:            'trialing',
-      plan:              'basic',
-      limits:            { equipment: 50, users: 5 },
+      plan:              'starter',
+      limits:            PLAN_LIMITS.starter,
       currentPeriodEnd:  null,
       trialEnd:          null,
       cancelAtPeriodEnd: false,
@@ -123,43 +116,42 @@ export async function setupNewCompany(
     joinedAt: FieldValue.serverTimestamp(),
   })
 
+  const companyMemberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
+  batch.set(companyMemberRef, {
+    uid,
+    name:      userName,
+    email,
+    role:      'admin',
+    joinedAt:  FieldValue.serverTimestamp(),
+    companyId,
+  })
+
   for (const name of DEFAULT_CATEGORIES) {
     const catRef = adminDb.collection(`companies/${companyId}/categories`).doc()
     batch.set(catRef, { name, createdAt: FieldValue.serverTimestamp(), isDefault: true })
   }
 
+  // Initialize the equipment counter so createEquipment never hard-errors on a
+  // missing counter document for new companies.
+  const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
+  batch.set(counterRef, { count: 0, updatedAt: FieldValue.serverTimestamp() })
+
   try {
     await batch.commit()
-    console.log('[actions/auth]', { action: 'company_batch_committed', companyId })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/auth]', { error: message, action: 'company_batch_failed' })
+  } catch {
     throw new Error('Failed to create company')
   }
 
-  // Batch succeeded — now set custom claims. If this fails the Firestore docs
-  // are already written, so attempt a best-effort cleanup of the company document
-  // before re-throwing, to avoid leaving the account in an unrecoverable state.
   try {
+    // ALLOWED from Server Actions: activeCompanyId, role (from verified membership)
+    // FORBIDDEN from Server Actions: subscription.*, stripeCustomerId, hadTrial
+    // Subscription fields are written ONLY by Cloud Functions/webhooks.
     await adminAuth.setCustomUserClaims(uid, { activeCompanyId: companyId, role: 'admin' })
-  } catch (claimsErr) {
-    const message = claimsErr instanceof Error ? claimsErr.message : String(claimsErr)
-    console.error('[actions/auth]', { error: message, companyId, action: 'claims_failed_attempting_cleanup' })
-
-    // Best-effort: delete the company doc so the user can retry signup cleanly.
-    // Membership and user docs are also cleaned up where possible.
-    try {
-      await adminDb.collection('companies').doc(companyId).delete()
-      console.log('[actions/auth]', { companyId, action: 'cleanup_company_deleted' })
-    } catch (cleanupErr) {
-      const cleanupMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-      console.error('[actions/auth]', { error: cleanupMessage, companyId, action: 'cleanup_failed' })
-    }
-
+  } catch {
     throw new Error('Claims failed')
   }
 
-  console.log('[actions/auth]', { action: 'company_created', companyId })
+  console.log('[actions/auth]', { action: 'company_created' })
 }
 
 /**
@@ -180,24 +172,20 @@ export async function deleteSession(): Promise<void> {
 /**
  * Switches the active company for the current user.
  * Validates that a membership document exists for the target companyId before
- * updating custom claims.
+ * updating claims.
  *
- * This action only updates claims on the Auth user. It does NOT re-issue the
- * session cookie — the caller MUST complete the handshake:
+ * After setting new custom claims, all existing refresh tokens are revoked so
+ * that any outstanding session cookie carrying the old activeCompanyId cannot
+ * be used to verify sessions server-side. Without revocation the stale cookie
+ * remains valid for up to 14 days.
  *
- *   1. Call this Server Action (updates claims server-side).
- *   2. Client calls `auth.currentUser.getIdToken(true)` to force a token refresh
- *      so the new activeCompanyId claim is included.
- *   3. Client calls `createSession(freshIdToken)` to re-issue the session cookie.
- *   4. Client navigates to /bookings (or calls `revalidatePath` after step 3).
- *
- * Skipping steps 2–3 leaves the session cookie carrying the old activeCompanyId
- * until it expires — a cross-tenant data exposure risk.
- *
- * @returns The new role for the switched company, so the client can pass it
- *          as additional context if needed before the token refresh completes.
+ * IMPORTANT: After calling this action the caller MUST:
+ *   1. Call `auth.currentUser.getIdToken(true)` to force a token refresh
+ *   2. Call `createSession(freshIdToken)` to re-issue the session cookie
+ * Skipping these steps leaves the client with no valid session cookie and the
+ * user will be redirected to /login on the next server request.
  */
-export async function switchCompany(companyId: string): Promise<{ role: string }> {
+export async function switchCompany(companyId: string): Promise<void> {
   const session = await getVerifiedSession()
   const uid = session.uid
 
@@ -222,13 +210,16 @@ export async function switchCompany(companyId: string): Promise<{ role: string }
       role,
     })
 
-    console.log('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, role, action: 'claims_updated_awaiting_session_reissue' })
+    // Revoke all existing refresh tokens so the old session cookie (which
+    // carries the previous activeCompanyId) is immediately invalidated.
+    // Client must call getIdToken(true) then createSession() after this to
+    // get a valid session cookie.
+    await adminAuth.revokeRefreshTokens(uid)
 
-    // Do NOT call revalidatePath here — the session cookie still carries the old
-    // activeCompanyId at this point. The caller must force-refresh the ID token
-    // and call createSession() before navigating. Revalidation happens naturally
-    // when the client navigates after the new session cookie is issued.
-    return { role }
+    console.log('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, role, action: 'company_switched' })
+
+    // Invalidate all cached server data so the new company's data is loaded.
+    revalidatePath('/', 'layout')
   } catch (err) {
     const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
     console.error('[actions/auth]', { code, action: 'switch_company_failed' })

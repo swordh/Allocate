@@ -1,0 +1,153 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+}
+
+.wordmark {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(71, 71, 71, 0.2);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(145, 145, 145, 0.5);
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────────── */
+
+.card {
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  margin: 0;
+}
+
+.companyName {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--white);
+  margin: 0;
+}
+
+.email {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--on-surface-variant);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.btnPrimary {
+  display: block;
+  background: var(--white);
+  color: var(--on-primary);
+  border: none;
+  padding: 14px 24px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btnPrimary:hover {
+  background: var(--secondary);
+}
+
+.btnSecondary {
+  display: block;
+  background: transparent;
+  color: var(--white);
+  border: 1px solid rgba(71, 71, 71, 0.4);
+  padding: 14px 24px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.btnSecondary:hover {
+  border-color: var(--white);
+}
+
+.note {
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--on-surface-variant);
+  margin: 0;
+  margin-top: 8px;
+}
+
+/* ── Invalid state ─────────────────────────────────────────────────────────── */
+
+.invalidLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--error);
+  margin: 0;
+}
+
+.invalidReason {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--on-surface-variant);
+  margin: 0;
+}

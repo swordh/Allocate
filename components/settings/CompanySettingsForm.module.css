@@ -1,46 +1,32 @@
 .container {
-  padding: var(--booking-pad-h);
-  max-width: 640px;
-}
-
-.heading {
-  font-size: var(--font-booking-title);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  margin-bottom: 4px;
-  color: var(--white);
-}
-
-.subHeading {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--mid);
-  margin-bottom: 48px;
+  max-width: 512px;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 40px;
 }
 
-.fieldGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* ── Company Name ─────────────────────────────────── */
+
+.companyNameSection {
+  margin-bottom: 0;
+}
+
+.companyNameField {
+  border-bottom: 1px solid rgba(71, 71, 71, 0.30);
 }
 
 .fieldLabel {
   display: block;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--mid);
+  color: var(--outline);
+  padding-top: 16px;
+  padding-bottom: 4px;
 }
 
 .fieldInput {
@@ -48,73 +34,420 @@
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--rule);
+  outline: none;
   color: var(--white);
   font-family: inherit;
   font-size: 20px;
-  font-weight: 400;
-  padding: 8px 0 12px;
-  caret-color: var(--accent);
-  transition: border-bottom-color 0.15s ease;
+  font-weight: 500;
+  padding-bottom: 16px;
+  caret-color: var(--tertiary);
 }
 
-.fieldInput:focus {
-  outline: none;
-  border-bottom-color: var(--mid);
-}
+/* ── Section header (label + horizontal rule) ─────── */
 
-/* Logo upload placeholder */
-.logoUploadDisabled {
+.sectionHeader {
   display: flex;
   align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--rule);
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
-.logoUploadText {
-  font-size: var(--font-body);
-  font-weight: 300;
-  color: var(--mid);
+.sectionHeaderLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--outline);
+  white-space: nowrap;
 }
 
-/* Error banner */
+.sectionHeaderLine {
+  height: 1px;
+  flex-grow: 1;
+  background: rgba(71, 71, 71, 0.20);
+}
+
+/* ── Custom Fields ────────────────────────────────── */
+
+.customFieldsSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.customFieldsDescription {
+  font-size: 0.75rem;
+  color: var(--outline);
+  margin: 0 0 24px;
+}
+
+/* Category <details> */
+
+.categoryDetails {
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.categorySummary {
+  background: var(--surface-container-low);
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background 0.1s;
+}
+
+.categorySummary::-webkit-details-marker {
+  display: none;
+}
+
+.categorySummary:hover {
+  background: var(--surface-container-high);
+}
+
+.categoryName {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.btnRemoveCategory {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+
+.btnRemoveCategory:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Category body (inside <details>) */
+
+.categoryBody {
+  background: var(--surface-container-low);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Field rows */
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fieldNameInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  caret-color: var(--tertiary);
+}
+
+.fieldNameInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.fieldDefaultInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.50);
+  font-family: inherit;
+  font-size: 0.75rem;
+  text-align: right;
+  caret-color: var(--tertiary);
+}
+
+.fieldDefaultInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.btnRemoveField {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+  font-family: inherit;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+
+.btnRemoveField:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Add field row */
+
+.addFieldRow {
+  padding: 12px 24px;
+}
+
+.btnAddField {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.20);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+
+.btnAddField:hover {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+/* Add category button */
+
+.btnAddCategory {
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 10px 24px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--white);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  align-self: flex-start;
+}
+
+.btnAddCategory:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Inline add-category form */
+
+.addCategoryInline {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.addCategoryInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.40);
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 4px 0 8px;
+  caret-color: var(--tertiary);
+}
+
+.addCategoryInput::placeholder {
+  color: rgba(255, 255, 255, 0.30);
+}
+
+.btnAddCategoryConfirm {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-tertiary);
+  background: var(--tertiary);
+  border: none;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  flex-shrink: 0;
+}
+
+.btnAddCategoryConfirm:hover:not(:disabled) {
+  background: #a88f00;
+}
+
+.btnAddCategoryConfirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnAddCategoryCancel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.40);
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+
+.btnAddCategoryCancel:hover {
+  color: var(--white);
+}
+
+/* ── Error / success banners ──────────────────────── */
+
 .errorBanner {
   font-size: var(--font-body);
-  color: var(--repair);
-  border: 1px solid var(--repair);
+  color: var(--error);
+  border: 1px solid var(--error);
   padding: 12px 16px;
 }
 
-/* Success banner */
 .successBanner {
   font-size: var(--font-body);
-  color: var(--accent);
-  border: 1px solid rgba(238, 204, 2, 0.3);
+  color: var(--tertiary);
+  border: 1px solid rgba(238, 204, 2, 0.30);
   padding: 12px 16px;
 }
 
-/* Save button */
+/* ── Save button ──────────────────────────────────── */
+
 .btnSave {
   display: inline-block;
   align-self: flex-start;
-  background: var(--accent);
-  color: var(--black);
+  background: var(--tertiary);
+  color: #221b00;
   border: none;
-  padding: 16px 40px;
+  border-radius: 0;
+  padding: 16px 32px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background 0.1s;
 }
 
 .btnSave:hover:not(:disabled) {
-  opacity: 0.85;
+  background: #a88f00;
 }
 
 .btnSave:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ── Field type selector ──────────────────────────── */
+
+.fieldTypeSelect {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  outline: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.fieldTypeSelect:hover {
+  border-color: rgba(255, 255, 255, 0.40);
+}
+
+.fieldTypeSelect:focus {
+  border-color: var(--tertiary);
+}
+
+/* ── Boolean default toggle ──────────────────────── */
+
+.booleanToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.booleanToggleLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.50);
+  user-select: none;
+}
+
+.toggle {
+  width: 32px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.1s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.toggleOn {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.toggleOn::after {
+  transform: translateX(16px);
+  background: var(--white);
+}
+
+/* ── List options input ──────────────────────────── */
+
+.fieldOptionsInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.50);
+  font-family: inherit;
+  font-size: 0.75rem;
+  text-align: right;
+  caret-color: var(--tertiary);
+}
+
+.fieldOptionsInput::placeholder {
+  color: rgba(255, 255, 255, 0.20);
 }
