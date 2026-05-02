@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className={styles.main}>
         {children}
       </main>
-      <MobileBottomNav role={session.role} />
+      <MobileBottomNav />
     </div>
   )
 }

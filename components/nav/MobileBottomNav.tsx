@@ -3,11 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import styles from './MobileBottomNav.module.css'
 
-interface MobileBottomNavProps {
-  role: 'admin' | 'member' | 'viewer'
-}
-
-export function MobileBottomNav({ role }: MobileBottomNavProps) {
+export function MobileBottomNav() {
   const pathname = usePathname()
   const isActive = (path: string) => pathname.startsWith(path)
   return (
