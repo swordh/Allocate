@@ -45,6 +45,11 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: NEXT_PUBLIC_APP_URL
+    value: "https://allocate--allocate-e0735.europe-west4.hosted.app"
+    availability:
+      - BUILD
+      - RUNTIME
 
   # Stripe price IDs — non-secret, runtime only. Replace placeholders with real price IDs from Stripe Dashboard before enabling checkout.
   - variable: STRIPE_PRICE_STARTER_MONTHLY
