@@ -130,9 +130,9 @@ function wireTransaction(
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => {
+    (async (cb: (tx: unknown) => Promise<unknown>) => {
       await cb(tx)
-    },
+    }) as never,
   )
 
   // db.doc() returns a stub with the path set so tx.get() can look it up.
