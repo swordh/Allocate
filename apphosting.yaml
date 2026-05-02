@@ -11,43 +11,48 @@ runConfig:
 env:
   # Public Firebase client config — needed at build time so it ends up in the client bundle.
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    value: ""
+    value: "AIzaSyDlmC62B2RS-zO_YseqbcOs4gpzKaiVd-A"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    value: ""
+    value: "allocate-e0735.firebaseapp.com"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-    value: ""
+    value: "allocate-e0735"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    value: ""
+    value: "allocate-e0735.firebasestorage.app"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-    value: ""
+    value: "5366151572"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    value: ""
+    value: "1:5366151572:web:f63b276838880215053781"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: "G-02WW3DDDPD"
     availability:
       - BUILD
       - RUNTIME
 
-  # Stripe price IDs — non-secret, runtime only.
+  # Stripe price IDs — non-secret, runtime only. Replace placeholders with real price IDs from Stripe Dashboard before enabling checkout.
   - variable: STRIPE_PRICE_STARTER_MONTHLY
-    value: ""
+    value: "price_REPLACE_ME_MONTHLY"
     availability:
       - RUNTIME
   - variable: STRIPE_PRICE_STARTER_YEARLY
-    value: ""
+    value: "price_REPLACE_ME_YEARLY"
     availability:
       - RUNTIME
 
