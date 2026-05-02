@@ -54,31 +54,28 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
       const cat = categories.find((c) => c.name === newCategory)
       const templates = cat?.customFieldTemplates ?? []
       setCustomFields(
-        templates.map((t) => {
-          const baseField = {
-            id: t.id,
-            label: t.label,
-            type: t.type as any,
-          }
+        templates.map((t): CustomField => {
+          const id = t.id
+          const label = t.label
 
           switch (t.type) {
             case 'text':
-              return { ...baseField, value: t.defaultValue || '' }
+              return { id, label, type: 'text', value: String(t.defaultValue ?? '') }
             case 'boolean':
-              return { ...baseField, value: t.defaultValue === true || t.defaultValue === 'true' }
+              return { id, label, type: 'boolean', value: t.defaultValue === true || t.defaultValue === 'true' }
             case 'list':
               return {
-                ...baseField,
-                options: t.options || [],
-                value: t.defaultValue || (t.options?.[0] || '')
+                id, label, type: 'list',
+                options: t.options ?? [],
+                value: String(t.defaultValue ?? t.options?.[0] ?? ''),
               }
             case 'value':
               return {
-                ...baseField,
-                value: { min: parseInt(String(t.defaultValue) || '0') || 0, max: null }
+                id, label, type: 'value',
+                value: { min: parseInt(String(t.defaultValue ?? '0')) || 0, max: null },
               }
             default:
-              return { ...baseField, value: '' }
+              return { id, label, type: 'text', value: '' }
           }
         })
       )

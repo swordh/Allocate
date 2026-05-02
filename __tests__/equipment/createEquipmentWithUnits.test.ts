@@ -73,7 +73,7 @@ const VALID_FIELDS = {
 const VALID_UNIT = {
   label: 'Alexa #1',
   serialNumber: 'K1.0012345',
-  status: 'available' as const,
+  status: 'ok' as const,
   notes: null,
   availableForBooking: true,
 }
@@ -122,9 +122,9 @@ function wireCreateEquipmentTransaction(
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => {
+    (async (cb: (tx: unknown) => Promise<unknown>) => {
       await cb(tx)
-    },
+    }) as never,
   )
 
   vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -290,7 +290,7 @@ describe('input validation', () => {
     })
 
     it('accepts all valid status values', async () => {
-      const validStatuses = ['available', 'checked_out', 'needs_repair'] as const
+      const validStatuses = ['ok', 'needs_repair', 'limited_operations'] as const
 
       for (const status of validStatuses) {
         vi.clearAllMocks()
@@ -446,7 +446,7 @@ describe('happy path — with units', () => {
 
     const units = [
       { ...VALID_UNIT, label: 'Alexa #1' },
-      { ...VALID_UNIT, label: 'Alexa #2', status: 'checked_out' as const },
+      { ...VALID_UNIT, label: 'Alexa #2', status: 'ok' as const },
       { ...VALID_UNIT, label: 'Alexa #3', status: 'needs_repair' as const },
     ]
 
@@ -460,7 +460,7 @@ describe('happy path — with units', () => {
     const getBatch = wireBatch()
 
     const units = [
-      { ...VALID_UNIT, label: 'Alexa #1', status: 'available' as const },
+      { ...VALID_UNIT, label: 'Alexa #1', status: 'ok' as const },
       { ...VALID_UNIT, label: 'Alexa #2', status: 'needs_repair' as const },
     ]
 
@@ -472,7 +472,7 @@ describe('happy path — with units', () => {
 
     expect(writtenLabels).toContain('Alexa #1')
     expect(writtenLabels).toContain('Alexa #2')
-    expect(writtenStatuses).toContain('available')
+    expect(writtenStatuses).toContain('ok')
     expect(writtenStatuses).toContain('needs_repair')
   })
 

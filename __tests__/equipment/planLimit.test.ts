@@ -163,9 +163,9 @@ function wireTransactionWithCounter(opts: {
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => {
+    (async (cb: (tx: unknown) => Promise<unknown>) => {
       await cb(tx)
-    },
+    }) as never,
   )
 
   vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -232,9 +232,9 @@ function wireDeactivateTransaction(opts: {
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => {
+    (async (cb: (tx: unknown) => Promise<unknown>) => {
       await cb(tx)
-    },
+    }) as never,
   )
 
   vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -380,7 +380,7 @@ describe('createEquipment — counter document plan limit', () => {
       const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
 
       vi.mocked(adminDb.runTransaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
+        (async (cb: (tx: unknown) => Promise<unknown>) => {
           callCount++
           const currentCount = callCount === 1 ? 24 : 25 // second call sees updated counter
 
@@ -408,7 +408,7 @@ describe('createEquipment — counter document plan limit', () => {
           }
 
           await cb(tx)
-        },
+        }) as never,
       )
 
       vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -454,7 +454,7 @@ describe('createEquipment — counter document plan limit', () => {
     const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
 
     vi.mocked(adminDb.runTransaction).mockImplementation(
-      async (cb: (tx: unknown) => Promise<unknown>) => {
+      (async (cb: (tx: unknown) => Promise<unknown>) => {
         callCount++
         const currentCount = callCount === 1 ? 24 : 25 // second call sees updated counter
 
@@ -482,7 +482,7 @@ describe('createEquipment — counter document plan limit', () => {
         }
 
         await cb(tx)
-      },
+      }) as never,
     )
 
     vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -631,7 +631,7 @@ describe('deactivateEquipment — counter document decrement', () => {
       expect(result).toEqual({ success: true })
       // Counter update call should NOT include the counter path
       const counterUpdateCalls = tx.update.mock.calls.filter(
-        ([ref]: [{ path: string }]) => ref.path?.includes('_meta/equipmentCount'),
+        (args: unknown[]) => (args[0] as { path?: string })?.path?.includes('_meta/equipmentCount'),
       )
       expect(counterUpdateCalls).toHaveLength(0)
     },
@@ -666,9 +666,9 @@ describe('deactivateEquipment — counter document decrement', () => {
       }
 
       vi.mocked(adminDb.runTransaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
+        (async (cb: (tx: unknown) => Promise<unknown>) => {
           await cb(tx)
-        },
+        }) as never,
       )
 
       vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
@@ -696,7 +696,7 @@ describe('deactivateEquipment — counter document decrement', () => {
 
       expect(result).toEqual({ success: true })
       const counterUpdates = tx.update.mock.calls.filter(
-        ([ref]: [{ path: string }]) => ref.path?.includes('_meta/equipmentCount'),
+        (args: unknown[]) => (args[0] as { path?: string })?.path?.includes('_meta/equipmentCount'),
       )
       expect(counterUpdates).toHaveLength(0)
     },

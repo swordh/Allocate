@@ -102,9 +102,9 @@ function wireCreateEquipmentTransaction(
   }
 
   vi.mocked(adminDb.runTransaction).mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => {
+    (async (cb: (tx: unknown) => Promise<unknown>) => {
       await cb(tx)
-    },
+    }) as never,
   )
 
   vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
