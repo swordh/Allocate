@@ -217,7 +217,7 @@ export default function CompanySettingsForm({
                         type="text"
                         className={styles.fieldDefaultInput}
                         placeholder="Default value"
-                        value={field.defaultValue || ''}
+                        value={typeof field.defaultValue === 'string' ? field.defaultValue : ''}
                         onChange={(e) =>
                           handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
                         }
@@ -259,7 +259,7 @@ export default function CompanySettingsForm({
                         type="text"
                         className={styles.fieldDefaultInput}
                         placeholder="Min value (e.g., 0)"
-                        value={field.defaultValue || ''}
+                        value={typeof field.defaultValue === 'string' ? field.defaultValue : ''}
                         onChange={(e) =>
                           handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
                         }

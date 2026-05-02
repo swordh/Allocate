@@ -172,7 +172,7 @@ export default function BookingForm({
     setConflictResult(null)
   }
 
-  function sortedSerializedUnits(eq: Equipment): typeof eq.units {
+  function sortedSerializedUnits(eq: Equipment): NonNullable<typeof eq.units> {
     const bookable = (eq.units ?? []).filter(u => u.availableForBooking !== false)
     const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
     const available   = bookable.filter(u => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))

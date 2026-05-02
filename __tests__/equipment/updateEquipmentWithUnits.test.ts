@@ -74,7 +74,7 @@ const UNIT_UPDATE = {
   id: 'unit-1',
   label: 'Alexa #1',
   serialNumber: 'K1.0012345',
-  status: 'available' as const,
+  status: 'ok' as const,
   notes: null,
   availableForBooking: true,
 }
@@ -297,7 +297,7 @@ describe('unit updates', () => {
       expect.objectContaining({
         label: 'Alexa #1',
         serialNumber: 'K1.0012345',
-        status: 'available',
+        status: 'ok',
         availableForBooking: true,
       })
     )
@@ -306,7 +306,7 @@ describe('unit updates', () => {
   it('handles multiple unit updates in one batch', async () => {
     const units = [
       { ...UNIT_UPDATE, id: 'unit-1', label: 'Alexa #1' },
-      { ...UNIT_UPDATE, id: 'unit-2', label: 'Alexa #2', status: 'checked_out' as const },
+      { ...UNIT_UPDATE, id: 'unit-2', label: 'Alexa #2', status: 'ok' as const },
     ]
 
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, units, [], [])
@@ -323,7 +323,7 @@ describe('unit creates', () => {
     const newUnit = {
       label: 'Alexa #4',
       serialNumber: null,
-      status: 'available' as const,
+      status: 'ok' as const,
       notes: null,
       availableForBooking: true,
     }
@@ -334,7 +334,7 @@ describe('unit creates', () => {
       expect.anything(),
       expect.objectContaining({
         label: 'Alexa #4',
-        status: 'available',
+        status: 'ok',
         active: true,
         equipmentId: EQUIPMENT_ID,
         companyId: COMPANY_ID,
