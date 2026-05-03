@@ -1,4 +1,5 @@
 import BookingForm from './BookingForm'
+import { PageHeader } from '@/components/nav/PageHeader'
 import type { Booking, Equipment } from '@/types'
 import styles from './BookingFormPage.module.css'
 
@@ -22,12 +23,9 @@ export default function BookingFormPage({
   bookingId,
 }: BookingFormPageProps) {
   return (
-    <main className={styles.main}>
+    <>
+      <PageHeader title="BOOKING" />
       <div className={styles.contentWidth}>
-        <header className={styles.header}>
-          <h1 className={styles.h1}>BOOKING</h1>
-          <div className={styles.divider} />
-        </header>
         <BookingForm
           companyId={companyId}
           equipment={equipment}
@@ -38,6 +36,6 @@ export default function BookingFormPage({
           bookingId={bookingId}
         />
       </div>
-    </main>
+    </>
   )
 }
