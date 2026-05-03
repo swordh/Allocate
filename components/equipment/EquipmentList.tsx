@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import { deactivateEquipment, toggleEquipmentAvailability } from '@/actions/equipment'
 import EquipmentEmpty from './EquipmentEmpty'
@@ -50,8 +51,12 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const { equipment: liveEquipment, loading, error } = useEquipment(companyId)
   const equipment = loading ? initialEquipment : liveEquipment
 
-  // Unified modal state
-  const [unifiedModalOpen, setUnifiedModalOpen] = useState(false)
+  // ?add=1 in the URL (from the mobile menu CTA) opens the add modal on mount.
+  const searchParams = useSearchParams()
+  const openOnMount = role === 'admin' && searchParams.get('add') === '1'
+
+  // Unified modal state — pre-open if ?add=1 was present on first render
+  const [unifiedModalOpen, setUnifiedModalOpen] = useState(openOnMount)
   const [unifiedModalEquipment, setUnifiedModalEquipment] = useState<Equipment | undefined>(undefined)
 
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
@@ -110,15 +115,14 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
 
   return (
     <>
-      {/* Page header with Add Equipment button for admins */}
-      <div className={styles.header}>
-        <h1 className={styles.pageTitle}>Equipment</h1>
-        {role === 'admin' && (
-          <button className={styles.addBtn} onClick={openAddModal}>
-            Add Equipment
+      {/* Mobile-only primary action under the page title */}
+      {role === 'admin' && (
+        <div className={styles.mobileAction}>
+          <button className={styles.mobileActionBtn} onClick={openAddModal}>
+            New Equipment
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {actionError && (
         <div className={styles.actionError}>

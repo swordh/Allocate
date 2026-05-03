@@ -129,7 +129,8 @@ export default function Booking4WeekView({
         <button className={styles.todayBtn} onClick={goToToday}>Today</button>
       </div>
 
-      {/* Grid */}
+      {/* Grid — wrapped in scroll container so mobile never causes body overflow */}
+      <div className={styles.gridScroll}>
       <div className={styles.grid}>
         {/* Weekday headers */}
         {WEEKDAYS.map((wd, i) => (
@@ -175,6 +176,7 @@ export default function Booking4WeekView({
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
