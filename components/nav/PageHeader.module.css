@@ -32,3 +32,10 @@
 .headerWithNav {
   margin-bottom: 0;
 }
+
+@media (max-width: 768px) {
+  .header {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}

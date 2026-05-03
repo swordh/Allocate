@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { adminDb } from '@/lib/firebase-admin'
 import PrimaryNav from '@/components/nav/PrimaryNav'
-import { MobileBottomNav } from '@/components/nav/MobileBottomNav'
+import { MobileMenu } from '@/components/nav/MobileMenu'
 import styles from './app-layout.module.css'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className={styles.main}>
         {children}
       </main>
-      <MobileBottomNav />
+      <MobileMenu role={session.role} />
     </div>
   )
 }
