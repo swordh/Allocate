@@ -86,6 +86,25 @@
   border-color: rgba(255, 255, 255, 0.4);
 }
 
+.fullDayBtnActive {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #221b00;
+  background: var(--white, #ffffff);
+  border: 1px solid var(--white, #ffffff);
+  padding: 3px 8px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+
+.fullDayBtnActive:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
 .label {
   display: block;
   font-size: 10px;

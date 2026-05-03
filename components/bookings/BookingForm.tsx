@@ -65,8 +65,10 @@ export default function BookingForm({
   const [projectName, setProjectName]   = useState(booking?.projectName ?? '')
   const [startDate, setStartDate]       = useState(booking?.startDate ?? defaultStartDate)
   const [endDate, setEndDate]           = useState(booking?.endDate ?? defaultEndDate)
-  const [startTime, setStartTime]       = useState(booking?.startTime ?? '')
-  const [endTime, setEndTime]           = useState(booking?.endTime ?? '')
+  // For a new booking default to 09:00–17:00 so the toggle starts OFF.
+  // For edit: preserve the saved value (null/undefined → '' = all-day = toggle ON).
+  const [startTime, setStartTime]       = useState(booking ? (booking.startTime ?? '') : '09:00')
+  const [endTime, setEndTime]           = useState(booking ? (booking.endTime ?? '') : '17:00')
   const [notes, setNotes]               = useState(booking?.notes ?? '')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(initialItems)
   const [error, setError]               = useState<string | null>(null)
@@ -389,68 +391,85 @@ export default function BookingForm({
           {/* Times — hidden when Full Day (-1) */}
           {timeSlotMinutes !== -1 && (
             <div className={styles.field}>
-              <div className={styles.sectionLabelRow}>
-                <div className={styles.sectionLabel}>Time</div>
-                <button
-                  type="button"
-                  className={styles.fullDayBtn}
-                  onClick={() => { setStartTime(''); setEndTime('') }}
-                >
-                  Full day
-                </button>
-              </div>
-              <div className={styles.dateRow}>
-                <div>
-                  <label className={styles.label} htmlFor="startHour">Start Time</label>
-                  <div className={styles.inputWrap}>
-                    <div className={styles.timeRow}>
-                      <select
-                        id="startHour"
-                        className={styles.timeSelect}
-                        value={startHour}
-                        onChange={(e) => handleStartHour(e.target.value)}
+              {(() => {
+                const isFullDay = !startTime && !endTime
+                return (
+                  <>
+                    <div className={styles.sectionLabelRow}>
+                      <div className={styles.sectionLabel}>Time</div>
+                      <button
+                        type="button"
+                        className={isFullDay ? styles.fullDayBtnActive : styles.fullDayBtn}
+                        onClick={() => {
+                          if (isFullDay) {
+                            setStartTime('09:00')
+                            setEndTime('17:00')
+                          } else {
+                            setStartTime('')
+                            setEndTime('')
+                          }
+                        }}
                       >
-                        <option value="">—</option>
-                        {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
-                      </select>
-                      <span className={styles.timeSeparator}>:</span>
-                      <select
-                        className={styles.timeSelect}
-                        value={startMinute}
-                        onChange={(e) => handleStartMinute(e.target.value)}
-                        disabled={!startHour}
-                      >
-                        {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
+                        Full day
+                      </button>
                     </div>
-                  </div>
-                </div>
-                <div>
-                  <label className={styles.label} htmlFor="endHour">End Time</label>
-                  <div className={styles.inputWrap}>
-                    <div className={styles.timeRow}>
-                      <select
-                        id="endHour"
-                        className={styles.timeSelect}
-                        value={endHour}
-                        onChange={(e) => handleEndHour(e.target.value)}
-                      >
-                        <option value="">—</option>
-                        {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
-                      </select>
-                      <span className={styles.timeSeparator}>:</span>
-                      <select
-                        className={styles.timeSelect}
-                        value={endMinute}
-                        onChange={(e) => handleEndMinute(e.target.value)}
-                        disabled={!endHour}
-                      >
-                        {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    {!isFullDay && (
+                      <div className={styles.dateRow}>
+                        <div>
+                          <label className={styles.label} htmlFor="startHour">Start Time</label>
+                          <div className={styles.inputWrap}>
+                            <div className={styles.timeRow}>
+                              <select
+                                id="startHour"
+                                className={styles.timeSelect}
+                                value={startHour}
+                                onChange={(e) => handleStartHour(e.target.value)}
+                              >
+                                <option value="">—</option>
+                                {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
+                              </select>
+                              <span className={styles.timeSeparator}>:</span>
+                              <select
+                                className={styles.timeSelect}
+                                value={startMinute}
+                                onChange={(e) => handleStartMinute(e.target.value)}
+                                disabled={!startHour}
+                              >
+                                {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className={styles.label} htmlFor="endHour">End Time</label>
+                          <div className={styles.inputWrap}>
+                            <div className={styles.timeRow}>
+                              <select
+                                id="endHour"
+                                className={styles.timeSelect}
+                                value={endHour}
+                                onChange={(e) => handleEndHour(e.target.value)}
+                              >
+                                <option value="">—</option>
+                                {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
+                              </select>
+                              <span className={styles.timeSeparator}>:</span>
+                              <select
+                                className={styles.timeSelect}
+                                value={endMinute}
+                                onChange={(e) => handleEndMinute(e.target.value)}
+                                disabled={!endHour}
+                              >
+                                {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
 
