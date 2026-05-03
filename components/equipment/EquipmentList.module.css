@@ -1,34 +1,31 @@
-.header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+/* Mobile-only primary action button under the Equipment page title */
+.mobileAction {
+  display: none;
   margin-bottom: 32px;
 }
 
-.pageTitle {
-  font-size: 72px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.05em;
-  color: var(--white);
+@media (max-width: 768px) {
+  .mobileAction {
+    display: block;
+  }
 }
 
-.addBtn {
-  background: transparent;
-  color: var(--white);
-  padding: 10px 24px;
-  font-size: 10px;
+.mobileActionBtn {
+  background: var(--white);
+  color: var(--on-primary);
+  padding: 8px 20px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0;
+  border: none;
   cursor: pointer;
   transition: background 0.1s;
+  display: inline-block;
 }
 
-.addBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
+.mobileActionBtn:hover {
+  background: var(--secondary);
 }
 
 .actionError {

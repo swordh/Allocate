@@ -151,6 +151,8 @@
   align-items: center;
   gap: 0;
   width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .inviteInput {
@@ -164,8 +166,10 @@
   font-weight: 300;
   padding: 8px 0;
   width: 320px;
+  min-width: 0;
   border-radius: 0;
   transition: border-bottom-color 0.1s;
+  box-sizing: border-box;
 }
 
 .inviteInput:focus {
@@ -232,4 +236,39 @@
 .roleSelect:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding-left: 24px;
+    padding-right: 24px;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .inviteSection {
+    max-width: 100%;
+  }
+
+  .inviteForm {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .inviteInput {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .btnInvite {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .memberTable {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
@@ -148,18 +148,6 @@ function BookingBlock({ booking }: { booking: Booking }) {
 }
 
 // ---------------------------------------------------------------------------
-// Mobile helpers
-// ---------------------------------------------------------------------------
-
-function formatDayHeader(dateStr: string): { weekday: string; date: string } {
-  const d = new Date(dateStr + 'T00:00:00')
-  return {
-    weekday: d.toLocaleDateString('en-GB', { weekday: 'short' }).toUpperCase(),
-    date:    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -167,7 +155,6 @@ export default function BookingWeekView({
   companyId,
   initialBookings,
   weekNumber,
-  year,
   weekStart,
   weekEnd,
 }: BookingWeekViewProps) {
@@ -181,21 +168,6 @@ export default function BookingWeekView({
   const bookings = loading ? initialBookings : liveBookings
   const days     = useMemo(() => getDaysOfWeek(weekStart), [weekStart])
   const today    = todayString()
-
-  // Mobile single-day nav
-  const [selectedDay, setSelectedDay] = useState(days.includes(today) ? today : days[0])
-
-  function prevDay() {
-    const d = new Date(selectedDay + 'T00:00:00')
-    d.setDate(d.getDate() - 1)
-    setSelectedDay(toDateString(d))
-  }
-
-  function nextDay() {
-    const d = new Date(selectedDay + 'T00:00:00')
-    d.setDate(d.getDate() + 1)
-    setSelectedDay(toDateString(d))
-  }
 
   function bookingsForDay(dayStr: string): Booking[] {
     return bookings.filter(
@@ -237,41 +209,7 @@ export default function BookingWeekView({
         </button>
       </div>
 
-      {/* Mobile: single-day view */}
-      <div className={styles.mobileView}>
-        <div className={styles.mobileDayNav}>
-          <button className={styles.navBtn} onClick={prevDay}>←</button>
-          <div className={styles.mobileDayTitle}>
-            {(() => {
-              const h = formatDayHeader(selectedDay)
-              return (
-                <>
-                  <span className={styles.mobileDayWeekday}>{h.weekday}</span>
-                  <span className={`${styles.mobileDayDate} ${selectedDay === today ? styles.mobileDayDateToday : ''}`}>
-                    {h.date}
-                  </span>
-                </>
-              )
-            })()}
-          </div>
-          <button className={styles.navBtn} onClick={nextDay}>→</button>
-        </div>
-        <div className={styles.mobileDayBody}>
-          {bookingsForDay(selectedDay).length === 0 ? (
-            <div className={styles.mobileDayEmpty}>No bookings</div>
-          ) : (
-            bookingsForDay(selectedDay).map((booking) => (
-              <Link key={booking.id} href={`/bookings/${booking.id}`}
-                className={`${styles.mobileBlock} ${statusClass(booking.status)}`}
-              >
-                {booking.projectName}
-              </Link>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Desktop: time-grid calendar */}
+      {/* Time-grid calendar — horizontally scrollable on mobile */}
       <div className={styles.calWrap} ref={calWrapRef}>
         <div className={styles.calGrid}>
           {/* Header row: empty corner + 7 day headers */}

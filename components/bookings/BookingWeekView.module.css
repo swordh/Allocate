@@ -61,95 +61,23 @@
 }
 
 /* -----------------------------------------------------------------------
-   Mobile single-day view
-   ----------------------------------------------------------------------- */
-
-.mobileView {
-  display: flex;
-  flex-direction: column;
-}
-
-@media (min-width: 768px) {
-  .mobileView { display: none; }
-}
-
-.mobileDayNav {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px var(--booking-pad-h);
-  border-bottom: 1px solid var(--rule);
-}
-
-.mobileDayTitle {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-}
-
-.mobileDayWeekday {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: #919191;
-}
-
-.mobileDayDate {
-  font-size: 18px;
-  font-weight: 700;
-  color: #919191;
-}
-
-.mobileDayDateToday {
-  color: var(--accent);
-}
-
-.mobileDayBody {
-  padding: 16px var(--booking-pad-h);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 200px;
-}
-
-.mobileDayEmpty {
-  font-size: 12px;
-  color: #919191;
-  padding: 24px 0;
-}
-
-.mobileBlock {
-  display: block;
-  padding: 8px 10px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  text-decoration: none;
-}
-
-/* -----------------------------------------------------------------------
-   Desktop: time-grid calendar
+   Time-grid calendar — visible on all screen sizes, scrolls both axes
    ----------------------------------------------------------------------- */
 
 .calWrap {
-  display: none;
+  overflow-x: auto;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   max-height: calc(100vh - 260px);
   min-height: 500px;
 }
 
-@media (min-width: 768px) {
-  .calWrap { display: block; }
-}
-
 /* 8 columns: 64px time + 7 equal day columns */
+/* min-width ensures all 7 day columns stay usable — calWrap handles overflow-x */
 .calGrid {
   display: grid;
-  grid-template-columns: 64px repeat(7, 1fr);
+  grid-template-columns: 64px repeat(7, minmax(80px, 1fr));
+  min-width: 624px; /* 64 + 7×80 */
   border-left: 1px solid #1a1a1a;
 }
 
