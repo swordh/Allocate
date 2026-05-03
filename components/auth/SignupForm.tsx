@@ -222,14 +222,14 @@ export default function SignupForm() {
               type="button"
               onClick={() => setMode('create')}
             >
-              Skapa ett nytt företag
+              Create a new company
             </button>
             <button
               className={styles.modeCard}
               type="button"
               onClick={() => setMode('invite')}
             >
-              Jag har en inbjudningslänk
+              I have an invitation link
             </button>
           </div>
 
