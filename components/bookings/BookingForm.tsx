@@ -389,7 +389,16 @@ export default function BookingForm({
           {/* Times — hidden when Full Day (-1) */}
           {timeSlotMinutes !== -1 && (
             <div className={styles.field}>
-              <div className={styles.sectionLabel}>Time</div>
+              <div className={styles.sectionLabelRow}>
+                <div className={styles.sectionLabel}>Time</div>
+                <button
+                  type="button"
+                  className={styles.fullDayBtn}
+                  onClick={() => { setStartTime(''); setEndTime('') }}
+                >
+                  Full day
+                </button>
+              </div>
               <div className={styles.dateRow}>
                 <div>
                   <label className={styles.label} htmlFor="startHour">Start Time</label>
