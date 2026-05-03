@@ -5,7 +5,7 @@
   position: fixed;
   top: 12px;
   right: 16px;
-  z-index: 60;
+  z-index: 58;
   background: none;
   border: none;
   color: var(--white);
@@ -22,13 +22,17 @@
   }
 }
 
+.triggerHidden {
+  display: none !important;
+}
+
 /* ── Backdrop ──────────────────────────────────────────────────────────────── */
 
 .backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 55;
+  z-index: 59;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
 }
@@ -46,7 +50,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 56;
+  z-index: 60;
   width: 280px;
   background: var(--surface-container-low);
   border-left: 1px solid rgba(255, 255, 255, 0.1);

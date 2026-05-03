@@ -19,8 +19,8 @@ const TOP_NAV = [
 const BOOKINGS_ITEMS = [
   { label: 'List',    href: '/bookings/list' },
   { label: 'Week',    href: '/bookings/week' },
-  { label: 'Month',   href: '/bookings/month', disabled: true },
-  { label: '4 Weeks', href: '/bookings/4weeks', disabled: true },
+  { label: 'Month',   href: '/bookings/month' },
+  { label: '4 Weeks', href: '/bookings/4weeks' },
 ]
 
 // ── Settings sub-nav ──────────────────────────────────────────────────────────
@@ -73,9 +73,9 @@ export function MobileMenu({ role }: MobileMenuProps) {
 
   return (
     <>
-      {/* Hamburger trigger — only visible on mobile via CSS */}
+      {/* Hamburger trigger — only visible on mobile via CSS, hidden when sheet is open */}
       <button
-        className={styles.trigger}
+        className={`${styles.trigger} ${open ? styles.triggerHidden : ''}`}
         onClick={() => setOpen(true)}
         aria-label="Open navigation menu"
       >
@@ -128,28 +128,15 @@ export function MobileMenu({ role }: MobileMenuProps) {
           {isBookings && (
             <div className={styles.section}>
               <p className={styles.sectionLabel}>View</p>
-              {BOOKINGS_ITEMS.map((item) => {
-                if (item.disabled) {
-                  return (
-                    <span
-                      key={item.href}
-                      className={styles.navItem}
-                      style={{ opacity: 0.3, cursor: 'not-allowed' }}
-                    >
-                      {item.label}
-                    </span>
-                  )
-                }
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`${styles.navItem} ${isSubActive(item.href) ? styles.navItemActive : ''}`}
-                  >
-                    {item.label}
-                  </Link>
-                )
-              })}
+              {BOOKINGS_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`${styles.navItem} ${isSubActive(item.href) ? styles.navItemActive : ''}`}
+                >
+                  {item.label}
+                </Link>
+              ))}
             </div>
           )}
 
