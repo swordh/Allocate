@@ -7,7 +7,7 @@
 /* Mobile-only primary action button under the Bookings page title */
 .mobileNewBooking {
   display: none;
-  padding: 0 24px 32px;
+  padding: 0 0 32px;
 }
 
 @media (max-width: 768px) {
