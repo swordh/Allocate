@@ -1,34 +1,73 @@
-// Migration: rename trackingType 'serialized' → 'units' (issue #172)
-// Run once with: npx ts-node tools/migrate_serialized_to_units.ts
-// Prerequisites: GOOGLE_APPLICATION_CREDENTIALS set, or gcloud auth application-default login
+/**
+ * Migration: rename trackingType 'serialized' → 'units' (issue #172)
+ *
+ * Updates all equipment documents where trackingType === 'serialized' to 'units'.
+ * Scope: companies/{companyId}/equipment/{equipmentId}
+ *
+ * Run from the repo root:
+ *   node tools/migrate_serialized_to_units.js
+ * Prerequisites: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON in .env.local
+ */
 
 'use strict';
 
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore, WriteBatch } from 'firebase-admin/firestore';
+const fs = require('fs');
+const path = require('path');
 
 // ---------------------------------------------------------------------------
-// 1. Initialise Firebase Admin with Application Default Credentials
+// 1. Load .env.local (same pattern as migrate_unit_status.js)
 // ---------------------------------------------------------------------------
-initializeApp({
-  credential: applicationDefault(),
-  projectId: 'allocate-e0735',
-});
+const ENV_PATH = path.resolve(__dirname, '../.env.local');
+
+function loadEnvFile(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const vars = {};
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    vars[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+  }
+  return vars;
+}
+
+const env = loadEnvFile(ENV_PATH);
+const serviceAccountJson = env['FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON'];
+if (!serviceAccountJson) {
+  console.error('ERROR: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON not found in .env.local');
+  process.exit(1);
+}
+
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(serviceAccountJson);
+} catch (err) {
+  console.error('ERROR: Failed to parse FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON:', err.message);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// 2. Initialise Firebase Admin
+// ---------------------------------------------------------------------------
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+
+initializeApp({ credential: cert(serviceAccount) });
 
 const db = getFirestore();
-db.settings({ preferRest: false }); // use gRPC (default); remove if you hit auth issues with ADC
 
 // ---------------------------------------------------------------------------
-// 2. Constants
+// 3. Constants
 // ---------------------------------------------------------------------------
-const BATCH_SIZE = 499; // Firestore batched write max is 500 operations
+const BATCH_SIZE = 499;
 const OLD_VALUE = 'serialized';
 const NEW_VALUE = 'units';
 
 // ---------------------------------------------------------------------------
-// 3. Migration
+// 4. Migration
 // ---------------------------------------------------------------------------
-async function migrate(): Promise<void> {
+async function migrate() {
   console.log(`Migration started: trackingType '${OLD_VALUE}' → '${NEW_VALUE}'`);
   console.log('Listing companies...');
 
@@ -85,10 +124,9 @@ async function migrate(): Promise<void> {
       `  [${companyId}] ${equipmentSnapshot.size} equipment doc(s) checked — updating ${docsToUpdate.length}.`
     );
 
-    // Split into batches of BATCH_SIZE
     for (let i = 0; i < docsToUpdate.length; i += BATCH_SIZE) {
       const chunk = docsToUpdate.slice(i, i + BATCH_SIZE);
-      const batch: WriteBatch = db.batch();
+      const batch = db.batch();
 
       for (const docSnap of chunk) {
         batch.update(docSnap.ref, { trackingType: NEW_VALUE });
@@ -106,7 +144,6 @@ async function migrate(): Promise<void> {
           `    ERROR: Batch commit failed for company '${companyId}' (offset ${i}):`,
           err
         );
-        // Continue to next batch rather than aborting the entire migration
       }
     }
   }
