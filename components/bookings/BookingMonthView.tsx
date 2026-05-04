@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
@@ -100,6 +100,7 @@ export default function BookingMonthView({
   month,
 }: BookingMonthViewProps) {
   const router = useRouter()
+  const monthInputRef = useRef<HTMLInputElement>(null)
   const { start, end } = getMonthBounds(year, month)
 
   const { bookings: liveBookings, loading } = useBookings(companyId, {
@@ -133,7 +134,19 @@ export default function BookingMonthView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevYear, prevMonth)}>←</button>
-        <span className={styles.monthLabel}>{formatMonthYear(year, month)}</span>
+        <button className={styles.monthLabel} onClick={() => monthInputRef.current?.showPicker()}>
+          {formatMonthYear(year, month)}
+        </button>
+        <input
+          ref={monthInputRef}
+          type="month"
+          value={`${year}-${String(month).padStart(2, '0')}`}
+          onChange={(e) => {
+            const [y, m] = e.target.value.split('-').map(Number)
+            if (y && m) navigate(y, m)
+          }}
+          className={styles.hiddenDateInput}
+        />
         <button className={styles.navBtn} onClick={() => navigate(nextYear, nextMonth)}>→</button>
         <button
           className={styles.todayBtn}

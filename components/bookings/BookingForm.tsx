@@ -487,7 +487,7 @@ export default function BookingForm({
               </div>
             ) : (
               <div className={styles.equipmentList}>
-                {Array.from(grouped.entries()).map(([category, items]) => (
+                {Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([category, items]) => (
                   <section key={category} className={styles.category}>
                     <h2 className={styles.categoryLabel}>{category}</h2>
                     {items.map((eq) => {
