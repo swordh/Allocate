@@ -40,23 +40,31 @@ function docToUnit(doc: FirebaseFirestore.DocumentSnapshot): EquipmentUnit {
 }
 
 /**
- * Fetches active equipment for a company, sorted by category then name.
+ * Fetches equipment for a company, sorted by category then name.
  * Uses two parallel queries: parent equipment docs + collectionGroup units,
  * then stitches them together.
  * Wrapped in React.cache — multiple Server Components sharing the same
  * companyId in a single render pass incur only one Firestore read.
+ *
+ * Pass `includeInactive: true` to also return soft-deleted equipment and units.
+ * Default behaviour (false) returns only active items.
  */
-export const getEquipment = cache(async (companyId: string): Promise<Equipment[]> => {
+export const getEquipment = cache(async (
+  companyId: string,
+  opts?: { includeInactive?: boolean },
+): Promise<Equipment[]> => {
+  const includeInactive = opts?.includeInactive ?? false
+
   const [eqSnapshot, unitsSnapshot] = await Promise.all([
-    adminDb.collection('companies').doc(companyId).collection('equipment')
-      .where('active', '==', true)
-      .orderBy('category', 'asc')
-      .orderBy('name', 'asc')
-      .get(),
-    adminDb.collectionGroup('units')
-      .where('companyId', '==', companyId)
-      .where('active', '==', true)
-      .get(),
+    (() => {
+      const ref = adminDb.collection('companies').doc(companyId).collection('equipment')
+      const q = includeInactive ? ref : ref.where('active', '==', true)
+      return q.orderBy('category', 'asc').orderBy('name', 'asc').get()
+    })(),
+    (() => {
+      const ref = adminDb.collectionGroup('units').where('companyId', '==', companyId)
+      return (includeInactive ? ref : ref.where('active', '==', true)).get()
+    })(),
   ])
 
   const unitsMap = new Map<string, EquipmentUnit[]>()

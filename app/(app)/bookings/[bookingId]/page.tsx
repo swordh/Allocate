@@ -19,9 +19,8 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
   const sp = await searchParams
   const session = await getVerifiedSession()
 
-  const [booking, equipment] = await Promise.all([
+  const [booking] = await Promise.all([
     getBooking(session.activeCompanyId, bookingId),
-    getEquipment(session.activeCompanyId),
   ])
 
   if (!booking) notFound()
@@ -34,7 +33,11 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
   const isEditing = wantsEdit && canEdit
 
   if (isEditing) {
-    const company = await getCompany(session.activeCompanyId)
+    const [company, equipment] = await Promise.all([
+      getCompany(session.activeCompanyId),
+      // Booking form must only show active equipment so users can't re-book deleted items.
+      getEquipment(session.activeCompanyId),
+    ])
     const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
 
     return (
@@ -54,6 +57,9 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
   if (booking.userId) {
     userProfile = await getUserProfile(booking.userId)
   }
+
+  // Fetch with inactive so deleted equipment/units are still named in the pick list.
+  const equipment = await getEquipment(session.activeCompanyId, { includeInactive: true })
 
   return (
     <BookingDetail

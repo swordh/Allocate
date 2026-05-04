@@ -231,7 +231,11 @@ export default function BookingDetail({
                       <span
                         className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
                       >
-                        {eq?.name ?? item.equipmentId}
+                        {eq
+                          ? eq.active !== false
+                            ? eq.name
+                            : `${eq.name} (deleted)`
+                          : item.equipmentId}
                       </span>
                       <span className={styles.pickItemMeta}>
                         {eq?.category ?? ''}
@@ -241,7 +245,9 @@ export default function BookingDetail({
                         {eq?.trackingType === 'serialized' && unit
                           ? (
                             <span className={styles.pickItemUnit}>
-                              {unit.label}
+                              {unit.active !== false
+                                ? unit.label
+                                : `${unit.label} (deleted)`}
                               {unit.serialNumber ? ` · ${unit.serialNumber}` : ''}
                             </span>
                           )
