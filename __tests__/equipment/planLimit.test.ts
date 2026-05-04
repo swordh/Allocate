@@ -96,7 +96,7 @@ const VALID_FIELDS = {
   name: 'ARRI Alexa Mini LF',
   description: null,
   category: 'Camera',
-  trackingType: 'serialized' as const,
+  trackingType: 'units' as const,
   totalQuantity: 1,
   requiresApproval: false,
   approverId: null,

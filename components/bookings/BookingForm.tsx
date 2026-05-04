@@ -174,7 +174,7 @@ export default function BookingForm({
     setConflictResult(null)
   }
 
-  function sortedSerializedUnits(eq: Equipment): NonNullable<typeof eq.units> {
+  function sortedUnits(eq: Equipment): NonNullable<typeof eq.units> {
     const bookable = (eq.units ?? []).filter(u => u.availableForBooking !== false)
     const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
     const available   = bookable.filter(u => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
@@ -182,8 +182,8 @@ export default function BookingForm({
     return [...available, ...unavailable]
   }
 
-  function toggleSerializedItem(eq: Equipment) {
-    const sorted = sortedSerializedUnits(eq)
+  function toggleUnitItem(eq: Equipment) {
+    const sorted = sortedUnits(eq)
     setSelectedItems((prev) => {
       const hasSelection = prev.some((i) => i.equipmentId === eq.id && i.unitId)
       if (hasSelection) {
@@ -493,8 +493,8 @@ export default function BookingForm({
                     {items.map((eq) => {
                       const hasConflict = conflictIds.has(eq.id)
 
-                      if (eq.trackingType === 'serialized') {
-                        const units = sortedSerializedUnits(eq)
+                      if (eq.trackingType === 'units') {
+                        const units = sortedUnits(eq)
                         const selectedUnitId = getSelectedUnitId(eq.id)
                         const isChecked = !!selectedUnitId
 
@@ -513,7 +513,7 @@ export default function BookingForm({
                                 type="checkbox"
                                 className={styles.hiddenCheckbox}
                                 checked={isChecked}
-                                onChange={() => toggleSerializedItem(eq)}
+                                onChange={() => toggleUnitItem(eq)}
                               />
                               <div className={styles.equipmentMeta}>
                                 <span className={styles.equipmentName}>{eq.name}</span>

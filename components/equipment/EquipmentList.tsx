@@ -137,9 +137,9 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
           {categories.map((cat) => {
             const items = grouped[cat]
 
-            // Separate quantity items (flat) from serialized items (group header + unit rows)
+            // Separate quantity items (flat) from unit-tracked items (group header + unit rows)
             const quantityItems = items.filter((i) => i.trackingType === 'quantity' || !i.trackingType)
-            const serializedItems = items.filter((i) => i.trackingType === 'serialized')
+            const unitItems = items.filter((i) => i.trackingType === 'units')
 
             return (
               <section key={cat} className={styles.category}>
@@ -197,8 +197,8 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                   </div>
                 ))}
 
-                {/* Serialized items — collapsible group with unified edit modal */}
-                {serializedItems.map((eq) => (
+                {/* Unit-tracked items — collapsible group with unified edit modal */}
+                {unitItems.map((eq) => (
                   <details key={eq.id} className={styles.group}>
                     <summary className={styles.groupHeader}>
                       <div className={styles.rowLeft}>

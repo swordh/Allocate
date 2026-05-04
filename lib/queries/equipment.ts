@@ -13,7 +13,7 @@ function docToEquipment(doc: FirebaseFirestore.DocumentSnapshot): Equipment {
     category:         data.category         ?? '',
     icon:             data.icon             ?? undefined,
     active:           data.active           ?? true,
-    trackingType:     data.trackingType     ?? 'serialized',
+    trackingType:     data.trackingType     ?? 'units',
     totalQuantity:    data.totalQuantity    ?? 1,
     requiresApproval:     data.requiresApproval     ?? false,
     approverId:           data.approverId           ?? null,
@@ -83,7 +83,7 @@ export const getEquipment = cache(async (
     const eq = docToEquipment(doc)
     return {
       ...eq,
-      units: eq.trackingType === 'serialized' ? (unitsMap.get(eq.id) ?? []) : undefined,
+      units: eq.trackingType === 'units' ? (unitsMap.get(eq.id) ?? []) : undefined,
     }
   })
 })

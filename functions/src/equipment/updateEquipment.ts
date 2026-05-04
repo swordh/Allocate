@@ -141,9 +141,9 @@ export const updateEquipment = onCall({ region: 'europe-west1', cors: true, invo
     updates['customFields'] = validateCustomFields(request.data.customFields);
   }
 
-  // ── serialNumber — only valid for serialized items ────────────────────────
+  // ── serialNumber — only valid for unit-tracked items ─────────────────────
   if (request.data.serialNumber !== undefined) {
-    if (existingData.trackingType !== 'serialized') {
+    if (existingData.trackingType !== 'units') {
       throw new HttpsError('invalid-argument', 'serialNumber is not allowed on quantity-tracked items.');
     }
     updates['serialNumber'] = request.data.serialNumber
