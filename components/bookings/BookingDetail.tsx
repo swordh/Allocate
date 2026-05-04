@@ -242,7 +242,7 @@ export default function BookingDetail({
                         {eq?.trackingType === 'quantity' && item.quantity > 1
                           ? <span className={styles.pickItemQty}>&times;{item.quantity}</span>
                           : null}
-                        {eq?.trackingType === 'serialized' && unit
+                        {eq?.trackingType === 'units' && unit
                           ? (
                             <span className={styles.pickItemUnit}>
                               {unit.active !== false

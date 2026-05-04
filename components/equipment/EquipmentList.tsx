@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
-import { deactivateEquipment, toggleEquipmentAvailability } from '@/actions/equipment'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentEditModal from './EquipmentEditModal'
 import type { Equipment, EquipmentStatus, Role } from '@/types'
@@ -59,10 +58,6 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const [unifiedModalOpen, setUnifiedModalOpen] = useState(openOnMount)
   const [unifiedModalEquipment, setUnifiedModalEquipment] = useState<Equipment | undefined>(undefined)
 
-  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [togglingAvailabilityId, setTogglingAvailabilityId] = useState<string | null>(null)
-
   function openAddModal() {
     setUnifiedModalEquipment(undefined)
     setUnifiedModalOpen(true)
@@ -71,25 +66,6 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   function openEditModal(item: Equipment) {
     setUnifiedModalEquipment(item)
     setUnifiedModalOpen(true)
-  }
-
-  async function handleDeactivate(item: Equipment) {
-    if (!confirm(`Delete "${item.name}"? It will no longer appear in the equipment list.`)) return
-    setDeactivatingId(item.id)
-    setActionError(null)
-    const result = await deactivateEquipment(item.id)
-    setDeactivatingId(null)
-    if ('error' in result) setActionError(result.error)
-  }
-
-  async function handleToggleAvailability(item: Equipment) {
-    setTogglingAvailabilityId(item.id)
-    setActionError(null)
-    const result = await toggleEquipmentAvailability(item.id, !item.availableForBooking)
-    setTogglingAvailabilityId(null)
-    if (result.error) {
-      setActionError(result.error)
-    }
   }
 
   if (error) {
@@ -124,12 +100,6 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         </div>
       )}
 
-      {actionError && (
-        <div className={styles.actionError}>
-          <p>{actionError}</p>
-        </div>
-      )}
-
       {equipment.length === 0 ? (
         <EquipmentEmpty role={role} onAddClick={openAddModal} />
       ) : (
@@ -137,9 +107,9 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
           {categories.map((cat) => {
             const items = grouped[cat]
 
-            // Separate quantity items (flat) from serialized items (group header + unit rows)
+            // Separate quantity items (flat) from unit-tracked items (group header + unit rows)
             const quantityItems = items.filter((i) => i.trackingType === 'quantity' || !i.trackingType)
-            const serializedItems = items.filter((i) => i.trackingType === 'serialized')
+            const unitItems = items.filter((i) => i.trackingType === 'units')
 
             return (
               <section key={cat} className={styles.category}>
@@ -152,7 +122,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                 {/* Quantity items render flat */}
                 {quantityItems.map((item) => (
                   <div key={item.id} className={styles.row}>
-                    <div className={styles.rowLeft}>
+                    <div className={`${styles.rowLeft} ${styles.rowLeftQty}`}>
                       <span className={styles.name}>{item.name}</span>
                       {item.trackingType === 'quantity' && (
                         <>
@@ -169,36 +139,18 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     {role === 'admin' && (
                       <div className={styles.rowActions}>
                         <button
-                          className={item.availableForBooking ? styles.availabilityBtnAvailable : styles.availabilityBtnUnavailable}
-                          onClick={() => handleToggleAvailability(item)}
-                          disabled={togglingAvailabilityId === item.id}
-                        >
-                          {togglingAvailabilityId === item.id
-                            ? '...'
-                            : item.availableForBooking
-                              ? 'Available'
-                              : 'Unavailable'}
-                        </button>
-                        <button
                           className={styles.editBtn}
                           onClick={() => openEditModal(item)}
                         >
                           Edit
-                        </button>
-                        <button
-                          className={styles.deactivateBtn}
-                          onClick={() => handleDeactivate(item)}
-                          disabled={deactivatingId === item.id}
-                        >
-                          {deactivatingId === item.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     )}
                   </div>
                 ))}
 
-                {/* Serialized items — collapsible group with unified edit modal */}
-                {serializedItems.map((eq) => (
+                {/* Unit-tracked items — collapsible group with unified edit modal */}
+                {unitItems.map((eq) => (
                   <details key={eq.id} className={styles.group}>
                     <summary className={styles.groupHeader}>
                       <div className={styles.rowLeft}>

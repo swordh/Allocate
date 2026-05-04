@@ -39,7 +39,7 @@ export async function createEquipment(
   const description = (formData.get('description') as string | null)?.trim() || null
 
   const trackingType =
-    (formData.get('trackingType') as string | null) === 'quantity' ? 'quantity' : 'serialized'
+    (formData.get('trackingType') as string | null) === 'quantity' ? 'quantity' : 'units'
 
   let totalQuantity = 1
   if (trackingType === 'quantity') {
@@ -322,7 +322,7 @@ export async function deactivateEquipment(
     // Units are deactivated in a separate batch after the transaction. If this batch fails,
     // the parent equipment is already deactivated and the counter is correct, but child units
     // remain active=true. A cleanup job or retry is needed in that case.
-    if (trackingType === 'serialized') {
+    if (trackingType === 'units') {
       const unitsSnap = await equipmentRef.collection('units').where('active', '==', true).get()
       if (unitsSnap.size > 0) {
         const batch = adminDb.batch()
@@ -431,7 +431,7 @@ export async function createUnit(
   if (!parentSnap.exists) return { error: 'Equipment not found.' }
 
   const parent = parentSnap.data()!
-  if (parent.trackingType !== 'serialized') return { error: 'Units can only be added to serialized equipment.' }
+  if (parent.trackingType !== 'units') return { error: 'Units can only be added to unit-tracked equipment.' }
   if (!parent.active) return { error: 'Cannot add units to deactivated equipment.' }
 
   const label = (formData.get('label') as string | null)?.trim() ?? ''
@@ -564,6 +564,7 @@ export interface EquipmentFields {
   description: string | null
   requiresApproval: boolean
   approverId: string | null
+  availableForBooking?: boolean
   customFields: CustomField[]
 }
 
@@ -632,6 +633,7 @@ export async function updateEquipmentWithUnits(
       description: equipment.description?.trim() || null,
       requiresApproval: equipment.requiresApproval,
       approverId: equipment.approverId || null,
+      ...(equipment.availableForBooking !== undefined && { availableForBooking: equipment.availableForBooking }),
       customFields: equipment.customFields,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,

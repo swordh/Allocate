@@ -62,7 +62,7 @@ export function useEquipment(companyId: string, opts?: UseEquipmentOpts) {
     for (const eq of equipmentMap.values()) {
       result.push({
         ...eq,
-        units: eq.trackingType === 'serialized' ? (unitsMap.get(eq.id) ?? []) : undefined,
+        units: eq.trackingType === 'units' ? (unitsMap.get(eq.id) ?? []) : undefined,
       })
     }
     return result.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))

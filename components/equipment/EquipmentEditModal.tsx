@@ -43,8 +43,9 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
 
   // Create-mode fields
-  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'serialized')
+  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'units')
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
+  const [availableForBooking, setAvailableForBooking] = useState(equipment?.availableForBooking ?? true)
   const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
 
   // When category changes in create mode, populate custom fields from templates
@@ -99,8 +100,9 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
     setDescription(equipment?.description ?? '')
     setRequiresApproval(equipment?.requiresApproval ?? false)
     setApproverId(equipment?.approverId ?? '')
-    setTrackingType(equipment?.trackingType ?? 'serialized')
+    setTrackingType(equipment?.trackingType ?? 'units')
     setTotalQuantity(equipment?.totalQuantity ?? 1)
+    setAvailableForBooking(equipment?.availableForBooking ?? true)
     setCustomFields(equipment?.customFields ?? [])
     setDeletedIds([])
     setError(null)
@@ -209,6 +211,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
         description: description.trim() || null,
         requiresApproval,
         approverId: approverId || null,
+        availableForBooking,
         customFields,
       }
 
@@ -256,7 +259,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
         customFields,
       }
 
-      const unitCreates: UnitCreate[] = trackingType === 'serialized'
+      const unitCreates: UnitCreate[] = trackingType === 'units'
         ? unitRows.map((r) => ({
             label: r.label,
             serialNumber: r.serialNumber,
@@ -416,11 +419,11 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             <div className={styles.trackingToggleGroup}>
               <button
                 type="button"
-                className={`${styles.trackingToggleBtn} ${trackingType === 'serialized' ? styles.trackingToggleBtnActive : ''}`}
-                onClick={() => { if (!isEditMode) setTrackingType('serialized') }}
+                className={`${styles.trackingToggleBtn} ${trackingType === 'units' ? styles.trackingToggleBtnActive : ''}`}
+                onClick={() => { if (!isEditMode) setTrackingType('units') }}
                 disabled={isEditMode}
               >
-                Serialized (individual units)
+                Units (individual)
               </button>
               <button
                 type="button"
@@ -432,17 +435,33 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
               </button>
             </div>
             {trackingType === 'quantity' && (
-              <div className={`${styles.field} ${styles.fieldMt}`}>
-                <label className={styles.fieldLabel}>Total Quantity</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={totalQuantity}
-                  onChange={(e) => setTotalQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className={styles.input}
-                  disabled={isEditMode}
-                />
-              </div>
+              <>
+                <div className={`${styles.field} ${styles.fieldMt}`}>
+                  <label className={styles.fieldLabel}>Total Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={totalQuantity}
+                    onChange={(e) => setTotalQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className={styles.input}
+                    disabled={isEditMode}
+                  />
+                </div>
+                {isEditMode && (
+                  <div className={`${styles.approvalRow} ${styles.fieldMt}`}>
+                    <button
+                      type="button"
+                      className={`${styles.toggle} ${availableForBooking ? styles.toggleOn : ''}`}
+                      onClick={() => setAvailableForBooking((v) => !v)}
+                      role="switch"
+                      aria-checked={availableForBooking}
+                    />
+                    <span className={styles.approvalLabel}>
+                      {availableForBooking ? 'Available for booking' : 'Unavailable for booking'}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -527,8 +546,8 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             </div>
           )}
 
-          {/* Section D: Units — serialized only */}
-          {trackingType === 'serialized' && (
+          {/* Section D: Units — unit-tracked only */}
+          {trackingType === 'units' && (
             <div className={styles.section}>
               <p className={styles.sectionLabel}>Units</p>
 

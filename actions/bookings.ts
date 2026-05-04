@@ -17,7 +17,7 @@ interface EquipmentDocumentInternal {
   name: string
   active: boolean
   availableForBooking?: boolean
-  trackingType: 'serialized' | 'quantity'
+  trackingType: 'units' | 'quantity'
   totalQuantity: number
   requiresApproval: boolean
   approverId: string | null
@@ -165,7 +165,7 @@ async function detectConflictsReadOnly(
 
     const equipment = equipmentSnap.data() as EquipmentDocumentInternal
 
-    if (equipment.trackingType === 'serialized') {
+    if (equipment.trackingType === 'units') {
       // For serialized items, conflict is per-unit, not per-equipment-type.
       if (!item.unitId) {
         conflicts.push({
@@ -288,7 +288,7 @@ async function detectConflictsInTransaction(
 
     const equipment = equipmentSnap.data() as EquipmentDocumentInternal
 
-    if (equipment.trackingType === 'serialized') {
+    if (equipment.trackingType === 'units') {
       // For serialized items, conflict is per-unit, not per-equipment-type.
       if (!item.unitId) {
         conflicts.push({
@@ -481,15 +481,15 @@ export async function createBooking(
           throw new Error('Some selected equipment is not available for booking.')
         }
 
-        if (equipment.trackingType === 'serialized') {
+        if (equipment.trackingType === 'units') {
           if (item.quantity !== 1) {
             throw new Error(
-              `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
+              `Equipment "${equipment.name}" is unit-tracked; quantity must be 1.`,
             )
           }
           if (!item.unitId) {
             throw new Error(
-              `Equipment "${equipment.name}" is serialized; unitId is required.`,
+              `Equipment "${equipment.name}" is unit-tracked; unitId is required.`,
             )
           }
         }
@@ -712,9 +712,9 @@ export async function updateBooking(
             throw new Error(`Equipment "${equipment.name}" is not available (deactivated).`)
           }
 
-          if (equipment.trackingType === 'serialized' && item.quantity !== 1) {
+          if (equipment.trackingType === 'units' && item.quantity !== 1) {
             throw new Error(
-              `Equipment "${equipment.name}" is serialized; quantity must be 1.`,
+              `Equipment "${equipment.name}" is unit-tracked; quantity must be 1.`,
             )
           }
 
