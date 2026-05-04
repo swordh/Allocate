@@ -8,6 +8,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import { setupNewCompany, createSession } from '@/actions/auth'
+import { TIMEZONE_OPTIONS } from '@/constants/company'
 import styles from './Auth.module.css'
 
 const MIN_PASSWORD_LENGTH = 8
@@ -36,6 +37,15 @@ export default function SignupForm() {
   const [inviteError,      setInviteError]      = useState<string | null>(null)
   const [resolvedToken,    setResolvedToken]    = useState<string | null>(inviteToken)
   const [emailLocked,      setEmailLocked]      = useState(inviteToken !== null)
+
+  const [timezone, setTimezone] = useState(() => {
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone
+      return TIMEZONE_OPTIONS.some(o => o.value === detected) ? detected : 'UTC'
+    } catch {
+      return 'UTC'
+    }
+  })
 
   const [companyName, setCompanyName] = useState('')
   const [userName,    setUserName]    = useState('')
@@ -181,7 +191,7 @@ export default function SignupForm() {
     // ── Standard path: create company + session ────────────────────────────
     try {
       const idToken = await credential.user.getIdToken()
-      await setupNewCompany(idToken, trimmedCompany, trimmedName)
+      await setupNewCompany(idToken, trimmedCompany, trimmedName, timezone)
     } catch (err) {
       await credential.user.delete().catch(() => {/* best-effort */})
 
@@ -344,6 +354,23 @@ export default function SignupForm() {
                 required
                 disabled={loading}
               />
+            </div>
+          )}
+
+          {!(mode === 'invite') && (
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="timezone">Timezone</label>
+              <select
+                id="timezone"
+                className={styles.input}
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                disabled={loading}
+              >
+                {TIMEZONE_OPTIONS.map(({ label, value }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
           )}
 
