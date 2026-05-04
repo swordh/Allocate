@@ -44,9 +44,15 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
         </div>
 
         <div className={styles.actions}>
-          <Link href="/bookings/new" className={styles.newBookingBtn}>
-            NEW BOOKING
-          </Link>
+          {isActive('/equipment') && role === 'admin' ? (
+            <Link href="/equipment?add=1" className={styles.newBookingBtn}>
+              NEW EQUIPMENT
+            </Link>
+          ) : (
+            <Link href="/bookings/new" className={styles.newBookingBtn}>
+              NEW BOOKING
+            </Link>
+          )}
         </div>
       </div>
     </nav>
