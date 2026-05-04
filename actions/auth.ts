@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { PLAN_LIMITS } from '@/lib/subscription'
+import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
 
@@ -45,6 +46,11 @@ export async function createSession(idToken: string): Promise<void> {
   }
 }
 
+function isValidTimezone(tz: string): boolean {
+  try { new Intl.DateTimeFormat(undefined, { timeZone: tz }); return true }
+  catch { return false }
+}
+
 /**
  * Creates a company for a newly registered user — server-side, no CORS issues.
  * Sets custom claims (activeCompanyId, role) on the Auth user.
@@ -62,6 +68,7 @@ export async function setupNewCompany(
   idToken: string,
   companyName: string,
   userName: string,
+  timezone = 'UTC',
 ): Promise<void> {
   let uid: string
   let email: string
@@ -72,6 +79,8 @@ export async function setupNewCompany(
   } catch {
     throw new Error('Invalid token')
   }
+
+  const safeTimezone = isValidTimezone(timezone) ? timezone : 'UTC'
 
   // Idempotency: if the user already has a membership, the account exists.
   const membershipCol = adminDb.collection(`users/${uid}/memberships`)
@@ -93,6 +102,7 @@ export async function setupNewCompany(
     createdBy:        uid,
     stripeCustomerId: '',
     hadTrial:         false,
+    preferences:      { ...DEFAULT_COMPANY_PREFERENCES, timezone: safeTimezone },
     subscription: {
       status:            'trialing',
       plan:              'starter',
