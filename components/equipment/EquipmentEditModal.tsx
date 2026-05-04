@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { updateEquipmentWithUnits, deactivateEquipment, createEquipmentWithUnits } from '@/actions/equipment'
+import { updateEquipmentWithUnits, deactivateEquipment, createEquipmentWithUnits, deactivateUnit } from '@/actions/equipment'
 import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
 import type { Equipment, EquipmentStatus, TrackingType, CustomField, CustomFieldList } from '@/types'
@@ -43,7 +43,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
   const [approverId, setApproverId] = useState(equipment?.approverId ?? '')
 
   // Create-mode fields
-  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'serialized')
+  const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'units')
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
   const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
 
@@ -99,7 +99,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
     setDescription(equipment?.description ?? '')
     setRequiresApproval(equipment?.requiresApproval ?? false)
     setApproverId(equipment?.approverId ?? '')
-    setTrackingType(equipment?.trackingType ?? 'serialized')
+    setTrackingType(equipment?.trackingType ?? 'units')
     setTotalQuantity(equipment?.totalQuantity ?? 1)
     setCustomFields(equipment?.customFields ?? [])
     setDeletedIds([])
@@ -159,9 +159,41 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
     setUnitRows((prev) => prev.map((r) => (r.tempId === tempId ? { ...r, ...patch } : r)))
   }
 
-  function deleteRow(row: UnitRow) {
-    if (row.id) setDeletedIds((prev) => [...prev, row.id!])
-    setUnitRows((prev) => prev.filter((r) => r.tempId !== row.tempId))
+  async function deleteRow(row: UnitRow) {
+    // New (unsaved) rows can be removed immediately — no Firestore check needed.
+    if (!row.id || !equipment) {
+      setUnitRows((prev) => prev.filter((r) => r.tempId !== row.tempId))
+      return
+    }
+
+    setDeleting(true)
+    setError(null)
+
+    const result = await deactivateUnit(equipment.id, row.id)
+
+    if (result && 'requiresForce' in result) {
+      setDeleting(false)
+      const confirmed = confirm(
+        `This unit has ${result.futureBookingCount} future booking(s). Delete anyway?`,
+      )
+      if (!confirmed) return
+      setDeleting(true)
+      const forceResult = await deactivateUnit(equipment.id, row.id, true)
+      setDeleting(false)
+      if (forceResult && 'error' in forceResult) {
+        setError(forceResult.error)
+        return
+      }
+      setDeletedIds((prev) => [...prev, row.id!])
+      setUnitRows((prev) => prev.filter((r) => r.tempId !== row.tempId))
+    } else if (result && 'error' in result) {
+      setDeleting(false)
+      setError(result.error)
+    } else {
+      setDeleting(false)
+      setDeletedIds((prev) => [...prev, row.id!])
+      setUnitRows((prev) => prev.filter((r) => r.tempId !== row.tempId))
+    }
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -224,7 +256,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
         customFields,
       }
 
-      const unitCreates: UnitCreate[] = trackingType === 'serialized'
+      const unitCreates: UnitCreate[] = trackingType === 'units'
         ? unitRows.map((r) => ({
             label: r.label,
             serialNumber: r.serialNumber,
@@ -384,11 +416,11 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             <div className={styles.trackingToggleGroup}>
               <button
                 type="button"
-                className={`${styles.trackingToggleBtn} ${trackingType === 'serialized' ? styles.trackingToggleBtnActive : ''}`}
-                onClick={() => { if (!isEditMode) setTrackingType('serialized') }}
+                className={`${styles.trackingToggleBtn} ${trackingType === 'units' ? styles.trackingToggleBtnActive : ''}`}
+                onClick={() => { if (!isEditMode) setTrackingType('units') }}
                 disabled={isEditMode}
               >
-                Serialized (individual units)
+                Units (individual)
               </button>
               <button
                 type="button"
@@ -495,8 +527,8 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             </div>
           )}
 
-          {/* Section D: Units — serialized only */}
-          {trackingType === 'serialized' && (
+          {/* Section D: Units — unit-tracked only */}
+          {trackingType === 'units' && (
             <div className={styles.section}>
               <p className={styles.sectionLabel}>Units</p>
 

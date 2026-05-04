@@ -14,7 +14,7 @@ vi.mock('@/lib/firebase-admin', () => {
       data: () => ({
         name: 'ARRI Alexa Mini LF',
         category: 'Camera',
-        trackingType: 'serialized',
+        trackingType: 'units',
         active: true,
       }),
     }),
@@ -106,7 +106,7 @@ beforeEach(() => {
       data: () => ({
         name: 'ARRI Alexa Mini LF',
         category: 'Camera',
-        trackingType: 'serialized',
+        trackingType: 'units',
         active: true,
       }),
     }),

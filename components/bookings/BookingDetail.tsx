@@ -231,17 +231,23 @@ export default function BookingDetail({
                       <span
                         className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
                       >
-                        {eq?.name ?? item.equipmentId}
+                        {eq
+                          ? eq.active !== false
+                            ? eq.name
+                            : `${eq.name} (deleted)`
+                          : item.equipmentId}
                       </span>
                       <span className={styles.pickItemMeta}>
                         {eq?.category ?? ''}
                         {eq?.trackingType === 'quantity' && item.quantity > 1
                           ? <span className={styles.pickItemQty}>&times;{item.quantity}</span>
                           : null}
-                        {eq?.trackingType === 'serialized' && unit
+                        {eq?.trackingType === 'units' && unit
                           ? (
                             <span className={styles.pickItemUnit}>
-                              {unit.label}
+                              {unit.active !== false
+                                ? unit.label
+                                : `${unit.label} (deleted)`}
                               {unit.serialNumber ? ` · ${unit.serialNumber}` : ''}
                             </span>
                           )

@@ -1,8 +1,8 @@
 export type EquipmentStatus = 'ok' | 'needs_repair' | 'limited_operations'
 
-// 'serialized' = one parent doc per equipment type, one subcollection doc per physical unit
-// 'quantity'   = one document represents a pool of interchangeable items
-export type TrackingType = 'serialized' | 'quantity'
+// 'units'    = one parent doc per equipment type, one subcollection doc per physical unit
+// 'quantity' = one document represents a pool of interchangeable items
+export type TrackingType = 'units' | 'quantity'
 
 // Default categories seeded for every new company
 export const DEFAULT_EQUIPMENT_CATEGORIES = [
@@ -49,7 +49,7 @@ export interface Equipment {
   icon?: string
   active: boolean
   trackingType: TrackingType  // immutable after creation
-  totalQuantity: number       // always 1 for serialized; >= 1 for quantity
+  totalQuantity: number       // always 1 for unit-tracked items; >= 1 for quantity
   requiresApproval: boolean   // triggers approval flow when booked
   approverId: string | null   // specific user who must approve; Admin if null
   availableForBooking: boolean // when false, hidden from the booking form picker
