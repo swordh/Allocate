@@ -62,8 +62,13 @@ export const getEquipment = cache(async (
       return q.orderBy('category', 'asc').orderBy('name', 'asc').get()
     })(),
     (() => {
-      const ref = adminDb.collectionGroup('units').where('companyId', '==', companyId)
-      return (includeInactive ? ref : ref.where('active', '==', true)).get()
+      const base = adminDb.collectionGroup('units').where('companyId', '==', companyId)
+      if (!includeInactive) return base.where('active', '==', true).get()
+      // Run two queries to reuse existing (companyId, active) composite index
+      return Promise.all([
+        base.where('active', '==', true).get(),
+        base.where('active', '==', false).get(),
+      ]).then(([a, b]) => ({ docs: [...a.docs, ...b.docs] }))
     })(),
   ])
 
