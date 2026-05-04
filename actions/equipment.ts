@@ -564,6 +564,7 @@ export interface EquipmentFields {
   description: string | null
   requiresApproval: boolean
   approverId: string | null
+  availableForBooking?: boolean
   customFields: CustomField[]
 }
 
@@ -632,6 +633,7 @@ export async function updateEquipmentWithUnits(
       description: equipment.description?.trim() || null,
       requiresApproval: equipment.requiresApproval,
       approverId: equipment.approverId || null,
+      ...(equipment.availableForBooking !== undefined && { availableForBooking: equipment.availableForBooking }),
       customFields: equipment.customFields,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,

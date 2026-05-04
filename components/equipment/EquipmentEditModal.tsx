@@ -45,6 +45,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
   // Create-mode fields
   const [trackingType, setTrackingType] = useState<TrackingType>(equipment?.trackingType ?? 'units')
   const [totalQuantity, setTotalQuantity] = useState(equipment?.totalQuantity ?? 1)
+  const [availableForBooking, setAvailableForBooking] = useState(equipment?.availableForBooking ?? true)
   const [customFields, setCustomFields] = useState<CustomField[]>(equipment?.customFields ?? [])
 
   // When category changes in create mode, populate custom fields from templates
@@ -101,6 +102,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
     setApproverId(equipment?.approverId ?? '')
     setTrackingType(equipment?.trackingType ?? 'units')
     setTotalQuantity(equipment?.totalQuantity ?? 1)
+    setAvailableForBooking(equipment?.availableForBooking ?? true)
     setCustomFields(equipment?.customFields ?? [])
     setDeletedIds([])
     setError(null)
@@ -209,6 +211,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
         description: description.trim() || null,
         requiresApproval,
         approverId: approverId || null,
+        availableForBooking,
         customFields,
       }
 
@@ -432,17 +435,33 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
               </button>
             </div>
             {trackingType === 'quantity' && (
-              <div className={`${styles.field} ${styles.fieldMt}`}>
-                <label className={styles.fieldLabel}>Total Quantity</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={totalQuantity}
-                  onChange={(e) => setTotalQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className={styles.input}
-                  disabled={isEditMode}
-                />
-              </div>
+              <>
+                <div className={`${styles.field} ${styles.fieldMt}`}>
+                  <label className={styles.fieldLabel}>Total Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={totalQuantity}
+                    onChange={(e) => setTotalQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className={styles.input}
+                    disabled={isEditMode}
+                  />
+                </div>
+                {isEditMode && (
+                  <div className={`${styles.approvalRow} ${styles.fieldMt}`}>
+                    <button
+                      type="button"
+                      className={`${styles.toggle} ${availableForBooking ? styles.toggleOn : ''}`}
+                      onClick={() => setAvailableForBooking((v) => !v)}
+                      role="switch"
+                      aria-checked={availableForBooking}
+                    />
+                    <span className={styles.approvalLabel}>
+                      {availableForBooking ? 'Available for booking' : 'Unavailable for booking'}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

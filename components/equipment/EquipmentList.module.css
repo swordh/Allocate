@@ -250,6 +250,11 @@
   gap: 12px;
 }
 
+/* Indent quantity rows to align with unit group headers (chevron 16px + gap 12px) */
+.rowLeftQty {
+  padding-left: 28px;
+}
+
 .name {
   font-size: var(--font-body);
   font-weight: 700;
