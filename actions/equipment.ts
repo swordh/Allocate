@@ -498,7 +498,7 @@ export async function deactivateUnit(
   equipmentId: string,
   unitId: string,
   force = false,
-): Promise<void | { error: string }> {
+): Promise<void | { error: string } | { requiresForce: true; futureBookingCount: number }> {
   const session = await getVerifiedSession()
   if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
 
@@ -508,18 +508,21 @@ export async function deactivateUnit(
   if (!unitSnap.exists) return { error: 'Unit not found.' }
 
   if (!force) {
+    const todayStr = new Date().toISOString().slice(0, 10)
+
     const bookingsSnap = await adminDb
       .collection('companies').doc(companyId).collection('bookings')
       .where('unitIds', 'array-contains', unitId)
+      .where('endDate', '>=', todayStr)
       .get()
 
-    const activeBookings = bookingsSnap.docs.filter((doc) => {
+    const futureBookings = bookingsSnap.docs.filter((doc) => {
       const data = doc.data()
       return data.status !== 'cancelled' && data.status !== 'returned'
     })
 
-    if (activeBookings.length > 0) {
-      return { error: 'This unit has active bookings. Deactivate or cancel them first.' }
+    if (futureBookings.length > 0) {
+      return { requiresForce: true, futureBookingCount: futureBookings.length }
     }
   }
 

@@ -4,7 +4,13 @@ import { collection, collectionGroup, onSnapshot, query, where } from 'firebase/
 import { db } from '@/lib/firebase'
 import type { Equipment, EquipmentUnit } from '@/types'
 
-export function useEquipment(companyId: string) {
+interface UseEquipmentOpts {
+  includeInactive?: boolean
+}
+
+export function useEquipment(companyId: string, opts?: UseEquipmentOpts) {
+  const includeInactive = opts?.includeInactive ?? false
+
   const [equipmentMap, setEquipmentMap] = useState<Map<string, Equipment>>(new Map())
   const [unitsMap, setUnitsMap] = useState<Map<string, EquipmentUnit[]>>(new Map())
   const [loadingEquipment, setLoadingEquipment] = useState(true)
@@ -14,26 +20,33 @@ export function useEquipment(companyId: string) {
   useEffect(() => {
     if (!companyId) return
 
-    const eqQuery = query(
-      collection(db, 'companies', companyId, 'equipment'),
-      where('active', '==', true),
-    )
+    const eqQuery = includeInactive
+      ? query(collection(db, 'companies', companyId, 'equipment'))
+      : query(
+          collection(db, 'companies', companyId, 'equipment'),
+          where('active', '==', true),
+        )
     const unsubEquipment = onSnapshot(eqQuery, (snapshot) => {
       const map = new Map<string, Equipment>()
-      snapshot.docs.forEach((doc) => map.set(doc.id, { id: doc.id, ...doc.data() } as Equipment))
+      snapshot.docs.forEach((doc) => map.set(doc.id, { id: doc.id, active: true, ...doc.data() } as Equipment))
       setEquipmentMap(map)
       setLoadingEquipment(false)
     }, (err) => { setError(err as Error); setLoadingEquipment(false) })
 
-    const unitsQuery = query(
-      collectionGroup(db, 'units'),
-      where('companyId', '==', companyId),
-      where('active', '==', true),
-    )
+    const unitsQuery = includeInactive
+      ? query(
+          collectionGroup(db, 'units'),
+          where('companyId', '==', companyId),
+        )
+      : query(
+          collectionGroup(db, 'units'),
+          where('companyId', '==', companyId),
+          where('active', '==', true),
+        )
     const unsubUnits = onSnapshot(unitsQuery, (snapshot) => {
       const map = new Map<string, EquipmentUnit[]>()
       snapshot.docs.forEach((doc) => {
-        const unit = { id: doc.id, ...doc.data() } as EquipmentUnit
+        const unit = { id: doc.id, active: true, ...doc.data() } as EquipmentUnit
         if (!map.has(unit.equipmentId)) map.set(unit.equipmentId, [])
         map.get(unit.equipmentId)!.push(unit)
       })
@@ -42,7 +55,7 @@ export function useEquipment(companyId: string) {
     }, (err) => { setError(err as Error); setLoadingUnits(false) })
 
     return () => { unsubEquipment(); unsubUnits() }
-  }, [companyId])
+  }, [companyId, includeInactive])
 
   const equipment = useMemo(() => {
     const result: Equipment[] = []
