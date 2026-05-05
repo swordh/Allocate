@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
 import type { Booking, Role, UserProfile } from '@/types'
@@ -88,7 +87,6 @@ export default function BookingList({
   initialBookings,
   userProfiles,
 }: BookingListProps) {
-  const router = useRouter()
   const datePickerRef = useRef<HTMLInputElement>(null)
 
   const [showCancelled, setShowCancelled] = useState(false)
@@ -190,8 +188,9 @@ export default function BookingList({
         type="date"
         onChange={(e) => {
           if (!e.target.value) return
-          const [y, m] = e.target.value.split('-').map(Number)
-          router.push(`/bookings/month?year=${y}&month=${m}`)
+          const target = e.target.value
+          const nearest = sortedDates.find((d) => d >= target) ?? sortedDates[sortedDates.length - 1]
+          if (nearest) document.getElementById(`group-${nearest}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }}
         className={styles.hiddenDateInput}
       />
@@ -201,7 +200,7 @@ export default function BookingList({
         const isToday = dateStr === today
 
         return (
-          <div key={dateStr} className={styles.group}>
+          <div key={dateStr} id={`group-${dateStr}`} className={styles.group}>
             <div className={styles.groupHeader}>
               <button
                 className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}
