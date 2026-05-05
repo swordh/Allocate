@@ -134,7 +134,10 @@ export default function BookingMonthView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevYear, prevMonth)}>←</button>
-        <button className={styles.monthLabel} onClick={() => monthInputRef.current?.showPicker()}>
+        <button className={styles.monthLabel} onClick={() => {
+          try { monthInputRef.current?.showPicker() }
+          catch { monthInputRef.current?.focus() }
+        }}>
           {formatMonthYear(year, month)}
         </button>
         <input

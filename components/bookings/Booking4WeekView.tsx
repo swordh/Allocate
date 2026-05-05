@@ -125,7 +125,10 @@ export default function Booking4WeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevPeriod())}>←</button>
-        <button className={styles.periodLabel} onClick={() => dateInputRef.current?.showPicker()}>
+        <button className={styles.periodLabel} onClick={() => {
+          try { dateInputRef.current?.showPicker() }
+          catch { dateInputRef.current?.focus() }
+        }}>
           {formatPeriodLabel(periodStart, endDate)}
         </button>
         <input
