@@ -11,11 +11,11 @@ import styles from './BookingWeekView.module.css'
 // Time grid constants
 // ---------------------------------------------------------------------------
 
-const START_HOUR = 7
-const END_HOUR   = 22
-const HOURS      = END_HOUR - START_HOUR  // 15
+const START_HOUR = 0
+const END_HOUR   = 24
+const HOURS      = END_HOUR - START_HOUR  // 24
 const CELL_H     = 48
-const TOTAL_H    = HOURS * CELL_H         // 720px
+const TOTAL_H    = HOURS * CELL_H         // 1152px
 
 function timeToTop(time: string | null | undefined): number {
   if (!time) return 0
@@ -185,13 +185,16 @@ export default function BookingWeekView({
 
   const dateInputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-scroll to current time
+  // Auto-scroll to current time (or 07:00 for non-current weeks)
   const calWrapRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!days.includes(today)) return
-    const now     = new Date()
-    const lineTop = ((now.getHours() - START_HOUR) + now.getMinutes() / 60) * CELL_H
-    calWrapRef.current?.scrollTo({ top: Math.max(0, lineTop - 100) })
+    if (days.includes(today)) {
+      const now     = new Date()
+      const lineTop = (now.getHours() + now.getMinutes() / 60) * CELL_H
+      calWrapRef.current?.scrollTo({ top: Math.max(0, lineTop - 100) })
+    } else {
+      calWrapRef.current?.scrollTo({ top: Math.max(0, 7 * CELL_H - 100) })
+    }
   }, [weekStart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -249,6 +252,7 @@ export default function BookingWeekView({
             <div
               key={day}
               className={`${styles.dayCol} ${isWeekend(day) ? styles.dayColWeekend : ''}`}
+            style={{ height: TOTAL_H }}
             >
               {Array.from({ length: HOURS }, (_, i) => (
                 <div key={i} className={styles.hourCell}>
