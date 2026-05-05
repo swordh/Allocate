@@ -134,22 +134,19 @@ export default function BookingMonthView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevYear, prevMonth)}>←</button>
-        <button className={styles.monthLabel} onClick={() => {
-          try { monthInputRef.current?.showPicker() }
-          catch { monthInputRef.current?.focus() }
-        }}>
-          {formatMonthYear(year, month)}
-        </button>
-        <input
-          ref={monthInputRef}
-          type="month"
-          value={`${year}-${String(month).padStart(2, '0')}`}
-          onChange={(e) => {
-            const [y, m] = e.target.value.split('-').map(Number)
-            if (y && m) navigate(y, m)
-          }}
-          className={styles.hiddenDateInput}
-        />
+        <label className={styles.monthLabelWrap}>
+          <span className={styles.monthLabel}>{formatMonthYear(year, month)}</span>
+          <input
+            ref={monthInputRef}
+            type="month"
+            value={`${year}-${String(month).padStart(2, '0')}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split('-').map(Number)
+              if (y && m) navigate(y, m)
+            }}
+            className={styles.overlayDateInput}
+          />
+        </label>
         <button className={styles.navBtn} onClick={() => navigate(nextYear, nextMonth)}>→</button>
         <button
           className={styles.todayBtn}
