@@ -202,7 +202,10 @@ export default function BookingWeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevWeek.week, prevWeek.year)}>←</button>
-        <button className={styles.weekLabel} onClick={() => dateInputRef.current?.showPicker()}>
+        <button className={styles.weekLabel} onClick={() => {
+          try { dateInputRef.current?.showPicker() }
+          catch { dateInputRef.current?.focus() }
+        }}>
           W.{String(weekNumber).padStart(2, '0')} — {formatMonthYear(weekStart)}
         </button>
         <input
