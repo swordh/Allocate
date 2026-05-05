@@ -15,7 +15,7 @@ export default function CompanySettingsForm({
   categories: initialCategories,
 }: CompanySettingsFormProps) {
   const [companyName, setCompanyName] = useState(initialName)
-  const [categories, setCategories] = useState<Category[]>(initialCategories ?? [])
+  const [categories, setCategories] = useState<Category[]>([...(initialCategories ?? [])].sort((a, b) => a.name.localeCompare(b.name)))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -67,7 +67,7 @@ export default function CompanySettingsForm({
         createdAt: new Date().toISOString(),
         customFieldTemplates: [],
       }
-      setCategories((prev) => [...prev, newCat])
+      setCategories((prev) => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)))
       setNewCategoryName('')
       setAddingCategory(false)
       setSuccess(false)

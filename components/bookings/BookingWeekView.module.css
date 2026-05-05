@@ -41,6 +41,10 @@
   letter-spacing: 0.18em;
   color: #919191;
   min-width: 160px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
 }
 
 .todayBtn {
@@ -252,4 +256,12 @@
 .emptyAction:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.hiddenDateInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
 }

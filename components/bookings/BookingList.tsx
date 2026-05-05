@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
 import type { Booking, Role, UserProfile } from '@/types'
@@ -87,6 +88,9 @@ export default function BookingList({
   initialBookings,
   userProfiles,
 }: BookingListProps) {
+  const router = useRouter()
+  const datePickerRef = useRef<HTMLInputElement>(null)
+
   const [showCancelled, setShowCancelled] = useState(false)
   const [showOnlyMine, setShowOnlyMine] = useState(false)
 
@@ -181,20 +185,36 @@ export default function BookingList({
       )}
 
       {/* Date groups */}
+      <input
+        ref={datePickerRef}
+        type="date"
+        onChange={(e) => {
+          if (!e.target.value) return
+          const [y, m] = e.target.value.split('-').map(Number)
+          router.push(`/bookings/month?year=${y}&month=${m}`)
+        }}
+        className={styles.hiddenDateInput}
+      />
       {sortedDates.map((dateStr) => {
         const dateBookings = grouped.get(dateStr) ?? []
         const label = formatDateLabel(dateStr, today, tomorrow)
         const isToday = dateStr === today
-        const fullDate = formatFullDate(dateStr)
 
         return (
           <div key={dateStr} className={styles.group}>
             <div className={styles.groupHeader}>
-              <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
+              <button
+                className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}
+                onClick={() => {
+                  if (datePickerRef.current) {
+                    datePickerRef.current.value = dateStr
+                    datePickerRef.current.showPicker()
+                  }
+                }}
+              >
                 {label.toUpperCase()}
-              </span>
+              </button>
               <div className={styles.groupRule} />
-              <span className={styles.groupDate}>{fullDate}</span>
             </div>
             <div className={styles.bookingCards}>
               {dateBookings.map((booking) => (
