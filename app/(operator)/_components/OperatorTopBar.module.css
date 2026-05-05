@@ -1,0 +1,103 @@
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(20px);
+  background: rgba(8, 8, 8, 0.9);
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+}
+
+.inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 16px 24px;
+}
+
+.wordmark {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.links {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 48px;
+}
+
+.link {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(240, 237, 232, 0.6);
+  transition: color 0.1s;
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--white);
+}
+
+.linkActive {
+  color: var(--white);
+  border-bottom: 2px solid var(--white);
+  padding-bottom: 4px;
+}
+
+.desktopControls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.logoutBtn {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+
+.logoutBtn:hover {
+  color: var(--white);
+}
+
+.hamburger {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--white);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .links {
+    display: none;
+  }
+
+  .desktopControls {
+    display: none;
+  }
+
+  .hamburger {
+    display: flex;
+  }
+}
