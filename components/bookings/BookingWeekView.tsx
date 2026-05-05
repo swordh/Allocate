@@ -202,22 +202,21 @@ export default function BookingWeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevWeek.week, prevWeek.year)}>←</button>
-        <button className={styles.weekLabel} onClick={() => {
-          try { dateInputRef.current?.showPicker() }
-          catch { dateInputRef.current?.focus() }
-        }}>
-          W.{String(weekNumber).padStart(2, '0')} — {formatMonthYear(weekStart)}
-        </button>
-        <input
-          ref={dateInputRef}
-          type="date"
-          onChange={(e) => {
-            if (!e.target.value) return
-            const d = new Date(e.target.value + 'T00:00:00')
-            navigate(getISOWeek(d), d.getFullYear())
-          }}
-          className={styles.hiddenDateInput}
-        />
+        <label className={styles.weekLabelWrap}>
+          <span className={styles.weekLabel}>
+            W.{String(weekNumber).padStart(2, '0')} — {formatMonthYear(weekStart)}
+          </span>
+          <input
+            ref={dateInputRef}
+            type="date"
+            onChange={(e) => {
+              if (!e.target.value) return
+              const d = new Date(e.target.value + 'T00:00:00')
+              navigate(getISOWeek(d), d.getFullYear())
+            }}
+            className={styles.overlayDateInput}
+          />
+        </label>
         <button className={styles.navBtn} onClick={() => navigate(nextWeek.week, nextWeek.year)}>→</button>
         <button
           className={styles.todayBtn}
