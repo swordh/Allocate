@@ -20,7 +20,7 @@ export function useCategories(companyId: string) {
           isDefault: doc.data().isDefault ?? false,
           createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
           customFieldTemplates: doc.data().customFieldTemplates ?? [],
-        }))
+        })).sort((a, b) => a.name.localeCompare(b.name))
         setCategories(data)
       })
       .catch((err) => {

@@ -10,7 +10,7 @@
 .navBar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   padding: 12px var(--booking-pad-h);
   border-bottom: 1px solid rgba(71, 71, 71, 0.2);
 }
@@ -40,9 +40,19 @@
   text-transform: uppercase;
   letter-spacing: 0.18em;
   color: #919191;
-  min-width: 0;
-  flex: 1;
-  text-align: center;
+  min-width: 200px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hiddenDateInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
 }
 
 .todayBtn {
@@ -66,41 +76,11 @@
    7-column grid
    ----------------------------------------------------------------------- */
 
-/* Prevents body-level horizontal scroll; grid scrolls internally on mobile */
-.gridScroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   border-left: 1px solid rgba(71, 71, 71, 0.2);
   border-top: 1px solid rgba(71, 71, 71, 0.2);
-  min-width: 560px; /* 7 × 80px minimum — keeps cells usable */
-}
-
-@media (max-width: 768px) {
-  .grid {
-    min-width: 490px; /* 7 × 70px on mobile */
-  }
-
-  .day {
-    padding: 6px 6px;
-    min-height: 60px;
-  }
-
-  .dayNum {
-    font-size: 12px;
-    width: 20px;
-    height: 20px;
-    line-height: 20px;
-  }
-
-  .dayHeader {
-    padding: 6px 4px;
-    font-size: 8px;
-  }
 }
 
 .dayHeader {
@@ -126,8 +106,8 @@
 .day {
   border-right: 1px solid rgba(71, 71, 71, 0.2);
   border-bottom: 1px solid rgba(71, 71, 71, 0.2);
-  padding: 8px 10px;
-  min-height: 80px;
+  padding: 10px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -162,7 +142,7 @@
 .dayBookings {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   margin-top: 2px;
 }
 
