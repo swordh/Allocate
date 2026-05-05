@@ -189,7 +189,7 @@ export default function BookingList({
         onChange={(e) => {
           if (!e.target.value) return
           const target = e.target.value
-          const nearest = sortedDates.find((d) => d >= target) ?? sortedDates[sortedDates.length - 1]
+          const nearest = [...sortedDates].reverse().find((d) => d >= target) ?? sortedDates[0]
           if (nearest) document.getElementById(`group-${nearest}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }}
         className={styles.hiddenDateInput}
