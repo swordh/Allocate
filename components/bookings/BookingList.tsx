@@ -207,7 +207,8 @@ export default function BookingList({
                 onClick={() => {
                   if (datePickerRef.current) {
                     datePickerRef.current.value = dateStr
-                    datePickerRef.current.showPicker()
+                    try { datePickerRef.current.showPicker() }
+                    catch { datePickerRef.current.focus() }
                   }
                 }}
               >
