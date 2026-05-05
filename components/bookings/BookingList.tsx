@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
 import type { Booking, Role, UserProfile } from '@/types'
@@ -87,8 +87,6 @@ export default function BookingList({
   initialBookings,
   userProfiles,
 }: BookingListProps) {
-  const datePickerRef = useRef<HTMLInputElement>(null)
-
   const [showCancelled, setShowCancelled] = useState(false)
   const [showOnlyMine, setShowOnlyMine] = useState(false)
 
@@ -183,17 +181,6 @@ export default function BookingList({
       )}
 
       {/* Date groups */}
-      <input
-        ref={datePickerRef}
-        type="date"
-        onChange={(e) => {
-          if (!e.target.value) return
-          const target = e.target.value
-          const nearest = [...sortedDates].reverse().find((d) => d >= target) ?? sortedDates[0]
-          if (nearest) document.getElementById(`group-${nearest}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }}
-        className={styles.hiddenDateInput}
-      />
       {sortedDates.map((dateStr) => {
         const dateBookings = grouped.get(dateStr) ?? []
         const label = formatDateLabel(dateStr, today, tomorrow)
@@ -202,18 +189,22 @@ export default function BookingList({
         return (
           <div key={dateStr} id={`group-${dateStr}`} className={styles.group}>
             <div className={styles.groupHeader}>
-              <button
-                className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}
-                onClick={() => {
-                  if (datePickerRef.current) {
-                    datePickerRef.current.value = dateStr
-                    try { datePickerRef.current.showPicker() }
-                    catch { datePickerRef.current.focus() }
-                  }
-                }}
-              >
-                {label.toUpperCase()}
-              </button>
+              <label className={styles.dateLabelWrap}>
+                <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
+                  {label.toUpperCase()}
+                </span>
+                <input
+                  type="date"
+                  defaultValue={dateStr}
+                  onChange={(e) => {
+                    if (!e.target.value) return
+                    const target = e.target.value
+                    const nearest = [...sortedDates].reverse().find((d) => d >= target) ?? sortedDates[0]
+                    if (nearest) document.getElementById(`group-${nearest}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }}
+                  className={styles.overlayDateInput}
+                />
+              </label>
               <div className={styles.groupRule} />
             </div>
             <div className={styles.bookingCards}>
