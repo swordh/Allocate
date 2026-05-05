@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useBookings } from '@/hooks/useBookings'
@@ -79,6 +79,7 @@ export default function Booking4WeekView({
   periodStart,
 }: Booking4WeekViewProps) {
   const router = useRouter()
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   const days    = useMemo(() => get28Days(periodStart), [periodStart])
   const endDate = days[27]
@@ -124,13 +125,22 @@ export default function Booking4WeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevPeriod())}>←</button>
-        <span className={styles.periodLabel}>{formatPeriodLabel(periodStart, endDate)}</span>
+        <button className={styles.periodLabel} onClick={() => dateInputRef.current?.showPicker()}>
+          {formatPeriodLabel(periodStart, endDate)}
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          onChange={(e) => {
+            if (e.target.value) navigate(toDateString(getMondayOf(e.target.value)))
+          }}
+          className={styles.hiddenDateInput}
+        />
         <button className={styles.navBtn} onClick={() => navigate(nextPeriod())}>→</button>
         <button className={styles.todayBtn} onClick={goToToday}>Today</button>
       </div>
 
-      {/* Grid — wrapped in scroll container so mobile never causes body overflow */}
-      <div className={styles.gridScroll}>
+      {/* Grid */}
       <div className={styles.grid}>
         {/* Weekday headers */}
         {WEEKDAYS.map((wd, i) => (
@@ -159,7 +169,7 @@ export default function Booking4WeekView({
                 {dayNum}
               </span>
               <div className={styles.dayBookings}>
-                {dayBookings.slice(0, 2).map((booking) => (
+                {dayBookings.slice(0, 3).map((booking) => (
                   <Link
                     key={booking.id}
                     href={`/bookings/${booking.id}`}
@@ -169,14 +179,13 @@ export default function Booking4WeekView({
                     <span className={styles.bookingName}>{booking.projectName}</span>
                   </Link>
                 ))}
-                {dayBookings.length > 2 && (
-                  <span className={styles.moreBookings}>+{dayBookings.length - 2} more</span>
+                {dayBookings.length > 3 && (
+                  <span className={styles.moreBookings}>+{dayBookings.length - 3} more</span>
                 )}
               </div>
             </div>
           )
         })}
-      </div>
       </div>
     </div>
   )

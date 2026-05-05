@@ -183,6 +183,8 @@ export default function BookingWeekView({
     router.push(`/bookings/week?week=${week}&year=${yr}`)
   }
 
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
   // Auto-scroll to current time
   const calWrapRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -197,9 +199,19 @@ export default function BookingWeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevWeek.week, prevWeek.year)}>←</button>
-        <span className={styles.weekLabel}>
+        <button className={styles.weekLabel} onClick={() => dateInputRef.current?.showPicker()}>
           W.{String(weekNumber).padStart(2, '0')} — {formatMonthYear(weekStart)}
-        </span>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          onChange={(e) => {
+            if (!e.target.value) return
+            const d = new Date(e.target.value + 'T00:00:00')
+            navigate(getISOWeek(d), d.getFullYear())
+          }}
+          className={styles.hiddenDateInput}
+        />
         <button className={styles.navBtn} onClick={() => navigate(nextWeek.week, nextWeek.year)}>→</button>
         <button
           className={styles.todayBtn}
