@@ -125,20 +125,17 @@ export default function Booking4WeekView({
       {/* Nav bar */}
       <div className={styles.navBar}>
         <button className={styles.navBtn} onClick={() => navigate(prevPeriod())}>←</button>
-        <button className={styles.periodLabel} onClick={() => {
-          try { dateInputRef.current?.showPicker() }
-          catch { dateInputRef.current?.focus() }
-        }}>
-          {formatPeriodLabel(periodStart, endDate)}
-        </button>
-        <input
-          ref={dateInputRef}
-          type="date"
-          onChange={(e) => {
-            if (e.target.value) navigate(toDateString(getMondayOf(e.target.value)))
-          }}
-          className={styles.hiddenDateInput}
-        />
+        <label className={styles.periodLabelWrap}>
+          <span className={styles.periodLabel}>{formatPeriodLabel(periodStart, endDate)}</span>
+          <input
+            ref={dateInputRef}
+            type="date"
+            onChange={(e) => {
+              if (e.target.value) navigate(toDateString(getMondayOf(e.target.value)))
+            }}
+            className={styles.overlayDateInput}
+          />
+        </label>
         <button className={styles.navBtn} onClick={() => navigate(nextPeriod())}>→</button>
         <button className={styles.todayBtn} onClick={goToToday}>Today</button>
       </div>
