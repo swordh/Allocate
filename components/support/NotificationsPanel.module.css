@@ -1,0 +1,116 @@
+.panel {
+  position: fixed;
+  top: 64px;
+  right: 24px;
+  width: 300px;
+  background: var(--surface-container-low);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 55;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.panelOpen {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: rgba(240, 237, 232, 0.4);
+  cursor: pointer;
+  padding: 2px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  transition: color 0.1s;
+}
+
+.closeBtn:hover {
+  color: var(--white);
+}
+
+.body {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 32px;
+  color: var(--outline);
+}
+
+.emptyText {
+  font-size: 0.75rem;
+  color: var(--mid);
+  letter-spacing: 0.05em;
+}
+
+.footer {
+  padding: 12px 18px;
+  border-top: 1px solid rgba(71, 71, 71, 0.2);
+  flex-shrink: 0;
+}
+
+.footerLink {
+  background: none;
+  border: none;
+  color: rgba(240, 237, 232, 0.4);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.footerLink:hover {
+  color: var(--white);
+}
+
+@media (max-width: 768px) {
+  .panel {
+    top: 56px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
