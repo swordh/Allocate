@@ -18,8 +18,11 @@ const generalSans = localFont({
   display: 'swap',
 })
 
+const ENV_LABELS: Record<string, string> = { dev: 'Dev', alpha: 'Alpha', beta: 'Beta' }
+const envLabel = ENV_LABELS[process.env.NEXT_PUBLIC_APP_ENV ?? '']
+
 export const metadata: Metadata = {
-  title:       'Allocate',
+  title:       envLabel ? `Allocate (${envLabel})` : 'Allocate',
   description: 'Film production equipment booking',
 }
 

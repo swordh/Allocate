@@ -9,6 +9,38 @@
   flex-direction: column;
 }
 
+.logoLine {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.envBadge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+.envBadge_dev {
+  background: var(--surface-container-highest);
+  color: var(--outline);
+}
+
+.envBadge_alpha {
+  background: #2a2200;
+  color: var(--accent);
+}
+
+.envBadge_beta {
+  background: #1a1a2e;
+  color: #7b9cff;
+}
+
 .logo {
   font-size: var(--font-logo);
   font-weight: 900;
