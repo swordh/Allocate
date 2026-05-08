@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
+import { useSupportContext } from '@/lib/support-context'
 import styles from './MobileMenu.module.css'
 
 // ── Top-level nav ─────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ interface MobileMenuProps {
 export function MobileMenu({ role }: MobileMenuProps) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const { openHelp, openNotifications, unreadCount } = useSupportContext()
 
   // Auto-close when the route changes.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -155,6 +157,28 @@ export function MobileMenu({ role }: MobileMenuProps) {
               ))}
             </div>
           )}
+
+          {/* More */}
+          <div className={styles.section}>
+            <p className={styles.sectionLabel}>More</p>
+            <button
+              className={styles.navItem}
+              onClick={() => { openNotifications(); setOpen(false) }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>notifications</span>
+              Notifications
+              {unreadCount > 0 && (
+                <span className={styles.unreadBadge}>{unreadCount}</span>
+              )}
+            </button>
+            <button
+              className={styles.navItem}
+              onClick={() => { openHelp(); setOpen(false) }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>help</span>
+              Help &amp; feedback
+            </button>
+          </div>
         </div>
 
         {/* Bottom CTA */}
