@@ -27,6 +27,7 @@ export default async function FeedbackPage({
       submittedBy: d.submittedBy,
       companyId: d.companyId ?? '',
       companyName: d.companyName ?? '',
+      userName: d.userName ?? '',
       status: d.status,
       priority: d.priority,
     }

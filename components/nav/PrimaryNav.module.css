@@ -17,12 +17,43 @@
   padding: 16px 24px;
 }
 
+.wordmarkGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .wordmark {
   font-size: 1.25rem;
   font-weight: 900;
   letter-spacing: -0.04em;
   text-transform: uppercase;
   color: var(--white);
+}
+
+.envBadge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.envBadge_dev {
+  background: var(--surface-container-highest);
+  color: var(--outline);
+}
+
+.envBadge_alpha {
+  background: #2a2200;
+  color: var(--accent);
+}
+
+.envBadge_beta {
+  background: #1a1a2e;
+  color: #7b9cff;
 }
 
 .links {
@@ -76,6 +107,51 @@
   display: flex;
   align-items: center;
   gap: 24px;
+}
+
+.iconGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iconBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: rgba(240, 237, 232, 0.5);
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+
+.iconBtn:hover {
+  color: var(--white);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.iconBtnActive {
+  color: var(--white);
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.unreadDot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--black);
+  pointer-events: none;
 }
 
 @media (max-width: 768px) {
