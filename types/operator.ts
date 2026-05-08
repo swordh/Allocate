@@ -1,4 +1,4 @@
-export type FeedbackType = 'feature_request' | 'bug_report'
+export type FeedbackType = 'feature_request' | 'bug_report' | 'support'
 export type FeedbackStatus = 'open' | 'in_progress' | 'done' | 'wont_fix'
 export type FeedbackPriority = 'low' | 'medium' | 'high'
 
@@ -11,6 +11,7 @@ export interface OperatorFeedback {
   submittedBy: string        // uid
   companyId: string
   companyName: string
+  userName: string
   status: FeedbackStatus
   priority: FeedbackPriority
 }

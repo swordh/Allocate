@@ -41,7 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 # Firebase
-.firebaserc
 .firebase/
 firebase-debug.log
 firestore-debug.log
