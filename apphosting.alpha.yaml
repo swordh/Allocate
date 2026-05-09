@@ -1,13 +1,10 @@
-# Firebase App Hosting — ALPHA backend only
-# Backend: allocate-alpha in project allocate-alpha
-# Docs: https://firebase.google.com/docs/app-hosting/configure
+# Firebase App Hosting — ALPHA environment
+# Activate: Firebase Console → App Hosting → alpha backend → Settings → Environment = "alpha"
+# Merges with apphosting.yaml (base). Values here take precedence.
+# Docs: https://firebase.google.com/docs/app-hosting/multiple-environments
 
 runConfig:
-  minInstances: 0
   maxInstances: 2
-  concurrency: 80
-  cpu: 1
-  memoryMiB: 512
 
 env:
   - variable: NEXT_PUBLIC_APP_ENV
@@ -53,26 +50,12 @@ env:
       - BUILD
       - RUNTIME
 
-  # Stripe price IDs — test mode
+  # Stripe — test mode
   - variable: STRIPE_PRICE_STARTER_MONTHLY
     value: "price_1Q0r0X06TtFrNVu39VXac7MQ"
     availability:
       - RUNTIME
   - variable: STRIPE_PRICE_STARTER_YEARLY
     value: "price_1Q0N5206TtFrNVu3B1rlpJYi"
-    availability:
-      - RUNTIME
-
-  # Secrets — resolved from allocate-alpha's Google Secret Manager
-  - variable: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
-    secret: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
-    availability:
-      - RUNTIME
-  - variable: STRIPE_SECRET_KEY
-    secret: STRIPE_SECRET_KEY
-    availability:
-      - RUNTIME
-  - variable: STRIPE_WEBHOOK_SECRET
-    secret: STRIPE_WEBHOOK_SECRET
     availability:
       - RUNTIME
