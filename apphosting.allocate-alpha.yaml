@@ -1,65 +1,59 @@
-# Firebase App Hosting — PRODUCTION backend only
-# Backend: allocate in project allocate-e0735
-# Alpha and beta use apphosting.allocate-alpha.yaml / apphosting.allocate-beta.yaml
+# Firebase App Hosting — ALPHA backend only
+# Backend: allocate-alpha in project allocate-alpha
 # Docs: https://firebase.google.com/docs/app-hosting/configure
 
 runConfig:
   minInstances: 0
-  maxInstances: 10
+  maxInstances: 2
   concurrency: 80
   cpu: 1
   memoryMiB: 512
 
 env:
   - variable: NEXT_PUBLIC_APP_ENV
-    value: ""
-    availability:
-      - BUILD
-      - RUNTIME
-
-  # Firebase client config — allocate-e0735 (prod)
-  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    value: "AIzaSyDlmC62B2RS-zO_YseqbcOs4gpzKaiVd-A"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    value: "allocate-e0735.firebaseapp.com"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-    value: "allocate-e0735"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    value: "allocate-e0735.firebasestorage.app"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-    value: "5366151572"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    value: "1:5366151572:web:f63b276838880215053781"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
-    value: "G-02WW3DDDPD"
+    value: "alpha"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_APP_URL
-    value: "https://allocate--allocate-e0735.europe-west4.hosted.app"
+    value: "https://allocate-alpha--allocate-alpha.europe-west4.hosted.app"
     availability:
       - BUILD
       - RUNTIME
 
-  # Stripe price IDs — non-secret, runtime only.
+  # Firebase client config — allocate-alpha project
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyCxvUqvlF6uszTbsktJsmbikFAsulKlw8k"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "allocate-alpha.firebaseapp.com"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "allocate-alpha"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "allocate-alpha.firebasestorage.app"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "484998289231"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:484998289231:web:59c527ee62b0ae03cdd73a"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Stripe price IDs — test mode
   - variable: STRIPE_PRICE_STARTER_MONTHLY
     value: "price_1Q0r0X06TtFrNVu39VXac7MQ"
     availability:
@@ -69,8 +63,7 @@ env:
     availability:
       - RUNTIME
 
-  # Secrets — managed in Google Secret Manager.
-  # Create with: firebase apphosting:secrets:set <NAME>
+  # Secrets — resolved from allocate-alpha's Google Secret Manager
   - variable: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
     secret: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
     availability:
