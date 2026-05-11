@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import { GroupedVirtuoso, type GroupedVirtuosoHandle } from 'react-virtuoso'
 import { useBookings } from '@/hooks/useBookings'
 import type { Booking, Role, UserProfile } from '@/types'
 import styles from './BookingList.module.css'
@@ -40,22 +41,12 @@ function groupBookingsByDate(bookings: Booking[]): Map<string, Booking[]> {
 function formatDateLabel(dateStr: string, today: string, tomorrow: string): string {
   if (dateStr === today) return 'Today'
   if (dateStr === tomorrow) return 'Tomorrow'
-  // Format as "Mon 23 Mar" style
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
   })
-}
-
-function formatFullDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  }).toUpperCase()
 }
 
 // ---------------------------------------------------------------------------
@@ -90,8 +81,17 @@ export default function BookingList({
   const [showCancelled, setShowCancelled] = useState(false)
   const [showOnlyMine, setShowOnlyMine] = useState(false)
 
+  // Load a large window so past and future bookings up to 5 years in each
+  // direction are available without extra fetches.
+  const fiveYearsAgo = useMemo(() => {
+    const d = new Date()
+    d.setFullYear(d.getFullYear() - 5)
+    return d.toISOString().slice(0, 10)
+  }, [])
+
   const { bookings: liveBookings, loading, error } = useBookings(companyId, {
     includeCancelled: showCancelled,
+    startDate: fiveYearsAgo,
   })
 
   // Use live data once the listener has fired; fall back to server-fetched initial data.
@@ -112,7 +112,7 @@ export default function BookingList({
   const stats = useMemo(() => computeStats(visibleBookings, today), [visibleBookings, today])
   void stats // prevent unused variable warning
 
-  // Group non-cancelled bookings by startDate, sorted newest first.
+  // Group by startDate, filtered, sorted oldest → newest.
   const grouped = useMemo(() => {
     const all = showCancelled
       ? visibleBookings
@@ -121,9 +121,35 @@ export default function BookingList({
   }, [visibleBookings, showCancelled])
 
   const sortedDates = useMemo(
-    () => Array.from(grouped.keys()).sort((a, b) => (a > b ? -1 : 1)),
+    () => Array.from(grouped.keys()).sort((a, b) => (a > b ? 1 : -1)),
     [grouped],
   )
+
+  // Flat booking array in date order for O(1) lookup by virtuoso index.
+  const flatBookings = useMemo(
+    () => sortedDates.flatMap((d) => grouped.get(d) ?? []),
+    [sortedDates, grouped],
+  )
+
+  // Number of booking items per date group.
+  const groupCounts = useMemo(
+    () => sortedDates.map((d) => (grouped.get(d) ?? []).length),
+    [sortedDates, grouped],
+  )
+
+  // Flat item index of the first booking on or after today.
+  // Used for initial scroll position and the Today button.
+  const todayItemIndex = useMemo(() => {
+    let offset = 0
+    for (let i = 0; i < sortedDates.length; i++) {
+      if (sortedDates[i] >= today) return offset
+      offset += groupCounts[i]
+    }
+    // All dates are in the past — scroll to the last item.
+    return Math.max(0, flatBookings.length - 1)
+  }, [sortedDates, groupCounts, flatBookings.length, today])
+
+  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
 
   if (error) {
     return (
@@ -136,20 +162,7 @@ export default function BookingList({
   return (
     <div className={styles.container}>
       {/* Stats bar — logic preserved, UI hidden per redesign spec */}
-      {/* <div className={styles.statsBar}>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{stats.bookingsToday}</span>
-          <span className={styles.statLabel}>Bookings today</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{stats.itemsOut}</span>
-          <span className={styles.statLabel}>Items out</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{stats.pendingApprovals}</span>
-          <span className={styles.statLabel}>Pending approvals</span>
-        </div>
-      </div> */}
+      {/* <div className={styles.statsBar}>…</div> */}
 
       {/* Controls */}
       <div className={styles.controls}>
@@ -164,6 +177,14 @@ export default function BookingList({
           onClick={() => setShowOnlyMine((v) => !v)}
         >
           {showOnlyMine ? 'Show all' : 'Only mine'}
+        </button>
+        <button
+          className={styles.todayBtn}
+          onClick={() =>
+            virtuosoRef.current?.scrollToIndex({ index: todayItemIndex, align: 'start', behavior: 'smooth' })
+          }
+        >
+          Today
         </button>
       </div>
 
@@ -180,45 +201,42 @@ export default function BookingList({
         </div>
       )}
 
-      {/* Date groups */}
-      {sortedDates.map((dateStr) => {
-        const dateBookings = grouped.get(dateStr) ?? []
-        const label = formatDateLabel(dateStr, today, tomorrow)
-        const isToday = dateStr === today
-
-        return (
-          <div key={dateStr} id={`group-${dateStr}`} className={styles.group}>
-            <div className={styles.groupHeader}>
-              <label className={styles.dateLabelWrap}>
+      {/* Virtualized date-grouped list. Mounted once Firestore data has loaded so
+          Virtuoso receives a stable dataset and the right initialTopMostItemIndex
+          on first render — prevents the previous data-swap-mid-mount duplicate. */}
+      {sortedDates.length > 0 && loading && (
+        <div style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }} />
+      )}
+      {sortedDates.length > 0 && !loading && (
+        <GroupedVirtuoso
+          ref={virtuosoRef}
+          style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }}
+          groupCounts={groupCounts}
+          initialTopMostItemIndex={todayItemIndex}
+          groupContent={(index) => {
+            const dateStr  = sortedDates[index]
+            const label    = formatDateLabel(dateStr, today, tomorrow)
+            const isToday  = dateStr === today
+            return (
+              <div className={`${styles.groupHeader} ${index === 0 ? styles.groupHeaderFirst : ''}`}>
                 <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
                   {label.toUpperCase()}
                 </span>
-                <input
-                  type="date"
-                  defaultValue={dateStr}
-                  onChange={(e) => {
-                    if (!e.target.value) return
-                    const target = e.target.value
-                    const nearest = [...sortedDates].reverse().find((d) => d >= target) ?? sortedDates[0]
-                    if (nearest) document.getElementById(`group-${nearest}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }}
-                  className={styles.overlayDateInput}
-                />
-              </label>
-              <div className={styles.groupRule} />
-            </div>
-            <div className={styles.bookingCards}>
-              {dateBookings.map((booking) => (
-                <BookingRow
-                  key={booking.id}
-                  booking={booking}
-                  userProfiles={userProfiles}
-                />
-              ))}
-            </div>
-          </div>
-        )
-      })}
+                <div className={styles.groupRule} />
+              </div>
+            )
+          }}
+          itemContent={(index) => {
+            const booking = flatBookings[index]
+            if (!booking) return <div />
+            return (
+              <div className={styles.bookingCardWrapper}>
+                <BookingRow booking={booking} userProfiles={userProfiles} />
+              </div>
+            )
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -227,7 +245,6 @@ export default function BookingList({
 // Booking row
 // ---------------------------------------------------------------------------
 
-// Status display helpers
 const STATUS_LABELS: Record<string, string> = {
   checked_out: 'CHECKED OUT',
   confirmed:   'CONFIRMED',
@@ -319,14 +336,6 @@ function BookingRow({
   )
 }
 
-function formatShortDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-  })
-}
-
 function formatBookingDateTime(
   startDate: string,
   endDate: string,
@@ -352,24 +361,17 @@ function formatBookingDateTime(
   const hasTime = startTime && endTime
 
   if (hasTime) {
-    // With time: show start date/time - end date/time
     if (sameDay) {
-      // Same day: "23 apr 12:03-13:45"
       return `${formatMonthDay(startDate)} ${startTime}-${endTime}`
     } else {
-      // Multiple days: "23 apr 12:03 - 25 maj 14:32"
       return `${formatMonthDay(startDate)} ${startTime} - ${formatMonthDay(endDate)} ${endTime}`
     }
   } else {
-    // All day: show date only
     if (sameDay) {
-      // Same day: "23 apr"
       return formatMonthDay(startDate)
     } else if (sameMonth) {
-      // Same month: "23 - 25 apr"
       return `${start.day} - ${formatMonthDay(endDate)}`
     } else {
-      // Different months: "23 apr - 25 maj"
       return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`
     }
   }
