@@ -151,6 +151,13 @@ export default function BookingList({
 
   const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
 
+  // Delay mounting the virtuoso until client-side hydration is complete.
+  // GroupedVirtuoso renders a different subset on SSR vs client (SSR renders
+  // item 0; client renders from initialTopMostItemIndex), which causes React
+  // to detect a hydration mismatch and render both — resulting in duplicates.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   // After live data loads, re-scroll to today so the position reflects the
   // full dataset (initial server data may have a different offset).
   useEffect(() => {
@@ -210,8 +217,12 @@ export default function BookingList({
         </div>
       )}
 
-      {/* Virtualized date-grouped list */}
-      {sortedDates.length > 0 && (
+      {/* Virtualized date-grouped list — only rendered client-side to avoid
+          SSR/hydration mismatch that caused duplicate booking rows. */}
+      {sortedDates.length > 0 && !mounted && (
+        <div style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }} />
+      )}
+      {sortedDates.length > 0 && mounted && (
         <GroupedVirtuoso
           ref={virtuosoRef}
           style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }}
