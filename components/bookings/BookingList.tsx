@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { GroupedVirtuoso, type GroupedVirtuosoHandle } from 'react-virtuoso'
 import { useBookings } from '@/hooks/useBookings'
@@ -151,22 +151,6 @@ export default function BookingList({
 
   const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
 
-  // Delay mounting the virtuoso until client-side hydration is complete.
-  // GroupedVirtuoso renders a different subset on SSR vs client (SSR renders
-  // item 0; client renders from initialTopMostItemIndex), which causes React
-  // to detect a hydration mismatch and render both — resulting in duplicates.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
-
-  // After live data loads, re-scroll to today so the position reflects the
-  // full dataset (initial server data may have a different offset).
-  useEffect(() => {
-    if (!loading && flatBookings.length > 0) {
-      virtuosoRef.current?.scrollToIndex({ index: todayItemIndex, align: 'start' })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]) // intentionally only fires when loading flips to false
-
   if (error) {
     return (
       <div className={styles.errorState}>
@@ -217,12 +201,13 @@ export default function BookingList({
         </div>
       )}
 
-      {/* Virtualized date-grouped list — only rendered client-side to avoid
-          SSR/hydration mismatch that caused duplicate booking rows. */}
-      {sortedDates.length > 0 && !mounted && (
+      {/* Virtualized date-grouped list. Mounted once Firestore data has loaded so
+          Virtuoso receives a stable dataset and the right initialTopMostItemIndex
+          on first render — prevents the previous data-swap-mid-mount duplicate. */}
+      {sortedDates.length > 0 && loading && (
         <div style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }} />
       )}
-      {sortedDates.length > 0 && mounted && (
+      {sortedDates.length > 0 && !loading && (
         <GroupedVirtuoso
           ref={virtuosoRef}
           style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }}
