@@ -214,7 +214,7 @@ export default function BookingList({
       {sortedDates.length > 0 && (
         <GroupedVirtuoso
           ref={virtuosoRef}
-          useWindowScroll
+          style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }}
           groupCounts={groupCounts}
           initialTopMostItemIndex={todayItemIndex}
           groupContent={(index) => {
