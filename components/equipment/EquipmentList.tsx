@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import EquipmentEmpty from './EquipmentEmpty'
@@ -54,9 +54,18 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const searchParams = useSearchParams()
   const openOnMount = role === 'admin' && searchParams.get('add') === '1'
 
-  // Unified modal state — pre-open if ?add=1 was present on first render
-  const [unifiedModalOpen, setUnifiedModalOpen] = useState(openOnMount)
+  const [unifiedModalOpen, setUnifiedModalOpen] = useState(false)
   const [unifiedModalEquipment, setUnifiedModalEquipment] = useState<Equipment | undefined>(undefined)
+
+  useEffect(() => {
+    if (openOnMount) setUnifiedModalOpen(true)
+  }, [openOnMount])
+
+  useEffect(() => {
+    const handler = () => { setUnifiedModalEquipment(undefined); setUnifiedModalOpen(true) }
+    window.addEventListener('equipment:open-add', handler)
+    return () => window.removeEventListener('equipment:open-add', handler)
+  }, [])
 
   function openAddModal() {
     setUnifiedModalEquipment(undefined)
