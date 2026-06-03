@@ -33,6 +33,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={generalSans.variable}>
+      <head>
+        <link
+          rel="preload"
+          href="/fonts/material-symbols-outlined.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
