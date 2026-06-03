@@ -80,9 +80,12 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
           </div>
 
           {isActive('/equipment') && role === 'admin' ? (
-            <Link href="/equipment?add=1" className={styles.newBookingBtn}>
+            <button
+              className={styles.newBookingBtn}
+              onClick={() => window.dispatchEvent(new Event('equipment:open-add'))}
+            >
               NEW EQUIPMENT
-            </Link>
+            </button>
           ) : (
             <Link href="/bookings/new" className={styles.newBookingBtn}>
               NEW BOOKING
