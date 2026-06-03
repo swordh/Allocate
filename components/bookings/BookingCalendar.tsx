@@ -4,10 +4,10 @@ import { useState } from 'react'
 import styles from './BookingCalendar.module.css'
 
 const MONTHS = [
-  'JANUARI','FEBRUARI','MARS','APRIL','MAJ','JUNI',
-  'JULI','AUGUSTI','SEPTEMBER','OKTOBER','NOVEMBER','DECEMBER',
+  'JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+  'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER',
 ]
-const DOW = ['MÅ','TI','ON','TO','FR','LÖ','SÖ']
+const DOW = ['MO','TU','WE','TH','FR','SA','SU']
 
 function keyOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -60,7 +60,7 @@ export default function BookingCalendar({ start, end, onChange }: BookingCalenda
         <button
           type="button"
           onClick={() => setView(new Date(y, m - 1, 1))}
-          aria-label="Föregående månad"
+          aria-label="Previous month"
         >
           ‹
         </button>
@@ -68,7 +68,7 @@ export default function BookingCalendar({ start, end, onChange }: BookingCalenda
         <button
           type="button"
           onClick={() => setView(new Date(y, m + 1, 1))}
-          aria-label="Nästa månad"
+          aria-label="Next month"
         >
           ›
         </button>

@@ -27,7 +27,7 @@ interface SelectedItem {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-const MONTHS_SHORT = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec']
+const MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
 
 function fromKey(k: string): Date {
   const [y, m, d] = k.split('-').map(Number)
@@ -261,7 +261,7 @@ export default function BookingForm({
     setError(null)
 
     if (selectedItems.length === 0) {
-      setError('Välj minst ett utrustningsobjekt.')
+      setError('Select at least one equipment item.')
       return
     }
 
@@ -271,7 +271,7 @@ export default function BookingForm({
       const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId, st, et)
       setConflictResult(result)
       if (result.hasConflict) {
-        setError('Utrustning är inte tillgänglig för valt datum. Kontrollera konflikterna nedan.')
+        setError('Equipment is not available for the selected dates. Check conflicts below.')
         return
       }
     }
@@ -286,7 +286,7 @@ export default function BookingForm({
     formData.set('items', JSON.stringify(selectedItems))
 
     if (bookingId) {
-      const toastId = showToast('saving', 'Sparar ändringar...')
+      const toastId = showToast('saving', 'Saving changes...')
       startTransition(async () => {
         const result = await updateBooking(bookingId, formData)
         dismissToast(toastId)
@@ -294,12 +294,12 @@ export default function BookingForm({
           setError(result.error)
           showToast('error', result.error, 5000)
         } else {
-          showToast('success', 'Bokning uppdaterad', 3000)
+          showToast('success', 'Booking updated', 3000)
           router.push(`/bookings/${bookingId}`)
         }
       })
     } else {
-      const toastId = showToast('saving', 'Sparar bokning...')
+      const toastId = showToast('saving', 'Saving booking...')
       startTransition(async () => {
         const result = await createBooking(formData)
         dismissToast(toastId)
@@ -307,7 +307,7 @@ export default function BookingForm({
           setError(result.error)
           showToast('error', result.error, 5000)
         } else {
-          showToast('success', 'Bokning skapad', 3000)
+          showToast('success', 'Booking created', 3000)
           router.push(`/bookings/${result.bookingId}`)
         }
       })
@@ -323,7 +323,7 @@ export default function BookingForm({
     ? fmtDate(startDate) +
       (endDate && endDate !== startDate ? ' → ' + fmtDate(endDate) : '') +
       ' · ' + daysBetween(startDate, endDate || startDate) +
-      (daysBetween(startDate, endDate || startDate) === 1 ? ' dag' : ' dagar')
+      (daysBetween(startDate, endDate || startDate) === 1 ? ' day' : ' days')
     : null
 
   // ── render ───────────────────────────────────────────────────────────────
@@ -333,7 +333,7 @@ export default function BookingForm({
 
         {/* Page head */}
         <div className={styles.pageHead}>
-          <h1 className={styles.h1}>{bookingId ? 'REDIGERA BOKNING' : 'NY BOKNING'}</h1>
+          <h1 className={styles.h1}>{bookingId ? 'EDIT BOOKING' : 'NEW BOOKING'}</h1>
           <div className={styles.rule} />
         </div>
 
@@ -342,7 +342,7 @@ export default function BookingForm({
         {/* 01 — PROJECT */}
         <section className={styles.section}>
           <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>PROJEKT</h2>
+            <h2 className={styles.secTitle}>PROJECT</h2>
           </div>
           <div className={styles.secBody}>
             <input
@@ -350,7 +350,7 @@ export default function BookingForm({
               type="text"
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Projektnamn"
+              placeholder="Project name"
               maxLength={200}
               required
             />
@@ -360,7 +360,7 @@ export default function BookingForm({
         {/* 02 — DATES */}
         <section className={styles.section}>
           <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>DATUM</h2>
+            <h2 className={styles.secTitle}>DATES</h2>
             {dateHint && <span className={styles.secHint}>{dateHint}</span>}
           </div>
           <div className={styles.secBody}>
@@ -378,13 +378,13 @@ export default function BookingForm({
                   <div className={styles.datebox}>
                     <label className={styles.datelabel}>START</label>
                     <span className={startDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(startDate) || 'Välj i kalender'}
+                      {fmtDate(startDate) || 'Pick in calendar'}
                     </span>
                   </div>
                   <div className={styles.datebox}>
-                    <label className={styles.datelabel}>SLUT</label>
+                    <label className={styles.datelabel}>END</label>
                     <span className={endDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(endDate) || (startDate ? 'Samma dag' : '—')}
+                      {fmtDate(endDate) || (startDate ? 'Same day' : '—')}
                     </span>
                   </div>
                 </div>
@@ -404,10 +404,10 @@ export default function BookingForm({
                           </svg>
                         )}
                       </span>
-                      <span className={styles.checkLabel}>Heldag</span>
+                      <span className={styles.checkLabel}>Full day</span>
                     </button>
                     <span className={styles.fulldayNote}>
-                      {fullDay ? 'Bokad för hela dagen' : 'Ange specifika tider nedan'}
+                      {fullDay ? 'Booked for the full day' : 'Set specific times below'}
                     </span>
                   </div>
                 )}
@@ -416,7 +416,7 @@ export default function BookingForm({
                 {timeSlotMinutes !== -1 && !fullDay && (
                   <div className={styles.timeRow}>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>STARTTID</label>
+                      <label className={styles.datelabel}>START TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={startTime}
@@ -428,7 +428,7 @@ export default function BookingForm({
                     </div>
                     <div className={styles.timeSep}>→</div>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>SLUTTID</label>
+                      <label className={styles.datelabel}>END TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={endTime}
@@ -448,23 +448,23 @@ export default function BookingForm({
         {/* 03 — EQUIPMENT */}
         <section className={styles.section}>
           <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>UTRUSTNING</h2>
+            <h2 className={styles.secTitle}>EQUIPMENT</h2>
             {itemCount > 0 && (
-              <span className={styles.secHint}>{itemCount} {itemCount === 1 ? 'objekt' : 'objekt'}</span>
+              <span className={styles.secHint}>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
             )}
             {(isCheckingConflict || isLoadingAvailability) && (
-              <span className={styles.secChecking}>kontrollerar…</span>
+              <span className={styles.secChecking}>checking…</span>
             )}
             <span className={`${styles.secTag} ${!hasDates ? styles.secTagMuted : ''}`}>
-              {hasDates ? `TILLGÄNGLIGHET · ${fmtDate(startDate)}` : 'VÄLJ DATUM FÖR LIVE-TILLGÄNGLIGHET'}
+              {hasDates ? `AVAILABILITY · ${fmtDate(startDate)}` : 'SELECT DATES FOR LIVE AVAILABILITY'}
             </span>
           </div>
           <div className={styles.secBody}>
             {bookableEquipment.length === 0 ? (
               <div className={styles.emptyMsg}>
                 {equipment.length === 0
-                  ? 'Ingen utrustning tillagd. Lägg till utrustning på utrustningssidan.'
-                  : 'Ingen utrustning är tillgänglig för bokning just nu.'}
+                  ? 'No equipment added. Add equipment on the equipment page.'
+                  : 'No equipment available for booking right now.'}
               </div>
             ) : (
               <div className={styles.cats}>
@@ -531,7 +531,7 @@ export default function BookingForm({
                                           })
                                         }}
                                       >
-                                        {selectedUnitId ? `${1} VALD` : 'VÄLJ'}
+                                        {selectedUnitId ? `${1} SELECTED` : 'SELECT'}
                                         <svg
                                           width="10" height="6" viewBox="0 0 11 7" fill="none"
                                           style={{ transform: isUnitOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
@@ -559,7 +559,7 @@ export default function BookingForm({
                                               <span className={styles.unitSn}>{unit.serialNumber}</span>
                                             )}
                                             <span className={styles.unitState}>
-                                              {isBooked ? 'BOKAD' : isOn ? '✓' : '+'}
+                                              {isBooked ? 'BOOKED' : isOn ? '✓' : '+'}
                                             </span>
                                           </button>
                                         )
@@ -612,17 +612,17 @@ export default function BookingForm({
 
             {conflictResult?.hasConflict && (
               <div className={styles.conflictNotice}>
-                <div className={styles.conflictTitle}>Konflikter hittades</div>
+                <div className={styles.conflictTitle}>Conflicts found</div>
                 {conflictResult.conflicts.map((c) => {
                   const eq = equipment.find((e) => e.id === c.equipmentId)
                   return (
                     <div key={c.equipmentId} className={styles.conflictItem}>
                       <span>{eq?.name ?? c.equipmentId}</span>
                       {c.reason === 'insufficient_quantity' && c.available !== undefined && (
-                        <span className={styles.conflictDetail}>Endast {c.available} tillgängliga</span>
+                        <span className={styles.conflictDetail}>Only {c.available} available</span>
                       )}
                       {c.reason === 'already_booked' && (
-                        <span className={styles.conflictDetail}>Redan bokad</span>
+                        <span className={styles.conflictDetail}>Already booked</span>
                       )}
                     </div>
                   )
@@ -635,14 +635,14 @@ export default function BookingForm({
         {/* 04 — NOTES */}
         <section className={styles.section}>
           <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>ANTECKNINGAR</h2>
+            <h2 className={styles.secTitle}>NOTES</h2>
           </div>
           <div className={styles.secBody}>
             <textarea
               className={styles.notes}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Leveransdetaljer, crew, specialhantering…"
+              placeholder="Delivery details, crew, special handling…"
               maxLength={2000}
               rows={3}
             />
@@ -657,21 +657,21 @@ export default function BookingForm({
         <div className={styles.actionSummary}>
           {startDate
             ? <strong className={styles.asStrong}>{fmtDate(startDate)}{endDate && endDate !== startDate ? '–' + fmtDate(endDate) : ''}</strong>
-            : <span className={styles.asDim}>Inga datum</span>
+            : <span className={styles.asDim}>No dates</span>
           }
           <i className={styles.asDiv} />
-          <span>{itemCount} {itemCount === 1 ? 'objekt' : 'objekt'}</span>
+          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
         </div>
         <div className={styles.actionBtns}>
           <button type="button" className={styles.btnGhost} onClick={() => router.back()}>
-            AVBRYT
+            CANCEL
           </button>
           <button
             type="submit"
             className={`${styles.btnPrimary} ${!canCreate ? styles.btnDisabled : ''}`}
             disabled={!canCreate || isPending}
           >
-            {isPending ? 'SPARAR…' : bookingId ? 'UPPDATERA BOKNING' : 'SKAPA BOKNING'}
+            {isPending ? 'SAVING…' : bookingId ? 'UPDATE BOOKING' : 'CREATE BOOKING'}
           </button>
         </div>
       </div>
