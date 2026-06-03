@@ -1,0 +1,119 @@
+/* -----------------------------------------------------------------------
+   BookingCalendar — inline range-picker
+   ----------------------------------------------------------------------- */
+
+.cal {
+  width: 100%;
+}
+
+.calHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.calHead span {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.calHead button {
+  background: none;
+  border: 1px solid #2b2b2b;
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  font-size: 18px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.calHead button:hover {
+  border-color: var(--tertiary, #EECC02);
+  color: var(--tertiary, #EECC02);
+}
+
+.calDow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.calDow span {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.37);
+}
+
+.calGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calEmpty {
+  aspect-ratio: 1;
+}
+
+.calDay {
+  aspect-ratio: 1;
+  background: #1b1b1b;
+  border: none;
+  color: #cfcfcf;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  position: relative;
+}
+
+.calDay:hover {
+  background: #242424;
+  color: #fff;
+}
+
+.calDayToday {
+  color: var(--tertiary, #EECC02);
+}
+
+.calDayToday:hover {
+  color: #fff;
+}
+
+.calDayMid {
+  background: rgba(255, 220, 0, 0.14);
+  color: #fff;
+}
+
+.calDayMid:hover {
+  background: rgba(255, 220, 0, 0.22);
+}
+
+.calDayStart,
+.calDayEnd,
+.calDaySolo {
+  background: var(--tertiary, #EECC02);
+  color: #000;
+  font-weight: 700;
+}
+
+.calDayStart:hover,
+.calDayEnd:hover,
+.calDaySolo:hover {
+  background: var(--tertiary, #EECC02);
+  color: #000;
+}

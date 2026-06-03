@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBooking, updateBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
 import { useToast } from '@/lib/toast-context'
+import BookingCalendar from './BookingCalendar'
 import type { Booking, Equipment } from '@/types'
 import type { ConflictResult, BookedSummary } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
@@ -24,15 +25,32 @@ interface SelectedItem {
   quantity: number
 }
 
-function generateHourOptions(): string[] {
-  return Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+const MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+
+function fromKey(k: string): Date {
+  const [y, m, d] = k.split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 
-function generateMinuteOptions(slotMinutes: number): string[] {
+function fmtDate(k: string | null): string {
+  if (!k) return ''
+  const d = fromKey(k)
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function daysBetween(s: string, e: string): number {
+  return Math.round((fromKey(e).getTime() - fromKey(s).getTime()) / 86400000) + 1
+}
+
+function generateTimeOptions(slotMinutes: number): string[] {
   const step = slotMinutes >= 60 ? 60 : slotMinutes
   const options: string[] = []
-  for (let m = 0; m < 60; m += step) {
-    options.push(String(m).padStart(2, '0'))
+  for (let h = 6; h <= 23; h++) {
+    for (let m = 0; m < 60; m += step) {
+      options.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    }
   }
   return options
 }
@@ -45,6 +63,31 @@ function groupByCategory(equipment: Equipment[]): Map<string, Equipment[]> {
   }
   return map
 }
+
+// ── sub-components ───────────────────────────────────────────────────────────
+
+function AvailBadge({ available, total, hasDates }: { available: number; total: number; hasDates: boolean }) {
+  const tone = available <= 0 ? 'none' : available <= Math.max(1, Math.floor(total * 0.34)) ? 'low' : 'ok'
+  return (
+    <span className={`${styles.avail} ${tone === 'none' ? styles.availNone : tone === 'low' ? styles.availLow : ''}`}>
+      <i className={styles.availDot} />
+      <b>{available}</b> available
+      {hasDates && available < total && <span className={styles.availOf}> of {total}</span>}
+    </span>
+  )
+}
+
+function Stepper({ value, min = 0, max = 99, onChange }: { value: number; min?: number; max?: number; onChange: (n: number) => void }) {
+  return (
+    <div className={styles.stepper} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className={styles.stepBtn} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}>–</button>
+      <span className={styles.stepVal}>{value}</span>
+      <button type="button" className={styles.stepBtn} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}>+</button>
+    </div>
+  )
+}
+
+// ── main component ───────────────────────────────────────────────────────────
 
 export default function BookingForm({
   companyId,
@@ -62,26 +105,48 @@ export default function BookingForm({
     ? booking.items.map((i) => ({ equipmentId: i.equipmentId, unitId: i.unitId, quantity: i.quantity }))
     : []
 
-  const [projectName, setProjectName]   = useState(booking?.projectName ?? '')
-  const [startDate, setStartDate]       = useState(booking?.startDate ?? defaultStartDate)
-  const [endDate, setEndDate]           = useState(booking?.endDate ?? defaultEndDate)
-  // For a new booking default to 09:00–17:00 so the toggle starts OFF.
-  // For edit: preserve the saved value (null/undefined → '' = all-day = toggle ON).
-  const [startTime, setStartTime]       = useState(booking ? (booking.startTime ?? '') : '09:00')
-  const [endTime, setEndTime]           = useState(booking ? (booking.endTime ?? '') : '17:00')
-  const [notes, setNotes]               = useState(booking?.notes ?? '')
+  // ── form state ──────────────────────────────────────────────────────────
+  const [projectName, setProjectName] = useState(booking?.projectName ?? '')
+  const [startDate, setStartDate]     = useState(booking?.startDate ?? defaultStartDate)
+  const [endDate, setEndDate]         = useState(booking?.endDate ?? defaultEndDate)
+  const [fullDay, setFullDay]         = useState(booking ? (!booking.startTime && !booking.endTime) : false)
+  const [startTime, setStartTime]     = useState(booking ? (booking.startTime ?? '') : '08:00')
+  const [endTime, setEndTime]         = useState(booking ? (booking.endTime ?? '') : '18:00')
+  const [notes, setNotes]             = useState(booking?.notes ?? '')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(initialItems)
-  const [error, setError]               = useState<string | null>(null)
-  const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null)
-  const [isCheckingConflict, setIsCheckingConflict] = useState(false)
-  const [bookedSummary, setBookedSummary] = useState<Record<string, BookedSummary> | null>(null)
-  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
-  const [isPending, startTransition]    = useTransition()
 
+  // ── availability + conflict state ───────────────────────────────────────
+  const [error, setError]                     = useState<string | null>(null)
+  const [conflictResult, setConflictResult]   = useState<ConflictResult | null>(null)
+  const [isCheckingConflict, setIsCheckingConflict] = useState(false)
+  const [bookedSummary, setBookedSummary]     = useState<Record<string, BookedSummary> | null>(null)
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
+  const [isPending, startTransition]          = useTransition()
+
+  // ── accordion state ─────────────────────────────────────────────────────
+  const bookableEquipment = useMemo(() => equipment.filter((e) => e.availableForBooking !== false), [equipment])
+  const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
+  const sortedCategories = useMemo(() => Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)), [grouped])
+
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() => {
+    const first = sortedCategories[0]?.[0]
+    return first ? { [first]: true } : {}
+  })
+
+  // ── unit-chip open state ─────────────────────────────────────────────────
+  const [unitOpen, setUnitOpen] = useState<Set<string>>(() => {
+    const s = new Set<string>()
+    initialItems.filter((i) => i.unitId).forEach((i) => s.add(i.equipmentId))
+    return s
+  })
+
+  // ── time options ─────────────────────────────────────────────────────────
+  const timeOptions = useMemo(() => generateTimeOptions(timeSlotMinutes), [timeSlotMinutes])
+
+  // ── load availability on mount ──────────────────────────────────────────
   const effectiveStart = booking?.startDate ?? defaultStartDate
   const effectiveEnd   = booking?.endDate   ?? defaultEndDate
 
-  // Load availability on mount (default dates are already set)
   useEffect(() => {
     if (!effectiveStart || !effectiveEnd) return
     setIsLoadingAvailability(true)
@@ -91,152 +156,41 @@ export default function BookingForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Refresh availability + conflicts when the time window changes
-  // (date changes are handled by handleDateChange).
+  // ── refresh on time change ───────────────────────────────────────────────
   useEffect(() => {
     if (!startDate || !endDate) return
-    const effectiveEnd = endDate < startDate ? startDate : endDate
+    const eff = endDate < startDate ? startDate : endDate
+    const st = fullDay ? null : (startTime || null)
+    const et = fullDay ? null : (endTime || null)
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, startDate, effectiveEnd, bookingId, startTime || null, endTime || null)
+    getBookedSummary(companyId, startDate, eff, bookingId, st, et)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
-
     if (selectedItems.length > 0) {
       setIsCheckingConflict(true)
-      checkConflict(companyId, startDate, effectiveEnd, selectedItems, bookingId, startTime || null, endTime || null)
+      checkConflict(companyId, startDate, eff, selectedItems, bookingId, st, et)
         .then(setConflictResult)
         .finally(() => setIsCheckingConflict(false))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startTime, endTime])
+  }, [startTime, endTime, fullDay])
 
-  const hourOptions   = useMemo(() => generateHourOptions(), [])
-  const minuteOptions = useMemo(() => generateMinuteOptions(timeSlotMinutes), [timeSlotMinutes])
-
-  const startHour   = startTime ? startTime.split(':')[0] : ''
-  const startMinute = startTime ? startTime.split(':')[1] : '00'
-  const endHour     = endTime   ? endTime.split(':')[0]   : ''
-  const endMinute   = endTime   ? endTime.split(':')[1]   : '00'
-
-  function handleStartHour(hh: string) {
-    if (!hh) { setStartTime(''); return }
-    setStartTime(`${hh}:${startMinute}`)
-  }
-  function handleStartMinute(mm: string) {
-    setStartTime(`${startHour || '00'}:${mm}`)
-  }
-  function handleEndHour(hh: string) {
-    if (!hh) { setEndTime(''); return }
-    setEndTime(`${hh}:${endMinute}`)
-  }
-  function handleEndMinute(mm: string) {
-    setEndTime(`${endHour || '00'}:${mm}`)
-  }
-
-  const bookableEquipment = equipment.filter((e) => e.availableForBooking !== false)
-  const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
-
-  const conflictIds = useMemo(() => {
-    if (!conflictResult?.hasConflict) return new Set<string>()
-    return new Set(conflictResult.conflicts.map((c) => c.equipmentId))
-  }, [conflictResult])
-
-  // For quantity equipment
-  function isSelected(id: string): boolean {
-    return selectedItems.some((i) => i.equipmentId === id && !i.unitId)
-  }
-
-  // For serialized equipment: returns selected unitId or undefined
-  function getSelectedUnitId(equipmentId: string): string | undefined {
-    return selectedItems.find((i) => i.equipmentId === equipmentId && i.unitId)?.unitId
-  }
-
-  function getQuantity(id: string): number {
-    return selectedItems.find((i) => i.equipmentId === id && !i.unitId)?.quantity ?? 1
-  }
-
-  function toggleItem(eq: Equipment) {
-    setSelectedItems((prev) => {
-      if (prev.some((i) => i.equipmentId === eq.id && !i.unitId)) {
-        return prev.filter((i) => !(i.equipmentId === eq.id && !i.unitId))
-      }
-      return [...prev, { equipmentId: eq.id, quantity: 1 }]
-    })
-    setConflictResult(null)
-  }
-
-  function selectUnit(equipmentId: string, unitId: string) {
-    setSelectedItems((prev) => {
-      const without = prev.filter((i) => i.equipmentId !== equipmentId || !i.unitId)
-      if (!unitId) return without
-      return [...without, { equipmentId, unitId, quantity: 1 }]
-    })
-    setConflictResult(null)
-  }
-
-  function sortedUnits(eq: Equipment): NonNullable<typeof eq.units> {
-    const bookable = (eq.units ?? []).filter(u => u.availableForBooking !== false)
-    const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-    const available   = bookable.filter(u => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
-    const unavailable = bookable.filter(u =>  booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
-    return [...available, ...unavailable]
-  }
-
-  function toggleUnitItem(eq: Equipment) {
-    const sorted = sortedUnits(eq)
-    setSelectedItems((prev) => {
-      const hasSelection = prev.some((i) => i.equipmentId === eq.id && i.unitId)
-      if (hasSelection) {
-        return prev.filter((i) => i.equipmentId !== eq.id || !i.unitId)
-      }
-      const firstUnit = sorted[0]
-      if (!firstUnit) return prev
-      const without = prev.filter((i) => i.equipmentId !== eq.id || !i.unitId)
-      return [...without, { equipmentId: eq.id, unitId: firstUnit.id, quantity: 1 }]
-    })
-    setConflictResult(null)
-  }
-
-  function setQuantity(id: string, qty: number) {
-    setSelectedItems((prev) => {
-      if (qty <= 0) {
-        return prev.filter((i) => !(i.equipmentId === id && !i.unitId))
-      }
-      const exists = prev.some((i) => i.equipmentId === id && !i.unitId)
-      if (exists) {
-        return prev.map((i) => (i.equipmentId === id && !i.unitId ? { ...i, quantity: qty } : i))
-      }
-      return [...prev, { equipmentId: id, quantity: qty }]
-    })
-    setConflictResult(null)
-  }
-
-  async function handleDateChange(field: 'start' | 'end', value: string) {
-    const newStart = field === 'start' ? value : startDate
-    const newEnd   = field === 'end'   ? value : endDate
-
-    if (field === 'start') setStartDate(value)
-    else setEndDate(value)
-
-    if (field === 'start' && value > endDate) {
-      setEndDate(value)
-    }
-
-    if (!newStart || !newEnd) return
-
-    const effectiveEnd = newEnd < newStart ? newStart : newEnd
-
-    // Always refresh availability for all equipment when dates change
+  // ── date change ──────────────────────────────────────────────────────────
+  async function handleDateChange(newStart: string, newEnd: string | null) {
+    const s = newStart
+    const e = newEnd ?? newStart
+    setStartDate(s)
+    setEndDate(e)
+    const st = fullDay ? null : (startTime || null)
+    const et = fullDay ? null : (endTime || null)
     setIsLoadingAvailability(true)
-    getBookedSummary(companyId, newStart, effectiveEnd, bookingId, startTime || null, endTime || null)
+    getBookedSummary(companyId, s, e, bookingId, st, et)
       .then(setBookedSummary)
       .finally(() => setIsLoadingAvailability(false))
-
-    // Also re-check conflicts for already-selected items
     if (selectedItems.length > 0) {
       setIsCheckingConflict(true)
       try {
-        const result = await checkConflict(companyId, newStart, effectiveEnd, selectedItems, bookingId, startTime || null, endTime || null)
+        const result = await checkConflict(companyId, s, e, selectedItems, bookingId, st, et)
         setConflictResult(result)
       } finally {
         setIsCheckingConflict(false)
@@ -244,22 +198,64 @@ export default function BookingForm({
     }
   }
 
-  const requiresApproval = useMemo(() => {
-    return selectedItems.some((item) => {
-      const eq = equipment.find((e) => e.id === item.equipmentId)
-      return eq?.requiresApproval
+  // ── selection helpers ────────────────────────────────────────────────────
+  const conflictIds = useMemo(() => {
+    if (!conflictResult?.hasConflict) return new Set<string>()
+    return new Set(conflictResult.conflicts.map((c) => c.equipmentId))
+  }, [conflictResult])
+
+  function getQuantity(id: string): number {
+    return selectedItems.find((i) => i.equipmentId === id && !i.unitId)?.quantity ?? 0
+  }
+
+  function getSelectedUnitId(equipmentId: string): string | undefined {
+    return selectedItems.find((i) => i.equipmentId === equipmentId && i.unitId)?.unitId
+  }
+
+  function setQuantity(id: string, qty: number) {
+    setSelectedItems((prev) => {
+      if (qty <= 0) return prev.filter((i) => !(i.equipmentId === id && !i.unitId))
+      const exists = prev.some((i) => i.equipmentId === id && !i.unitId)
+      if (exists) return prev.map((i) => (i.equipmentId === id && !i.unitId ? { ...i, quantity: qty } : i))
+      return [...prev, { equipmentId: id, quantity: qty }]
     })
-  }, [selectedItems, equipment])
+    setConflictResult(null)
+  }
 
-  const selectedEquipment = useMemo(
-    () =>
-      selectedItems.map((item) => ({
-        item,
-        equipment: equipment.find((e) => e.id === item.equipmentId),
-      })).filter((s) => s.equipment !== undefined),
-    [selectedItems, equipment],
-  )
+  function selectUnit(equipmentId: string, unitId: string) {
+    setSelectedItems((prev) => {
+      const without = prev.filter((i) => i.equipmentId !== equipmentId || !i.unitId)
+      return [...without, { equipmentId, unitId, quantity: 1 }]
+    })
+    setConflictResult(null)
+  }
 
+  function deselectUnit(equipmentId: string) {
+    setSelectedItems((prev) => prev.filter((i) => !(i.equipmentId === equipmentId && i.unitId)))
+    setConflictResult(null)
+  }
+
+  function sortedUnits(eq: Equipment): NonNullable<typeof eq.units> {
+    const bookable = (eq.units ?? []).filter((u) => u.availableForBooking !== false)
+    const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
+    const available   = bookable.filter((u) => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
+    const unavailable = bookable.filter((u) =>  booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
+    return [...available, ...unavailable]
+  }
+
+  // ── full day toggle ──────────────────────────────────────────────────────
+  function toggleFullDay() {
+    if (!fullDay) {
+      setStartTime('')
+      setEndTime('')
+    } else {
+      setStartTime('08:00')
+      setEndTime('18:00')
+    }
+    setFullDay(!fullDay)
+  }
+
+  // ── submit ───────────────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -270,10 +266,12 @@ export default function BookingForm({
     }
 
     if (startDate && endDate) {
-      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId, startTime || null, endTime || null)
+      const st = fullDay ? null : (startTime || null)
+      const et = fullDay ? null : (endTime || null)
+      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId, st, et)
       setConflictResult(result)
       if (result.hasConflict) {
-        setError('Some equipment is unavailable for the selected dates. Review conflicts below.')
+        setError('Equipment is not available for the selected dates. Check conflicts below.')
         return
       }
     }
@@ -282,8 +280,8 @@ export default function BookingForm({
     formData.set('projectName', projectName)
     formData.set('startDate', startDate)
     formData.set('endDate', endDate)
-    if (startTime) formData.set('startTime', startTime)
-    if (endTime) formData.set('endTime', endTime)
+    if (!fullDay && startTime) formData.set('startTime', startTime)
+    if (!fullDay && endTime)   formData.set('endTime', endTime)
     formData.set('notes', notes)
     formData.set('items', JSON.stringify(selectedItems))
 
@@ -316,413 +314,364 @@ export default function BookingForm({
     }
   }
 
-  const dateRangeLabel =
-    startDate === endDate ? startDate : `${startDate} — ${endDate}`
+  // ── derived values ───────────────────────────────────────────────────────
+  const itemCount = selectedItems.length
+  const canCreate = !!projectName.trim() && !!startDate && itemCount > 0
+  const hasDates  = !!startDate
 
-  const timeRangeLabel =
-    startTime && endTime ? `${startTime} → ${endTime}`
-    : startTime ? `From ${startTime}`
-    : endTime ? `Until ${endTime}`
+  const dateHint = startDate
+    ? fmtDate(startDate) +
+      (endDate && endDate !== startDate ? ' → ' + fmtDate(endDate) : '') +
+      ' · ' + daysBetween(startDate, endDate || startDate) +
+      (daysBetween(startDate, endDate || startDate) === 1 ? ' day' : ' days')
     : null
 
+  // ── render ───────────────────────────────────────────────────────────────
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
-      <div className={styles.layout}>
-        {/* Left: form fields */}
-        <div className={styles.fields}>
+      <div className={styles.main}>
 
-          {error && (
-            <div className={styles.errorBanner}>{error}</div>
-          )}
-
-          {/* Project name */}
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="projectName">
-              Project / Title
-            </label>
-            <div className={styles.inputWrap}>
-              <input
-                id="projectName"
-                className={styles.input}
-                type="text"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="e.g. Nordic Noir EP5 — Camera Package"
-                maxLength={200}
-                required
-              />
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className={styles.field}>
-            <div className={styles.sectionLabel}>Date</div>
-            <div className={styles.dateRow}>
-              <div>
-                <label className={styles.label} htmlFor="startDate">Start Date</label>
-                <div className={styles.inputWrap}>
-                  <input
-                    id="startDate"
-                    className={styles.input}
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => handleDateChange('start', e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={styles.label} htmlFor="endDate">End Date</label>
-                <div className={styles.inputWrap}>
-                  <input
-                    id="endDate"
-                    className={styles.input}
-                    type="date"
-                    value={endDate}
-                    min={startDate}
-                    onChange={(e) => handleDateChange('end', e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Times — hidden when Full Day (-1) */}
-          {timeSlotMinutes !== -1 && (
-            <div className={styles.field}>
-              {(() => {
-                const isFullDay = !startTime && !endTime
-                return (
-                  <>
-                    <div className={styles.sectionLabelRow}>
-                      <div className={styles.sectionLabel}>Time</div>
-                      <button
-                        type="button"
-                        className={isFullDay ? styles.fullDayBtnActive : styles.fullDayBtn}
-                        onClick={() => {
-                          if (isFullDay) {
-                            setStartTime('09:00')
-                            setEndTime('17:00')
-                          } else {
-                            setStartTime('')
-                            setEndTime('')
-                          }
-                        }}
-                      >
-                        Full day
-                      </button>
-                    </div>
-                    {!isFullDay && (
-                      <div className={styles.dateRow}>
-                        <div>
-                          <label className={styles.label} htmlFor="startHour">Start Time</label>
-                          <div className={styles.inputWrap}>
-                            <div className={styles.timeRow}>
-                              <select
-                                id="startHour"
-                                className={styles.timeSelect}
-                                value={startHour}
-                                onChange={(e) => handleStartHour(e.target.value)}
-                              >
-                                <option value="">—</option>
-                                {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
-                              </select>
-                              <span className={styles.timeSeparator}>:</span>
-                              <select
-                                className={styles.timeSelect}
-                                value={startMinute}
-                                onChange={(e) => handleStartMinute(e.target.value)}
-                                disabled={!startHour}
-                              >
-                                {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <label className={styles.label} htmlFor="endHour">End Time</label>
-                          <div className={styles.inputWrap}>
-                            <div className={styles.timeRow}>
-                              <select
-                                id="endHour"
-                                className={styles.timeSelect}
-                                value={endHour}
-                                onChange={(e) => handleEndHour(e.target.value)}
-                              >
-                                <option value="">—</option>
-                                {hourOptions.map((h) => <option key={h} value={h}>{h}</option>)}
-                              </select>
-                              <span className={styles.timeSeparator}>:</span>
-                              <select
-                                className={styles.timeSelect}
-                                value={endMinute}
-                                onChange={(e) => handleEndMinute(e.target.value)}
-                                disabled={!endHour}
-                              >
-                                {minuteOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-          )}
-
-          {/* Equipment */}
-          <div className={styles.field}>
-            <div className={styles.sectionLabel}>Equipment</div>
-            {(isCheckingConflict || isLoadingAvailability) && (
-              <div className={styles.conflictChecking}>Checking availability…</div>
-            )}
-            {bookableEquipment.length === 0 ? (
-              <div className={styles.noEquipment}>
-                {equipment.length === 0
-                  ? 'No equipment available. Add equipment in the Equipment page first.'
-                  : 'No equipment is currently available for booking.'}
-              </div>
-            ) : (
-              <div className={styles.equipmentList}>
-                {Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([category, items]) => (
-                  <section key={category} className={styles.category}>
-                    <h2 className={styles.categoryLabel}>{category}</h2>
-                    {items.map((eq) => {
-                      const hasConflict = conflictIds.has(eq.id)
-
-                      if (eq.trackingType === 'units') {
-                        const units = sortedUnits(eq)
-                        const selectedUnitId = getSelectedUnitId(eq.id)
-                        const isChecked = !!selectedUnitId
-
-                        // Proactive availability from bookedSummary
-                        const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-                        const availableUnits = units.filter(u => !bookedUnitIds.has(u.id))
-                        const proactiveUnavailable = bookedSummary !== null && availableUnits.length === 0
-
-                        return (
-                          <div key={eq.id} className={`${styles.equipmentBox} ${hasConflict ? styles.equipmentBoxConflict : ''}`}>
-                            <label className={`${styles.equipmentRow} ${isChecked ? styles.equipmentRowSelected : ''}`}>
-                              <div className={`${styles.customCheckbox} ${isChecked ? styles.customCheckboxChecked : ''}`}>
-                                {isChecked && <span className={styles.checkIcon}>&#10003;</span>}
-                              </div>
-                              <input
-                                type="checkbox"
-                                className={styles.hiddenCheckbox}
-                                checked={isChecked}
-                                onChange={() => toggleUnitItem(eq)}
-                              />
-                              <div className={styles.equipmentMeta}>
-                                <span className={styles.equipmentName}>{eq.name}</span>
-                                <span className={styles.typeTag}>UNITS</span>
-                                {bookedSummary !== null && !hasConflict && (
-                                  proactiveUnavailable
-                                    ? <span className={styles.availabilityNone}>Unavailable</span>
-                                    : availableUnits.length < units.length
-                                      ? <span className={styles.availabilityCount}>{availableUnits.length} of {units.length} free</span>
-                                      : null
-                                )}
-                              </div>
-                              {/* Approval required tag — hidden for MVP
-                              {eq.requiresApproval && (
-                                <span className={styles.approvalTag}>Approval required</span>
-                              )}
-                              */}
-                              {hasConflict && (
-                                <span className={styles.conflictTag}>Unavailable</span>
-                              )}
-                            </label>
-                            {isChecked && units.length > 0 && (
-                              <div className={styles.unitDropdownRow}>
-                                <span className={styles.unitDropdownLabel}>Which unit?</span>
-                                <select
-                                  className={styles.unitSelect}
-                                  value={selectedUnitId ?? ''}
-                                  onChange={(e) => selectUnit(eq.id, e.target.value)}
-                                >
-                                  {units.map((unit) => {
-                                    const isUnitBooked = bookedUnitIds.has(unit.id)
-                                    return (
-                                      <option key={unit.id} value={unit.id}>
-                                        {unit.label}{unit.serialNumber ? ` — S/N ${unit.serialNumber}` : ''}{isUnitBooked ? ' (Unavailable)' : ''}
-                                      </option>
-                                    )
-                                  })}
-                                </select>
-                              </div>
-                            )}
-                            {isChecked && units.length === 0 && (
-                              <div className={styles.unitDropdownRow}>
-                                <span className={styles.noUnits}>No units available</span>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      }
-
-                      // quantity equipment
-                      const selected = isSelected(eq.id)
-                      const qty = selected ? getQuantity(eq.id) : 0
-
-                      // Proactive availability from bookedSummary
-                      const qtyBooked = bookedSummary?.[eq.id]?.quantity ?? 0
-                      const qtyAvailable = eq.totalQuantity - qtyBooked
-                      const proactiveUnavailable = bookedSummary !== null && qtyAvailable <= 0
-
-                      return (
-                        <div key={eq.id} className={`${styles.equipmentBox} ${hasConflict ? styles.equipmentBoxConflict : ''}`}>
-                          <div className={`${styles.equipmentRow} ${selected ? styles.equipmentRowSelected : ''}`}>
-                            <label className={styles.equipmentLabel}>
-                              <div className={`${styles.customCheckbox} ${selected ? styles.customCheckboxChecked : ''}`}>
-                                {selected && <span className={styles.checkIcon}>&#10003;</span>}
-                              </div>
-                              <input
-                                type="checkbox"
-                                className={styles.hiddenCheckbox}
-                                checked={selected}
-                                onChange={() => setQuantity(eq.id, selected ? 0 : 1)}
-                              />
-                              <div className={styles.equipmentMeta}>
-                                <span className={styles.equipmentName}>{eq.name}</span>
-                                <span className={styles.typeTag}>QTY</span>
-                                {bookedSummary !== null && !hasConflict && (
-                                  proactiveUnavailable
-                                    ? <span className={styles.availabilityNone}>Unavailable</span>
-                                    : qtyBooked > 0
-                                      ? <span className={styles.availabilityCount}>{qtyAvailable} of {eq.totalQuantity} available</span>
-                                      : null
-                                )}
-                                {/* Approval required tag — hidden for MVP
-                                {eq.requiresApproval && (
-                                  <span className={styles.approvalTag}>Approval required</span>
-                                )}
-                                */}
-                                {hasConflict && (
-                                  <span className={styles.conflictTag}>Unavailable</span>
-                                )}
-                              </div>
-                            </label>
-                            <div className={styles.quantityControl}>
-                              <div className={styles.qtyInner}>
-                                <button
-                                  type="button"
-                                  className={styles.qtyBtn}
-                                  onClick={() => setQuantity(eq.id, qty - 1)}
-                                >&#8722;</button>
-                                <span className={styles.qtyValue}>{qty}</span>
-                                <button
-                                  type="button"
-                                  className={styles.qtyBtn}
-                                  onClick={() => setQuantity(eq.id, Math.min(eq.totalQuantity, qty + 1))}
-                                >&#43;</button>
-                              </div>
-                              <span className={styles.qtyMax}>of {eq.totalQuantity}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </section>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Notes */}
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="notes">Notes</label>
-            <textarea
-              id="notes"
-              className={styles.textarea}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any additional notes or special requirements…"
-              maxLength={2000}
-              rows={4}
-            />
-          </div>
+        {/* Page head */}
+        <div className={styles.pageHead}>
+          <h1 className={styles.h1}>{bookingId ? 'EDIT BOOKING' : 'NEW BOOKING'}</h1>
+          <div className={styles.rule} />
         </div>
 
-        {/* Right: summary panel */}
-        <div className={styles.summary}>
-          <div className={styles.summaryTitle}>Booking Summary</div>
+        {error && <div className={styles.errorBanner}>{error}</div>}
 
-          {/* Selected items */}
-          <div>
-            {selectedEquipment.length === 0 ? (
-              <div className={styles.summaryEmpty}>No items selected</div>
-            ) : (
-              <div>
-                {selectedEquipment.map(({ item, equipment: eq }) => {
-                  const key = item.unitId ? `${item.equipmentId}:${item.unitId}` : item.equipmentId
-                  const unitLabel = item.unitId
-                    ? eq!.units?.find((u) => u.id === item.unitId)?.label
-                    : undefined
-                  return (
-                    <div key={key} className={styles.summaryItem}>
-                      <span className={styles.summaryItemName}>{eq!.name}</span>
-                      <span className={styles.summaryItemDetail}>
-                        {unitLabel ?? (eq!.trackingType === 'quantity' ? `\u00d7${item.quantity}` : '')}
+        {/* 01 — PROJECT */}
+        <section className={styles.section}>
+          <div className={styles.secHead}>
+            <h2 className={styles.secTitle}>PROJECT</h2>
+          </div>
+          <div className={styles.secBody}>
+            <input
+              className={styles.bigfield}
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="Project name"
+              maxLength={200}
+              required
+            />
+          </div>
+        </section>
+
+        {/* 02 — DATES */}
+        <section className={styles.section}>
+          <div className={styles.secHead}>
+            <h2 className={styles.secTitle}>DATES</h2>
+            {dateHint && <span className={styles.secHint}>{dateHint}</span>}
+          </div>
+          <div className={styles.secBody}>
+            <div className={styles.scheduleGrid}>
+              <div className={styles.calWrap}>
+                <BookingCalendar
+                  start={startDate || null}
+                  end={endDate || null}
+                  onChange={(s, e) => handleDateChange(s, e)}
+                />
+              </div>
+              <div className={styles.schedSide}>
+                {/* Date readouts */}
+                <div className={styles.dateRow}>
+                  <div className={styles.datebox}>
+                    <label className={styles.datelabel}>START</label>
+                    <span className={startDate ? styles.dateVal : styles.dateValDim}>
+                      {fmtDate(startDate) || 'Pick in calendar'}
+                    </span>
+                  </div>
+                  <div className={styles.datebox}>
+                    <label className={styles.datelabel}>END</label>
+                    <span className={endDate ? styles.dateVal : styles.dateValDim}>
+                      {fmtDate(endDate) || (startDate ? 'Same day' : '—')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Full day toggle */}
+                {timeSlotMinutes !== -1 && (
+                  <div className={styles.fulldayRow}>
+                    <button
+                      type="button"
+                      className={`${styles.check} ${fullDay ? styles.checkOn : ''}`}
+                      onClick={toggleFullDay}
+                    >
+                      <span className={styles.checkBox}>
+                        {fullDay && (
+                          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                            <path d="M2 7L5 10L11 2.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" />
+                          </svg>
+                        )}
                       </span>
+                      <span className={styles.checkLabel}>Full day</span>
+                    </button>
+                    <span className={styles.fulldayNote}>
+                      {fullDay ? 'Booked for the full day' : 'Set specific times below'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Time pickers */}
+                {timeSlotMinutes !== -1 && !fullDay && (
+                  <div className={styles.timeRow}>
+                    <div className={styles.timebox}>
+                      <label className={styles.datelabel}>START TIME</label>
+                      <select
+                        className={styles.timeSelect}
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                      >
+                        <option value="">--:--</option>
+                        {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className={styles.timeSep}>→</div>
+                    <div className={styles.timebox}>
+                      <label className={styles.datelabel}>END TIME</label>
+                      <select
+                        className={styles.timeSelect}
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                      >
+                        <option value="">--:--</option>
+                        {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 03 — EQUIPMENT */}
+        <section className={styles.section}>
+          <div className={styles.secHead}>
+            <h2 className={styles.secTitle}>EQUIPMENT</h2>
+            {itemCount > 0 && (
+              <span className={styles.secHint}>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+            )}
+            {(isCheckingConflict || isLoadingAvailability) && (
+              <span className={styles.secChecking}>checking…</span>
+            )}
+            <span className={`${styles.secTag} ${!hasDates ? styles.secTagMuted : ''}`}>
+              {hasDates ? `AVAILABILITY · ${fmtDate(startDate)}` : 'SELECT DATES FOR LIVE AVAILABILITY'}
+            </span>
+          </div>
+          <div className={styles.secBody}>
+            {bookableEquipment.length === 0 ? (
+              <div className={styles.emptyMsg}>
+                {equipment.length === 0
+                  ? 'No equipment added. Add equipment on the equipment page.'
+                  : 'No equipment available for booking right now.'}
+              </div>
+            ) : (
+              <div className={styles.cats}>
+                {sortedCategories.map(([cat, items]) => {
+                  const isOpen = !!openCats[cat]
+                  const selCount = items.reduce((n, it) => {
+                    const qty = getQuantity(it.id)
+                    const unitId = getSelectedUnitId(it.id)
+                    return n + (qty > 0 || !!unitId ? 1 : 0)
+                  }, 0)
+                  return (
+                    <div key={cat} className={`${styles.cat} ${isOpen ? styles.catOpen : ''}`}>
+                      <button
+                        type="button"
+                        className={styles.catHead}
+                        onClick={() => setOpenCats({ ...openCats, [cat]: !isOpen })}
+                      >
+                        <svg className={styles.catChev} width="11" height="7" viewBox="0 0 11 7" fill="none">
+                          <path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.7" />
+                        </svg>
+                        <span className={styles.catName}>{cat}</span>
+                        <span className={styles.catMeta}>
+                          {selCount > 0 && <em className={styles.catBadge}>{selCount}</em>}
+                          <span className={styles.catCount}>{items.length}</span>
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className={styles.catBody}>
+                          {items.map((eq) => {
+                            const hasConflict = conflictIds.has(eq.id)
+
+                            if (eq.trackingType === 'units') {
+                              const units = sortedUnits(eq)
+                              const selectedUnitId = getSelectedUnitId(eq.id)
+                              const isUnitOpen = unitOpen.has(eq.id)
+                              const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
+                              const availableUnits = units.filter((u) => !bookedUnitIds.has(u.id))
+                              const availCount = bookedSummary !== null ? availableUnits.length : units.length
+
+                              return (
+                                <div
+                                  key={eq.id}
+                                  className={`${styles.eq} ${selectedUnitId ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
+                                >
+                                  <div className={styles.eqMain}>
+                                    <div className={styles.eqInfo}>
+                                      <span className={styles.eqName}>{eq.name}</span>
+                                    </div>
+                                    <div className={styles.eqRight}>
+                                      <AvailBadge
+                                        available={availCount}
+                                        total={units.length}
+                                        hasDates={hasDates && bookedSummary !== null}
+                                      />
+                                      <button
+                                        type="button"
+                                        className={`${styles.unitToggle} ${selectedUnitId ? styles.unitToggleOn : ''}`}
+                                        onClick={() => {
+                                          const next = !isUnitOpen
+                                          setUnitOpen((prev) => {
+                                            const s = new Set(prev)
+                                            if (next) s.add(eq.id); else s.delete(eq.id)
+                                            return s
+                                          })
+                                        }}
+                                      >
+                                        {selectedUnitId ? `${1} SELECTED` : 'SELECT'}
+                                        <svg
+                                          width="10" height="6" viewBox="0 0 11 7" fill="none"
+                                          style={{ transform: isUnitOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                                        >
+                                          <path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.6" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {isUnitOpen && (
+                                    <div className={styles.units}>
+                                      {units.map((unit) => {
+                                        const isBooked = bookedUnitIds.has(unit.id)
+                                        const isOn = selectedUnitId === unit.id
+                                        return (
+                                          <button
+                                            key={unit.id}
+                                            type="button"
+                                            disabled={isBooked && !isOn}
+                                            className={`${styles.unitChip} ${isOn ? styles.unitChipOn : ''} ${isBooked && !isOn ? styles.unitChipBad : ''}`}
+                                            onClick={() => isOn ? deselectUnit(eq.id) : selectUnit(eq.id, unit.id)}
+                                          >
+                                            <span className={styles.unitName}>{unit.label}</span>
+                                            {unit.serialNumber && (
+                                              <span className={styles.unitSn}>{unit.serialNumber}</span>
+                                            )}
+                                            <span className={styles.unitState}>
+                                              {isBooked ? 'BOOKED' : isOn ? '✓' : '+'}
+                                            </span>
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            }
+
+                            // quantity equipment
+                            const qty = getQuantity(eq.id)
+                            const qtyBooked = bookedSummary?.[eq.id]?.quantity ?? 0
+                            const qtyAvail = Math.max(0, eq.totalQuantity - qtyBooked)
+                            const displayAvail = bookedSummary !== null ? qtyAvail : eq.totalQuantity
+
+                            return (
+                              <div
+                                key={eq.id}
+                                className={`${styles.eq} ${qty > 0 ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
+                              >
+                                <div className={styles.eqMain}>
+                                  <div className={styles.eqInfo}>
+                                    <span className={styles.eqName}>{eq.name}</span>
+                                  </div>
+                                  <div className={styles.eqRight}>
+                                    <AvailBadge
+                                      available={displayAvail}
+                                      total={eq.totalQuantity}
+                                      hasDates={hasDates && bookedSummary !== null}
+                                    />
+                                    <Stepper
+                                      value={qty}
+                                      min={0}
+                                      max={qtyAvail + qty}
+                                      onChange={(n) => setQuantity(eq.id, n)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
-                <div className={styles.summaryCount}>
-                  {selectedEquipment.length} item{selectedEquipment.length !== 1 ? 's' : ''} selected
-                </div>
+              </div>
+            )}
+
+            {conflictResult?.hasConflict && (
+              <div className={styles.conflictNotice}>
+                <div className={styles.conflictTitle}>Conflicts found</div>
+                {conflictResult.conflicts.map((c) => {
+                  const eq = equipment.find((e) => e.id === c.equipmentId)
+                  return (
+                    <div key={c.equipmentId} className={styles.conflictItem}>
+                      <span>{eq?.name ?? c.equipmentId}</span>
+                      {c.reason === 'insufficient_quantity' && c.available !== undefined && (
+                        <span className={styles.conflictDetail}>Only {c.available} available</span>
+                      )}
+                      {c.reason === 'already_booked' && (
+                        <span className={styles.conflictDetail}>Already booked</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
+        </section>
 
-          {/* Date */}
-          <div className={styles.summarySection}>
-            <div className={styles.summaryLabel}>Date</div>
-            <div className={styles.summaryValue}>{startDate ? dateRangeLabel : '—'}</div>
+        {/* 04 — NOTES */}
+        <section className={styles.section}>
+          <div className={styles.secHead}>
+            <h2 className={styles.secTitle}>NOTES</h2>
           </div>
-
-          {/* Time */}
-          <div className={styles.summarySection}>
-            <div className={styles.summaryLabel}>Time</div>
-            <div className={styles.summaryValue}>{timeRangeLabel ?? '—'}</div>
+          <div className={styles.secBody}>
+            <textarea
+              className={styles.notes}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Delivery details, crew, special handling…"
+              maxLength={2000}
+              rows={3}
+            />
           </div>
+        </section>
 
-          {/* Approval notice — hidden for MVP
-          {requiresApproval && (
-            <div className={styles.approvalNotice}>
-              One or more items require approval. Your booking will be submitted as Pending and reviewed before confirmation.
-            </div>
-          )}
-          */}
+        <div className={styles.footSpacer} />
+      </div>
 
-          {conflictResult?.hasConflict && (
-            <div className={styles.conflictNotice}>
-              <div className={styles.conflictTitle}>Conflicts detected</div>
-              {conflictResult.conflicts.map((c) => {
-                const eq = equipment.find((e) => e.id === c.equipmentId)
-                return (
-                  <div key={c.equipmentId} className={styles.conflictItem}>
-                    <span>{eq?.name ?? c.equipmentId}</span>
-                    {c.reason === 'insufficient_quantity' && c.available !== undefined && (
-                      <span className={styles.conflictDetail}>Only {c.available} available</span>
-                    )}
-                    {c.reason === 'already_booked' && (
-                      <span className={styles.conflictDetail}>Already booked</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
+      {/* Sticky action bar */}
+      <div className={styles.actionbar}>
+        <div className={styles.actionSummary}>
+          {startDate
+            ? <strong className={styles.asStrong}>{fmtDate(startDate)}{endDate && endDate !== startDate ? '–' + fmtDate(endDate) : ''}</strong>
+            : <span className={styles.asDim}>No dates</span>
+          }
+          <i className={styles.asDiv} />
+          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+        </div>
+        <div className={styles.actionBtns}>
+          <button type="button" className={styles.btnGhost} onClick={() => router.back()}>
+            CANCEL
+          </button>
           <button
             type="submit"
-            className={styles.submitBtn}
-            disabled={isPending || isCheckingConflict}
+            className={`${styles.btnPrimary} ${!canCreate ? styles.btnDisabled : ''}`}
+            disabled={!canCreate || isPending}
           >
-            {isPending ? 'Saving\u2026' : bookingId ? 'UPDATE BOOKING' : 'CONFIRM BOOKING'}
+            {isPending ? 'SAVING…' : bookingId ? 'UPDATE BOOKING' : 'CREATE BOOKING'}
           </button>
         </div>
       </div>
