@@ -32,3 +32,11 @@ env:
     secret: STRIPE_PRICE_STARTER_YEARLY
     availability:
       - RUNTIME
+  - variable: STRIPE_PRICE_BASIC_MONTHLY
+    secret: STRIPE_PRICE_BASIC_MONTHLY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_BASIC_YEARLY
+    secret: STRIPE_PRICE_BASIC_YEARLY
+    availability:
+      - RUNTIME
