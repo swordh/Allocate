@@ -29,6 +29,56 @@
   margin-bottom: 32px;
 }
 
+.planGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.planOption {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid rgba(71, 71, 71, 0.3);
+  padding: 20px 24px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.planOptionActive {
+  border-color: rgba(238, 204, 2, 0.6);
+}
+
+.planOptionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.planName {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+
+.planPrice {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.planPriceUnit {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mid);
+}
+
 .planBadge {
   display: inline-block;
   background: var(--accent);

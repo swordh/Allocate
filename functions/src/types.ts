@@ -8,7 +8,7 @@ export type UserRole = 'admin' | 'crew' | 'viewer';
 
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'incomplete' | 'canceled';
 
-export type Plan = 'free' | 'starter';
+export type Plan = 'free' | 'starter' | 'basic';
 
 export interface PlanLimits {
   equipment: number;
@@ -18,6 +18,7 @@ export interface PlanLimits {
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: { equipment: 0, users: 0 },
   starter: { equipment: 25, users: 10 },
+  basic: { equipment: 100, users: 30 },
 };
 
 export interface CompanySubscription {
