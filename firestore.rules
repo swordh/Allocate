@@ -98,5 +98,12 @@ service cloud.firestore {
     match /deletionAuditLog/{logId} {
       allow read, write: if false;
     }
+
+    // ── Outbound email queue ──────────────────────────────────────────────────
+    // Written by server actions / Cloud Functions (Admin SDK) and consumed by the
+    // onMailQueued trigger. Contains recipient addresses (PII) — never client-readable.
+    match /mail/{mailId} {
+      allow read, write: if false;
+    }
   }
 }

@@ -25,3 +25,4 @@ export { approveBooking } from './bookings/approveBooking';
 export { rejectBooking } from './bookings/rejectBooking';
 export { updateBookingStatus } from './bookings/updateBookingStatus';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
+export { onMailQueued } from './email/onMailQueued';

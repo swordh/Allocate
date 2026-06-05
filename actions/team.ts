@@ -1,5 +1,6 @@
 'use server'
 
+import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
@@ -13,11 +14,111 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   return adminDb.batch()
 }
 
-export async function inviteUser(_formData: FormData): Promise<{ error?: string }> {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export async function inviteUser(formData: FormData): Promise<{ error?: string }> {
+  // ── 1. Auth-guard ────────────────────────────────────────────────────────────
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
-  console.log('[actions/team]', { uid: session.uid.slice(0, 8) + '...', action: 'invite_user_stub' })
-  return { error: 'Not implemented — Phase 5' }
+
+  const cid = session.activeCompanyId
+  if (!cid) return { error: 'No active company' }
+
+  // ── 2. Validate email ──────────────────────────────────────────────────────────
+  const rawEmail = formData.get('email')
+  const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
+  if (!EMAIL_RE.test(email)) return { error: 'Enter a valid email address.' }
+
+  // ── 3. Guard: already a member ──────────────────────────────────────────────────
+  const memberSnap = await adminDb
+    .collection(`companies/${cid}/members`)
+    .where('email', '==', email)
+    .limit(1)
+    .get()
+  if (!memberSnap.empty) {
+    return { error: 'That person is already a member of this company.' }
+  }
+
+  // App URL is required to build the accept link.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    console.error('[actions/team]', { companyId: cid, action: 'invite_user', error: 'NEXT_PUBLIC_APP_URL not set' })
+    return { error: 'Server is misconfigured — please contact support.' }
+  }
+
+  // Resolve inviter name + company name for the email body.
+  const [inviterSnap, companySnap] = await Promise.all([
+    adminDb.doc(`companies/${cid}/members/${session.uid}`).get(),
+    adminDb.doc(`companies/${cid}`).get(),
+  ])
+  const inviterName = (inviterSnap.data()?.name as string) || session.email || 'A teammate'
+  const companyName = (companySnap.data()?.name as string) || 'your team'
+
+  // Invited members join as Crew (matches the UI note). Structured so a role
+  // selector can replace this later.
+  const role: Extract<Role, 'crew'> = 'crew'
+
+  // ── 4. Reuse an existing pending invite, else create a new one ──────────────────
+  const pendingSnap = await adminDb
+    .collection(`companies/${cid}/invitations`)
+    .where('email', '==', email)
+    .where('status', '==', 'pending')
+    .limit(1)
+    .get()
+
+  let token: string
+  let resent = false
+
+  if (!pendingSnap.empty) {
+    // A pending invite already exists — resend its link rather than duplicate.
+    token = pendingSnap.docs[0].data().token as string
+    resent = true
+  } else {
+    token = randomBytes(15).toString('base64url') // 20-char URL-safe token
+    const nowIso = new Date().toISOString()
+
+    const inviteRef = adminDb.collection(`companies/${cid}/invitations`).doc()
+    const mirrorRef = adminDb.collection('invitations').doc(token)
+
+    const batch = adminDb.batch()
+    // Full record — read by acceptInvitationByToken (role) and revocation later.
+    batch.set(inviteRef, {
+      id: inviteRef.id,
+      email,
+      role,
+      invitedBy: session.uid,
+      invitedByName: inviterName,
+      invitedAt: nowIso,
+      status: 'pending',
+      token,
+    })
+    // Public mirror — resolved by the /invite/{token} page and accept callable.
+    batch.set(mirrorRef, {
+      companyId: cid,
+      inviteId: inviteRef.id,
+      email,
+      status: 'pending',
+    })
+    await batch.commit()
+  }
+
+  // ── 5. Enqueue the email — sent by the onMailQueued Cloud Function ───────────────
+  const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
+  await adminDb.collection('mail').add({
+    to: email,
+    template: 'invitation',
+    data: { companyName, inviterName, acceptUrl, role },
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+  })
+
+  revalidatePath('/settings/team')
+  console.log('[actions/team]', {
+    uid: session.uid.slice(0, 8) + '...',
+    companyId: cid,
+    action: resent ? 'invite_user_resend' : 'invite_user',
+  })
+  return {}
 }
 
 export async function updateMemberRole(
