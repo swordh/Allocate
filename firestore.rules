@@ -98,5 +98,22 @@ service cloud.firestore {
     match /deletionAuditLog/{logId} {
       allow read, write: if false;
     }
+
+    // ── Invitation mirror (public bearer-token lookup) ────────────────────────
+    // Top-level mirror at invitations/{token}. The token is an unguessable random
+    // id that acts as a bearer secret, so a single-document `get` is public — this
+    // lets the signup form validate a pasted invite link/code client-side.
+    // `list` is denied to prevent enumeration; all writes are Admin SDK only.
+    match /invitations/{token} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // ── Outbound email queue ──────────────────────────────────────────────────
+    // Written by server actions / Cloud Functions (Admin SDK) and consumed by the
+    // onMailQueued trigger. Contains recipient addresses (PII) — never client-readable.
+    match /mail/{mailId} {
+      allow read, write: if false;
+    }
   }
 }

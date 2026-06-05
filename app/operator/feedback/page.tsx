@@ -25,6 +25,7 @@ export default async function FeedbackPage({
       description: d.description,
       submittedAt: d.submittedAt?.toDate?.()?.toISOString() ?? '',
       submittedBy: d.submittedBy,
+      userEmail: '',
       companyId: d.companyId ?? '',
       companyName: d.companyName ?? '',
       userName: d.userName ?? '',
