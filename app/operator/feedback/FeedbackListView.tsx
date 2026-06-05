@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { OperatorFeedback, FeedbackType, FeedbackStatus, FeedbackPriority } from '@/types/operator'
 import { updateFeedbackStatus, createFeedback } from './actions'
@@ -16,6 +17,7 @@ const TYPE_FILTERS = [
   { key: 'all',             label: 'All'             },
   { key: 'feature_request', label: 'Feature Request' },
   { key: 'bug_report',      label: 'Bug Report'      },
+  { key: 'support',         label: 'Support'         },
 ]
 
 const STATUS_FILTERS = [
@@ -36,11 +38,15 @@ function formatDate(iso: string): string {
 }
 
 function typeBadgeClass(type: FeedbackType): string {
-  return type === 'bug_report' ? styles.badgeBug : styles.badgeFeature
+  if (type === 'bug_report') return styles.badgeBug
+  if (type === 'feature_request') return styles.badgeFeature
+  return styles.badgeSupport
 }
 
 function typeLabel(type: FeedbackType): string {
-  return type === 'bug_report' ? 'Bug' : 'Feature'
+  if (type === 'bug_report') return 'Bug'
+  if (type === 'feature_request') return 'Feature'
+  return 'Support'
 }
 
 function priorityBadgeClass(priority: FeedbackPriority): string {
@@ -218,7 +224,9 @@ export default function FeedbackListView({ items, activeType, activeStatus }: Fe
           items.map((item) => (
             <div key={item.id} className={styles.item}>
               <div className={styles.itemHeader}>
-                <p className={styles.itemTitle}>{item.title}</p>
+                <Link href={`/operator/feedback/${item.id}`} className={styles.itemTitleLink}>
+                  <p className={styles.itemTitle}>{item.title}</p>
+                </Link>
                 <div className={styles.itemBadges}>
                   <span className={`${styles.badge} ${typeBadgeClass(item.type)}`}>
                     {typeLabel(item.type)}

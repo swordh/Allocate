@@ -24,3 +24,11 @@ env:
     secret: STRIPE_WEBHOOK_SECRET
     availability:
       - RUNTIME
+  - variable: STRIPE_PRICE_STARTER_MONTHLY
+    secret: STRIPE_PRICE_STARTER_MONTHLY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_STARTER_YEARLY
+    secret: STRIPE_PRICE_STARTER_YEARLY
+    availability:
+      - RUNTIME
