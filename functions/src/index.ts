@@ -11,6 +11,8 @@ setGlobalOptions({ region: 'europe-west1' });
 initializeApp();
 
 export { setActiveClaim } from './auth/setActiveClaim';
+export { acceptInvitationByToken } from './auth/acceptInvitation';
+export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
 export { addEquipment } from './equipment/addEquipment';
 export { updateEquipment } from './equipment/updateEquipment';

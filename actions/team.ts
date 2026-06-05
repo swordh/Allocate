@@ -74,7 +74,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
     token = pendingSnap.docs[0].data().token as string
     resent = true
   } else {
-    token = randomBytes(15).toString('base64url') // 20-char URL-safe token
+    token = randomBytes(16).toString('hex') // 32-char alphanumeric token (matches [a-zA-Z0-9] across the accept flow)
     const nowIso = new Date().toISOString()
 
     const inviteRef = adminDb.collection(`companies/${cid}/invitations`).doc()

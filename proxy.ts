@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/signup', '/api/auth/session']
+const PUBLIC_PATHS = ['/login', '/signup', '/invite', '/api/auth/session']
 
 /**
  * Auth guard for all application routes.
