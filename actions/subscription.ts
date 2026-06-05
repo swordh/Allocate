@@ -4,18 +4,28 @@ import { getVerifiedSession } from '@/lib/dal'
 import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
 import Stripe from 'stripe'
+import type { Plan } from '@/lib/subscription'
+
+const PRICE_ENV_BY_PLAN: Record<Plan, { month?: string; year?: string }> = {
+  starter: {
+    month: process.env.STRIPE_PRICE_STARTER_MONTHLY,
+    year:  process.env.STRIPE_PRICE_STARTER_YEARLY,
+  },
+  basic: {
+    month: process.env.STRIPE_PRICE_BASIC_MONTHLY,
+    year:  process.env.STRIPE_PRICE_BASIC_YEARLY,
+  },
+}
 
 export async function createCheckoutSession(
   interval: 'month' | 'year',
+  plan: Plan = 'starter',
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
-  console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session' })
+  console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session', plan, interval })
 
-  const priceId =
-    interval === 'month'
-      ? process.env.STRIPE_PRICE_STARTER_MONTHLY
-      : process.env.STRIPE_PRICE_STARTER_YEARLY
+  const priceId = interval === 'month' ? PRICE_ENV_BY_PLAN[plan].month : PRICE_ENV_BY_PLAN[plan].year
 
   if (!priceId) return { error: 'Stripe price not configured' }
 
@@ -67,7 +77,7 @@ export async function createCheckoutSession(
     try {
       const checkoutSession = await stripe.checkout.sessions.create(
         sessionParams,
-        { idempotencyKey: `checkout-${companyId}-${interval}-${Math.floor(Date.now() / 60000)}` },
+        { idempotencyKey: `checkout-${companyId}-${plan}-${interval}-${Math.floor(Date.now() / 60000)}`},
       )
       return { url: checkoutSession.url! }
     } catch (err) {
@@ -83,7 +93,7 @@ export async function createCheckoutSession(
         await companyRef.update({ stripeCustomerId: newCustomer.id })
         const retrySession = await stripe.checkout.sessions.create(
           { ...sessionParams, customer: newCustomer.id },
-          { idempotencyKey: `checkout-${companyId}-${interval}-${Math.floor(Date.now() / 60000)}` },
+          { idempotencyKey: `checkout-${companyId}-${plan}-${interval}-${Math.floor(Date.now() / 60000)}`},
         )
         return { url: retrySession.url! }
       }

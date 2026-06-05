@@ -6,7 +6,7 @@ export interface CompanyPreferences {
 }
 
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'incomplete' | 'canceled'
-export type Plan = 'starter'
+export type Plan = 'starter' | 'basic'
 export type BillingInterval = 'month' | 'year'
 
 export interface Subscription {
