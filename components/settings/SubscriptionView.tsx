@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { createPortalSession, createCheckoutSession } from '@/actions/subscription'
+import { createPortalSession, createCheckoutSession, createPlanChangeSession } from '@/actions/subscription'
+import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 import type { Subscription } from '@/types'
 import styles from './SubscriptionView.module.css'
 
@@ -11,6 +12,7 @@ interface SubscriptionViewProps {
 
 const PLAN_LABELS: Record<string, string> = {
   starter: 'Starter',
+  basic:   'Basic',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -23,6 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default function SubscriptionView({ subscription }: SubscriptionViewProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [plan, setPlan] = useState<PlanId>('starter')
 
   async function handleManage() {
     setLoading(true)
@@ -36,10 +39,22 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
     }
   }
 
+  async function handleChangePlan() {
+    setLoading(true)
+    setError(null)
+    const result = await createPlanChangeSession()
+    if ('url' in result) {
+      window.location.href = result.url
+    } else {
+      setError(result.error)
+      setLoading(false)
+    }
+  }
+
   async function handleSubscribe(interval: 'month' | 'year') {
     setLoading(true)
     setError(null)
-    const result = await createCheckoutSession(interval)
+    const result = await createCheckoutSession(interval, plan)
     if ('url' in result) {
       window.location.href = result.url
     } else {
@@ -59,6 +74,26 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
             {subscription?.status === 'canceled' ? 'Your subscription has been canceled.' : 'No active subscription.'}
           </p>
           {error && <div className={styles.errorBanner}>{error}</div>}
+
+          <div className={styles.planPicker}>
+            {PLAN_ORDER.map((id) => {
+              const p = PLAN_CATALOG[id]
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`${styles.planPickerBtn} ${plan === id ? styles.planPickerBtnActive : ''}`}
+                  onClick={() => setPlan(id)}
+                  aria-pressed={plan === id}
+                >
+                  <span className={styles.planPickerName}>{p.name}</span>
+                  <span className={styles.planPickerMeta}>{p.priceMonthly} kr/mo · {p.priceYearly} kr/yr</span>
+                  <span className={styles.planPickerMeta}>{p.equipment} equipment · {p.users} members</span>
+                </button>
+              )
+            })}
+          </div>
+
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
             <button
               className={styles.btnManage}
@@ -114,12 +149,47 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
             )}
           </div>
 
+          {/* Available plans — highlights the current plan; switching happens in the Stripe portal */}
+          <div className={styles.planPickerGrid}>
+            {PLAN_ORDER.map((id) => {
+              const p = PLAN_CATALOG[id]
+              const isCurrent = subscription.plan === id
+              return (
+                <div
+                  key={id}
+                  className={`${styles.planPickerCard} ${isCurrent ? styles.planPickerCardActive : ''}`}
+                  aria-current={isCurrent ? 'true' : undefined}
+                >
+                  <span className={styles.planPickerName}>{p.name}</span>
+                  <span className={styles.planPickerMeta}>{p.priceMonthly} kr/mo · {p.priceYearly} kr/yr</span>
+                  <span className={styles.planPickerMeta}>{p.equipment} equipment · {p.users} members</span>
+                  {isCurrent && <span className={styles.planPickerCurrent}>Current</span>}
+                </div>
+              )
+            })}
+          </div>
+
           {/* Error banner */}
           {error && (
             <div className={styles.errorBanner}>
               {error}
             </div>
           )}
+
+          {/* Change plan */}
+          <div className={styles.actionRow}>
+            <button
+              className={styles.btnManage}
+              onClick={handleChangePlan}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? 'Redirecting…' : 'Change Plan'}
+            </button>
+            <span className={styles.actionHint}>
+              Plan changes take effect immediately and are prorated on your next invoice.
+            </span>
+          </div>
 
           {/* Manage billing */}
           <button
