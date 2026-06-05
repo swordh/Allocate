@@ -69,6 +69,52 @@
   color: var(--mid);
 }
 
+/* Plan cards (active/trialing branch) — informational, highlights current plan */
+.planPickerGrid {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.planPickerCard {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(71, 71, 71, 0.3);
+  padding: 16px 20px;
+  position: relative;
+}
+
+.planPickerCardActive {
+  border-color: rgba(238, 204, 2, 0.6);
+}
+
+.planPickerCurrent {
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Change-plan action row: button + proration hint */
+.actionRow {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.actionHint {
+  font-size: 11px;
+  color: var(--dim);
+  font-weight: 300;
+}
+
 /* Current plan block */
 .currentPlanBlock {
   border: 1px solid rgba(238, 204, 2, 0.3);

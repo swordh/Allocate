@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createPortalSession, createCheckoutSession } from '@/actions/subscription'
+import { createPortalSession, createCheckoutSession, createPlanChangeSession } from '@/actions/subscription'
 import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 import type { Subscription } from '@/types'
 import styles from './SubscriptionView.module.css'
@@ -31,6 +31,18 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
     setLoading(true)
     setError(null)
     const result = await createPortalSession()
+    if ('url' in result) {
+      window.location.href = result.url
+    } else {
+      setError(result.error)
+      setLoading(false)
+    }
+  }
+
+  async function handleChangePlan() {
+    setLoading(true)
+    setError(null)
+    const result = await createPlanChangeSession()
     if ('url' in result) {
       window.location.href = result.url
     } else {
@@ -137,12 +149,47 @@ export default function SubscriptionView({ subscription }: SubscriptionViewProps
             )}
           </div>
 
+          {/* Available plans — highlights the current plan; switching happens in the Stripe portal */}
+          <div className={styles.planPickerGrid}>
+            {PLAN_ORDER.map((id) => {
+              const p = PLAN_CATALOG[id]
+              const isCurrent = subscription.plan === id
+              return (
+                <div
+                  key={id}
+                  className={`${styles.planPickerCard} ${isCurrent ? styles.planPickerCardActive : ''}`}
+                  aria-current={isCurrent ? 'true' : undefined}
+                >
+                  <span className={styles.planPickerName}>{p.name}</span>
+                  <span className={styles.planPickerMeta}>{p.priceMonthly} kr/mo · {p.priceYearly} kr/yr</span>
+                  <span className={styles.planPickerMeta}>{p.equipment} equipment · {p.users} members</span>
+                  {isCurrent && <span className={styles.planPickerCurrent}>Current</span>}
+                </div>
+              )
+            })}
+          </div>
+
           {/* Error banner */}
           {error && (
             <div className={styles.errorBanner}>
               {error}
             </div>
           )}
+
+          {/* Change plan */}
+          <div className={styles.actionRow}>
+            <button
+              className={styles.btnManage}
+              onClick={handleChangePlan}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? 'Redirecting…' : 'Change Plan'}
+            </button>
+            <span className={styles.actionHint}>
+              Plan changes take effect immediately and are prorated on your next invoice.
+            </span>
+          </div>
 
           {/* Manage billing */}
           <button

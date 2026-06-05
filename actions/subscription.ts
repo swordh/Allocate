@@ -131,3 +131,51 @@ export async function createPortalSession(): Promise<{ url: string } | { error: 
     return { error: 'Could not open subscription portal' }
   }
 }
+
+// Opens the Billing Portal deep-linked straight to the subscription-update
+// (plan change) flow. The portal applies the change immediately with proration;
+// the customer.subscription.updated webhook then syncs plan/limits to Firestore.
+export async function createPlanChangeSession(): Promise<{ url: string } | { error: string }> {
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+  console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_plan_change_session' })
+
+  try {
+    const companyId = session.activeCompanyId
+    const companySnap = await adminDb.doc(`companies/${companyId}`).get()
+    const companyData = companySnap.data() ?? {}
+
+    const stripeCustomerId: string = companyData.stripeCustomerId ?? ''
+    const stripeSubscriptionId: string = companyData.subscription?.stripeSubscriptionId ?? ''
+
+    if (!stripeCustomerId || !stripeSubscriptionId) {
+      return { error: 'No active subscription found' }
+    }
+
+    const params: Stripe.BillingPortal.SessionCreateParams = {
+      customer: stripeCustomerId,
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription`,
+      flow_data: {
+        type: 'subscription_update',
+        subscription_update: { subscription: stripeSubscriptionId },
+      },
+    }
+
+    // Use the dedicated portal configuration (plan switching enabled) when set;
+    // otherwise fall back to the Stripe Dashboard default configuration.
+    if (process.env.STRIPE_PORTAL_CONFIG_ID) {
+      params.configuration = process.env.STRIPE_PORTAL_CONFIG_ID
+    }
+
+    const portalSession = await stripe.billingPortal.sessions.create(params)
+
+    return { url: portalSession.url }
+  } catch (err) {
+    console.error('[actions/subscription]', {
+      action: 'create_plan_change_session_error',
+      message: err instanceof Error ? err.message : String(err),
+      code: err instanceof Stripe.errors.StripeError ? err.code : undefined,
+    })
+    return { error: 'Could not open plan change portal' }
+  }
+}
