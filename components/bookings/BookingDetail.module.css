@@ -252,6 +252,48 @@
   /* inherits meta styles */
 }
 
+/* Grouped unit-tracked equipment: name header + indented unit sub-rows */
+.pickGroup {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pickGroup:first-child {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pickGroupHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 0 8px;
+}
+
+.pickGroupUnits {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Unit sub-rows sit inside a group; drop the group's own first/last hairlines */
+.pickSubItem {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pickGroupUnits .pickSubItem:first-child {
+  border-top: none;
+}
+
+.pickGroupUnits .pickSubItem:last-child {
+  border-bottom: none;
+  padding-bottom: 12px;
+}
+
 /* -----------------------------------------------------------------------
    Right column: summary + actions
    ----------------------------------------------------------------------- */
