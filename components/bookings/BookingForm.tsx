@@ -316,7 +316,7 @@ export default function BookingForm({
 
   // ── derived values ───────────────────────────────────────────────────────
   const itemCount = selectedItems.length
-  const canCreate = !!projectName.trim() && !!startDate && itemCount > 0
+  const canCreate = !!projectName.trim() && !!startDate && !!endDate && itemCount > 0
   const hasDates  = !!startDate
 
   const dateHint = startDate
@@ -378,13 +378,13 @@ export default function BookingForm({
                   <div className={styles.datebox}>
                     <label className={styles.datelabel}>START</label>
                     <span className={startDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(startDate) || 'Pick in calendar'}
+                      {fmtDate(startDate) || '--'}
                     </span>
                   </div>
                   <div className={styles.datebox}>
                     <label className={styles.datelabel}>END</label>
                     <span className={endDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(endDate) || (startDate ? 'Same day' : '—')}
+                      {fmtDate(endDate) || '--'}
                     </span>
                   </div>
                 </div>
