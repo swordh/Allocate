@@ -376,13 +376,13 @@ export default function BookingForm({
                 {/* Date readouts */}
                 <div className={styles.dateRow}>
                   <div className={styles.datebox}>
-                    <label className={styles.datelabel}>START</label>
+                    <label className={styles.datelabel}>PICKUP</label>
                     <span className={startDate ? styles.dateVal : styles.dateValDim}>
                       {fmtDate(startDate) || '--'}
                     </span>
                   </div>
                   <div className={styles.datebox}>
-                    <label className={styles.datelabel}>END</label>
+                    <label className={styles.datelabel}>RETURN</label>
                     <span className={endDate ? styles.dateVal : styles.dateValDim}>
                       {fmtDate(endDate) || '--'}
                     </span>
@@ -416,7 +416,7 @@ export default function BookingForm({
                 {timeSlotMinutes !== -1 && !fullDay && (
                   <div className={styles.timeRow}>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>START TIME</label>
+                      <label className={styles.datelabel}>PICKUP TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={startTime}
@@ -428,7 +428,7 @@ export default function BookingForm({
                     </div>
                     <div className={styles.timeSep}>→</div>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>END TIME</label>
+                      <label className={styles.datelabel}>RETURN TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={endTime}
