@@ -453,4 +453,39 @@ describe('createBooking', () => {
       expect((result as { error: string }).error).toContain('exceeds total stock')
     })
   })
+
+  // ── Multiple units per equipment ───────────────────────────────────────────
+
+  describe('multi-unit selection', () => {
+    const UNITS_EQUIP = {
+      name: 'Camera Units',
+      active: true,
+      trackingType: 'units',
+      totalQuantity: 2,
+      requiresApproval: false,
+      approverId: null,
+    }
+
+    it('creates a booking with two units of the same unit-tracked equipment', async () => {
+      const { tx, newDocId } = wireTransaction({
+        [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: UNITS_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1/units/unit-a`]: { active: true },
+        [`companies/${COMPANY_ID}/equipment/equip-1/units/unit-b`]: { active: true },
+        [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
+      })
+
+      const items = JSON.stringify([
+        { equipmentId: 'equip-1', quantity: 1, unitId: 'unit-a' },
+        { equipmentId: 'equip-1', quantity: 1, unitId: 'unit-b' },
+      ])
+      const result = await createBooking(makeFormData({ items }))
+
+      expect(result).toEqual({ bookingId: newDocId })
+
+      const writtenData = vi.mocked(tx.set).mock.calls[0][1] as Record<string, unknown>
+      expect(writtenData.items).toHaveLength(2)
+      expect(writtenData.unitIds).toEqual(['unit-a', 'unit-b'])
+    })
+  })
 })
