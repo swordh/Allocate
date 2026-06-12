@@ -12,9 +12,6 @@ export default async function NewBookingPage() {
     redirect('/bookings')
   }
 
-  const today = new Date()
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-
   const [equipment, company] = await Promise.all([
     getEquipment(session.activeCompanyId),
     getCompany(session.activeCompanyId),
@@ -26,8 +23,8 @@ export default async function NewBookingPage() {
     <BookingFormPage
       companyId={session.activeCompanyId}
       equipment={equipment}
-      defaultStartDate={todayStr}
-      defaultEndDate={todayStr}
+      defaultStartDate=""
+      defaultEndDate=""
       timeSlotMinutes={timeSlotMinutes}
     />
   )
