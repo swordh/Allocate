@@ -19,6 +19,7 @@ type State =
   | { status: 'reset_form'; email: string }
   | { status: 'reset_submitting' }
   | { status: 'reset_done' }
+  | { status: 'email_changed' }
 
 function errorMessage(err: unknown): string {
   const code = (err as { code?: string }).code ?? ''
@@ -64,6 +65,25 @@ export default function AuthActionHandler({
             message: errorMessage(err),
             backTo: '/verify-email',
             backLabel: 'Back to verification',
+          })
+        })
+      return
+    }
+
+    if (mode === 'verifyAndChangeEmail') {
+      applyActionCode(auth, oobCode)
+        .then(() => {
+          // The sign-in email changed, so any existing session is now stale —
+          // send the user back to sign in with the new address.
+          setState({ status: 'email_changed' })
+          router.push('/login?emailChanged=1')
+        })
+        .catch((err) => {
+          setState({
+            status: 'error',
+            message: errorMessage(err),
+            backTo: '/login',
+            backLabel: 'Back to sign in',
           })
         })
       return
@@ -196,6 +216,16 @@ export default function AuthActionHandler({
       <div className={styles.page}>
         <div className={styles.formCard}>
           <h1 className={styles.pageTitle}>Password updated</h1>
+        </div>
+      </div>
+    )
+  }
+
+  if (state.status === 'email_changed') {
+    return (
+      <div className={styles.page}>
+        <div className={styles.formCard}>
+          <h1 className={styles.pageTitle}>Email updated</h1>
         </div>
       </div>
     )
