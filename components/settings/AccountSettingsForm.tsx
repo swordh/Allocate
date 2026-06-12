@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateUserProfile, deleteAccount, exportUserData } from '@/actions/account'
 import { deleteSession } from '@/actions/auth'
+import { requestEmailChange, requestPasswordReset } from '@/actions/auth-email'
+import { auth } from '@/lib/firebase'
 import styles from './AccountSettingsForm.module.css'
 
 interface AccountSettingsFormProps {
@@ -35,6 +37,52 @@ export default function AccountSettingsForm({
 
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // Change-email flow: an inline form revealed by "Change Email →".
+  const [showEmailChange, setShowEmailChange] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [emailSubmitting, setEmailSubmitting] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState(false)
+
+  // Change-password flow: sends a reset link to the user's own address.
+  const [passwordSending, setPasswordSending] = useState(false)
+  const [passwordSent, setPasswordSent] = useState(false)
+
+  async function handleEmailChange() {
+    if (emailSubmitting || newEmail.trim().length === 0) return
+    setEmailSubmitting(true)
+    setEmailError(null)
+    try {
+      const user = auth.currentUser
+      if (!user) {
+        setEmailError('Your session expired. Please sign in again.')
+        return
+      }
+      const idToken = await user.getIdToken()
+      const result = await requestEmailChange(idToken, newEmail.trim())
+      if (result.error) {
+        setEmailError(result.error)
+      } else {
+        setEmailSent(true)
+      }
+    } catch {
+      setEmailError('Something went wrong. Please try again.')
+    } finally {
+      setEmailSubmitting(false)
+    }
+  }
+
+  async function handlePasswordReset() {
+    setPasswordSending(true)
+    try {
+      // Reuses the same enumeration-safe action; here we always have the address.
+      await requestPasswordReset(email)
+      setPasswordSent(true)
+    } finally {
+      setPasswordSending(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -184,18 +232,87 @@ export default function AccountSettingsForm({
             <div className={styles.profileInfoGroup}>
               <span className={styles.profileFieldLabel}>Email</span>
               <p className={styles.profileValue}>{email}</p>
-              <button type="button" className={styles.btnTextLink}>
-                Change Email →
-              </button>
+              {emailSent ? (
+                <p className={styles.profileValue}>
+                  We sent a confirmation link to <strong>{newEmail.trim()}</strong>. The
+                  change takes effect once you click it.
+                </p>
+              ) : !showEmailChange ? (
+                <button
+                  type="button"
+                  className={styles.btnTextLink}
+                  onClick={() => setShowEmailChange(true)}
+                >
+                  Change Email →
+                </button>
+              ) : (
+                <>
+                  <label htmlFor="new-email" className={styles.profileFieldLabel}>
+                    New email
+                  </label>
+                  <input
+                    id="new-email"
+                    type="email"
+                    autoComplete="email"
+                    className={styles.profileNameInput}
+                    value={newEmail}
+                    onChange={(e) => {
+                      setNewEmail(e.target.value)
+                      setEmailError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleEmailChange()
+                      }
+                    }}
+                    disabled={emailSubmitting}
+                  />
+                  {emailError && <div className={styles.errorBanner} style={{ marginTop: 12 }}>{emailError}</div>}
+                  <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className={styles.btnTextLink}
+                      onClick={handleEmailChange}
+                      disabled={emailSubmitting || newEmail.trim().length === 0}
+                    >
+                      {emailSubmitting ? 'Sending…' : 'Send confirmation →'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnTextLink}
+                      onClick={() => {
+                        setShowEmailChange(false)
+                        setNewEmail('')
+                        setEmailError(null)
+                      }}
+                      disabled={emailSubmitting}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Password */}
             <div className={styles.profileInfoGroup}>
               <span className={styles.profileFieldLabel}>Password</span>
               <p className={styles.profileValue}>••••••••••••</p>
-              <button type="button" className={styles.btnTextLink}>
-                Change Password →
-              </button>
+              {passwordSent ? (
+                <p className={styles.profileValue}>
+                  We sent a password-reset link to <strong>{email}</strong>.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.btnTextLink}
+                  onClick={handlePasswordReset}
+                  disabled={passwordSending}
+                >
+                  {passwordSending ? 'Sending…' : 'Change Password →'}
+                </button>
+              )}
             </div>
 
           </div>
