@@ -137,6 +137,21 @@ export default function BookingDetail({
     return equipment.find((e) => e.id === id)
   }
 
+  // Group pick-list items by equipment, preserving first-seen order and each
+  // item's original index (used for the pick-state key).
+  const pickGroups = (() => {
+    const order: string[] = []
+    const map = new Map<string, Array<{ item: (typeof booking.items)[number]; index: number }>>()
+    booking.items.forEach((item, index) => {
+      if (!map.has(item.equipmentId)) {
+        map.set(item.equipmentId, [])
+        order.push(item.equipmentId)
+      }
+      map.get(item.equipmentId)!.push({ item, index })
+    })
+    return order.map((equipmentId) => ({ equipmentId, entries: map.get(equipmentId)! }))
+  })()
+
   // ---------------------------------------------------------------------------
   // Date formatting
   // ---------------------------------------------------------------------------
@@ -209,12 +224,66 @@ export default function BookingDetail({
               )}
             </div>
             <ul className={styles.pickList}>
-              {booking.items.map((item, index) => {
-                const key = `${item.equipmentId}-${index}`
-                const eq = findEquipment(item.equipmentId)
-                const isPicked = pickedItems.has(key)
-                const unit = eq?.units?.find((u) => u.id === item.unitId) ?? null
+              {pickGroups.map((group) => {
+                const eq = findEquipment(group.equipmentId)
+                const eqName = eq
+                  ? eq.active !== false
+                    ? eq.name
+                    : `${eq.name} (deleted)`
+                  : group.equipmentId
 
+                // Unit-tracked equipment: equipment name as a header, each unit as
+                // its own checkable sub-row.
+                if (eq?.trackingType === 'units') {
+                  return (
+                    <li key={group.equipmentId} className={styles.pickGroup}>
+                      <div className={styles.pickGroupHeader}>
+                        <span className={styles.pickItemName}>{eqName}</span>
+                        {eq?.category && (
+                          <span className={styles.pickItemMeta}>{eq.category}</span>
+                        )}
+                      </div>
+                      <ul className={styles.pickGroupUnits}>
+                        {group.entries.map(({ item, index }) => {
+                          const key = `${item.equipmentId}-${index}`
+                          const isPicked = pickedItems.has(key)
+                          const unit = eq?.units?.find((u) => u.id === item.unitId) ?? null
+                          return (
+                            <li
+                              key={key}
+                              className={`${styles.pickItem} ${styles.pickSubItem} ${canPickList ? styles.pickItemInteractive : ''}`}
+                              onClick={() => canPickList && togglePickedItem(key)}
+                            >
+                              <span
+                                className={`${styles.pickCheckbox} ${isPicked ? styles.pickCheckboxChecked : ''}`}
+                                aria-hidden="true"
+                              >
+                                {isPicked && <span className={styles.pickCheckIcon}>&#10003;</span>}
+                              </span>
+                              <span className={styles.pickItemContent}>
+                                <span
+                                  className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
+                                >
+                                  {unit
+                                    ? unit.active !== false
+                                      ? unit.label
+                                      : `${unit.label} (deleted)`
+                                    : (item.unitId ?? '—')}
+                                  {unit?.serialNumber ? ` · ${unit.serialNumber}` : ''}
+                                </span>
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </li>
+                  )
+                }
+
+                // Quantity-tracked equipment: a single checkable row.
+                const { item, index } = group.entries[0]
+                const key = `${item.equipmentId}-${index}`
+                const isPicked = pickedItems.has(key)
                 return (
                   <li
                     key={key}
@@ -231,26 +300,12 @@ export default function BookingDetail({
                       <span
                         className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
                       >
-                        {eq
-                          ? eq.active !== false
-                            ? eq.name
-                            : `${eq.name} (deleted)`
-                          : item.equipmentId}
+                        {eqName}
                       </span>
                       <span className={styles.pickItemMeta}>
                         {eq?.category ?? ''}
-                        {eq?.trackingType === 'quantity' && item.quantity > 1
+                        {item.quantity > 1
                           ? <span className={styles.pickItemQty}>&times;{item.quantity}</span>
-                          : null}
-                        {eq?.trackingType === 'units' && unit
-                          ? (
-                            <span className={styles.pickItemUnit}>
-                              {unit.active !== false
-                                ? unit.label
-                                : `${unit.label} (deleted)`}
-                              {unit.serialNumber ? ` · ${unit.serialNumber}` : ''}
-                            </span>
-                          )
                           : null}
                       </span>
                     </span>

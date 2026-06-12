@@ -208,8 +208,10 @@ export default function BookingForm({
     return selectedItems.find((i) => i.equipmentId === id && !i.unitId)?.quantity ?? 0
   }
 
-  function getSelectedUnitId(equipmentId: string): string | undefined {
-    return selectedItems.find((i) => i.equipmentId === equipmentId && i.unitId)?.unitId
+  function getSelectedUnitIds(equipmentId: string): string[] {
+    return selectedItems
+      .filter((i) => i.equipmentId === equipmentId && i.unitId)
+      .map((i) => i.unitId as string)
   }
 
   function setQuantity(id: string, qty: number) {
@@ -224,14 +226,14 @@ export default function BookingForm({
 
   function selectUnit(equipmentId: string, unitId: string) {
     setSelectedItems((prev) => {
-      const without = prev.filter((i) => i.equipmentId !== equipmentId || !i.unitId)
-      return [...without, { equipmentId, unitId, quantity: 1 }]
+      if (prev.some((i) => i.equipmentId === equipmentId && i.unitId === unitId)) return prev
+      return [...prev, { equipmentId, unitId, quantity: 1 }]
     })
     setConflictResult(null)
   }
 
-  function deselectUnit(equipmentId: string) {
-    setSelectedItems((prev) => prev.filter((i) => !(i.equipmentId === equipmentId && i.unitId)))
+  function deselectUnit(equipmentId: string, unitId: string) {
+    setSelectedItems((prev) => prev.filter((i) => !(i.equipmentId === equipmentId && i.unitId === unitId)))
     setConflictResult(null)
   }
 
@@ -316,7 +318,7 @@ export default function BookingForm({
 
   // ── derived values ───────────────────────────────────────────────────────
   const itemCount = selectedItems.length
-  const canCreate = !!projectName.trim() && !!startDate && itemCount > 0
+  const canCreate = !!projectName.trim() && !!startDate && !!endDate && itemCount > 0
   const hasDates  = !!startDate
 
   const dateHint = startDate
@@ -376,15 +378,15 @@ export default function BookingForm({
                 {/* Date readouts */}
                 <div className={styles.dateRow}>
                   <div className={styles.datebox}>
-                    <label className={styles.datelabel}>START</label>
+                    <label className={styles.datelabel}>PICKUP</label>
                     <span className={startDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(startDate) || 'Pick in calendar'}
+                      {fmtDate(startDate) || '--'}
                     </span>
                   </div>
                   <div className={styles.datebox}>
-                    <label className={styles.datelabel}>END</label>
+                    <label className={styles.datelabel}>RETURN</label>
                     <span className={endDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(endDate) || (startDate ? 'Same day' : '—')}
+                      {fmtDate(endDate) || '--'}
                     </span>
                   </div>
                 </div>
@@ -416,7 +418,7 @@ export default function BookingForm({
                 {timeSlotMinutes !== -1 && !fullDay && (
                   <div className={styles.timeRow}>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>START TIME</label>
+                      <label className={styles.datelabel}>PICKUP TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={startTime}
@@ -428,7 +430,7 @@ export default function BookingForm({
                     </div>
                     <div className={styles.timeSep}>→</div>
                     <div className={styles.timebox}>
-                      <label className={styles.datelabel}>END TIME</label>
+                      <label className={styles.datelabel}>RETURN TIME</label>
                       <select
                         className={styles.timeSelect}
                         value={endTime}
@@ -472,8 +474,8 @@ export default function BookingForm({
                   const isOpen = !!openCats[cat]
                   const selCount = items.reduce((n, it) => {
                     const qty = getQuantity(it.id)
-                    const unitId = getSelectedUnitId(it.id)
-                    return n + (qty > 0 || !!unitId ? 1 : 0)
+                    const unitCount = getSelectedUnitIds(it.id).length
+                    return n + (qty > 0 ? 1 : 0) + unitCount
                   }, 0)
                   return (
                     <div key={cat} className={`${styles.cat} ${isOpen ? styles.catOpen : ''}`}>
@@ -498,7 +500,7 @@ export default function BookingForm({
 
                             if (eq.trackingType === 'units') {
                               const units = sortedUnits(eq)
-                              const selectedUnitId = getSelectedUnitId(eq.id)
+                              const selectedUnitIds = getSelectedUnitIds(eq.id)
                               const isUnitOpen = unitOpen.has(eq.id)
                               const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
                               const availableUnits = units.filter((u) => !bookedUnitIds.has(u.id))
@@ -507,7 +509,7 @@ export default function BookingForm({
                               return (
                                 <div
                                   key={eq.id}
-                                  className={`${styles.eq} ${selectedUnitId ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
+                                  className={`${styles.eq} ${selectedUnitIds.length > 0 ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
                                 >
                                   <div className={styles.eqMain}>
                                     <div className={styles.eqInfo}>
@@ -521,7 +523,7 @@ export default function BookingForm({
                                       />
                                       <button
                                         type="button"
-                                        className={`${styles.unitToggle} ${selectedUnitId ? styles.unitToggleOn : ''}`}
+                                        className={`${styles.unitToggle} ${selectedUnitIds.length > 0 ? styles.unitToggleOn : ''}`}
                                         onClick={() => {
                                           const next = !isUnitOpen
                                           setUnitOpen((prev) => {
@@ -531,7 +533,7 @@ export default function BookingForm({
                                           })
                                         }}
                                       >
-                                        {selectedUnitId ? `${1} SELECTED` : 'SELECT'}
+                                        {selectedUnitIds.length > 0 ? `${selectedUnitIds.length} SELECTED` : 'SELECT'}
                                         <svg
                                           width="10" height="6" viewBox="0 0 11 7" fill="none"
                                           style={{ transform: isUnitOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
@@ -545,14 +547,14 @@ export default function BookingForm({
                                     <div className={styles.units}>
                                       {units.map((unit) => {
                                         const isBooked = bookedUnitIds.has(unit.id)
-                                        const isOn = selectedUnitId === unit.id
+                                        const isOn = selectedUnitIds.includes(unit.id)
                                         return (
                                           <button
                                             key={unit.id}
                                             type="button"
                                             disabled={isBooked && !isOn}
                                             className={`${styles.unitChip} ${isOn ? styles.unitChipOn : ''} ${isBooked && !isOn ? styles.unitChipBad : ''}`}
-                                            onClick={() => isOn ? deselectUnit(eq.id) : selectUnit(eq.id, unit.id)}
+                                            onClick={() => isOn ? deselectUnit(eq.id, unit.id) : selectUnit(eq.id, unit.id)}
                                           >
                                             <span className={styles.unitName}>{unit.label}</span>
                                             {unit.serialNumber && (

@@ -32,6 +32,9 @@ export default function BookingCalendar({ start, end, onChange }: BookingCalenda
     }
     return new Date(today.getFullYear(), today.getMonth(), 1)
   })
+  // Phase flag: distinguishes "just picked a start" (next click extends to a range)
+  // from a completed selection (next click resets to a new start).
+  const [awaitingEnd, setAwaitingEnd] = useState(false)
 
   const y = view.getFullYear()
   const m = view.getMonth()
@@ -46,11 +49,15 @@ export default function BookingCalendar({ start, end, onChange }: BookingCalenda
 
   function pick(d: Date) {
     const k = keyOf(d)
-    if (!start || (start && end)) {
-      onChange(k, null)
+    if (!awaitingEnd || !start) {
+      // First click: start == end (a valid one-day booking), then await the end.
+      onChange(k, k)
+      setAwaitingEnd(true)
     } else {
+      // Second click: set the end, sorting so the earlier date is the start.
       if (fromKey(k) < fromKey(start)) onChange(k, start)
       else onChange(start, k)
+      setAwaitingEnd(false)
     }
   }
 
