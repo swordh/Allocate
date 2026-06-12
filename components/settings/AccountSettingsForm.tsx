@@ -49,8 +49,8 @@ export default function AccountSettingsForm({
   const [passwordSending, setPasswordSending] = useState(false)
   const [passwordSent, setPasswordSent] = useState(false)
 
-  async function handleEmailChange(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleEmailChange() {
+    if (emailSubmitting || newEmail.trim().length === 0) return
     setEmailSubmitting(true)
     setEmailError(null)
     try {
@@ -259,6 +259,12 @@ export default function AccountSettingsForm({
                     onChange={(e) => {
                       setNewEmail(e.target.value)
                       setEmailError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleEmailChange()
+                      }
                     }}
                     disabled={emailSubmitting}
                   />

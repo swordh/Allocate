@@ -1,7 +1,13 @@
 'use server'
 
+import 'server-only'
 import type { ActionCodeSettings } from 'firebase-admin/auth'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
+
+/** Canonical error code from a FirebaseAuthError (e.g. 'auth/user-not-found'). */
+function firebaseErrorCode(err: unknown): string {
+  return (err as { code?: string }).code ?? 'unknown'
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -68,8 +74,7 @@ export async function sendVerificationEmail(idToken: string): Promise<{ error?: 
     console.log('[actions/auth-email]', { action: 'verification_sent' })
     return {}
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    console.error('[actions/auth-email]', { code, action: 'verification_failed' })
+    console.error('[actions/auth-email]', { code: firebaseErrorCode(err), action: 'verification_failed' })
     return { error: 'Could not send the verification email. Please try again.' }
   }
 }
@@ -90,8 +95,8 @@ export async function requestPasswordReset(rawEmail: string): Promise<{ ok: true
     console.log('[actions/auth-email]', { action: 'reset_sent' })
   } catch (err) {
     // user-not-found is expected and intentionally silent. Log anything else.
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
-    if (!String(code).includes('user-not-found')) {
+    const code = firebaseErrorCode(err)
+    if (code !== 'auth/user-not-found') {
       console.error('[actions/auth-email]', { code, action: 'reset_failed' })
     }
   }
@@ -132,9 +137,9 @@ export async function requestEmailChange(
     console.log('[actions/auth-email]', { action: 'email_change_sent' })
     return {}
   } catch (err) {
-    const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
+    const code = firebaseErrorCode(err)
     // The address is taken by another account — tell the user without leaking more.
-    if (String(code).includes('email-already-exists')) {
+    if (code === 'auth/email-already-exists') {
       return { error: 'That email address is already in use.' }
     }
     console.error('[actions/auth-email]', { code, action: 'email_change_failed' })

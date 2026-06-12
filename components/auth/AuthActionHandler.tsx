@@ -7,6 +7,7 @@ import {
   applyActionCode,
   verifyPasswordResetCode,
   confirmPasswordReset,
+  signOut,
 } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { createSession } from '@/actions/auth'
@@ -72,9 +73,11 @@ export default function AuthActionHandler({
 
     if (mode === 'verifyAndChangeEmail') {
       applyActionCode(auth, oobCode)
-        .then(() => {
-          // The sign-in email changed, so any existing session is now stale —
-          // send the user back to sign in with the new address.
+        .then(async () => {
+          // The sign-in email changed, so the client identity and any existing
+          // session are now stale — sign out and send the user back to sign in
+          // with the new address.
+          await signOut(auth).catch(() => {})
           setState({ status: 'email_changed' })
           router.push('/login?emailChanged=1')
         })
