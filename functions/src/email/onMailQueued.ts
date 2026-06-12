@@ -4,6 +4,9 @@ import { logger } from 'firebase-functions/v2';
 import { Timestamp } from 'firebase-admin/firestore';
 import { sendEmail, RenderedEmail } from './send';
 import { invitationEmail } from './templates/invitation';
+import { verifyEmailEmail } from './templates/verifyEmail';
+import { resetPasswordEmail } from './templates/resetPassword';
+import { changeEmailEmail } from './templates/changeEmail';
 
 const RESEND_API_KEY = defineSecret('RESEND_API_KEY');
 
@@ -59,6 +62,12 @@ function renderMail(mail: FirebaseFirestore.DocumentData): RenderedEmail {
   switch (mail['template']) {
     case 'invitation':
       return invitationEmail(mail['data']);
+    case 'verifyEmail':
+      return verifyEmailEmail(mail['data']);
+    case 'resetPassword':
+      return resetPasswordEmail(mail['data']);
+    case 'changeEmail':
+      return changeEmailEmail(mail['data']);
     case undefined:
     case null:
     case '': {

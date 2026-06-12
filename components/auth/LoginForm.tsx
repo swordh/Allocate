@@ -3,9 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signInWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
+import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { createSession } from '@/actions/auth'
+import { sendVerificationEmail } from '@/actions/auth-email'
 import styles from './Auth.module.css'
 
 export default function LoginForm() {
@@ -26,7 +27,7 @@ export default function LoginForm() {
       await credential.user.reload()
       const idToken = await credential.user.getIdToken(true)
       if (!credential.user.emailVerified) {
-        sendEmailVerification(credential.user).catch(() => {})
+        sendVerificationEmail(idToken).catch(() => {})
         await createSession(idToken)
         router.push('/verify-email')
       } else {
@@ -93,6 +94,10 @@ export default function LoginForm() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <p className={styles.footer}>
+          <Link href="/forgot-password">Forgot password?</Link>
+        </p>
 
         <p className={styles.footer}>
           No account?{' '}
