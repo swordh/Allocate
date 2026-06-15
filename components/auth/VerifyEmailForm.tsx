@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { onAuthStateChanged, sendEmailVerification, type User } from 'firebase/auth'
+import { onAuthStateChanged, type User } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { createSession } from '@/actions/auth'
+import { sendVerificationEmail } from '@/actions/auth-email'
 import styles from './Auth.module.css'
 
 export default function VerifyEmailForm() {
@@ -61,15 +62,11 @@ export default function VerifyEmailForm() {
     setSending(true)
     setResendStatus(null)
     try {
-      await sendEmailVerification(currentUser)
-      setResendStatus('Verification email sent')
-    } catch (err) {
-      const code = (err as { code?: string }).code ?? ''
-      if (code === 'auth/too-many-requests') {
-        setResendStatus('Too many attempts. Wait a moment and try again.')
-      } else {
-        setResendStatus('Something went wrong. Please try again.')
-      }
+      const idToken = await currentUser.getIdToken()
+      const result = await sendVerificationEmail(idToken)
+      setResendStatus(result.error ?? 'Verification email sent')
+    } catch {
+      setResendStatus('Something went wrong. Please try again.')
     } finally {
       setSending(false)
     }

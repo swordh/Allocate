@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth'
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import { setupNewCompany, createSession } from '@/actions/auth'
+import { sendVerificationEmail } from '@/actions/auth-email'
 import { TIMEZONE_OPTIONS } from '@/constants/company'
 import styles from './Auth.module.css'
 
@@ -145,7 +146,7 @@ export default function SignupForm() {
     } catch {/* best-effort — Firestore writes are the source of truth */}
 
     try {
-      await sendEmailVerification(credential.user)
+      await sendVerificationEmail(await credential.user.getIdToken())
     } catch {/* best-effort */}
 
     if (mode === 'invite') {
