@@ -17,10 +17,11 @@ type State =
   | { status: 'loading' }
   | { status: 'success' }
   | { status: 'error'; message: string; backTo: string; backLabel: string }
+  | { status: 'confirm'; mode: 'verifyEmail' | 'verifyAndChangeEmail' }
+  | { status: 'confirming'; mode: 'verifyEmail' | 'verifyAndChangeEmail' }
   | { status: 'reset_form'; email: string }
   | { status: 'reset_submitting' }
   | { status: 'reset_done' }
-  | { status: 'email_changed' }
 
 function errorMessage(err: unknown): string {
   const code = (err as { code?: string }).code ?? ''
@@ -49,46 +50,12 @@ export default function AuthActionHandler({
     }
 
     if (mode === 'verifyEmail') {
-      applyActionCode(auth, oobCode)
-        .then(async () => {
-          const user = auth.currentUser
-          if (user) {
-            const freshToken = await user.getIdToken(true)
-            await createSession(freshToken)
-            router.push('/bookings')
-          } else {
-            router.push('/login')
-          }
-        })
-        .catch((err) => {
-          setState({
-            status: 'error',
-            message: errorMessage(err),
-            backTo: '/verify-email',
-            backLabel: 'Back to verification',
-          })
-        })
+      setState({ status: 'confirm', mode: 'verifyEmail' })
       return
     }
 
     if (mode === 'verifyAndChangeEmail') {
-      applyActionCode(auth, oobCode)
-        .then(async () => {
-          // The sign-in email changed, so the client identity and any existing
-          // session are now stale — sign out and send the user back to sign in
-          // with the new address.
-          await signOut(auth).catch(() => {})
-          setState({ status: 'email_changed' })
-          router.push('/login?emailChanged=1')
-        })
-        .catch((err) => {
-          setState({
-            status: 'error',
-            message: errorMessage(err),
-            backTo: '/login',
-            backLabel: 'Back to sign in',
-          })
-        })
+      setState({ status: 'confirm', mode: 'verifyAndChangeEmail' })
       return
     }
 
@@ -117,6 +84,45 @@ export default function AuthActionHandler({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  async function handleConfirm() {
+    if (!oobCode) return
+    if (state.status !== 'confirm') return
+    const confirmMode = state.mode
+    setState({ status: 'confirming', mode: confirmMode })
+    try {
+      await applyActionCode(auth, oobCode)
+      if (confirmMode === 'verifyEmail') {
+        const user = auth.currentUser
+        if (user) {
+          const freshToken = await user.getIdToken(true)
+          await createSession(freshToken)
+          router.push('/bookings')
+        } else {
+          router.push('/login')
+        }
+      } else {
+        await signOut(auth).catch(() => {})
+        router.push('/login?emailChanged=1')
+      }
+    } catch (err) {
+      if (confirmMode === 'verifyEmail') {
+        setState({
+          status: 'error',
+          message: errorMessage(err),
+          backTo: '/verify-email',
+          backLabel: 'Back to verification',
+        })
+      } else {
+        setState({
+          status: 'error',
+          message: errorMessage(err),
+          backTo: '/login',
+          backLabel: 'Back to sign in',
+        })
+      }
+    }
+  }
+
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!oobCode) return
@@ -138,6 +144,33 @@ export default function AuthActionHandler({
         backLabel: 'Back to sign in',
       })
     }
+  }
+
+  if (state.status === 'confirm' || state.status === 'confirming') {
+    const confirming = state.status === 'confirming'
+    const isChangeEmail = state.mode === 'verifyAndChangeEmail'
+    return (
+      <div className={styles.page}>
+        <div className={styles.formCard}>
+          <h1 className={styles.pageTitle}>
+            {isChangeEmail ? 'Confirm email change' : 'Confirm your email'}
+          </h1>
+          <p style={{ color: 'var(--on-surface-variant)', fontSize: 'var(--font-body)' }}>
+            {isChangeEmail
+              ? 'Click below to confirm your new email address.'
+              : 'Click below to verify your email address.'}
+          </p>
+          <button
+            type="button"
+            className={styles.submitBtn}
+            onClick={handleConfirm}
+            disabled={confirming}
+          >
+            {confirming ? 'Confirming…' : isChangeEmail ? 'Confirm change' : 'Confirm email'}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (state.status === 'loading' || state.status === 'success') {
@@ -219,16 +252,6 @@ export default function AuthActionHandler({
       <div className={styles.page}>
         <div className={styles.formCard}>
           <h1 className={styles.pageTitle}>Password updated</h1>
-        </div>
-      </div>
-    )
-  }
-
-  if (state.status === 'email_changed') {
-    return (
-      <div className={styles.page}>
-        <div className={styles.formCard}>
-          <h1 className={styles.pageTitle}>Email updated</h1>
         </div>
       </div>
     )

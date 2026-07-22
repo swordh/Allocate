@@ -51,7 +51,7 @@ async function main() {
   const existingConfigId        = process.env.STRIPE_PORTAL_CONFIG_ID
 
   const stripe = new Stripe(stripeSecretKey, {
-    apiVersion: '2026-02-25.clover',
+    apiVersion: '2026-06-24.dahlia',
     typescript: true,
   })
 
