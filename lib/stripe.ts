@@ -26,7 +26,7 @@ export const stripe: Stripe = lazy(() => {
     throw new Error('[stripe] STRIPE_SECRET_KEY is not set')
   }
   return new Stripe(stripeSecretKey, {
-    apiVersion: '2026-02-25.clover',
+    apiVersion: '2026-06-24.dahlia',
     typescript: true,
   })
 })

@@ -97,7 +97,7 @@ async function main() {
   console.log('────────────────────────────────────────────────────')
   if (!apply) console.log('DRY RUN — no Stripe resources created, no secrets written. Set APPLY=yes to execute.\n')
 
-  const stripe = new Stripe(secretKey, { apiVersion: '2026-02-25.clover', typescript: true })
+  const stripe = new Stripe(secretKey, { apiVersion: '2026-06-24.dahlia', typescript: true })
 
   // ── 1. Products ────────────────────────────────────────────────────────────
   const productIdByPlan: Record<PlanId, string> = { starter: '', basic: '' }
