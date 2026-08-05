@@ -1,0 +1,28 @@
+.textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 14px 16px;
+  resize: vertical;
+  font-family: var(--font-ui);
+  font-size: var(--fs-input);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.textarea::placeholder {
+  color: var(--text-placeholder);
+}
+
+.textarea:focus {
+  border-color: var(--border-emphasis);
+}
+
+.invalid,
+.invalid:focus {
+  border-color: var(--danger-border);
+}
