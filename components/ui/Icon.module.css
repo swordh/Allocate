@@ -1,6 +1,14 @@
 .icon {
   display: inline-block;
   flex: none;
-  color: var(--text-tertiary);
   vertical-align: middle;
+}
+
+/*
+ * Zero-specificity default so a consumer's own class always wins, regardless
+ * of the order Next.js emits the CSS modules in. Icons otherwise inherit
+ * whatever `color` the surrounding context sets.
+ */
+:where(.icon) {
+  color: var(--text-tertiary);
 }

@@ -5,6 +5,7 @@ import { useSupportContext } from '@/lib/support-context'
 import { useToast } from '@/lib/toast-context'
 import { submitFeedback } from '@/actions/submitFeedback'
 import { getRecentActions } from '@/lib/action-tracker'
+import Icon from '@/components/ui/Icon'
 import styles from './SupportModal.module.css'
 
 // ── Bug form ────────────────────────────────────────────────────────────────
@@ -300,7 +301,7 @@ export default function SupportModal() {
         <div className={styles.header}>
           <span className={styles.headerTitle}>Help &amp; feedback</span>
           <button className={styles.closeBtn} onClick={handleClose} aria-label="Close">
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
+            <Icon name="close" size={18} />
           </button>
         </div>
 
@@ -313,7 +314,7 @@ export default function SupportModal() {
               className={`${styles.tab} ${activeTab === 'bug' ? styles.tabActive : ''}`}
               onClick={() => handleTabChange('bug')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>bug_report</span>
+              <Icon name="bug" size={15} />
               Bug report
               <span className={styles.tabNum}>01</span>
             </button>
@@ -323,7 +324,7 @@ export default function SupportModal() {
               className={`${styles.tab} ${activeTab === 'feature' ? styles.tabActive : ''}`}
               onClick={() => handleTabChange('feature')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>lightbulb</span>
+              <Icon name="lightbulb" size={15} />
               Feature request
               <span className={styles.tabNum}>02</span>
             </button>
@@ -333,7 +334,7 @@ export default function SupportModal() {
               className={`${styles.tab} ${activeTab === 'help' ? styles.tabActive : ''}`}
               onClick={() => handleTabChange('help')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>support_agent</span>
+              <Icon name="support-agent" size={15} />
               Get help
               <span className={styles.tabNum}>03</span>
             </button>
@@ -344,7 +345,7 @@ export default function SupportModal() {
         <div className={styles.body}>
           {submitted ? (
             <div className={styles.success}>
-              <span className={`material-symbols-outlined ${styles.successIcon}`}>check_circle</span>
+              <Icon name="check-circle" size={48} className={styles.successIcon} />
               <h3 className={styles.successTitle}>{submitted.kind} sent</h3>
               <p className={styles.successDesc}>
                 {activeTab === 'bug' && 'Thanks — we triage incoming reports within one business day.'}
@@ -352,7 +353,7 @@ export default function SupportModal() {
                 {activeTab === 'help' && 'Our support team replies within a few hours during business days.'}
               </p>
               <div className={styles.ticketBadge}>
-                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>confirmation_number</span>
+                <Icon name="ticket" size={14} />
                 {submitted.ticketId}
               </div>
             </div>
