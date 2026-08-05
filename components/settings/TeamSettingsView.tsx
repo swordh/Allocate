@@ -2,13 +2,15 @@
 
 import { useState } from 'react'
 import { useMembers } from '@/hooks/useMembers'
-import { inviteUser, removeMember, updateMemberRole } from '@/actions/team'
+import { inviteUser, removeMember, updateMemberRole, revokeInvitation } from '@/actions/team'
 import type { Role } from '@/types'
+import type { Invitation } from '@/types/invitation'
 import styles from './TeamSettingsView.module.css'
 
 interface TeamSettingsViewProps {
   companyId: string
   currentUserId: string
+  pendingInvites: Invitation[]
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -17,7 +19,7 @@ const ROLE_LABELS: Record<Role, string> = {
   viewer: 'Viewer',
 }
 
-export default function TeamSettingsView({ companyId, currentUserId }: TeamSettingsViewProps) {
+export default function TeamSettingsView({ companyId, currentUserId, pendingInvites }: TeamSettingsViewProps) {
   const { members, loading } = useMembers(companyId)
 
   const [inviteEmail, setInviteEmail] = useState('')
@@ -29,6 +31,11 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
 
   const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({})
   const [roleError, setRoleError] = useState<string | null>(null)
+
+  // TODO(fas-2): restyle with the design's team table
+  const [invites, setInvites] = useState(pendingInvites)
+  const [revoking, setRevoking] = useState<Record<string, boolean>>({})
+  const [revokeError, setRevokeError] = useState<string | null>(null)
 
   async function handleInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -70,6 +77,22 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
     const result = await updateMemberRole(memberId, newRole)
     setRoleChanging((prev) => ({ ...prev, [memberId]: false }))
     if (result.error) setRoleError(result.error)
+  }
+
+  async function handleRevoke(inviteId: string) {
+    setRevokeError(null)
+    setRevoking((prev) => ({ ...prev, [inviteId]: true }))
+    const result = await revokeInvitation(inviteId)
+    setRevoking((prev) => ({ ...prev, [inviteId]: false }))
+    if (result.error) {
+      setRevokeError(result.error)
+    } else {
+      setInvites((prev) => prev.filter((inv) => inv.id !== inviteId))
+    }
+  }
+
+  function formatDate(iso: string): string {
+    return new Date(iso).toLocaleDateString()
   }
 
   return (
@@ -189,6 +212,39 @@ export default function TeamSettingsView({ companyId, currentUserId }: TeamSetti
           Invited members will join as Crew by default.
         </p>
       </div>
+
+      {/* Pending invitations — TODO(fas-2): restyle with the design's team table */}
+      {invites.length > 0 && (
+        <div className={styles.pendingSection}>
+          <div className={styles.sectionLabel}>Pending Invitations</div>
+
+          {revokeError && (
+            <div className={styles.errorBanner}>
+              {revokeError}
+            </div>
+          )}
+
+          <ul className={styles.pendingList}>
+            {invites.map((invite) => (
+              <li key={invite.id} className={styles.pendingRow}>
+                <span className={styles.pendingEmail}>{invite.email}</span>
+                <span className={styles.pendingMeta}>
+                  Sent {formatDate(invite.invitedAt)}
+                  {invite.expiresAt ? ` · Expires ${formatDate(invite.expiresAt)}` : ''}
+                </span>
+                <button
+                  className={styles.btnRemove}
+                  onClick={() => handleRevoke(invite.id)}
+                  disabled={revoking[invite.id]}
+                  type="button"
+                >
+                  {revoking[invite.id] ? 'Revoking…' : 'Revoke'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

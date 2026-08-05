@@ -12,6 +12,9 @@ export interface Invitation {
   token: string
   acceptedAt?: string     // ISO string
   acceptedBy?: string     // uid
+  expiresAt?: string      // ISO string — missing means "never expires" (backward compat)
+  revokedAt?: string      // ISO string
+  revokedBy?: string      // uid of the admin who revoked it
 }
 
 /** Top-level mirror document at invitations/{token} */
@@ -20,4 +23,5 @@ export interface InvitationMirror {
   inviteId: string
   email: string
   status: InvitationStatus
+  expiresAt?: string      // ISO string — mirrors Invitation.expiresAt
 }

@@ -238,6 +238,57 @@
   cursor: not-allowed;
 }
 
+/* Pending invitations — TODO(fas-2): restyle with the design's team table */
+.pendingSection {
+  padding-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pendingList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pendingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--surface-container-lowest);
+  border-bottom: 2px solid var(--black);
+}
+
+.pendingEmail {
+  font-size: 14px;
+  color: var(--white);
+}
+
+.pendingMeta {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  flex: 1 1 auto;
+  text-align: right;
+  margin-right: 16px;
+}
+
+@media (max-width: 768px) {
+  .pendingRow {
+    flex-wrap: wrap;
+  }
+
+  .pendingMeta {
+    text-align: left;
+    margin-right: 0;
+  }
+}
+
 @media (max-width: 768px) {
   .container {
     box-sizing: border-box;

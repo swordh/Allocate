@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import type { Role } from '@/types'
 
 const BATCH_LIMIT = 490
@@ -15,6 +16,10 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function newExpiresAt(): string {
+  return new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+}
 
 export async function inviteUser(formData: FormData): Promise<{ error?: string }> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────
@@ -71,11 +76,24 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
 
   if (!pendingSnap.empty) {
     // A pending invite already exists — resend its link rather than duplicate.
-    token = pendingSnap.docs[0].data().token as string
+    // Extend expiresAt on both docs: without this, resending an invitation
+    // older than INVITE_TTL_DAYS would re-send a link that is already dead.
+    const pendingDoc = pendingSnap.docs[0]
+    token = pendingDoc.data().token as string
     resent = true
+
+    const expiresAt = newExpiresAt()
+    const inviteRef = adminDb.doc(`companies/${cid}/invitations/${pendingDoc.id}`)
+    const mirrorRef = adminDb.collection('invitations').doc(token)
+
+    const batch = adminDb.batch()
+    batch.update(inviteRef, { expiresAt })
+    batch.update(mirrorRef, { expiresAt })
+    await batch.commit()
   } else {
     token = randomBytes(16).toString('hex') // 32-char alphanumeric token (matches [a-zA-Z0-9] across the accept flow)
     const nowIso = new Date().toISOString()
+    const expiresAt = newExpiresAt()
 
     const inviteRef = adminDb.collection(`companies/${cid}/invitations`).doc()
     const mirrorRef = adminDb.collection('invitations').doc(token)
@@ -91,6 +109,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
       invitedAt: nowIso,
       status: 'pending',
       token,
+      expiresAt,
     })
     // Public mirror — resolved by the /invite/{token} page and accept callable.
     batch.set(mirrorRef, {
@@ -98,6 +117,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
       inviteId: inviteRef.id,
       email,
       status: 'pending',
+      expiresAt,
     })
     await batch.commit()
   }
@@ -298,6 +318,50 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
     target:    memberId.slice(0, 8) + '...',
     companyId: cid,
     action:    'remove_member',
+  })
+
+  return {}
+}
+
+export async function revokeInvitation(inviteId: string): Promise<{ error?: string }> {
+  // ── 1. Auth-guard ────────────────────────────────────────────────────────────
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const cid = session.activeCompanyId
+  if (!cid) return { error: 'No active company' }
+
+  // ── 2. Read the private doc FIRST — it's what gives us the token for the
+  // mirror path. Never accept a token from the client. ─────────────────────────
+  const inviteRef = adminDb.doc(`companies/${cid}/invitations/${inviteId}`)
+  const inviteSnap = await inviteRef.get()
+  if (!inviteSnap.exists) return { error: 'Invitation not found' }
+
+  const inviteData = inviteSnap.data()!
+  if (inviteData.status !== 'pending') {
+    return { error: 'Only pending invitations can be revoked' }
+  }
+
+  const token = inviteData.token as string
+  const mirrorRef = adminDb.collection('invitations').doc(token)
+
+  // ── 3. Batch-update both documents ────────────────────────────────────────────
+  const nowIso = new Date().toISOString()
+  const batch = adminDb.batch()
+  batch.update(inviteRef, {
+    status: 'revoked',
+    revokedAt: nowIso,
+    revokedBy: session.uid,
+  })
+  batch.update(mirrorRef, { status: 'revoked' })
+  await batch.commit()
+
+  revalidatePath('/settings/team')
+  console.log('[actions/team]', {
+    uid:       session.uid.slice(0, 8) + '...',
+    companyId: cid,
+    inviteId,
+    action:    'revoke_invitation',
   })
 
   return {}
