@@ -393,10 +393,6 @@
   color: rgba(255, 255, 255, 0.85);
 }
 
-.addUnitBtn .material-symbols-outlined {
-  font-size: 14px;
-}
-
 /* ── Tracking type toggle ─────────────────────────────────────────────────── */
 
 .trackingToggleGroup {

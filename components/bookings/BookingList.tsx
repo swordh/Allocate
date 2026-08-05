@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { GroupedVirtuoso, type GroupedVirtuosoHandle } from 'react-virtuoso'
 import { useBookings } from '@/hooks/useBookings'
 import type { Booking, Role, UserProfile } from '@/types'
+import Icon from '@/components/ui/Icon'
 import styles from './BookingList.module.css'
 
 interface BookingListProps {
@@ -314,17 +315,17 @@ function BookingRow({
             {getStatusLabel(booking)}
           </span>
           <div className={styles.rowMetaWithIcon}>
-            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
+            <Icon name="schedule" size={14} className={styles.rowMetaIcon} />
             <span className={styles.rowMetaItem}>{timeOrDate}</span>
           </div>
           {displayName && (
             <div className={styles.rowMetaWithIcon}>
-              <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
+              <Icon name="person" size={14} className={styles.rowMetaIcon} />
               <span className={styles.rowMetaItem}>{displayName}</span>
             </div>
           )}
           <div className={styles.rowMetaWithIcon}>
-            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>inventory_2</span>
+            <Icon name="inventory" size={14} className={styles.rowMetaIcon} />
             <span className={styles.rowMetaItem}>
               {itemCount} {itemCount === 1 ? 'item' : 'items'}
             </span>

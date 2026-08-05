@@ -144,7 +144,7 @@
 }
 
 .dayNumToday {
-  background: #EECC02;
+  background: var(--accent);
   color: #221b00;
 }
 
@@ -191,7 +191,7 @@
 }
 
 /* Status dot colours */
-.dotCheckedOut { background: #EECC02; }
+.dotCheckedOut { background: var(--accent); }
 .dotConfirmed  { background: #ffffff; }
 .dotPending    { background: rgba(145, 145, 145, 0.5); }
 .dotReturned   { background: #474747; }

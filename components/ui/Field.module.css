@@ -1,0 +1,52 @@
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-weak);
+}
+
+.md .label {
+  font-size: var(--fs-label);
+  margin-bottom: 10px;
+}
+
+.sm .label {
+  font-size: var(--fs-label-sm);
+  margin-bottom: 8px;
+}
+
+.required {
+  margin-left: 3px;
+  color: var(--accent);
+}
+
+.optional {
+  margin-left: 6px;
+  color: var(--text-pale);
+}
+
+.helper,
+.error {
+  margin-top: 6px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.helper {
+  color: var(--text-faint);
+}
+
+.error {
+  color: var(--danger-text);
+}

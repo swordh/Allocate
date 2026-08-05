@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { useSupportContext } from '@/lib/support-context'
+import Icon from '@/components/ui/Icon'
 import styles from './PrimaryNav.module.css'
 
 const ENV_LABELS: Record<string, string> = {
@@ -66,7 +67,7 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
               aria-label="Notifications"
               title="Notifications"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>notifications</span>
+              <Icon name="notifications" size={18} />
               {unreadCount > 0 && <span className={styles.unreadDot} aria-hidden="true" />}
             </button>
             <button
@@ -75,7 +76,7 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
               aria-label="Help & feedback"
               title="Help & feedback  (Shift+?)"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>help</span>
+              <Icon name="help" size={18} />
             </button>
           </div>
 

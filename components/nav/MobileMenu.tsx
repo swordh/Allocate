@@ -5,12 +5,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { useSupportContext } from '@/lib/support-context'
+import Icon, { type IconName } from '@/components/ui/Icon'
 import styles from './MobileMenu.module.css'
 
 // ── Top-level nav ─────────────────────────────────────────────────────────────
 
-const TOP_NAV = [
-  { label: 'Bookings', href: '/bookings', icon: 'calendar_today' },
+const TOP_NAV: { label: string; href: string; icon: IconName }[] = [
+  { label: 'Bookings', href: '/bookings', icon: 'calendar' },
   { label: 'Equipment', href: '/equipment', icon: 'construction' },
   { label: 'Settings', href: '/settings', icon: 'settings' },
 ]
@@ -81,7 +82,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
         onClick={() => setOpen(true)}
         aria-label="Open navigation menu"
       >
-        <span className="material-symbols-outlined">menu</span>
+        <Icon name="menu" size={24} />
       </button>
 
       {/* Backdrop */}
@@ -104,7 +105,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
             onClick={() => setOpen(false)}
             aria-label="Close navigation menu"
           >
-            <span className="material-symbols-outlined">close</span>
+            <Icon name="close" size={24} />
           </button>
         </div>
 
@@ -118,9 +119,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
                 href={item.href}
                 className={`${styles.navItem} ${isTopActive(item.href) ? styles.navItemActive : ''}`}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
-                  {item.icon}
-                </span>
+                <Icon name={item.icon} size={18} />
                 {item.label}
               </Link>
             ))}
@@ -165,7 +164,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
               className={styles.navItem}
               onClick={() => { openNotifications(); setOpen(false) }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>notifications</span>
+              <Icon name="notifications" size={18} />
               Notifications
               {unreadCount > 0 && (
                 <span className={styles.unreadBadge}>{unreadCount}</span>
@@ -175,7 +174,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
               className={styles.navItem}
               onClick={() => { openHelp(); setOpen(false) }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>help</span>
+              <Icon name="help" size={18} />
               Help &amp; feedback
             </button>
           </div>

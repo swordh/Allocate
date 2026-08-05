@@ -97,16 +97,21 @@
 .groupHeader::-webkit-details-marker { display: none; }
 .groupHeader { list-style: none; }
 
-/* Chevron icon — rotates when group is open */
+/*
+ * Chevron glyph — points down when closed, up when open.
+ * Rotation lives here rather than on Glyph's `rotate` prop: that prop writes
+ * an inline transform, which would beat the [open] rule below.
+ */
 .chevron {
-  font-size: 16px !important;
+  font-size: 16px;
   color: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
   transition: transform 0.15s;
   flex-shrink: 0;
 }
 
 .group[open] .chevron {
-  transform: rotate(180deg);
+  transform: rotate(270deg);
 }
 
 /* Parent name row for individual equipment groups */

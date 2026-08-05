@@ -1,0 +1,59 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+/* ── Sizes ─────────────────────────────────────────────────────────────── */
+
+.md {
+  padding: 11px 12px;
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-btn-tight);
+}
+
+.sm {
+  padding: 8px 6px;
+  font-size: var(--fs-label-sm);
+  letter-spacing: var(--ls-btn);
+}
+
+.cycle {
+  padding: 9px 13px;
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-btn-tight);
+}
+
+/* ── States ────────────────────────────────────────────────────────────── */
+
+.active {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  border-color: var(--border-emphasis);
+}
+
+.inactive {
+  background: transparent;
+  color: var(--text-weak);
+  border-color: var(--border-soft);
+}
+
+.inactive:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: var(--border-medium);
+}
+
+.chip:disabled {
+  color: var(--text-pale);
+  border-color: var(--hairline);
+  cursor: not-allowed;
+}

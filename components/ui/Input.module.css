@@ -1,0 +1,46 @@
+.input {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.input::placeholder {
+  color: var(--text-placeholder);
+  font-weight: var(--fw-medium);
+}
+
+.input:focus {
+  border-color: var(--border-emphasis);
+}
+
+.input:disabled {
+  color: var(--text-pale);
+  cursor: not-allowed;
+}
+
+.invalid,
+.invalid:focus {
+  border-color: var(--danger-border);
+}
+
+/* ── Sizes ─────────────────────────────────────────────────────────────── */
+
+.lg {
+  padding: 15px 16px;
+  font-size: var(--fs-input-lg);
+}
+
+.md {
+  padding: 12px 14px;
+  font-size: var(--fs-input);
+}
+
+.sm {
+  padding: 11px 13px;
+  font-size: var(--fs-input-sm);
+}

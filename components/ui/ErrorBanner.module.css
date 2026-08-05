@@ -1,0 +1,47 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid transparent;
+}
+
+.text {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-notice);
+}
+
+/* ── Tones ─────────────────────────────────────────────────────────────── */
+
+.info {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--notice-info-text);
+}
+
+.info .dot {
+  color: var(--accent);
+}
+
+.danger {
+  background: var(--danger-tint);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.danger .dot {
+  color: var(--danger);
+}
+
+.neutral {
+  background: var(--fill-weak);
+  border-color: var(--border-medium);
+  color: var(--text-secondary);
+}
+
+.neutral .dot {
+  color: var(--text-muted);
+}

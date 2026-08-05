@@ -1,0 +1,31 @@
+.track {
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px;
+  background: var(--fill);
+  border: 1px solid var(--border-track);
+}
+
+.segment {
+  padding: 8px 16px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.segment:hover:not(.selected) {
+  color: var(--text-secondary);
+}
+
+.selected {
+  background: var(--fill-active);
+  color: var(--text-primary);
+}

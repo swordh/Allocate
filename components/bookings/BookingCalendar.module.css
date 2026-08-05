@@ -37,8 +37,8 @@
 }
 
 .calHead button:hover {
-  border-color: var(--tertiary, #EECC02);
-  color: var(--tertiary, #EECC02);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .calDow {
@@ -87,7 +87,7 @@
 }
 
 .calDayToday {
-  color: var(--tertiary, #EECC02);
+  color: var(--accent);
 }
 
 .calDayToday:hover {
@@ -106,7 +106,7 @@
 .calDayStart,
 .calDayEnd,
 .calDaySolo {
-  background: var(--tertiary, #EECC02);
+  background: var(--accent);
   color: #000;
   font-weight: 700;
 }
@@ -114,6 +114,6 @@
 .calDayStart:hover,
 .calDayEnd:hover,
 .calDaySolo:hover {
-  background: var(--tertiary, #EECC02);
+  background: var(--accent);
   color: #000;
 }
