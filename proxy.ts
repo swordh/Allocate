@@ -4,7 +4,16 @@ import { NextRequest, NextResponse } from 'next/server'
 // password-reset and email-verification/-change links are clicked from email,
 // often in a fresh session. The oobCode in the link is itself the security
 // token (validated by Firebase), so these pages carry no privileged data.
-const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password', '/auth/action', '/invite', '/api/auth/session']
+const PUBLIC_PATHS = [
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/auth/action',
+  '/invite',
+  '/api/auth/session',
+  '/privacy',
+  '/terms',
+]
 
 /**
  * Auth guard for all application routes.

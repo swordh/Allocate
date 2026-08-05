@@ -1,0 +1,39 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 30px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.body p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--fw-medium);
+  line-height: 1.75;
+  color: var(--text-muted);
+}
+
+.body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.body a:hover {
+  text-decoration: underline;
+}

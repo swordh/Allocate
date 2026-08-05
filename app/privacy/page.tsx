@@ -1,113 +1,197 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import styles from '../legal.module.css'
+import DataRows from '@/components/ui/DataRows'
+import LegalLayout from '@/components/legal/LegalLayout'
+import LegalSection from '@/components/legal/LegalSection'
+import LegalCards from '@/components/legal/LegalCards'
+import LegalContact from '@/components/legal/LegalContact'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Allocate',
 }
 
+const SECTIONS = [
+  { id: 'controller', label: 'Data controller' },
+  { id: 'collected', label: 'What we collect' },
+  { id: 'why', label: 'Why we process it' },
+  { id: 'processors', label: 'Third-party processors' },
+  { id: 'retention', label: 'Data retention' },
+  { id: 'rights', label: 'Your rights' },
+  { id: 'cookies', label: 'Cookies' },
+  { id: 'changes', label: 'Changes to this policy' },
+  { id: 'contact', label: 'Contact' },
+]
+
 export default function PrivacyPage() {
   return (
-    <div className={styles.shell}>
-      <header className={styles.header}>
-        <Link href="/" className={styles.wordmark}>Allocate</Link>
-      </header>
+    <LegalLayout
+      page="privacy"
+      eyebrow="LAST UPDATED 27 APRIL 2026"
+      title="Privacy Policy"
+      lede="This policy explains what personal data Allocate collects when you use the service, why we collect it, who processes it on our behalf, and the rights you have over it."
+      sections={SECTIONS}
+    >
+      <LegalSection id="controller" title="Data Controller">
+        <p>
+          Allocate is operated by Joakim Svärdh (enskild firma), Sweden. For any
+          privacy-related questions, contact{' '}
+          <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>.
+        </p>
+      </LegalSection>
 
-      <main className={styles.main}>
-        <p className={styles.label}>Legal</p>
-        <h1 className={styles.title}>Privacy Policy</h1>
-        <p className={styles.updated}>Last updated: 27 April 2026</p>
+      <LegalSection id="collected" title="What We Collect">
+        <DataRows
+          variant="boxed"
+          rows={[
+            { term: 'ACCOUNT DATA', value: 'Name and email address, provided at sign-up.' },
+            { term: 'COMPANY DATA', value: 'Company name and team member roles.' },
+            {
+              term: 'BOOKING DATA',
+              value: 'Project names, dates, and equipment selections you create within the service.',
+            },
+            {
+              term: 'SUBSCRIPTION DATA',
+              value:
+                'Your current plan and billing period. Payment details are handled exclusively by Stripe — we never see or store card numbers.',
+            },
+          ]}
+        />
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Data Controller</h2>
-          <p>
-            Allocate is operated by Joakim Svärdh (enskild firma), Sweden.
-            For any privacy-related questions, contact{' '}
-            <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>.
-          </p>
-        </div>
+      <LegalSection id="why" title="Why We Process It">
+        <DataRows
+          variant="boxed"
+          rows={[
+            {
+              term: 'TO PROVIDE THE SERVICE',
+              value:
+                'Legal basis: contract. Your account, booking, and subscription data are necessary to operate Allocate.',
+            },
+            {
+              term: 'TO COMPLY WITH LEGAL OBLIGATIONS',
+              value:
+                'Legal basis: legal obligation. E.g. retaining anonymized booking records for operational purposes.',
+            },
+          ]}
+        />
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>What We Collect</h2>
-          <ul>
-            <li><strong>Account data:</strong> name and email address, provided at sign-up.</li>
-            <li><strong>Company data:</strong> company name and team member roles.</li>
-            <li><strong>Booking data:</strong> project names, dates, and equipment selections you create within the service.</li>
-            <li><strong>Subscription data:</strong> your current plan and billing period. Payment details are handled exclusively by Stripe — we never see or store card numbers.</li>
-          </ul>
-        </div>
+      <LegalSection id="processors" title="Third-Party Processors">
+        <p>
+          We share data only with processors necessary to run the service, all operating
+          under GDPR-compliant Data Processing Agreements:
+        </p>
+        <LegalCards
+          cards={[
+            {
+              title: 'Google Firebase',
+              description: 'Authentication, database, and cloud functions (EU region: europe-west1).',
+            },
+            { title: 'Stripe', description: 'Subscription billing and payment processing.' },
+            { title: 'Vercel', description: 'Application hosting.' },
+          ]}
+        />
+        <p>We do not sell your data or share it with advertisers.</p>
+        <p>
+          Some processors operate outside the European Economic Area. All such transfers
+          are governed by Standard Contractual Clauses (SCCs) as approved by the European
+          Commission, ensuring an equivalent level of data protection.
+        </p>
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Why We Process It</h2>
-          <ul>
-            <li><strong>To provide the service</strong> (legal basis: contract) — your account, booking, and subscription data are necessary to operate Allocate.</li>
-            <li><strong>To comply with legal obligations</strong> (legal basis: legal obligation) — e.g. retaining anonymized booking records for operational purposes.</li>
-          </ul>
-        </div>
+      <LegalSection id="retention" title="Data Retention">
+        <DataRows
+          variant="boxed"
+          rows={[
+            {
+              term: 'ACCOUNT DATA',
+              value: 'Name, email — retained until you delete your account.',
+            },
+            {
+              term: 'BOOKING RECORDS',
+              value:
+                "Retained in anonymized form for the duration of the company's subscription. Records cannot be traced back to you after account deletion.",
+            },
+            {
+              term: 'INVOICE & PAYMENT RECORDS',
+              value: 'Retained for 7 years in accordance with Swedish accounting law (Bokföringslagen).',
+            },
+            { term: 'SERVER LOGS', value: 'Retained for 30 days, then automatically deleted.' },
+          ]}
+        />
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Third-Party Processors</h2>
-          <p>We share data only with processors necessary to run the service, all operating under GDPR-compliant Data Processing Agreements:</p>
-          <ul>
-            <li><strong>Google Firebase</strong> — authentication, database, and cloud functions (EU region: europe-west1).</li>
-            <li><strong>Stripe</strong> — subscription billing and payment processing.</li>
-            <li><strong>Vercel</strong> — application hosting.</li>
-          </ul>
-          <p>We do not sell your data or share it with advertisers.</p>
-          <p>
-            Some processors operate outside the European Economic Area. All such transfers
-            are governed by Standard Contractual Clauses (SCCs) as approved by the
-            European Commission, ensuring an equivalent level of data protection.
-          </p>
-        </div>
+      <LegalSection id="rights" title="Your Rights">
+        <p>Under GDPR you have the right to:</p>
+        <DataRows
+          variant="boxed"
+          rows={[
+            {
+              term: 'ACCESS',
+              value: (
+                <>
+                  Your personal data — contact us at{' '}
+                  <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a> and we will provide a
+                  copy.
+                </>
+              ),
+            },
+            {
+              term: 'ERASURE',
+              value: 'Delete your account directly from Settings. Deletion is immediate and permanent.',
+            },
+            { term: 'CORRECTION', value: 'Update your name and email from your profile settings.' },
+            {
+              term: 'PORTABILITY',
+              value: (
+                <>
+                  Download your data directly from your{' '}
+                  <Link href="/settings/account">Account Settings</Link>.
+                </>
+              ),
+            },
+            {
+              term: 'COMPLAINT',
+              value: (
+                <>
+                  You may lodge a complaint with the Swedish supervisory authority,{' '}
+                  <a href="https://www.imy.se" target="_blank" rel="noopener noreferrer">
+                    IMY (Integritetsskyddsmyndigheten)
+                  </a>
+                  .
+                </>
+              ),
+            },
+          ]}
+        />
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Data Retention</h2>
-          <ul>
-            <li><strong>Account data</strong> (name, email): retained until you delete your account.</li>
-            <li><strong>Booking records:</strong> retained in anonymized form for the duration of the company&apos;s subscription. Records cannot be traced back to you after account deletion.</li>
-            <li><strong>Invoice and payment records:</strong> retained for 7 years in accordance with Swedish accounting law (Bokföringslagen).</li>
-            <li><strong>Server logs:</strong> retained for 30 days, then automatically deleted.</li>
-          </ul>
-        </div>
+      <LegalSection id="cookies" title="Cookies">
+        <p>
+          Allocate uses a single session cookie to keep you signed in. No tracking or
+          advertising cookies are used.
+        </p>
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Your Rights</h2>
-          <p>Under GDPR you have the right to:</p>
-          <ul>
-            <li><strong>Access</strong> your personal data — contact us at <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a> and we will provide a copy.</li>
-            <li><strong>Erasure</strong> — delete your account directly from Settings. Deletion is immediate and permanent.</li>
-            <li><strong>Correction</strong> — update your name and email from your profile settings.</li>
-            <li><strong>Portability</strong> — download your data directly from your{' '}<Link href="/settings/account">Account Settings</Link>.</li>
-            <li><strong>Complaint</strong> — you may lodge a complaint with the Swedish supervisory authority, <a href="https://www.imy.se" target="_blank" rel="noopener noreferrer">IMY (Integritetsskyddsmyndigheten)</a>.</li>
-          </ul>
-        </div>
+      <LegalSection id="changes" title="Changes to This Policy">
+        <p>
+          We may update this policy from time to time. Material changes will be
+          communicated via email or an in-app notice. Continued use of the service after
+          changes constitutes acceptance.
+        </p>
+      </LegalSection>
 
-        <div className={styles.section}>
-          <h2>Cookies</h2>
-          <p>
-            Allocate uses a single session cookie to keep you signed in. No
-            tracking or advertising cookies are used.
-          </p>
-        </div>
-
-        <div className={styles.section}>
-          <h2>Changes to This Policy</h2>
-          <p>
-            We may update this policy from time to time. Material changes will be
-            communicated via email or an in-app notice. Continued use of the
-            service after changes constitutes acceptance.
-          </p>
-        </div>
-      </main>
-
-      <footer className={styles.footer}>
-        <p>© 2026 Allocate. All rights reserved.</p>
-        <div className={styles.footerLinks}>
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/terms">Terms</Link>
-        </div>
-      </footer>
-    </div>
+      <LegalSection id="contact" title="Contact">
+        <LegalContact
+          columns={[
+            {
+              label: 'EMAIL',
+              value: <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>,
+            },
+            { label: 'ENTITY', value: 'Joakim Svärdh (enskild firma), Sweden' },
+          ]}
+        />
+      </LegalSection>
+    </LegalLayout>
   )
 }

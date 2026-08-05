@@ -82,8 +82,10 @@ export async function sendVerificationEmail(idToken: string): Promise<{ error?: 
 /**
  * Sends a password-reset link via Resend. Always reports success to the client
  * (swallows user-not-found) so the form can't be used to enumerate accounts.
+ * `throttled` surfaces the one error state the design DOES show — Firebase's
+ * own rate limiting — without revealing whether the address has an account.
  */
-export async function requestPasswordReset(rawEmail: string): Promise<{ ok: true }> {
+export async function requestPasswordReset(rawEmail: string): Promise<{ ok: true; throttled?: boolean }> {
   const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
   if (!EMAIL_RE.test(email)) return { ok: true }
 
@@ -96,6 +98,9 @@ export async function requestPasswordReset(rawEmail: string): Promise<{ ok: true
   } catch (err) {
     // user-not-found is expected and intentionally silent. Log anything else.
     const code = firebaseErrorCode(err)
+    if (code === 'auth/too-many-requests') {
+      return { ok: true, throttled: true }
+    }
     if (code !== 'auth/user-not-found') {
       console.error('[actions/auth-email]', { code, action: 'reset_failed' })
     }

@@ -1,0 +1,23 @@
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.item {
+  position: relative;
+  padding-left: 20px;
+  font-size: 15px;
+  font-weight: var(--fw-medium);
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.item::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+}

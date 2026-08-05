@@ -11,6 +11,7 @@
   --bg-root:            #050506;  /* html, behind the app shell */
   --bg-page:            #000;     /* app canvas, desktop + mobile */
   --surface:            #0d0d0f;  /* inputs, sunken fields */
+  --surface-sunken:     #0a0a0b;  /* locked/disabled input fields */
   --surface-raised:     #161618;  /* popovers, dropdowns, date pickers */
   --surface-modal:      #111113;  /* modal / dialog card */
   --surface-modal-alt:  #101012;  /* secondary modal card */
@@ -21,8 +22,8 @@
   --border-track:       rgba(255, 255, 255, 0.07);  /* segmented-control track */
   --border-subtle:      rgba(255, 255, 255, 0.09);  /* tab rail, side panel */
   --border-soft:        rgba(255, 255, 255, 0.10);  /* popover, inactive chip */
-  --border:             rgba(255, 255, 255, 0.12);  /* input, modal card */
-  --border-medium:      rgba(255, 255, 255, 0.14);  /* neutral notice, toggle off */
+  --border:             rgba(255, 255, 255, 0.12);  /* modal card */
+  --border-medium:      rgba(255, 255, 255, 0.14);  /* input, neutral notice, toggle off */
   --border-strong:      rgba(255, 255, 255, 0.16);  /* secondary button */
   --border-dashed:      rgba(255, 255, 255, 0.20);  /* ghost / add button */
   --border-emphasis:    rgba(255, 255, 255, 0.28);  /* active chip */
@@ -30,8 +31,9 @@
   /* ────────────────────────────── FILLS ─────────────────────────────────── */
   --fill-weak:          rgba(255, 255, 255, 0.04);  /* neutral notice bg */
   --fill:               rgba(255, 255, 255, 0.05);  /* segmented-control track */
-  --fill-medium:        rgba(255, 255, 255, 0.08);  /* disabled button bg */
+  --fill-medium:        rgba(255, 255, 255, 0.08);  /* locked input border */
   --fill-active:        rgba(255, 255, 255, 0.12);  /* selected segment */
+  --fill-strong:        rgba(255, 255, 255, 0.16);  /* disabled button bg */
 
   /* ─────────────────────────────── TEXT ─────────────────────────────────── */
   --text-primary:       #fff;
@@ -68,7 +70,7 @@
   /* ────────────────────────────── BUTTON ────────────────────────────────── */
   --btn-primary-bg:   #fff;
   --btn-primary-fg:   #000;
-  --btn-disabled-bg:  var(--fill-medium);
+  --btn-disabled-bg:  var(--fill-strong);
   --btn-disabled-fg:  var(--text-pale);
 
   /* ───────────────────────────── TYPEFACES ──────────────────────────────── */
@@ -169,22 +171,22 @@
      ═════════════════════════════════════════════════════════════════════════ */
 
   /* Removed when their last screen is reskinned — phase noted per token. */
-  --white:                     var(--text-primary);    /* all phases */
-  --black:                     var(--bg-page);         /* all phases */
+  --white:                     var(--text-primary);    /* phases 2–5 */
+  --black:                     var(--bg-page);         /* phases 2–5 */
   --on-surface:                var(--text-primary);    /* phase 2 */
-  --on-surface-variant:        var(--text-secondary);  /* all phases */
-  --outline:                   var(--text-tertiary);   /* all phases */
+  --on-surface-variant:        var(--text-secondary);  /* phases 2–5 */
+  --outline:                   var(--text-tertiary);   /* phases 2, 4, 5 */
   --outline-variant:           var(--border);          /* phase 2, 4 */
   --rule:                      var(--border-strong);   /* phase 2 */
   --mid:                       var(--text-placeholder);/* phase 2, 4 */
   --dim:                       var(--text-placeholder);/* phase 2, 4 */
   --secondary:                 var(--text-bright);     /* phase 2, 4, 5 */
   --tertiary:                  var(--accent);          /* phase 4 */
-  --error:                     var(--danger);          /* all phases */
+  --error:                     var(--danger);          /* phases 2–5 */
   --repair:                    var(--danger);          /* phase 3 */
   --on-primary:                var(--btn-primary-fg);  /* phase 2, 4 */
   --surface-container-lowest:  var(--surface);         /* phase 2, 3 */
-  --surface-container-low:     var(--surface-raised);  /* all phases */
+  --surface-container-low:     var(--surface-raised);  /* phases 2–5 */
   --surface-container:         var(--surface-raised);  /* phase 2, 4 */
   --surface-container-high:    var(--surface-raised);  /* phase 2, 3 */
   --surface-container-highest: var(--surface-raised);  /* phase 2 */
