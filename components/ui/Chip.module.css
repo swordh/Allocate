@@ -33,6 +33,13 @@
   letter-spacing: var(--ls-btn-tight);
 }
 
+.tag {
+  padding: 7px 10px;
+  font-size: var(--fs-label-sm);
+  letter-spacing: var(--ls-nav);
+  cursor: default;
+}
+
 /* ── States ────────────────────────────────────────────────────────────── */
 
 .active {
@@ -56,4 +63,25 @@
   color: var(--text-pale);
   border-color: var(--hairline);
   cursor: not-allowed;
+}
+
+/* ── Tag size default look ─────────────────────────────────────────────── */
+/* Non-interactive metadata pills (e.g. "ROLE · CREW") sit brighter than the
+   inactive filter-chip look, and never invite hover. */
+
+.tag.inactive {
+  color: var(--text-secondary);
+  border-color: var(--border-medium);
+}
+
+/* ── Tones ─────────────────────────────────────────────────────────────── */
+
+.toneAccent {
+  color: var(--accent);
+  border-color: var(--accent-border-mid);
+}
+
+.toneDanger {
+  color: var(--danger);
+  border-color: var(--danger-border-mid);
 }

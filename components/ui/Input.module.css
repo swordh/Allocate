@@ -25,14 +25,40 @@
 
 .invalid,
 .invalid:focus {
-  border-color: var(--danger-border);
+  border-color: var(--danger-border-mid);
+}
+
+.busy,
+.busy:focus {
+  border-color: var(--accent-border-mid);
+}
+
+.locked,
+.locked:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--fill-medium);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.mono {
+  font-family: ui-monospace, Menlo, monospace;
+  letter-spacing: var(--ls-btn-tight);
 }
 
 /* ── Sizes ─────────────────────────────────────────────────────────────── */
 
 .lg {
-  padding: 15px 16px;
-  font-size: var(--fs-input-lg);
+  padding: 13px 14px;
+  font-size: var(--fs-input);
+}
+
+@media (max-width: 480px) {
+  .lg {
+    padding: 14px;
+    /* No 15px token exists in the type scale; single occurrence, design value. */
+    font-size: 15px;
+  }
 }
 
 .md {

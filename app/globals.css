@@ -11,6 +11,7 @@
   --bg-root:            #050506;  /* html, behind the app shell */
   --bg-page:            #000;     /* app canvas, desktop + mobile */
   --surface:            #0d0d0f;  /* inputs, sunken fields */
+  --surface-sunken:     #0a0a0b;  /* locked/disabled input fields */
   --surface-raised:     #161618;  /* popovers, dropdowns, date pickers */
   --surface-modal:      #111113;  /* modal / dialog card */
   --surface-modal-alt:  #101012;  /* secondary modal card */
@@ -30,8 +31,9 @@
   /* ────────────────────────────── FILLS ─────────────────────────────────── */
   --fill-weak:          rgba(255, 255, 255, 0.04);  /* neutral notice bg */
   --fill:               rgba(255, 255, 255, 0.05);  /* segmented-control track */
-  --fill-medium:        rgba(255, 255, 255, 0.08);  /* disabled button bg */
+  --fill-medium:        rgba(255, 255, 255, 0.08);  /* locked input border */
   --fill-active:        rgba(255, 255, 255, 0.12);  /* selected segment */
+  --fill-strong:        rgba(255, 255, 255, 0.16);  /* disabled button bg */
 
   /* ─────────────────────────────── TEXT ─────────────────────────────────── */
   --text-primary:       #fff;
@@ -68,7 +70,7 @@
   /* ────────────────────────────── BUTTON ────────────────────────────────── */
   --btn-primary-bg:   #fff;
   --btn-primary-fg:   #000;
-  --btn-disabled-bg:  var(--fill-medium);
+  --btn-disabled-bg:  var(--fill-strong);
   --btn-disabled-fg:  var(--text-pale);
 
   /* ───────────────────────────── TYPEFACES ──────────────────────────────── */

@@ -8,6 +8,7 @@ export type ButtonVariant =
   | 'ghost'
   | 'danger'
   | 'danger-solid'
+  | 'quiet'
 
 export type ButtonSize = 'lg' | 'md' | 'sm' | 'xs'
 
@@ -15,6 +16,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
   size?: ButtonSize
   fullWidth?: boolean
+  /** Renders a leading dot, tints the background and forces `disabled`/`aria-busy`. */
+  loading?: boolean
 }
 
 const VARIANTS: Record<ButtonVariant, string> = {
@@ -24,6 +27,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   ghost: styles.ghost,
   danger: styles.danger,
   'danger-solid': styles.dangerSolid,
+  quiet: styles.quiet,
 }
 
 const SIZES: Record<ButtonSize, string> = {
@@ -37,8 +41,10 @@ export default function Button({
   variant = 'primary',
   size = 'md',
   fullWidth = false,
+  loading = false,
   className,
   type = 'button',
+  disabled,
   children,
   ...rest
 }: ButtonProps) {
@@ -47,13 +53,21 @@ export default function Button({
     VARIANTS[variant],
     SIZES[size],
     fullWidth ? styles.fullWidth : '',
+    loading ? styles.loading : '',
     className ?? '',
   ]
     .filter(Boolean)
     .join(' ')
 
   return (
-    <button type={type} className={classes} {...rest}>
+    <button
+      type={type}
+      className={classes}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...rest}
+    >
+      {loading && <span className={styles.loadingDot} aria-hidden="true" />}
       {children}
     </button>
   )

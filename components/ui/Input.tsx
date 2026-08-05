@@ -7,6 +7,12 @@ export type InputSize = 'lg' | 'md' | 'sm'
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   inputSize?: InputSize
   invalid?: boolean
+  /** Accent-tinted border for an in-flight async check (e.g. invite code lookup). */
+  busy?: boolean
+  /** Sunken, non-interactive appearance for a value the user can't edit (e.g. email locked to an invite). */
+  locked?: boolean
+  /** Monospace, wide-tracking font for tokens/codes. */
+  mono?: boolean
 }
 
 const SIZES: Record<InputSize, string> = {
@@ -18,12 +24,31 @@ const SIZES: Record<InputSize, string> = {
 export default function Input({
   inputSize = 'md',
   invalid = false,
+  busy = false,
+  locked = false,
+  mono = false,
   className,
+  disabled,
   ...rest
 }: InputProps) {
-  const classes = [styles.input, SIZES[inputSize], invalid ? styles.invalid : '', className ?? '']
+  const classes = [
+    styles.input,
+    SIZES[inputSize],
+    invalid ? styles.invalid : '',
+    busy ? styles.busy : '',
+    locked ? styles.locked : '',
+    mono ? styles.mono : '',
+    className ?? '',
+  ]
     .filter(Boolean)
     .join(' ')
 
-  return <input className={classes} aria-invalid={invalid || undefined} {...rest} />
+  return (
+    <input
+      className={classes}
+      aria-invalid={invalid || undefined}
+      disabled={disabled || locked}
+      {...rest}
+    />
+  )
 }

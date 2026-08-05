@@ -1,9 +1,21 @@
 .banner {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 18px;
+  gap: 14px;
+  padding: 15px 18px;
   border: 1px solid transparent;
+}
+
+@media (max-width: 480px) {
+  .banner {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .dot {
+    margin-top: 6px;
+  }
 }
 
 .text {
@@ -11,14 +23,14 @@
   font-family: var(--font-ui);
   font-size: var(--fs-body-sm);
   font-weight: var(--fw-medium);
-  line-height: var(--lh-notice);
+  line-height: var(--lh-tight);
 }
 
 /* ── Tones ─────────────────────────────────────────────────────────────── */
 
 .info {
   background: var(--accent-tint);
-  border-color: var(--accent-border);
+  border-color: var(--accent-border-mid);
   color: var(--notice-info-text);
 }
 
