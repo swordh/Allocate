@@ -32,30 +32,20 @@ import { createBooking } from '@/actions/bookings'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 
+import {
+  ADMIN_SESSION,
+  COMPANY_ID,
+  CREW_SESSION,
+  VIEWER_SESSION,
+  makeUnit,
+  makeUnitsEquipment,
+} from '../helpers/fixtures'
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const COMPANY_ID = 'company-abc'
-
-const ADMIN_SESSION = {
-  uid: 'user-admin',
-  email: 'admin@example.com',
-  activeCompanyId: COMPANY_ID,
-  role: 'admin' as const,
-}
-
-const CREW_SESSION = {
-  uid: 'user-crew',
-  email: 'crew@example.com',
-  activeCompanyId: COMPANY_ID,
-  role: 'crew' as const,
-}
-
-const VIEWER_SESSION = {
-  uid: 'user-viewer',
-  email: 'viewer@example.com',
-  activeCompanyId: COMPANY_ID,
-  role: 'viewer' as const,
-}
+/** The unit every default booking request reserves. */
+const UNIT_ID = 'unit-a'
+const UNIT_PATH = `companies/${COMPANY_ID}/equipment/equip-1/units/${UNIT_ID}`
 
 /** Build a FormData with sensible defaults for a valid booking request. */
 function makeFormData(overrides: Record<string, string> = {}): FormData {
@@ -65,7 +55,8 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
   fd.set('startDate', '2030-01-10')
   fd.set('endDate', '2030-01-15')
   fd.set('notes', '')
-  fd.set('items', JSON.stringify([{ equipmentId: 'equip-1', quantity: 1 }]))
+  // equip-1 is unit-tracked, so a booking request must name the unit it reserves.
+  fd.set('items', JSON.stringify([{ equipmentId: 'equip-1', quantity: 1, unitId: UNIT_ID }]))
   for (const [k, v] of Object.entries(overrides)) fd.set(k, v)
   return fd
 }
@@ -79,15 +70,9 @@ const ACTIVE_COMPANY_DATA = {
   },
 }
 
-/** A standard active equipment document. */
-const ACTIVE_INDIVIDUAL_EQUIP = {
-  name: 'Camera A',
-  active: true,
-  trackingType: 'individual',
-  totalQuantity: 1,
-  requiresApproval: false,
-  approverId: null,
-}
+/** A standard active unit-tracked equipment document, plus its one unit. */
+const ACTIVE_UNITS_EQUIP = makeUnitsEquipment({ name: 'Camera A' })
+const ACTIVE_UNIT = makeUnit({ label: 'Unit 01' })
 
 /**
  * Wire adminDb.runTransaction to call the provided callback with a transaction
@@ -185,7 +170,8 @@ describe('createBooking', () => {
 
       wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${CREW_SESSION.uid}`]: { name: 'Crew Member' },
       })
 
@@ -198,7 +184,8 @@ describe('createBooking', () => {
     it('allows admin members to create bookings', async () => {
       wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
       })
 
@@ -270,7 +257,8 @@ describe('createBooking', () => {
     it('creates a booking and returns the new bookingId', async () => {
       const { newDocId } = wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
       })
 
@@ -282,7 +270,8 @@ describe('createBooking', () => {
     it('writes a confirmed booking when no approval is required', async () => {
       const { tx } = wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
       })
 
@@ -299,10 +288,11 @@ describe('createBooking', () => {
       const { tx } = wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
         [`companies/${COMPANY_ID}/equipment/equip-1`]: {
-          ...ACTIVE_INDIVIDUAL_EQUIP,
+          ...ACTIVE_UNITS_EQUIP,
           requiresApproval: true,
           approverId: 'approver-user-id',
         },
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
       })
 
@@ -320,12 +310,13 @@ describe('createBooking', () => {
 
   describe('conflict path', () => {
     it('returns an error when conflict detection finds an overlap', async () => {
-      // Wire the conflict: the equipment is individual and there is an
-      // overlapping booking in the query results returned during the transaction.
+      // Wire the conflict: equip-1 is unit-tracked and an existing booking
+      // already holds the same unit over an overlapping window.
       wireTransaction(
         {
           [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-          [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+          [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
           [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
         },
         [
@@ -338,7 +329,8 @@ describe('createBooking', () => {
               status: 'confirmed',
               approvalStatus: 'none',
               equipmentIds: ['equip-1'],
-              items: [{ equipmentId: 'equip-1', quantity: 1 }],
+              unitIds: [UNIT_ID],
+              items: [{ equipmentId: 'equip-1', quantity: 1, unitId: UNIT_ID }],
             },
           },
         ],
@@ -380,7 +372,8 @@ describe('createBooking', () => {
             limits: { equipment: 50, users: 5 },
           },
         },
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
         [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
       })
 
@@ -409,9 +402,10 @@ describe('createBooking', () => {
       wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
         [`companies/${COMPANY_ID}/equipment/equip-1`]: {
-          ...ACTIVE_INDIVIDUAL_EQUIP,
+          ...ACTIVE_UNITS_EQUIP,
           active: false,
         },
+        [UNIT_PATH]: ACTIVE_UNIT,
       })
 
       const result = await createBooking(makeFormData())
@@ -420,10 +414,11 @@ describe('createBooking', () => {
       expect((result as { error: string }).error).toContain('not available')
     })
 
-    it('returns an error when quantity > 1 for individually tracked equipment', async () => {
+    it('returns an error when quantity > 1 for unit-tracked equipment', async () => {
       wireTransaction({
         [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
-        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_INDIVIDUAL_EQUIP,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
       })
 
       const items = JSON.stringify([{ equipmentId: 'equip-1', quantity: 2 }])
