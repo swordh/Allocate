@@ -18,6 +18,16 @@ const generalSans = localFont({
   display: 'swap',
 })
 
+// Display face: large page headings, numbers, table values. See public/fonts/README.md.
+const archivo = localFont({
+  src: '../public/fonts/Archivo-Variable.woff2',
+  weight: '400 800',
+  style: 'normal',
+  variable: '--font-display',
+  display: 'swap',
+  fallback: ['system-ui', 'sans-serif'],
+})
+
 const ENV_LABELS: Record<string, string> = { dev: 'Dev', alpha: 'Alpha', beta: 'Beta' }
 const envLabel = ENV_LABELS[process.env.NEXT_PUBLIC_APP_ENV ?? '']
 
@@ -32,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={generalSans.variable}>
+    <html lang="en" className={`${generalSans.variable} ${archivo.variable}`}>
       <head>
         <link
           rel="preload"
