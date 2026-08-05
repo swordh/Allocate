@@ -215,9 +215,9 @@ html {
 body {
   background: var(--bg-page);
   font-family: var(--font-ui);
-  font-weight: 300;
-  font-size: var(--font-body);
-  line-height: 1.4;
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
