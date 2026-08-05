@@ -94,7 +94,7 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #080808;
+  background: var(--bg-page);
   border-right: 1px solid #1a1a1a;
   border-bottom: 1px solid #1a1a1a;
   padding: 12px 8px;
@@ -119,7 +119,7 @@
 
 .colHeaderToday .colHeaderDayNum,
 .colHeaderToday .colHeaderWeekday {
-  color: #EECC02;
+  color: var(--accent);
 }
 
 .colHeaderWeekend {
@@ -198,7 +198,7 @@
 }
 
 .blockConfirmed  { background: #1C1B1B; color: #fff;     border-left: 2px solid #fff;     }
-.blockCheckedOut { background: rgba(238,204,2,0.12); color: #EECC02; border-left: 2px solid #EECC02; }
+.blockCheckedOut { background: var(--accent-tint-strong); color: var(--accent); border-left: 2px solid var(--accent); }
 .blockPending    { background: #1C1B1B; color: #919191;  border-left: 2px solid #474747;  }
 .blockReturned   { background: rgba(255,255,255,0.04); color: #474747; border-left: 2px solid #474747; }
 
@@ -211,7 +211,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: #EECC02;
+  background: var(--accent);
   z-index: 5;
   pointer-events: none;
 }
@@ -222,7 +222,7 @@
   top: -4px;
   width: 9px;
   height: 9px;
-  background: #EECC02;
+  background: var(--accent);
   border-radius: 50%;
 }
 
