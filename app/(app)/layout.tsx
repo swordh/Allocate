@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import { getVerifiedSession } from '@/lib/dal'
+import { getUserProfile } from '@/lib/queries/users'
 import { adminDb } from '@/lib/firebase-admin'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileMenu } from '@/components/nav/MobileMenu'
@@ -15,13 +17,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const companyData = companyDoc.data()
-  const subStatus = companyData?.subscription?.status
-  const trialEnd = companyData?.subscription?.trialEnd ?? null
+  const subscription = companyData?.subscription
+  const subStatus = subscription?.status
+  const trialEnd = subscription?.trialEnd ?? null
 
-  // Allow: active subscription, or a real Stripe trial (trialEnd is set by webhook on subscription.created)
-  // Block: initial auto-trial (trialEnd=null), abandoned checkout, past_due, canceled
+  // No subscription object at all — the company never started checkout.
+  if (!subscription) redirect('/subscribe')
+
+  // A real Stripe trial has trialEnd set by the webhook on subscription.created.
+  // The initial auto-trial (trialEnd=null) is not a real trial and stays blocked.
   const isRealTrial = subStatus === 'trialing' && trialEnd !== null
-  if (subStatus !== 'active' && !isRealTrial) redirect('/subscribe')
+  const hasFullAccess = subStatus === 'active' || isRealTrial
+
+  // past_due / canceled / incomplete may reach /settings/** (e.g. to update
+  // their card) but nothing else under (app).
+  const settingsOnlyStatuses = ['past_due', 'canceled', 'incomplete']
+  const settingsOnly = settingsOnlyStatuses.includes(subStatus)
+
+  if (!hasFullAccess) {
+    if (settingsOnly) {
+      const pathname = (await headers()).get('x-pathname') ?? ''
+      if (!pathname.startsWith('/settings')) redirect('/subscribe')
+    } else {
+      redirect('/subscribe')
+    }
+  }
+
+  const profile = await getUserProfile(session.uid)
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
@@ -29,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className={styles.main}>
         {children}
       </main>
-      <MobileMenu role={session.role} />
+      <MobileMenu role={session.role} name={profile?.name ?? ''} email={session.email} />
     </div>
   )
 }

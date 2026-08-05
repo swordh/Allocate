@@ -5,10 +5,10 @@
   position: fixed;
   top: 12px;
   right: 16px;
-  z-index: 58;
+  z-index: var(--z-overlay);
   background: none;
   border: none;
-  color: var(--white);
+  color: var(--text-primary);
   cursor: pointer;
   padding: 4px;
   line-height: 1;
@@ -32,8 +32,8 @@
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 59;
-  background: rgba(0, 0, 0, 0.7);
+  z-index: var(--z-overlay);
+  background: var(--overlay-scrim);
   backdrop-filter: blur(4px);
 }
 
@@ -50,10 +50,10 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 60;
+  z-index: var(--z-toast);
   width: 280px;
-  background: var(--surface-container-low);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-raised);
+  border-left: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
@@ -71,14 +71,14 @@
   display: flex;
   justify-content: flex-end;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+  border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
 }
 
 .closeBtn {
   background: none;
   border: none;
-  color: var(--white);
+  color: var(--text-primary);
   cursor: pointer;
   padding: 4px;
   line-height: 1;
@@ -102,13 +102,13 @@
 }
 
 .sectionLabel {
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: 0.2em;
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-pale);
   padding: 0 24px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 /* ── Nav items ─────────────────────────────────────────────────────────────── */
@@ -118,13 +118,13 @@
   align-items: center;
   gap: 12px;
   padding: 12px 24px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-nav);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
   text-transform: uppercase;
-  color: rgba(240, 237, 232, 0.6);
+  color: var(--text-muted);
   text-decoration: none;
-  transition: color 0.1s, background 0.1s;
+  transition: color var(--transition), background var(--transition);
   cursor: pointer;
   background: none;
   border: none;
@@ -133,53 +133,94 @@
 }
 
 .navItem:hover {
-  color: var(--white);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  background: var(--fill-weak);
 }
 
 .navItemActive {
-  color: var(--white);
+  color: var(--text-primary);
+}
+
+/* ── Signed in as ──────────────────────────────────────────────────────────── */
+
+.signedInRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 24px 0;
+}
+
+.signedInInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.signedInName {
+  font-weight: var(--fw-semibold);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.signedInEmail {
+  margin-top: 3px;
+  font-size: var(--fs-btn);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signOutBtn {
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-strong);
+  padding: 11px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.signOutBtn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-emphasis);
+}
+
+.signOutBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* ── Bottom CTA ────────────────────────────────────────────────────────────── */
 
 .sheetFooter {
   padding: 16px 24px;
-  border-top: 1px solid rgba(71, 71, 71, 0.2);
+  border-top: 1px solid var(--hairline);
   flex-shrink: 0;
 }
 
 .ctaBtn {
   display: block;
   width: 100%;
-  background: var(--white);
-  color: var(--on-primary);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
   padding: 10px 20px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-btn);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
   text-transform: uppercase;
   border: none;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--transition);
   text-decoration: none;
   text-align: center;
 }
 
 .ctaBtn:hover {
-  background: var(--secondary);
-}
-
-.unreadBadge {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  background: var(--accent);
-  color: var(--black);
-  font-size: 0.625rem;
-  font-weight: 800;
+  background: var(--text-bright);
 }

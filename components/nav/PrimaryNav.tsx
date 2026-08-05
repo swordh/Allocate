@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { useSupportContext } from '@/lib/support-context'
-import Icon from '@/components/ui/Icon'
+import Button from '@/components/ui/Button'
+import { TOP_NAV } from './nav-items'
 import styles from './PrimaryNav.module.css'
 
 const ENV_LABELS: Record<string, string> = {
@@ -19,12 +20,12 @@ interface PrimaryNavProps {
 /**
  * Primary navigation — Client Component.
  * Uses usePathname() for live active-link detection on client-side navigation.
- * Role controls visibility of the Settings link.
+ * The nav itself is the same for every role — Settings is always visible.
  */
 export default function PrimaryNav({ role }: PrimaryNavProps) {
   const pathname = usePathname()
   const isActive = (path: string) => pathname.startsWith(path)
-  const { openHelp, openNotifications, notificationsOpen, unreadCount } = useSupportContext()
+  const { openHelp } = useSupportContext()
 
   return (
     <nav className={styles.nav}>
@@ -39,58 +40,41 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
         </div>
 
         <div className={styles.links}>
-          <Link
-            href="/bookings"
-            className={`${styles.link} ${isActive('/bookings') ? styles.linkActive : ''}`}
-          >
-            BOOKINGS
-          </Link>
-          <Link
-            href="/equipment"
-            className={`${styles.link} ${isActive('/equipment') ? styles.linkActive : ''}`}
-          >
-            EQUIPMENT
-          </Link>
-          <Link
-            href="/settings"
-            className={`${styles.link} ${isActive('/settings') ? styles.linkActive : ''}`}
-          >
-            SETTINGS
-          </Link>
+          {TOP_NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`${styles.link} ${isActive(item.href) ? styles.linkActive : ''}`}
+            >
+              {item.label}
+            </Link>
+          ))}
         </div>
 
         <div className={styles.actions}>
           <div className={styles.iconGroup}>
             <button
-              className={`${styles.iconBtn} ${notificationsOpen ? styles.iconBtnActive : ''}`}
-              onClick={openNotifications}
-              aria-label="Notifications"
-              title="Notifications"
-            >
-              <Icon name="notifications" size={18} />
-              {unreadCount > 0 && <span className={styles.unreadDot} aria-hidden="true" />}
-            </button>
-            <button
-              className={styles.iconBtn}
+              className={styles.helpBtn}
               onClick={() => openHelp()}
               aria-label="Help & feedback"
               title="Help & feedback  (Shift+?)"
             >
-              <Icon name="help" size={18} />
+              ?
             </button>
           </div>
 
           {isActive('/equipment') && role === 'admin' ? (
-            <button
-              className={styles.newBookingBtn}
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => window.dispatchEvent(new Event('equipment:open-add'))}
             >
               NEW EQUIPMENT
-            </button>
+            </Button>
           ) : (
-            <Link href="/bookings/new" className={styles.newBookingBtn}>
+            <Button variant="primary" size="sm" href="/bookings/new">
               NEW BOOKING
-            </Link>
+            </Button>
           )}
         </div>
       </div>

@@ -1,54 +1,28 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { useSupportContext } from '@/lib/support-context'
-import Icon, { type IconName } from '@/components/ui/Icon'
+import { deleteSession } from '@/actions/auth'
+import Icon from '@/components/ui/Icon'
+import { TOP_NAV, BOOKINGS_ITEMS, settingsItemsForRole } from './nav-items'
 import styles from './MobileMenu.module.css'
-
-// ── Top-level nav ─────────────────────────────────────────────────────────────
-
-const TOP_NAV: { label: string; href: string; icon: IconName }[] = [
-  { label: 'Bookings', href: '/bookings', icon: 'calendar' },
-  { label: 'Equipment', href: '/equipment', icon: 'construction' },
-  { label: 'Settings', href: '/settings', icon: 'settings' },
-]
-
-// ── Bookings sub-nav (mirrors BookingsSecondaryNav ITEMS) ─────────────────────
-
-const BOOKINGS_ITEMS = [
-  { label: 'List',    href: '/bookings/list' },
-  { label: 'Week',    href: '/bookings/week' },
-  { label: 'Month',   href: '/bookings/month' },
-  { label: '4 Weeks', href: '/bookings/4weeks' },
-]
-
-// ── Settings sub-nav ──────────────────────────────────────────────────────────
-
-const SETTINGS_ADMIN_ITEMS = [
-  { label: 'Company',      href: '/settings/company' },
-  { label: 'Team',         href: '/settings/team' },
-  { label: 'Subscription', href: '/settings/subscription' },
-  { label: 'Preferences',  href: '/settings/preferences' },
-  { label: 'Account',      href: '/settings/account' },
-]
-
-const SETTINGS_MEMBER_ITEMS = [
-  { label: 'Account', href: '/settings/account' },
-]
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface MobileMenuProps {
   role: Role
+  name: string
+  email: string
 }
 
-export function MobileMenu({ role }: MobileMenuProps) {
+export function MobileMenu({ role, name, email }: MobileMenuProps) {
   const [open, setOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const pathname = usePathname()
-  const { openHelp, openNotifications, unreadCount } = useSupportContext()
+  const router = useRouter()
+  const { openHelp } = useSupportContext()
 
   // Auto-close when the route changes.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -64,7 +38,7 @@ export function MobileMenu({ role }: MobileMenuProps) {
   const isEquipment = pathname.startsWith('/equipment')
   const isSettings = pathname.startsWith('/settings')
 
-  const settingsItems = role === 'admin' ? SETTINGS_ADMIN_ITEMS : SETTINGS_MEMBER_ITEMS
+  const settingsItems = settingsItemsForRole(role)
 
   function isTopActive(href: string) {
     return pathname.startsWith(href)
@@ -72,6 +46,18 @@ export function MobileMenu({ role }: MobileMenuProps) {
 
   function isSubActive(href: string) {
     return pathname === href || pathname.startsWith(href + '/')
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    try {
+      await deleteSession()
+      router.push('/login')
+    } catch (err) {
+      console.error('Sign out failed:', err)
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   return (
@@ -162,21 +148,29 @@ export function MobileMenu({ role }: MobileMenuProps) {
             <p className={styles.sectionLabel}>More</p>
             <button
               className={styles.navItem}
-              onClick={() => { openNotifications(); setOpen(false) }}
-            >
-              <Icon name="notifications" size={18} />
-              Notifications
-              {unreadCount > 0 && (
-                <span className={styles.unreadBadge}>{unreadCount}</span>
-              )}
-            </button>
-            <button
-              className={styles.navItem}
               onClick={() => { openHelp(); setOpen(false) }}
             >
               <Icon name="help" size={18} />
               Help &amp; feedback
             </button>
+          </div>
+
+          {/* Signed in as */}
+          <div className={styles.section}>
+            <p className={styles.sectionLabel}>Signed in as</p>
+            <div className={styles.signedInRow}>
+              <div className={styles.signedInInfo}>
+                <span className={styles.signedInName}>{name}</span>
+                <span className={styles.signedInEmail}>{email}</span>
+              </div>
+              <button
+                className={styles.signOutBtn}
+                onClick={handleSignOut}
+                disabled={signingOut}
+              >
+                SIGN OUT
+              </button>
+            </div>
           </div>
         </div>
 
