@@ -1,0 +1,91 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--overlay-scrim);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidepanel-width);
+  max-width: 100%;
+  height: 100%;
+  background: var(--surface-modal);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px var(--page-margin);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.close {
+  display: flex;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.close:hover {
+  color: var(--text-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--section-pad-v) var(--page-margin);
+}
+
+.footer {
+  display: flex;
+  gap: 10px;
+  padding: 18px var(--page-margin);
+  border-top: 1px solid var(--hairline);
+}
+
+/* Mobile: the same panel becomes a bottom drawer. */
+@media (max-width: 768px) {
+  .overlay {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .panel {
+    width: 100%;
+    height: auto;
+    max-height: 85vh;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .header,
+  .body,
+  .footer {
+    padding-left: var(--page-margin-mobile);
+    padding-right: var(--page-margin-mobile);
+  }
+
+  .footer {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+}
