@@ -1,16 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { useMembers } from '@/hooks/useMembers'
 import { inviteUser, removeMember, updateMemberRole, revokeInvitation } from '@/actions/team'
-import type { Role } from '@/types'
+import type { Role, TeamMember } from '@/types'
 import type { Invitation } from '@/types/invitation'
 import styles from './TeamSettingsView.module.css'
 
 interface TeamSettingsViewProps {
-  companyId: string
   currentUserId: string
   pendingInvites: Invitation[]
+  members: TeamMember[]
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -19,9 +18,7 @@ const ROLE_LABELS: Record<Role, string> = {
   viewer: 'Viewer',
 }
 
-export default function TeamSettingsView({ companyId, currentUserId, pendingInvites }: TeamSettingsViewProps) {
-  const { members, loading } = useMembers(companyId)
-
+export default function TeamSettingsView({ currentUserId, pendingInvites, members }: TeamSettingsViewProps) {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
@@ -116,9 +113,7 @@ export default function TeamSettingsView({ companyId, currentUserId, pendingInvi
       {/* Members table */}
       <div className={styles.sectionLabel}>Members</div>
 
-      {loading ? (
-        <div className={styles.loadingState}>Loading members…</div>
-      ) : members.length === 0 ? (
+      {members.length === 0 ? (
         <div className={styles.emptyState}>No members found.</div>
       ) : (
         <table className={styles.memberTable}>
