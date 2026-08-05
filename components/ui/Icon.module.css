@@ -1,0 +1,6 @@
+.icon {
+  display: inline-block;
+  flex: none;
+  color: var(--text-tertiary);
+  vertical-align: middle;
+}

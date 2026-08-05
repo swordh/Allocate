@@ -1,0 +1,7 @@
+.glyph {
+  display: inline-block;
+  flex: none;
+  line-height: 1;
+  color: var(--text-tertiary);
+  transition: transform var(--transition);
+}
