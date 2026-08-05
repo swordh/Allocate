@@ -22,8 +22,8 @@
   --border-track:       rgba(255, 255, 255, 0.07);  /* segmented-control track */
   --border-subtle:      rgba(255, 255, 255, 0.09);  /* tab rail, side panel */
   --border-soft:        rgba(255, 255, 255, 0.10);  /* popover, inactive chip */
-  --border:             rgba(255, 255, 255, 0.12);  /* input, modal card */
-  --border-medium:      rgba(255, 255, 255, 0.14);  /* neutral notice, toggle off */
+  --border:             rgba(255, 255, 255, 0.12);  /* modal card */
+  --border-medium:      rgba(255, 255, 255, 0.14);  /* input, neutral notice, toggle off */
   --border-strong:      rgba(255, 255, 255, 0.16);  /* secondary button */
   --border-dashed:      rgba(255, 255, 255, 0.20);  /* ghost / add button */
   --border-emphasis:    rgba(255, 255, 255, 0.28);  /* active chip */

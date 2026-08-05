@@ -1,0 +1,141 @@
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--accent);
+}
+
+.eyebrowDanger {
+  color: var(--danger);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-display-auth);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  letter-spacing: var(--ls-display);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .title {
+    /* Mobile design's own heading treatment — smaller, heavier, tracked. */
+    font-size: 31px;
+    line-height: 1;
+    font-weight: var(--fw-display);
+  }
+}
+
+.lede,
+.body {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.lede {
+  font-size: var(--fs-body-sm);
+  line-height: var(--lh-body);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body-loose);
+}
+
+.strong {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.statusDanger {
+  color: var(--danger);
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The design renders several of these actions as links rather than buttons,
+   so they can't use the Button primitive — they mirror its lg sizing. */
+.linkPrimary,
+.linkSecondary {
+  display: block;
+  padding: 15px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-align: center;
+  text-transform: uppercase;
+  border-radius: var(--radius);
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.linkPrimary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border: none;
+}
+
+.linkPrimary:hover {
+  color: var(--btn-primary-fg);
+}
+
+.linkSecondary {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.linkSecondary:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 480px) {
+  .linkPrimary,
+  .linkSecondary {
+    padding: 16px;
+    letter-spacing: var(--ls-btn-tight);
+  }
+}
+
+.fineprint {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-faint);
+}
+
+.inlineLink {
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.inlineLink:hover {
+  color: var(--accent-hover);
+}

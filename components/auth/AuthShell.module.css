@@ -8,6 +8,14 @@
   padding: 80px 24px;
 }
 
+@media (max-width: 480px) {
+  .shell {
+    /* The mobile design files use a 22px content margin, not the desktop 24px. */
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+}
+
 .legalFooter {
   position: absolute;
   left: 0;

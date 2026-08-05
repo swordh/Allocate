@@ -4,7 +4,7 @@
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-medium);
   outline: none;
   transition: border-color var(--transition);
 }

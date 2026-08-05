@@ -14,12 +14,22 @@
 
 .title {
   margin: 0;
+  font-family: var(--font-heading);
   /* 34px is a one-off design value, distinct from the 36px primary auth heading. */
   font-size: 34px;
   line-height: var(--lh-auth);
   font-weight: var(--fw-bold);
   color: var(--text-primary);
   text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .title {
+    font-size: 29px;
+    line-height: var(--lh-auth);
+    font-weight: var(--fw-display);
+    letter-spacing: var(--ls-display);
+  }
 }
 
 .body {

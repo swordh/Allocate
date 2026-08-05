@@ -8,6 +8,15 @@
   text-transform: uppercase;
 }
 
+@media (max-width: 480px) {
+  .title {
+    font-size: 29px;
+    line-height: 1;
+    font-weight: var(--fw-display);
+    letter-spacing: var(--ls-display);
+  }
+}
+
 /* ── Mode tabs ─────────────────────────────────────────────────────────── */
 
 .tabs {
