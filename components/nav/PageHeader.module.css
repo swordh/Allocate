@@ -17,6 +17,25 @@
   line-height: 1;
 }
 
+/* Settings-shell heading size from the design: 34px / 27px mobile. */
+.titleCompact {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: var(--fw-display);
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: uppercase;
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-weak);
+  margin-top: 10px;
+}
+
 .rule {
   height: 1px;
   width: 100%;
@@ -36,5 +55,15 @@
 @media (max-width: 768px) {
   .header {
     margin-bottom: 24px;
+  }
+
+  .titleCompact {
+    font-size: 27px;
+  }
+
+  .meta {
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-btn);
+    margin-top: 9px;
   }
 }

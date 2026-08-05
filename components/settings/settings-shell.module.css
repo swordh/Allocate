@@ -1,0 +1,74 @@
+/* Cancels the app shell's own 28px side padding (app-layout.module.css
+   .main) so the 40px insets below are measured from the shell's outer
+   1280px edge, matching the design exactly instead of stacking on top of
+   the shell's padding. */
+.shell {
+  margin: 0 calc(-1 * var(--page-margin));
+}
+
+@media (max-width: 768px) {
+  .shell {
+    margin: 0;
+  }
+}
+
+/* Wraps the whole PageHeader (title, meta line and the SettingsTabs nav
+   slot together) — the settings body is inset 40px, not the shell's 28px. */
+.titleBlock {
+  padding: 30px 40px 0;
+}
+
+/* Wraps SettingsTabs inside PageHeader's nav slot so it can be hidden on
+   mobile (decision: mobile has no tab rail, sections live in the hamburger
+   sheet instead). PageHeader's own .top margin-bottom already supplies the
+   ~22px gap above the tab row, so no spacing is added here. */
+.tabRow {
+  display: block;
+}
+
+.scrollArea {
+  padding: 0 40px 60px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 34px;
+  margin-top: 34px;
+  border-top: 1px solid var(--border-track);
+}
+
+.footerSpacer {
+  flex: 1;
+}
+
+.footerLink {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-weak);
+}
+
+.footerLink:hover {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .titleBlock {
+    padding: 30px var(--page-margin-mobile) 0;
+  }
+
+  .tabRow {
+    display: none;
+  }
+
+  .scrollArea {
+    padding: 0 var(--page-margin-mobile) 60px;
+  }
+
+  .footer {
+    display: none;
+  }
+}
