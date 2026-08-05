@@ -6,6 +6,7 @@ import { useEquipment } from '@/hooks/useEquipment'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentEditModal from './EquipmentEditModal'
 import type { Equipment, EquipmentStatus, Role } from '@/types'
+import Glyph from '@/components/ui/Glyph'
 import styles from './EquipmentList.module.css'
 
 interface EquipmentListProps {
@@ -163,9 +164,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                   <details key={eq.id} className={styles.group}>
                     <summary className={styles.groupHeader}>
                       <div className={styles.rowLeft}>
-                        <span className={`material-symbols-outlined ${styles.chevron}`}>
-                          expand_more
-                        </span>
+                        <Glyph char="›" className={styles.chevron} />
                         <span className={styles.name}>{eq.name}</span>
                         <span className={styles.trackingTypeBadge}>Units</span>
                       </div>

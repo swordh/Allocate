@@ -217,10 +217,8 @@
 }
 
 .rowMetaIcon {
-  font-size: 14px;
   color: var(--outline);
   opacity: 0.6;
-  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
 }
 
 .rowChevron {

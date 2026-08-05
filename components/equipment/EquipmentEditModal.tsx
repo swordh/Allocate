@@ -6,6 +6,7 @@ import { useCategories } from '@/hooks/useCategories'
 import { useMembers } from '@/hooks/useMembers'
 import type { Equipment, EquipmentStatus, TrackingType, CustomField, CustomFieldList } from '@/types'
 import type { UnitUpdate, UnitCreate, EquipmentFields } from '@/actions/equipment'
+import Icon from '@/components/ui/Icon'
 import styles from './EquipmentEditModal.module.css'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -325,7 +326,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
             <h2 className={styles.title}>{isEditMode ? equipment!.name : 'Add Equipment'}</h2>
           </div>
           <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <span className="material-symbols-outlined">close</span>
+            <Icon name="close" size={24} />
           </button>
         </div>
 
@@ -638,7 +639,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
                         onClick={() => deleteRow(row)}
                         aria-label="Delete unit"
                       >
-                        <span className="material-symbols-outlined">delete</span>
+                        <Icon name="delete" size={24} />
                       </button>
                     </div>
 
@@ -648,7 +649,7 @@ export default function EquipmentEditModal({ isOpen, onClose, companyId, equipme
 
               <div className={styles.addUnitRow}>
                 <button type="button" className={styles.addUnitBtn} onClick={addUnit}>
-                  <span className="material-symbols-outlined">add</span>
+                  <Icon name="add" size={14} />
                   Add Unit
                 </button>
               </div>
