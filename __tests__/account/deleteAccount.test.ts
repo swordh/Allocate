@@ -1,17 +1,13 @@
 /**
  * deleteAccount — multi-company sole-admin guard (issue #90)
  *
- * The current implementation only checks whether the user is the sole admin in
- * their ACTIVE company. If they belong to a second company where they are the
- * only admin, the current code lets the deletion proceed, orphaning that company.
- *
- * The planned fix iterates ALL of the user's memberships (via
+ * The guard iterates ALL of the user's memberships (via
  * `users/{uid}/memberships`), and for each membership where role === 'admin'
  * runs a collectionGroup count against `memberships` filtered by companyId and
- * role === 'admin'. If any company has count <= 1, deletion is blocked.
+ * role === 'admin'. If any company has count <= 1, deletion is blocked —
+ * otherwise deleting the account would orphan a company with no admin.
  *
- * These tests are written FIRST — they will fail against the current code and
- * must pass once the fix is implemented. The contract is:
+ * The guard now ships (commit ebe8043). The contract it must hold to:
  *
  *   - Block deletion when the user is the sole admin of ANY company they belong to.
  *   - Allow deletion when every company they are admin of has at least one other admin.
@@ -31,61 +27,85 @@ const {
   mockCookieGet,
   mockCookieDelete,
   mockDeleteUser,
-  mockUserDocDelete,
   mockDeleteSession,
-  mockMembershipsGet,       // users/{uid}/memberships collection .get()
-  mockCollectionGroupGet,   // collectionGroup count .get()
+  mockMembershipsGet,       // adminDb.collection('users/{uid}/memberships').get()
+  mockCollectionGroupGet,   // collectionGroup('memberships') admin count
+  mockUnitsGroupGet,        // collectionGroup('units') during anonymisation
+  mockBatchCommit,
+  mockBatchDelete,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie:  vi.fn(),
   mockCookieGet:            vi.fn(),
   mockCookieDelete:         vi.fn(),
   mockDeleteUser:           vi.fn(),
-  mockUserDocDelete:        vi.fn(),
   mockDeleteSession:        vi.fn(),
   mockMembershipsGet:       vi.fn(),
   mockCollectionGroupGet:   vi.fn(),
+  mockUnitsGroupGet:        vi.fn(),
+  mockBatchCommit:          vi.fn(),
+  mockBatchDelete:          vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
+vi.mock('firebase-admin/firestore', () => ({
+  FieldValue: { serverTimestamp: () => 'server-timestamp' },
+}))
+
 vi.mock('@/lib/firebase-admin', () => {
-  // Build a chainable collectionGroup mock that supports both access patterns:
-  //
-  //   Current code:  collectionGroup(...).where(...).where(...).get()
-  //   Planned fix:   collectionGroup(...).where(...).where(...).count().get()
-  //
-  // Each collectionGroup() call returns a fresh chain that captures the
-  // companyId from the first .where('companyId', '==', <id>) call. The
-  // captured id is forwarded to mockCollectionGroupGet({ _companyId }) so
-  // tests can route the response based on which company is being queried —
-  // without relying on brittle call-order assumptions.
-  const collectionGroupMock = vi.fn(() => {
-    let _companyId: string | undefined
+  // collectionGroup is used for two different things, and they must not share a
+  // spy: 'memberships' counts admins during the guard, 'units' reads unit docs
+  // during anonymisation. Routing them together made the units read return a
+  // count snapshot with no .docs — and made the guard's "no count queries were
+  // issued" assertions impossible to trust.
+  const collectionGroupMock = vi.fn((groupId: string) => {
+    let companyId: string | undefined
     const chain: Record<string, unknown> = {}
     chain['where'] = (field: string, _op: string, value: unknown) => {
-      if (field === 'companyId') _companyId = value as string
+      if (field === 'companyId') companyId = value as string
       return chain
     }
-    chain['get']   = () => mockCollectionGroupGet({ _companyId })   // current .where().where().get()
-    chain['count'] = () => ({ get: () => mockCollectionGroupGet({ _companyId }) }) // fixed .count().get()
+    chain['get'] = () =>
+      groupId === 'units' ? mockUnitsGroupGet({ companyId }) : mockCollectionGroupGet({ companyId })
+    chain['count'] = () => ({ get: () => mockCollectionGroupGet({ companyId }) })
     return chain
   })
 
-  // Build a chainable collection mock.
-  //
-  // Two access patterns share the same chain:
-  //   adminDb.collection('users').doc(uid).collection('memberships').get()
-  //   adminDb.collection('users').doc(uid).delete()
-  //
-  // The inner collection() call (for 'memberships') returns an object whose
-  // .get() is our mockMembershipsGet spy.
-  const membershipsColl = { get: mockMembershipsGet }
-  const userDoc = {
-    collection: () => membershipsColl,
-    delete:     mockUserDocDelete,
-    update:     vi.fn(),
+  // A collection reference is both a query root and a doc factory. Production
+  // reads memberships by slash path — adminDb.collection(`users/${uid}/memberships`)
+  // — so .get() must live directly on the collection, not only on a nested one.
+  const emptyChain: Record<string, unknown> = {}
+  emptyChain['where'] = () => emptyChain
+  emptyChain['get'] = async () => ({ docs: [] })
+
+  const collectionMock = vi.fn((path: string) => ({
+    path,
+    doc: (id?: string) => makeRef(id ? `${path}/${id}` : `${path}/auto-id`),
+    where: emptyChain['where'],
+    get: path.endsWith('/memberships')
+      ? mockMembershipsGet
+      : (emptyChain['get'] as () => Promise<{ docs: [] }>),
+  }))
+
+  function makeRef(path: string) {
+    return {
+      path,
+      id: path.split('/').pop(),
+      // Company docs must exist and be readable. No createdBy match and no
+      // stripeCustomerId, so anonymisation skips both the company update and
+      // the Stripe call — keeping @/lib/stripe out of these tests entirely.
+      get: async () => ({ exists: true, id: path.split('/').pop(), data: () => ({}) }),
+    }
   }
-  const collectionMock = vi.fn(() => ({ doc: () => userDoc }))
+
+  const docMock = vi.fn((path: string) => makeRef(path))
+
+  const batchMock = vi.fn(() => ({
+    set:    vi.fn(),
+    update: vi.fn(),
+    delete: mockBatchDelete,
+    commit: mockBatchCommit,
+  }))
 
   return {
     adminAuth: {
@@ -95,6 +115,8 @@ vi.mock('@/lib/firebase-admin', () => {
     adminDb: {
       collection:      collectionMock,
       collectionGroup: collectionGroupMock,
+      doc:             docMock,
+      batch:           batchMock,
     },
   }
 })
@@ -149,26 +171,26 @@ function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string 
  */
 function makeMembershipsSnap(memberships: Array<{ companyId: string; role: string }>) {
   return {
-    docs: memberships.map(m => ({ data: () => m })),
+    docs: memberships.map((m, i) => ({
+      id: `membership-${i}`,
+      data: () => m,
+      // deleteAccount does batch.delete(membershipDoc.ref) during anonymisation.
+      ref: { path: `users/user-1/memberships/membership-${i}`, id: `membership-${i}` },
+    })),
   }
 }
 
-/**
- * Build a fake count snapshot compatible with both access patterns:
- *
- *   Current code:  .where().where().get()       → reads .size
- *   Planned fix:   .where().where().count().get() → reads .data().count
- *
- * By including both fields the same mock works regardless of which path the
- * implementation takes. Tests that assert on blocking/allowing behaviour are
- * not affected by which field the implementation reads.
- */
+/** Build a count snapshot as returned by `.count().get()`. */
 function makeCountSnap(count: number) {
   return {
-    size: count,                   // consumed by current implementation
-    data: () => ({ count }),       // consumed by fixed implementation
+    size: count,
+    data: () => ({ count }),
   }
 }
+
+/** The exact message the sole-admin guard returns. */
+const SOLE_ADMIN_ERROR =
+  'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.'
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -183,11 +205,14 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     // Without this, unconsumed once-values from a previous test leak forward.
     mockCollectionGroupGet.mockReset()
     mockMembershipsGet.mockReset()
+    mockUnitsGroupGet.mockReset()
 
     // Re-establish defaults after the targeted resets above.
     mockDeleteSession.mockResolvedValue(undefined)
-    mockUserDocDelete.mockResolvedValue(undefined)
     mockDeleteUser.mockResolvedValue(undefined)
+    mockBatchCommit.mockResolvedValue(undefined)
+    // No units in any company by default — anonymisation has nothing to rewrite.
+    mockUnitsGroupGet.mockResolvedValue({ docs: [] })
     // Default collectionGroup count: 2 admins (safe, does not block).
     // mockCollectionGroupGet receives { _companyId } — default ignores it and
     // always returns 2 so single-company tests stay simple.
@@ -231,7 +256,10 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
 
     const result = await deleteAccount()
 
-    expect(result.error).toBeDefined()
+    // Assert the guard's own message, not merely that *some* error came back:
+    // for a long time this test passed on a mock TypeError instead.
+    expect(result.error).toBe(SOLE_ADMIN_ERROR)
+    expect(mockCollectionGroupGet).toHaveBeenCalled()
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
@@ -249,13 +277,14 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     )
 
     // Route by companyId — avoids brittle call-order assumptions.
-    mockCollectionGroupGet.mockImplementation(({ _companyId }: { _companyId?: string }) =>
-      Promise.resolve(makeCountSnap(_companyId === 'company-B' ? 1 : 2)),
+    mockCollectionGroupGet.mockImplementation(({ companyId }: { companyId?: string }) =>
+      Promise.resolve(makeCountSnap(companyId === 'company-B' ? 1 : 2)),
     )
 
     const result = await deleteAccount()
 
-    expect(result.error).toBeDefined()
+    expect(result.error).toBe(SOLE_ADMIN_ERROR)
+    expect(mockCollectionGroupGet).toHaveBeenCalled()
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
@@ -331,7 +360,9 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     // deleteAccount must catch the error and return gracefully — never throw.
     const result = await deleteAccount()
 
-    expect(result.error).toBeDefined()
+    // Distinguish a caught Firestore failure from the guard's own refusal.
+    expect(mockMembershipsGet).toHaveBeenCalled()
+    expect(result.error).toBe('Failed to delete account')
     // Session must not be deleted when the guard itself failed.
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
