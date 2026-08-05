@@ -73,8 +73,13 @@
 
   /* ───────────────────────────── TYPEFACES ──────────────────────────────── */
   /* --font-sans and --font-display are injected by next/font in layout.tsx */
+  /*
+   * next/font already appends a metric-matched fallback to each variable, so
+   * do not chain --font-sans after --font-display: the generic that comes with
+   * it terminates the list and everything after would be dead weight.
+   */
   --font-ui:       var(--font-sans), system-ui, sans-serif;
-  --font-heading:  var(--font-display), var(--font-sans), system-ui, sans-serif;
+  --font-heading:  var(--font-display), system-ui, sans-serif;
 
   /* ──────────────────────── TYPE SCALE — SIZE ───────────────────────────── */
   --fs-display-h1:   52px;  /* NEW BOOKING */
