@@ -31,89 +31,111 @@ import { checkConflict } from '@/actions/bookings'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 
+import { wireDb, type DocMap, type QueryResolver } from '../helpers/firestore'
+import {
+  ADMIN_SESSION,
+  COMPANY_ID,
+  makeQuantityEquipment,
+  makeUnit,
+  makeUnitsEquipment,
+  type EquipmentDoc,
+  type EquipmentUnitDoc,
+} from '../helpers/fixtures'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const COMPANY_ID = 'company-abc'
-const SESSION = {
-  uid: 'user-1',
-  email: 'user@example.com',
-  activeCompanyId: COMPANY_ID,
-  role: 'admin' as const,
+interface BookingInput {
+  id: string
+  startDate: string
+  endDate: string
+  status: string
+  approvalStatus: string
+  equipmentIds?: string[]
+  unitIds?: string[]
+  items?: Array<{ equipmentId: string; quantity: number; unitId?: string }>
 }
 
-/** Build a minimal equipment document snapshot. */
-function makeEquipSnap(
-  exists: boolean,
-  overrides: Partial<{
-    name: string
-    trackingType: 'individual' | 'quantity'
-    totalQuantity: number
-    active: boolean
-  }> = {},
-) {
+function makeBooking(overrides: Partial<BookingInput> & { id: string }): BookingInput {
   return {
-    exists,
-    data: () => ({
-      name: 'Camera A',
-      trackingType: 'individual',
-      totalQuantity: 1,
-      active: true,
-      requiresApproval: false,
-      approverId: null,
-      ...overrides,
-    }),
+    startDate: '2026-06-03',
+    endDate: '2026-06-08',
+    status: 'confirmed',
+    approvalStatus: 'none',
+    equipmentIds: ['equip-1'],
+    unitIds: [],
+    items: [{ equipmentId: 'equip-1', quantity: 1 }],
+    ...overrides,
   }
 }
-
-/** Build a minimal booking query snapshot. */
-function makeBookingsQuerySnap(
-  docs: Array<{
-    id: string
-    startDate: string
-    endDate: string
-    status: string
-    approvalStatus: string
-    equipmentIds: string[]
-    items: Array<{ equipmentId: string; quantity: number }>
-  }>,
-) {
-  return {
-    docs: docs.map((d) => ({
-      id: d.id,
-      data: () => ({
-        startDate: d.startDate,
-        endDate: d.endDate,
-        status: d.status,
-        approvalStatus: d.approvalStatus,
-        equipmentIds: d.equipmentIds,
-        items: d.items,
-      }),
-    })),
-  }
-}
-
-// ── Shared mock wiring ────────────────────────────────────────────────────────
 
 /**
- * Set up adminDb.doc() and adminDb.collection() so they return the supplied
- * snapshots. The production code calls:
- *   db.doc(`companies/${companyId}/equipment/${id}`).get()
- *   db.collection(`companies/${companyId}/bookings`)
- *     .where(...).where(...).get()
+ * Wire adminDb for the two paths detectConflictsReadOnly takes.
+ *
+ * Unit-tracked:
+ *   db.doc('companies/{c}/equipment/{id}').get()
+ *   db.doc('companies/{c}/equipment/{id}/units/{unitId}').get()
+ *   db.collection('companies/{c}/bookings')
+ *     .where('unitIds','array-contains',unitId).where('endDate','>=',start).get()
+ *
+ * Quantity-tracked: same, minus the unit read, filtering on equipmentIds.
+ *
+ * The booking query applies the same predicates Firestore would, so the
+ * `endDate >= startDate` index boundary is genuinely exercised rather than
+ * simulated by hand-wiring an empty result.
  */
-function wireAdminDb(
-  equipSnap: ReturnType<typeof makeEquipSnap>,
-  bookingsQuerySnap: ReturnType<typeof makeBookingsQuerySnap>,
-) {
-  const mockWhere2 = { get: vi.fn().mockResolvedValue(bookingsQuerySnap) }
-  const mockWhere1 = { where: vi.fn().mockReturnValue(mockWhere2) }
-  const mockCollectionRef = { where: vi.fn().mockReturnValue(mockWhere1) }
+function wire({
+  equipment = {},
+  units = {},
+  bookings = [],
+}: {
+  /** Keyed by equipmentId. `null` means the document does not exist. */
+  equipment?: Record<string, EquipmentDoc | null>
+  /** Keyed by `equipmentId/unitId`. `null` means the document does not exist. */
+  units?: Record<string, EquipmentUnitDoc | null>
+  bookings?: BookingInput[]
+} = {}) {
+  const docs: DocMap = {}
 
-  vi.mocked(adminDb.doc).mockReturnValue({
-    get: vi.fn().mockResolvedValue(equipSnap),
-  } as never)
+  for (const [equipmentId, data] of Object.entries(equipment)) {
+    docs[`companies/${COMPANY_ID}/equipment/${equipmentId}`] = data
+  }
+  for (const [key, data] of Object.entries(units)) {
+    const [equipmentId, unitId] = key.split('/')
+    docs[`companies/${COMPANY_ID}/equipment/${equipmentId}/units/${unitId}`] = data
+  }
 
-  vi.mocked(adminDb.collection).mockReturnValue(mockCollectionRef as never)
+  const query: QueryResolver = (ctx) => {
+    if (!ctx.path.endsWith('/bookings')) return []
+
+    const unitId = ctx.filters.find((f) => f.field === 'unitIds' && f.op === 'array-contains')?.value
+    const equipmentId = ctx.filters.find(
+      (f) => f.field === 'equipmentIds' && f.op === 'array-contains',
+    )?.value
+    const endDateFrom = ctx.filters.find((f) => f.field === 'endDate' && f.op === '>=')?.value as
+      | string
+      | undefined
+
+    return bookings
+      .filter((b) => (unitId === undefined ? true : (b.unitIds ?? []).includes(unitId as string)))
+      .filter((b) =>
+        equipmentId === undefined ? true : (b.equipmentIds ?? []).includes(equipmentId as string),
+      )
+      .filter((b) => (endDateFrom === undefined ? true : b.endDate >= endDateFrom))
+      .map((b) => ({
+        id: b.id,
+        data: {
+          startDate: b.startDate,
+          endDate: b.endDate,
+          status: b.status,
+          approvalStatus: b.approvalStatus,
+          equipmentIds: b.equipmentIds ?? [],
+          unitIds: b.unitIds ?? [],
+          items: b.items ?? [],
+        },
+      }))
+  }
+
+  return wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -121,212 +143,226 @@ function wireAdminDb(
 describe('checkConflict / detectConflictsReadOnly', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getVerifiedSession).mockResolvedValue(SESSION)
+    vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
   })
 
-  // ── Individual-tracked equipment ───────────────────────────────────────────
+  // ── Unit-tracked equipment ─────────────────────────────────────────────────
+  //
+  // Conflict is per physical unit, not per equipment type. These tests drive
+  // the `trackingType === 'units'` branch, which had no coverage at all until
+  // the fixtures were corrected — they declared a `trackingType` value that no
+  // longer exists, so every one of them silently ran the quantity branch.
 
-  describe('individual-tracked equipment', () => {
+  describe('unit-tracked equipment', () => {
+    const EQUIP = { 'equip-1': makeUnitsEquipment({ name: 'Camera A' }) }
+    const UNITS = { 'equip-1/unit-a': makeUnit({ label: 'Unit 01' }) }
+    const ITEM = { equipmentId: 'equip-1', quantity: 1, unitId: 'unit-a' }
+
     it('returns no conflict when there are no overlapping bookings', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([]),
-      )
+      wire({ equipment: EQUIP, units: UNITS })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-05',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
 
       expect(result.hasConflict).toBe(false)
       expect(result.conflicts).toHaveLength(0)
     })
 
-    it('returns conflict when an active booking overlaps the requested window', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { name: 'Camera A', trackingType: 'individual' }),
-        makeBookingsQuerySnap([
-          {
-            id: 'booking-existing',
-            startDate: '2026-06-03',
-            endDate: '2026-06-08',
-            status: 'confirmed',
-            approvalStatus: 'none',
-            equipmentIds: ['equip-1'],
-            items: [{ equipmentId: 'equip-1', quantity: 1 }],
-          },
-        ]),
-      )
+    it('returns conflict when no unitId is supplied for unit-tracked equipment', async () => {
+      wire({ equipment: EQUIP, units: UNITS })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-05',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [
+        { equipmentId: 'equip-1', quantity: 1 }, // unitId omitted
+      ])
 
       expect(result.hasConflict).toBe(true)
       expect(result.conflicts[0].equipmentId).toBe('equip-1')
       expect(result.conflicts[0].reason).toBe('already_booked')
     })
 
-    it('ignores cancelled bookings when evaluating conflicts', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([
-          {
-            id: 'booking-cancelled',
-            startDate: '2026-06-03',
-            endDate: '2026-06-08',
-            status: 'cancelled',        // should be ignored
-            approvalStatus: 'none',
-            equipmentIds: ['equip-1'],
-            items: [{ equipmentId: 'equip-1', quantity: 1 }],
-          },
-        ]),
-      )
+    it('returns conflict when the referenced unit does not exist', async () => {
+      wire({ equipment: EQUIP, units: { 'equip-1/unit-a': null } })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-05',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
+
+      expect(result.hasConflict).toBe(true)
+      expect(result.conflicts[0].reason).toBe('already_booked')
+    })
+
+    it('returns conflict when the referenced unit is deactivated', async () => {
+      wire({ equipment: EQUIP, units: { 'equip-1/unit-a': makeUnit({ active: false }) } })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
+
+      expect(result.hasConflict).toBe(true)
+      expect(result.conflicts[0].reason).toBe('already_booked')
+    })
+
+    it('returns conflict when another booking holds the same unit over the window', async () => {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [makeBooking({ id: 'booking-existing', unitIds: ['unit-a'] })],
+      })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
+
+      expect(result.hasConflict).toBe(true)
+      expect(result.conflicts[0].equipmentId).toBe('equip-1')
+      expect(result.conflicts[0].reason).toBe('already_booked')
+      // checkConflict deliberately maps the internal detail down to ConflictItem,
+      // which carries no conflictingBookingId — the caller must not learn the id
+      // of someone else's booking.
+      expect(result.conflicts[0]).not.toHaveProperty('conflictingBookingId')
+    })
+
+    it('returns no conflict when the overlapping booking holds a different unit', async () => {
+      // The whole point of unit tracking: two units of the same type are
+      // independently bookable.
+      wire({
+        equipment: EQUIP,
+        units: { ...UNITS, 'equip-1/unit-b': makeUnit({ label: 'Unit 02' }) },
+        bookings: [makeBooking({ id: 'booking-other-unit', unitIds: ['unit-b'] })],
+      })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
+
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('ignores cancelled bookings when evaluating conflicts', async () => {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({ id: 'booking-cancelled', unitIds: ['unit-a'], status: 'cancelled' }),
+        ],
+      })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
 
       expect(result.hasConflict).toBe(false)
     })
 
     it('ignores rejected bookings when evaluating conflicts', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([
-          {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
             id: 'booking-rejected',
-            startDate: '2026-06-03',
-            endDate: '2026-06-08',
+            unitIds: ['unit-a'],
             status: 'pending',
-            approvalStatus: 'rejected', // should be ignored
-            equipmentIds: ['equip-1'],
-            items: [{ equipmentId: 'equip-1', quantity: 1 }],
-          },
-        ]),
-      )
+            approvalStatus: 'rejected',
+          }),
+        ],
+      })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-05',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [ITEM])
 
       expect(result.hasConflict).toBe(false)
     })
 
     it('excludes the specified booking id from conflict evaluation', async () => {
       // Simulates an edit where the booking overlaps only with itself.
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([
-          {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
             id: 'booking-self',
+            unitIds: ['unit-a'],
             startDate: '2026-06-01',
             endDate: '2026-06-05',
-            status: 'confirmed',
-            approvalStatus: 'none',
-            equipmentIds: ['equip-1'],
-            items: [{ equipmentId: 'equip-1', quantity: 1 }],
-          },
-        ]),
-      )
+          }),
+        ],
+      })
 
       const result = await checkConflict(
         COMPANY_ID,
         '2026-06-01',
         '2026-06-05',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-        'booking-self', // excludeBookingId
+        [ITEM],
+        'booking-self',
       )
 
       expect(result.hasConflict).toBe(false)
     })
 
-    it('returns no conflict when existing booking ends the day before the new one starts (adjacent, non-overlapping)', async () => {
-      // Booking ends 2026-06-04; new booking starts 2026-06-05.
-      // The Firestore query uses endDate >= startDate, so this doc WILL be in
-      // the query results (endDate '2026-06-04' >= startDate '2026-06-05' is FALSE).
-      // The where clause filters it out before we see it — wire the query to return empty.
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([]),
-      )
+    it('returns no conflict when the existing booking ends the day before this one starts', async () => {
+      // endDate 2026-06-04 vs startDate 2026-06-05. The Firestore query filters
+      // on endDate >= startDate, and the mock applies that same predicate, so
+      // this genuinely exercises the boundary rather than assuming it.
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
+            id: 'booking-adjacent',
+            unitIds: ['unit-a'],
+            startDate: '2026-06-01',
+            endDate: '2026-06-04',
+          }),
+        ],
+      })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-05',
-        '2026-06-10',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
-
-      expect(result.hasConflict).toBe(false)
-    })
-
-    it('treats same-day start and end dates as a valid single-day booking with no conflict', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'individual' }),
-        makeBookingsQuerySnap([]),
-      )
-
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-01', // same day
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-05', '2026-06-10', [ITEM])
 
       expect(result.hasConflict).toBe(false)
     })
 
-    it('returns conflict when same-day booking collides with another same-day booking', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { name: 'Camera A', trackingType: 'individual' }),
-        makeBookingsQuerySnap([
-          {
+    it('returns no conflict when the existing booking starts the day after this one ends', async () => {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
+            id: 'booking-later',
+            unitIds: ['unit-a'],
+            startDate: '2026-06-11',
+            endDate: '2026-06-15',
+          }),
+        ],
+      })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-05', '2026-06-10', [ITEM])
+
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('treats same-day start and end dates as a valid single-day booking', async () => {
+      wire({ equipment: EQUIP, units: UNITS })
+
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-01', [ITEM])
+
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('returns conflict when a same-day booking collides with another same-day booking', async () => {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
             id: 'booking-same-day',
+            unitIds: ['unit-a'],
             startDate: '2026-06-01',
             endDate: '2026-06-01',
-            status: 'confirmed',
-            approvalStatus: 'none',
-            equipmentIds: ['equip-1'],
-            items: [{ equipmentId: 'equip-1', quantity: 1 }],
-          },
-        ]),
-      )
+          }),
+        ],
+      })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-01',
-        [{ equipmentId: 'equip-1', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-01', [ITEM])
 
       expect(result.hasConflict).toBe(true)
       expect(result.conflicts[0].reason).toBe('already_booked')
     })
 
     it('returns conflict for a non-existent equipment id', async () => {
-      wireAdminDb(
-        makeEquipSnap(false), // equipment does not exist
-        makeBookingsQuerySnap([]),
-      )
+      wire({ equipment: { 'ghost-equip': null } })
 
-      const result = await checkConflict(
-        COMPANY_ID,
-        '2026-06-01',
-        '2026-06-05',
-        [{ equipmentId: 'ghost-equip', quantity: 1 }],
-      )
+      const result = await checkConflict(COMPANY_ID, '2026-06-01', '2026-06-05', [
+        { equipmentId: 'ghost-equip', quantity: 1 },
+      ])
 
       expect(result.hasConflict).toBe(true)
       expect(result.conflicts[0].reason).toBe('already_booked')
@@ -337,20 +373,18 @@ describe('checkConflict / detectConflictsReadOnly', () => {
 
   describe('quantity-tracked equipment', () => {
     it('returns no conflict when requested quantity is within available stock', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'quantity', totalQuantity: 10 }),
-        makeBookingsQuerySnap([
-          {
+      wire({
+        equipment: { 'equip-q': makeQuantityEquipment({ totalQuantity: 10 }) },
+        bookings: [
+          makeBooking({
             id: 'booking-existing',
             startDate: '2026-06-01',
             endDate: '2026-06-05',
-            status: 'confirmed',
-            approvalStatus: 'none',
             equipmentIds: ['equip-q'],
             items: [{ equipmentId: 'equip-q', quantity: 3 }],
-          },
-        ]),
-      )
+          }),
+        ],
+      })
 
       // 10 total - 3 booked = 7 available. Requesting 5 — should pass.
       const result = await checkConflict(
@@ -364,20 +398,18 @@ describe('checkConflict / detectConflictsReadOnly', () => {
     })
 
     it('returns insufficient_quantity conflict when requested quantity exceeds available stock', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { name: 'Tripod', trackingType: 'quantity', totalQuantity: 5 }),
-        makeBookingsQuerySnap([
-          {
+      wire({
+        equipment: { 'equip-q': makeQuantityEquipment({ name: 'Tripod', totalQuantity: 5 }) },
+        bookings: [
+          makeBooking({
             id: 'booking-existing',
             startDate: '2026-06-01',
             endDate: '2026-06-05',
-            status: 'confirmed',
-            approvalStatus: 'none',
             equipmentIds: ['equip-q'],
             items: [{ equipmentId: 'equip-q', quantity: 4 }],
-          },
-        ]),
-      )
+          }),
+        ],
+      })
 
       // 5 total - 4 booked = 1 available. Requesting 3 — should fail.
       const result = await checkConflict(
@@ -394,20 +426,18 @@ describe('checkConflict / detectConflictsReadOnly', () => {
     })
 
     it('returns conflict when booked quantity exactly fills all stock', async () => {
-      wireAdminDb(
-        makeEquipSnap(true, { name: 'Light', trackingType: 'quantity', totalQuantity: 2 }),
-        makeBookingsQuerySnap([
-          {
+      wire({
+        equipment: { 'equip-q': makeQuantityEquipment({ name: 'Light', totalQuantity: 2 }) },
+        bookings: [
+          makeBooking({
             id: 'booking-full',
             startDate: '2026-06-01',
             endDate: '2026-06-10',
-            status: 'confirmed',
-            approvalStatus: 'none',
             equipmentIds: ['equip-q'],
             items: [{ equipmentId: 'equip-q', quantity: 2 }],
-          },
-        ]),
-      )
+          }),
+        ],
+      })
 
       const result = await checkConflict(
         COMPANY_ID,
@@ -423,32 +453,23 @@ describe('checkConflict / detectConflictsReadOnly', () => {
     it('accumulates booked quantity across multiple overlapping confirmed bookings', async () => {
       // 3 bookings of quantity 2 each = 6 booked. Total = 8. Available = 2.
       // Requesting 3 — should fail.
-      wireAdminDb(
-        makeEquipSnap(true, { trackingType: 'quantity', totalQuantity: 8 }),
-        makeBookingsQuerySnap([
-          {
-            id: 'b1',
-            startDate: '2026-06-01', endDate: '2026-06-10',
-            status: 'confirmed', approvalStatus: 'none',
-            equipmentIds: ['equip-q'],
-            items: [{ equipmentId: 'equip-q', quantity: 2 }],
-          },
-          {
-            id: 'b2',
-            startDate: '2026-06-03', endDate: '2026-06-08',
-            status: 'confirmed', approvalStatus: 'none',
-            equipmentIds: ['equip-q'],
-            items: [{ equipmentId: 'equip-q', quantity: 2 }],
-          },
-          {
-            id: 'b3',
-            startDate: '2026-06-05', endDate: '2026-06-07',
-            status: 'confirmed', approvalStatus: 'none',
-            equipmentIds: ['equip-q'],
-            items: [{ equipmentId: 'equip-q', quantity: 2 }],
-          },
-        ]),
-      )
+      wire({
+        equipment: { 'equip-q': makeQuantityEquipment({ totalQuantity: 8 }) },
+        bookings: [
+          makeBooking({
+            id: 'b1', startDate: '2026-06-01', endDate: '2026-06-10',
+            equipmentIds: ['equip-q'], items: [{ equipmentId: 'equip-q', quantity: 2 }],
+          }),
+          makeBooking({
+            id: 'b2', startDate: '2026-06-03', endDate: '2026-06-08',
+            equipmentIds: ['equip-q'], items: [{ equipmentId: 'equip-q', quantity: 2 }],
+          }),
+          makeBooking({
+            id: 'b3', startDate: '2026-06-05', endDate: '2026-06-07',
+            equipmentIds: ['equip-q'], items: [{ equipmentId: 'equip-q', quantity: 2 }],
+          }),
+        ],
+      })
 
       const result = await checkConflict(
         COMPANY_ID,
