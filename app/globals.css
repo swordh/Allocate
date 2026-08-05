@@ -22,41 +22,200 @@
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   Source of truth: redesign/00-OVERSIKT.md + the .dc.html prototypes in
+   design_handoff_allocate/. Every value below is taken verbatim from the
+   design files — do not invent new ones, and do not hardcode these values
+   inside component CSS modules.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --black:  #080808;
-  --white:  #FFFFFF;
-  --secondary: #F0EDE8;
-  --dim:    #2A2A2A;
-  --mid:    #4A4A4A;
-  --rule:   #474747;
-  --accent: #EECC02;
-  --repair: #cc3333;
+  /* ───────────────────────────── SURFACES ───────────────────────────────── */
+  --bg-root:            #050506;  /* html, behind the app shell */
+  --bg-page:            #000;     /* app canvas, desktop + mobile */
+  --surface:            #0d0d0f;  /* inputs, sunken fields */
+  --surface-raised:     #161618;  /* popovers, dropdowns, date pickers */
+  --surface-modal:      #111113;  /* modal / dialog card */
+  --surface-modal-alt:  #101012;  /* secondary modal card */
+  --surface-selected:   #141414;  /* active chip, selected cell */
 
-  --surface-container-lowest: #0E0E0E;
-  --surface-container-low: #1C1B1B;
-  --surface-container: #201F1F;
-  --surface-container-high: #2A2A2A;
-  --surface-container-highest: #353534;
-  --surface-bright: #3A3939;
-  --outline: #919191;
-  --outline-variant: #474747;
-  --on-surface: #FFFFFF;
-  --on-surface-variant: #C6C6C6;
-  --on-primary: #1a1c1c;
-  --tertiary: #EECC02;
-  --error: #CC3333;
+  /* ────────────────────────────── LINES ─────────────────────────────────── */
+  --hairline:           rgba(255, 255, 255, 0.06);  /* form-section rules */
+  --border-track:       rgba(255, 255, 255, 0.07);  /* segmented-control track */
+  --border-subtle:      rgba(255, 255, 255, 0.09);  /* tab rail, side panel */
+  --border-soft:        rgba(255, 255, 255, 0.10);  /* popover, inactive chip */
+  --border:             rgba(255, 255, 255, 0.12);  /* input, modal card */
+  --border-medium:      rgba(255, 255, 255, 0.14);  /* neutral notice, toggle off */
+  --border-strong:      rgba(255, 255, 255, 0.16);  /* secondary button */
+  --border-dashed:      rgba(255, 255, 255, 0.20);  /* ghost / add button */
+  --border-emphasis:    rgba(255, 255, 255, 0.28);  /* active chip */
 
-  --font-nav:           28px;
+  /* ────────────────────────────── FILLS ─────────────────────────────────── */
+  --fill-weak:          rgba(255, 255, 255, 0.04);  /* neutral notice bg */
+  --fill:               rgba(255, 255, 255, 0.05);  /* segmented-control track */
+  --fill-medium:        rgba(255, 255, 255, 0.08);  /* disabled button bg */
+  --fill-active:        rgba(255, 255, 255, 0.12);  /* selected segment */
+
+  /* ─────────────────────────────── TEXT ─────────────────────────────────── */
+  --text-primary:       #fff;
+  --text-bright:        #ECECEE;
+  --text-body:          #d8d9df;
+  --text-secondary:     #c8c8ce;  /* body copy, secondary button label */
+  --text-tertiary:      #9a9ba2;  /* default icon colour, ghost label */
+  --text-muted:         #8a8b93;  /* modal body, inactive tab / segment */
+  --text-weak:          #7f8088;  /* field labels, eyebrows, inactive chip */
+  --text-faint:         #6a6b72;  /* helper text */
+  --text-pale:          #5f6068;  /* disabled label, empty-state body */
+  --text-placeholder:   #4d4e55;
+
+  /* ────────────────────────────── ACCENT ────────────────────────────────── */
+  --accent:                #f4b24a;
+  --accent-hover:          #f7c471;
+  --accent-tint-weak:      rgba(244, 178, 74, 0.05);
+  --accent-tint:           rgba(244, 178, 74, 0.06);
+  --accent-tint-strong:    rgba(244, 178, 74, 0.12);
+  --accent-border:         rgba(244, 178, 74, 0.35);
+  --accent-border-mid:     rgba(244, 178, 74, 0.40);
+  --accent-border-strong:  rgba(244, 178, 74, 0.45);
+  --notice-info-text:      #e0d3bd;
+
+  /* ────────────────────────────── DANGER ────────────────────────────────── */
+  --danger:                #e5484d;
+  --danger-text:           #f0c3c4;
+  --danger-muted:          #7f4045;  /* disarmed destructive button label */
+  --danger-tint:           rgba(229, 72, 77, 0.07);
+  --danger-border:         rgba(229, 72, 77, 0.35);
+  --danger-border-mid:     rgba(229, 72, 77, 0.45);
+  --danger-border-strong:  rgba(229, 72, 77, 0.50);
+
+  /* ────────────────────────────── BUTTON ────────────────────────────────── */
+  --btn-primary-bg:   #fff;
+  --btn-primary-fg:   #000;
+  --btn-disabled-bg:  var(--fill-medium);
+  --btn-disabled-fg:  var(--text-pale);
+
+  /* ───────────────────────────── TYPEFACES ──────────────────────────────── */
+  /* --font-sans and --font-display are injected by next/font in layout.tsx */
+  --font-ui:       var(--font-sans), system-ui, sans-serif;
+  --font-heading:  var(--font-display), var(--font-sans), system-ui, sans-serif;
+
+  /* ──────────────────────── TYPE SCALE — SIZE ───────────────────────────── */
+  --fs-display-h1:   52px;  /* NEW BOOKING */
+  --fs-display-auth: 36px;  /* auth page headings, 34–36px */
+  --fs-modal-title:  17px;
+  --fs-input-lg:     16px;
+  --fs-section:      14px;  /* section header */
+  --fs-body:         14px;
+  --fs-btn-lg:       14px;
+  --fs-input:        14px;
+  --fs-body-sm:      13px;
+  --fs-nav:          13px;
+  --fs-input-sm:     13px;
+  --fs-tab:          12px;
+  --fs-btn:          12px;
+  --fs-label:        11px;
+  --fs-btn-sm:       11px;
+  --fs-eyebrow:      11px;
+  --fs-label-sm:     10px;
+  --fs-eyebrow-sm:   10px;
+  --fs-col-header:   10px;
+
+  /* ─────────────────────── TYPE SCALE — WEIGHT ──────────────────────────── */
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-display:   800;
+
+  /* ────────────────────── TYPE SCALE — TRACKING ─────────────────────────── */
+  --ls-section:    0.16em;
+  --ls-eyebrow:    0.12em;  /* field labels, table column headers */
+  --ls-nav:        0.10em;  /* nav items, tabs */
+  --ls-btn:        0.08em;
+  --ls-btn-tight:  0.06em;
+  --ls-display:    -0.01em;
+
+  /* ──────────────────── TYPE SCALE — LINE HEIGHT ────────────────────────── */
+  --lh-display:     0.95;
+  --lh-auth:        1.05;
+  --lh-tight:       1.5;
+  --lh-notice:      1.55;
+  --lh-body:        1.6;
+  --lh-body-loose:  1.65;
+
+  /* ────────────────────────────── LAYOUT ────────────────────────────────── */
+  --shell-width:         1280px;
+  --shell-width-wide:    1440px;  /* legal pages */
+  --page-margin:         28px;
+  --page-margin-mobile:  22px;
+  --header-pad-v:        20px;
+  --header-pad-h:        28px;
+  --section-pad-v:       30px;    /* form sections: padding 30px 0 */
+  --sidepanel-width:     328px;
+  --modal-width:         380px;
+  --mobile-statusbar-h:  52px;
+  --mobile-bottom-pad:   74px;
+
+  /* ───────────────────────────── GEOMETRY ───────────────────────────────── */
+  --radius:         0;     /* the rule: square corners everywhere */
+  --radius-pill:    20px;  /* toggle track only */
+  --radius-circle:  50%;   /* status dots, avatars, toggle knobs */
+
+  /* ────────────────────────────── MOTION ────────────────────────────────── */
+  --transition: 0.15s ease;
+
+  /* ────────────────────────── SHADOW / SCRIM ────────────────────────────── */
+  --shadow-popover:  0 12px 32px rgba(0, 0, 0, 0.5);
+  --overlay-scrim:   rgba(0, 0, 0, 0.65);
+
+  /* ───────────────────────────── LAYERING ───────────────────────────────── */
+  --z-dropdown:  20;
+  --z-sticky:    50;
+  --z-overlay:   100;
+  --z-toast:     200;
+
+  /* ─────────────────────────────── ICONS ────────────────────────────────── */
+  --icon-size:    18px;
+  --icon-stroke:  1.8;
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     DEPRECATED — legacy tokens from the previous visual identity.
+     They are still referenced by CSS modules belonging to screens that have
+     not been reskinned yet. Each alias is a pure var() indirection: when the
+     owning phase reskins its screens, delete the references AND the alias.
+     DO NOT add new usages of anything below this line.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* Removed when their last screen is reskinned — phase noted per token. */
+  --white:                     var(--text-primary);    /* all phases */
+  --black:                     var(--bg-page);         /* all phases */
+  --on-surface:                var(--text-primary);    /* phase 2 */
+  --on-surface-variant:        var(--text-secondary);  /* all phases */
+  --outline:                   var(--text-tertiary);   /* all phases */
+  --outline-variant:           var(--border);          /* phase 2, 4 */
+  --rule:                      var(--border-strong);   /* phase 2 */
+  --mid:                       var(--text-placeholder);/* phase 2, 4 */
+  --dim:                       var(--text-placeholder);/* phase 2, 4 */
+  --secondary:                 var(--text-bright);     /* phase 2, 4, 5 */
+  --tertiary:                  var(--accent);          /* phase 4 */
+  --error:                     var(--danger);          /* all phases */
+  --repair:                    var(--danger);          /* phase 3 */
+  --on-primary:                var(--btn-primary-fg);  /* phase 2, 4 */
+  --surface-container-lowest:  var(--surface);         /* phase 2, 3 */
+  --surface-container-low:     var(--surface-raised);  /* all phases */
+  --surface-container:         var(--surface-raised);  /* phase 2, 4 */
+  --surface-container-high:    var(--surface-raised);  /* phase 2, 3 */
+  --surface-container-highest: var(--surface-raised);  /* phase 2 */
+  --font-subnav:               var(--fs-eyebrow-sm);   /* phase 2 */
+
+  /* Old type scale and booking geometry — kept as literals, owned by phase 2/4. */
   --font-logo:          clamp(90px, 11vw, 148px);
   --font-stat:          42px;
   --font-booking-title: 40px;
-  --font-subnav:        10px;
   --font-body:          16px;
-
-  --grid-col-date:  160px;
-  --grid-col-right: 160px;
-  --booking-pad-h:  48px;
-  --booking-pad-v:  24px;
+  --booking-pad-h:      48px;
+  --booking-pad-v:      24px;
 }
 
 *, *::before, *::after {
@@ -66,12 +225,13 @@
 }
 
 html {
-  background: var(--black);
-  color: var(--white);
+  background: var(--bg-root);
+  color: var(--text-primary);
 }
 
 body {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  background: var(--bg-page);
+  font-family: var(--font-ui);
   font-weight: 300;
   font-size: var(--font-body);
   line-height: 1.4;
@@ -114,8 +274,8 @@ img {
 }
 
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #080808; }
-::-webkit-scrollbar-thumb { background: #474747; }
+::-webkit-scrollbar-track { background: var(--bg-page); }
+::-webkit-scrollbar-thumb { background: var(--border-emphasis); }
 
 .contentWidth { max-width: 800px; margin-left: auto; margin-right: auto; }
 .contentWidthWide { max-width: 1200px; margin-left: auto; margin-right: auto; }
