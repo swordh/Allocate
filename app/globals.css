@@ -171,22 +171,22 @@
      ═════════════════════════════════════════════════════════════════════════ */
 
   /* Removed when their last screen is reskinned — phase noted per token. */
-  --white:                     var(--text-primary);    /* all phases */
-  --black:                     var(--bg-page);         /* all phases */
+  --white:                     var(--text-primary);    /* phases 2–5 */
+  --black:                     var(--bg-page);         /* phases 2–5 */
   --on-surface:                var(--text-primary);    /* phase 2 */
-  --on-surface-variant:        var(--text-secondary);  /* all phases */
-  --outline:                   var(--text-tertiary);   /* all phases */
+  --on-surface-variant:        var(--text-secondary);  /* phases 2–5 */
+  --outline:                   var(--text-tertiary);   /* phases 2, 4, 5 */
   --outline-variant:           var(--border);          /* phase 2, 4 */
   --rule:                      var(--border-strong);   /* phase 2 */
   --mid:                       var(--text-placeholder);/* phase 2, 4 */
   --dim:                       var(--text-placeholder);/* phase 2, 4 */
   --secondary:                 var(--text-bright);     /* phase 2, 4, 5 */
   --tertiary:                  var(--accent);          /* phase 4 */
-  --error:                     var(--danger);          /* all phases */
+  --error:                     var(--danger);          /* phases 2–5 */
   --repair:                    var(--danger);          /* phase 3 */
   --on-primary:                var(--btn-primary-fg);  /* phase 2, 4 */
   --surface-container-lowest:  var(--surface);         /* phase 2, 3 */
-  --surface-container-low:     var(--surface-raised);  /* all phases */
+  --surface-container-low:     var(--surface-raised);  /* phases 2–5 */
   --surface-container:         var(--surface-raised);  /* phase 2, 4 */
   --surface-container-high:    var(--surface-raised);  /* phase 2, 3 */
   --surface-container-highest: var(--surface-raised);  /* phase 2 */
