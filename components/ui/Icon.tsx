@@ -9,6 +9,8 @@ interface IconProps {
   size?: number
   strokeWidth?: number
   className?: string
+  /** Escape hatch for positioning only (margins, alignment). Never for stroke or colour. */
+  style?: React.CSSProperties
   /** Supply only when the icon carries meaning on its own. Otherwise it is hidden from assistive tech. */
   'aria-label'?: string
 }
@@ -25,6 +27,7 @@ export default function Icon({
   size = 18,
   strokeWidth = 1.8,
   className,
+  style,
   'aria-label': ariaLabel,
 }: IconProps) {
   return (
@@ -39,6 +42,7 @@ export default function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className ? `${styles.icon} ${className}` : styles.icon}
+      style={style}
       role={ariaLabel ? 'img' : undefined}
       aria-label={ariaLabel}
       aria-hidden={ariaLabel ? undefined : true}
