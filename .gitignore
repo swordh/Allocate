@@ -49,3 +49,4 @@ ui-debug.log
 # Firebase Cloud Functions
 functions/lib/
 functions/node_modules/
+functions/tools/__previews__/

@@ -15,19 +15,22 @@ export function resetPasswordEmail(data: ResetPasswordData): RenderedEmail {
   const subject = 'Reset your Allocate password';
 
   const text = [
-    'We received a request to reset the password for your Allocate account.',
+    'A password reset was requested for this account. Set a new password below — the link is valid for one hour.',
     '',
     `Reset your password: ${resetUrl}`,
     '',
-    'If you didn’t request this, you can safely ignore this email — your password won’t change.',
+    "If you didn't request this, you can safely ignore this email — your password won't change.",
   ].join('\n');
 
   const html = renderLayout({
-    heading: 'Reset your password',
-    introHtml: 'We received a request to reset the password for your Allocate account.',
-    buttonLabel: 'Reset password',
+    preheader: 'Set a new password for your Allocate account',
+    eyebrow: 'PASSWORD RESET',
+    hero: ['Reset your', 'password'],
+    bodyHtml:
+      'A password reset was requested for this account. Set a new password below — the link is valid for one hour.',
+    buttonLabel: 'RESET PASSWORD',
     buttonUrl: resetUrl,
-    footnote: 'If you didn’t request this, you can safely ignore this email — your password won’t change.',
+    footerSentence: "If you didn't request this, you can safely ignore this email — your password won't change.",
   });
 
   return { subject, html, text };
