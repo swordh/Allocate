@@ -57,6 +57,7 @@
   --accent-border-mid:     rgba(244, 178, 74, 0.40);
   --accent-border-strong:  rgba(244, 178, 74, 0.45);
   --notice-info-text:      #e0d3bd;
+  --warn-muted:            #a8814a;  /* expiring/expired invite meta text */
 
   /* ────────────────────────────── DANGER ────────────────────────────────── */
   --danger:                #e5484d;

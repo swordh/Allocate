@@ -7,6 +7,7 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import type { Role } from '@/types'
+import type { PublicInvitation } from '@/types/invitation'
 
 const BATCH_LIMIT = 490
 
@@ -51,7 +52,22 @@ async function extendPendingInvite(
   return { expiresAt, lastSentAt }
 }
 
-export async function inviteUser(formData: FormData): Promise<{ error?: string }> {
+/**
+ * Result of `inviteUser`. On success, `invitation` is the real Firestore
+ * document (minus `token` — never shipped to the client, see the header
+ * comment on `PublicInvitation`), so the caller can render/append a real
+ * row instead of fabricating one from the submitted form values.
+ *
+ * `created` distinguishes the two branches `inviteUser` can take:
+ * - `true`  — a brand-new invitation was created; it consumes a new seat.
+ * - `false` — an existing pending invite for that email was resent;
+ *   the seat was already held, so the caller must NOT increment its count.
+ */
+type InviteUserResult =
+  | { error: string; invitation?: undefined; created?: undefined }
+  | { error?: undefined; invitation: PublicInvitation; created: boolean }
+
+export async function inviteUser(formData: FormData): Promise<InviteUserResult> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
@@ -105,6 +121,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
   let token: string
   let role: Role
   let resent = false
+  let invitation: PublicInvitation
 
   if (!pendingSnap.empty) {
     // A pending invite already exists — resend its link rather than duplicate.
@@ -119,7 +136,21 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
     role = (pendingData.role as Role) ?? 'crew'
     resent = true
 
-    await extendPendingInvite(cid, pendingDoc.id, token)
+    const { expiresAt, lastSentAt } = await extendPendingInvite(cid, pendingDoc.id, token)
+
+    // Round-trip the real doc (minus token) rather than fabricating a row
+    // client-side — id, invitedAt etc. must reflect what's actually stored.
+    invitation = {
+      id: pendingDoc.id,
+      email,
+      role,
+      invitedBy: pendingData.invitedBy as string,
+      invitedByName: pendingData.invitedByName as string,
+      invitedAt: pendingData.invitedAt as string,
+      status: 'pending',
+      expiresAt,
+      lastSentAt,
+    }
   } else {
     // ── Seat guard — members + active (non-expired) pending invitations
     // count against subscription.limits.users. An expired-but-still-`pending`
@@ -192,6 +223,17 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
       expiresAt,
     })
     await batch.commit()
+
+    invitation = {
+      id: inviteRef.id,
+      email,
+      role,
+      invitedBy: session.uid,
+      invitedByName: inviterName,
+      invitedAt: nowIso,
+      status: 'pending',
+      expiresAt,
+    }
   }
 
   // ── 5. Enqueue the email — sent by the onMailQueued Cloud Function ───────────────
@@ -210,7 +252,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
     companyId: cid,
     action: resent ? 'invite_user_resend' : 'invite_user',
   })
-  return {}
+  return { invitation, created: !resent }
 }
 
 /**

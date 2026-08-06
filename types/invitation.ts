@@ -23,6 +23,15 @@ export interface Invitation {
                           // UI can render "Invite re-sent just now"
 }
 
+/**
+ * Invitation shape safe to hand to the client. The token is the credential
+ * in the accept link — `revokeInvitation`/`resendInvitation` take an invite
+ * id and read the token server-side, so the UI never needs it. Used as the
+ * return shape from `inviteUser` (actions/team.ts) and as the pending-list
+ * item type in `TeamSettingsView`.
+ */
+export type PublicInvitation = Omit<Invitation, 'token'>
+
 /** Top-level mirror document at invitations/{token} */
 export interface InvitationMirror {
   companyId: string
