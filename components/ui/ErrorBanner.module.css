@@ -30,7 +30,7 @@
 
 .info {
   background: var(--accent-tint);
-  border-color: var(--accent-border-mid);
+  border-color: var(--accent-border);
   color: var(--notice-info-text);
 }
 
