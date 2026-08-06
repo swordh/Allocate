@@ -22,123 +22,157 @@
   }
 }
 
-.triggerHidden {
-  display: none !important;
-}
+/* ── Overlay + sheet ───────────────────────────────────────────────────────
+   design_handoff_allocate/screens/settings/12-16 Inställningar (Mobil).dc.html
+   lines 322–365 — a single overlay layer, flex column, with the sheet pushed
+   to the bottom via margin-top:auto. Rendered only while open (see
+   MobileMenu.tsx), so it never exists in the DOM — and never contributes tab
+   stops — when closed. */
 
-/* ── Backdrop ──────────────────────────────────────────────────────────────── */
-
-.backdrop {
-  display: none;
+.overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-overlay);
+  z-index: var(--z-toast);
   background: var(--overlay-scrim);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease;
 }
 
-@media (max-width: 768px) {
-  .backdropOpen {
-    display: block;
+.sheet {
+  margin-top: auto;
+  background: var(--surface-sheet);
+  border-top: 1px solid var(--fill-medium);
+  border-radius: 0;
+  padding: 14px 22px calc(34px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  overflow-y: auto;
+  animation: slideUp 0.2s ease;
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .sheet {
+    animation: none;
   }
 }
 
-/* ── Sheet ─────────────────────────────────────────────────────────────────── */
-
-.sheet {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: var(--z-toast);
-  width: 280px;
-  background: var(--surface-raised);
-  border-left: 1px solid var(--border-soft);
-  display: flex;
-  flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.sheetOpen {
-  transform: translateX(0);
-  box-shadow: -24px 0 80px rgba(0, 0, 0, 0.6);
-}
-
-/* ── Sheet header ──────────────────────────────────────────────────────────── */
-
-.sheetHeader {
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--hairline);
+.handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-dashed);
+  align-self: center;
+  margin-bottom: 20px;
   flex-shrink: 0;
 }
 
-.closeBtn {
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  cursor: pointer;
-  padding: 4px;
-  line-height: 1;
+/* ── Primary nav rows ──────────────────────────────────────────────────────
+   16px/700 label, 20px icon (stroke-width 1.9), trailing dot on the active
+   row. Icon colour and label colour both track the row's active state via
+   currentColor. */
+
+.primaryNav {
+  display: flex;
+  flex-direction: column;
+}
+
+.navRow {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 16px;
+  padding: 15px 4px;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-input-lg); /* 16px — nearest token, sized for inputs but matches here */
+  color: var(--text-muted);
+  text-decoration: none;
 }
 
-/* ── Sheet body (scrollable) ───────────────────────────────────────────────── */
-
-.sheetBody {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px 0;
+.navRowActive {
+  color: var(--text-primary);
 }
 
-/* ── Section ───────────────────────────────────────────────────────────────── */
-
-.section {
-  margin-bottom: 32px;
+.activeDot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 
-.sectionLabel {
-  font-size: var(--fs-eyebrow);
+/* ── Contextual group (Settings cards / bookings View switcher) ──────────── */
+
+.group {
+  margin-top: 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fill-medium);
+}
+
+.groupLabel {
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-pale);
-  padding: 0 24px;
-  margin-bottom: 10px;
+  margin: 0 0 10px;
 }
 
-/* ── Nav items ─────────────────────────────────────────────────────────────── */
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
-.navItem {
+.card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 24px;
-  font-size: var(--fs-nav);
-  font-weight: var(--fw-bold);
-  letter-spacing: var(--ls-nav);
-  text-transform: uppercase;
-  color: var(--text-muted);
+  padding: 13px 14px;
+  background: var(--surface);
+  border: 1px solid var(--fill);
+  border-left: 3px solid var(--border-medium);
+  border-radius: 0;
   text-decoration: none;
-  transition: color var(--transition), background var(--transition);
-  cursor: pointer;
-  background: none;
-  border: none;
-  width: 100%;
-  text-align: left;
 }
 
-.navItem:hover {
-  color: var(--text-primary);
-  background: var(--fill-weak);
+.cardActive {
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
 }
 
-.navItemActive {
+.cardLabel {
+  flex: 1;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-nav);
+  letter-spacing: var(--ls-btn);
+  color: var(--text-muted);
+}
+
+.cardActive .cardLabel {
   color: var(--text-primary);
+}
+
+.card .cardChevron {
+  font-size: 16px;
+  color: var(--text-pale);
 }
 
 /* ── Signed in as ──────────────────────────────────────────────────────────── */
@@ -147,7 +181,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 6px 24px 0;
+  padding: 6px 4px 14px;
 }
 
 .signedInInfo {
@@ -180,6 +214,7 @@
   color: var(--text-secondary);
   background: none;
   border: 1px solid var(--border-strong);
+  border-radius: 0;
   padding: 11px 14px;
   cursor: pointer;
   white-space: nowrap;
@@ -196,12 +231,15 @@
   opacity: 0.6;
 }
 
-/* ── Bottom CTA ────────────────────────────────────────────────────────────── */
+/* ── Create CTA ────────────────────────────────────────────────────────────
+   Not part of the design's sheet (it puts NEW BOOKING / NEW EQUIPMENT as a
+   page-level FAB instead) — kept here as the only mobile entry point until
+   that FAB exists. See MobileMenu.tsx for the full note. */
 
 .sheetFooter {
-  padding: 16px 24px;
-  border-top: 1px solid var(--hairline);
-  flex-shrink: 0;
+  margin-top: 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fill-medium);
 }
 
 .ctaBtn {
@@ -209,12 +247,13 @@
   width: 100%;
   background: var(--btn-primary-bg);
   color: var(--btn-primary-fg);
-  padding: 10px 20px;
+  padding: 13px;
   font-size: var(--fs-btn);
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-btn);
   text-transform: uppercase;
   border: none;
+  border-radius: 0;
   cursor: pointer;
   transition: background var(--transition);
   text-decoration: none;

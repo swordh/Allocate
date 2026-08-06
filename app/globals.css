@@ -16,6 +16,7 @@
   --surface-modal:      #111113;  /* modal / dialog card */
   --surface-modal-alt:  #101012;  /* secondary modal card */
   --surface-selected:   #141414;  /* active chip, selected cell */
+  --surface-sheet:      #0e0e11;  /* mobile bottom sheet (nav menu) */
 
   /* ────────────────────────────── LINES ─────────────────────────────────── */
   --hairline:           rgba(255, 255, 255, 0.06);  /* form-section rules */

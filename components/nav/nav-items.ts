@@ -13,9 +13,11 @@ export interface TopNavItem {
   icon: IconName
 }
 
+// icon values match the mobile nav sheet's SVGs exactly (the only place
+// TOP_NAV.icon is rendered — PrimaryNav's desktop links carry no icon).
 export const TOP_NAV: TopNavItem[] = [
-  { label: 'BOOKINGS',  href: '/bookings',  icon: 'calendar' },
-  { label: 'EQUIPMENT', href: '/equipment', icon: 'construction' },
+  { label: 'BOOKINGS',  href: '/bookings',  icon: 'list' },
+  { label: 'EQUIPMENT', href: '/equipment', icon: 'crate' },
   { label: 'SETTINGS',  href: '/settings',  icon: 'settings' },
 ]
 
