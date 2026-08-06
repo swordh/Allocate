@@ -115,10 +115,11 @@ describe('inviteUser — resend branch', () => {
 
     expect(result.error).toBeUndefined()
 
-    // Private doc update — expiresAt pushed 7 days out from "now".
+    // Private doc update — expiresAt pushed 7 days out from "now", plus a
+    // lastSentAt stamp so the UI can show "Invite re-sent just now".
     expect(batch.update).toHaveBeenCalledWith(
       expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${EXISTING_INVITE_ID}` }),
-      { expiresAt: '2026-08-12T00:00:00.000Z' },
+      { expiresAt: '2026-08-12T00:00:00.000Z', lastSentAt: '2026-08-05T00:00:00.000Z' },
     )
     // Mirror update — same new expiresAt.
     expect(batch.update).toHaveBeenCalledWith(

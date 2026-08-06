@@ -16,9 +16,39 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ALLOWED_ROLES: Role[] = ['admin', 'crew', 'viewer']
 
 function newExpiresAt(): string {
   return new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+}
+
+/**
+ * Shared resend step: pushes `expiresAt` out on both the private doc and the
+ * public mirror, and stamps `lastSentAt` on the private doc so the UI can
+ * show "Invite re-sent just now" (`lib/invite-status.ts:inviteMeta`). The
+ * mirror intentionally does NOT get `lastSentAt` — it's a minimal public
+ * lookup doc and nothing reads that field from it.
+ *
+ * Used by both `inviteUser`'s "already-pending" fallback and the dedicated
+ * `resendInvitation` action, so the two paths cannot drift.
+ */
+async function extendPendingInvite(
+  cid: string,
+  inviteId: string,
+  token: string,
+): Promise<{ expiresAt: string; lastSentAt: string }> {
+  const expiresAt = newExpiresAt()
+  const lastSentAt = new Date().toISOString()
+
+  const inviteRef = adminDb.doc(`companies/${cid}/invitations/${inviteId}`)
+  const mirrorRef = adminDb.collection('invitations').doc(token)
+
+  const batch = adminDb.batch()
+  batch.update(inviteRef, { expiresAt, lastSentAt })
+  batch.update(mirrorRef, { expiresAt })
+  await batch.commit()
+
+  return { expiresAt, lastSentAt }
 }
 
 export async function inviteUser(formData: FormData): Promise<{ error?: string }> {
@@ -59,9 +89,10 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
   const inviterName = (inviterSnap.data()?.name as string) || session.email || 'A teammate'
   const companyName = (companySnap.data()?.name as string) || 'your team'
 
-  // Invited members join as Crew (matches the UI note). Structured so a role
-  // selector can replace this later.
-  const role: Extract<Role, 'crew'> = 'crew'
+  // Role for a NEW invite — never trust the client value without this
+  // allowlist. Falls back to 'crew' for a missing/invalid value.
+  const rawRole = formData.get('role')
+  const submittedRole: Role = ALLOWED_ROLES.includes(rawRole as Role) ? (rawRole as Role) : 'crew'
 
   // ── 4. Reuse an existing pending invite, else create a new one ──────────────────
   const pendingSnap = await adminDb
@@ -72,25 +103,66 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
     .get()
 
   let token: string
+  let role: Role
   let resent = false
 
   if (!pendingSnap.empty) {
     // A pending invite already exists — resend its link rather than duplicate.
-    // Extend expiresAt on both docs: without this, resending an invitation
-    // older than INVITE_TTL_DAYS would re-send a link that is already dead.
+    // Role stays whatever the existing invite already had; resending doesn't
+    // re-submit a role choice. Extending expiresAt matters because without it,
+    // resending an invitation older than INVITE_TTL_DAYS would re-send a link
+    // that is already dead — shares the batch logic with resendInvitation()
+    // below so the two paths cannot drift.
     const pendingDoc = pendingSnap.docs[0]
-    token = pendingDoc.data().token as string
+    const pendingData = pendingDoc.data()
+    token = pendingData.token as string
+    role = (pendingData.role as Role) ?? 'crew'
     resent = true
 
-    const expiresAt = newExpiresAt()
-    const inviteRef = adminDb.doc(`companies/${cid}/invitations/${pendingDoc.id}`)
-    const mirrorRef = adminDb.collection('invitations').doc(token)
-
-    const batch = adminDb.batch()
-    batch.update(inviteRef, { expiresAt })
-    batch.update(mirrorRef, { expiresAt })
-    await batch.commit()
+    await extendPendingInvite(cid, pendingDoc.id, token)
   } else {
+    // ── Seat guard — members + active (non-expired) pending invitations
+    // count against subscription.limits.users. An expired-but-still-`pending`
+    // invitation (status not yet flipped by anything, since nothing sweeps
+    // it) must NOT permanently consume a seat, so it's excluded via a count
+    // aggregate rather than fetched and filtered in memory.
+    const seatLimit = (companySnap.data()?.subscription?.limits?.users) as number | undefined
+
+    if (typeof seatLimit === 'number') {
+      const nowIso = new Date().toISOString()
+      const [memberCountSnap, totalPendingSnap, expiredPendingSnap] = await Promise.all([
+        adminDb.collection(`companies/${cid}/members`).count().get(),
+        adminDb
+          .collection(`companies/${cid}/invitations`)
+          .where('status', '==', 'pending')
+          .count()
+          .get(),
+        adminDb
+          .collection(`companies/${cid}/invitations`)
+          .where('status', '==', 'pending')
+          .where('expiresAt', '<', nowIso)
+          .count()
+          .get(),
+      ])
+
+      const memberCount = memberCountSnap.data().count
+      const activePendingCount = totalPendingSnap.data().count - expiredPendingSnap.data().count
+      const seatsUsed = memberCount + activePendingCount
+
+      if (seatsUsed >= seatLimit) {
+        return {
+          error: `Seat limit reached (${seatLimit}). Upgrade your plan or revoke unused invitations to add more.`,
+        }
+      }
+    } else {
+      console.error('[actions/team]', {
+        companyId: cid,
+        action: 'invite_user_seat_guard',
+        error: 'subscription.limits.users missing or not a number — skipping seat guard',
+      })
+    }
+
+    role = submittedRole
     token = randomBytes(16).toString('hex') // 32-char alphanumeric token (matches [a-zA-Z0-9] across the accept flow)
     const nowIso = new Date().toISOString()
     const expiresAt = newExpiresAt()
@@ -138,6 +210,70 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string }
     companyId: cid,
     action: resent ? 'invite_user_resend' : 'invite_user',
   })
+  return {}
+}
+
+/**
+ * Dedicated resend for the team page's per-row RESEND button — lets the UI
+ * resend without re-posting the whole invite form. Reuses the same
+ * `extendPendingInvite` batch as `inviteUser`'s resend fallback above, so the
+ * two paths cannot drift.
+ */
+export async function resendInvitation(inviteId: string): Promise<{ error?: string }> {
+  // ── 1. Auth-guard ────────────────────────────────────────────────────────────
+  const session = await getVerifiedSession()
+  if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  const cid = session.activeCompanyId
+  if (!cid) return { error: 'No active company' }
+
+  // ── 2. Read the private doc FIRST — it's what gives us the token for the
+  // mirror path. Never accept a token from the client. ─────────────────────────
+  const inviteRef = adminDb.doc(`companies/${cid}/invitations/${inviteId}`)
+  const inviteSnap = await inviteRef.get()
+  if (!inviteSnap.exists) return { error: 'Invitation not found' }
+
+  const inviteData = inviteSnap.data()!
+  if (inviteData.status !== 'pending') {
+    return { error: 'Only pending invitations can be resent' }
+  }
+
+  const token = inviteData.token as string
+  const email = inviteData.email as string
+  const role = (inviteData.role as Role) ?? 'crew'
+  const inviterName = (inviteData.invitedByName as string) || 'A teammate'
+
+  // App URL is required to rebuild the accept link.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    console.error('[actions/team]', { companyId: cid, action: 'resend_invitation', error: 'NEXT_PUBLIC_APP_URL not set' })
+    return { error: 'Server is misconfigured — please contact support.' }
+  }
+
+  // ── 3. Extend expiry + stamp lastSentAt ───────────────────────────────────────
+  await extendPendingInvite(cid, inviteId, token)
+
+  // ── 4. Re-queue the email ──────────────────────────────────────────────────────
+  const companySnap = await adminDb.doc(`companies/${cid}`).get()
+  const companyName = (companySnap.data()?.name as string) || 'your team'
+  const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
+
+  await adminDb.collection('mail').add({
+    to: email,
+    template: 'invitation',
+    data: { companyName, inviterName, acceptUrl, role },
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+  })
+
+  revalidatePath('/settings/team')
+  console.log('[actions/team]', {
+    uid: session.uid.slice(0, 8) + '...',
+    companyId: cid,
+    inviteId,
+    action: 'resend_invitation',
+  })
+
   return {}
 }
 
