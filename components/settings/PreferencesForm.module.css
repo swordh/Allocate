@@ -35,6 +35,15 @@
   flex-wrap: wrap;
 }
 
+/* ── Responsive split ──────────────────────────────────────────────────── */
+/* Desktop and mobile chip rows differ only in the active-chip look (dark
+   fill vs. solid white/black per the design), not layout — but Chip's
+   variant is set per-render, so both render and CSS picks one. */
+
+.mobileOnly {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .row {
     grid-template-columns: 1fr;
@@ -46,5 +55,13 @@
     max-width: none;
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .deskOnly {
+    display: none;
+  }
+
+  .mobileOnly {
+    display: grid;
   }
 }

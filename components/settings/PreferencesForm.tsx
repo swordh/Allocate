@@ -54,10 +54,26 @@ export default function PreferencesForm({ preferences: initial }: PreferencesFor
             when a booking is not full-day.
           </div>
         </div>
-        <div className={styles.chipRow}>
+        {/* Desktop: dark-fill active chip. Mobile: white/black solid — matches
+            the design's mobile chip() helper, distinct from the desktop one.
+            Two renders, CSS picks one (same pattern as TeamSettingsView). */}
+        <div className={`${styles.chipRow} ${styles.deskOnly}`}>
           {TIME_SLOT_OPTIONS.map((value) => (
             <Chip
               key={value}
+              active={bookingTimeSlotMinutes === value}
+              onClick={() => handlePick(value)}
+              disabled={saving}
+            >
+              {TIME_SLOT_LABELS[value]}
+            </Chip>
+          ))}
+        </div>
+        <div className={`${styles.chipRow} ${styles.mobileOnly}`}>
+          {TIME_SLOT_OPTIONS.map((value) => (
+            <Chip
+              key={value}
+              variant="solid"
               active={bookingTimeSlotMinutes === value}
               onClick={() => handlePick(value)}
               disabled={saving}

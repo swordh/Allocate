@@ -53,6 +53,10 @@
   gap: 4px;
 }
 
+.roleChipsMobile {
+  display: none;
+}
+
 .seatCopy {
   flex: 1;
   text-align: right;
@@ -101,6 +105,14 @@
 
   .roleChips > button {
     flex: 1;
+  }
+
+  .roleChipsDesk {
+    display: none;
+  }
+
+  .roleChipsMobile {
+    display: grid;
   }
 
   .inviteRow > button {

@@ -225,12 +225,29 @@ export default function TeamSettingsView({
           className={styles.inviteInput}
           required
         />
-        <div className={styles.roleChips}>
+        {/* Desktop: dark-fill active chip. Mobile: white/black solid — matches
+            the design's mobile chip() helper, distinct from the desktop one.
+            Two renders, CSS picks one (same pattern as the member rows below). */}
+        <div className={`${styles.roleChips} ${styles.roleChipsDesk}`}>
           {ROLES.map((role) => (
             <Chip
               key={role}
               type="button"
               size="sm"
+              active={inviteRole === role}
+              onClick={() => setInviteRole(role)}
+            >
+              {ROLE_LABELS[role]}
+            </Chip>
+          ))}
+        </div>
+        <div className={`${styles.roleChips} ${styles.roleChipsMobile}`}>
+          {ROLES.map((role) => (
+            <Chip
+              key={role}
+              type="button"
+              size="sm"
+              variant="solid"
               active={inviteRole === role}
               onClick={() => setInviteRole(role)}
             >
@@ -383,6 +400,7 @@ export default function TeamSettingsView({
                             <Chip
                               key={role}
                               size="sm"
+                              variant="solid"
                               className={styles.roleChip}
                               active={member.role === role}
                               disabled={roleChanging[member.uid]}

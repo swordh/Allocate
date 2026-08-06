@@ -121,6 +121,14 @@
   gap: 8px;
 }
 
+/* ── Responsive split ──────────────────────────────────────────────────── */
+/* Desktop and mobile cycle chips differ only in the active-chip look (dark
+   fill vs. solid white/black per the design) — both render, CSS picks one. */
+
+.mobileOnly {
+  display: none;
+}
+
 /* ── Plan cards ────────────────────────────────────────────────────────── */
 
 .planGrid {
@@ -201,6 +209,14 @@
   .container {
     gap: 18px;
     padding-top: 14px;
+  }
+
+  .deskOnly {
+    display: none;
+  }
+
+  .mobileOnly {
+    display: flex;
   }
 
   .currentCard {

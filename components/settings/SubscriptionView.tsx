@@ -151,11 +151,22 @@ export default function SubscriptionView({
 
       <div className={styles.pickerHeader}>
         <span className={styles.pickerHeading}>{display.hasSub ? 'CHANGE PLAN' : 'CHOOSE A PLAN'}</span>
-        <div className={styles.cycleChips}>
+        {/* Desktop: dark-fill active chip. Mobile: white/black solid — matches
+            the design's mobile chip() helper, distinct from the desktop one.
+            Two renders, CSS picks one (same pattern as TeamSettingsView). */}
+        <div className={`${styles.cycleChips} ${styles.deskOnly}`}>
           <Chip size="cycle" active={cycle === 'month'} onClick={() => setCycle('month')} disabled={loading}>
             MONTHLY
           </Chip>
           <Chip size="cycle" active={cycle === 'year'} onClick={() => setCycle('year')} disabled={loading}>
+            YEARLY
+          </Chip>
+        </div>
+        <div className={`${styles.cycleChips} ${styles.mobileOnly}`}>
+          <Chip size="cycle" variant="solid" active={cycle === 'month'} onClick={() => setCycle('month')} disabled={loading}>
+            MONTHLY
+          </Chip>
+          <Chip size="cycle" variant="solid" active={cycle === 'year'} onClick={() => setCycle('year')} disabled={loading}>
             YEARLY
           </Chip>
         </div>
