@@ -87,3 +87,31 @@ export const getEquipment = cache(async (
     }
   })
 })
+
+/**
+ * Counts equipment docs (types, not units) per category, including inactive
+ * equipment. Used for "<n> TYPES" tallies where the true count matters (e.g.
+ * before allowing a category delete) but the caller has no use for the full
+ * Equipment objects or their units.
+ *
+ * Uses a `.select('category')` projection over the equipment collection only
+ * — no units collectionGroup join — since only the category field is needed.
+ * Wrapped in React.cache like the other queries in this file.
+ */
+export const getEquipmentCategoryCounts = cache(async (
+  companyId: string,
+): Promise<Record<string, number>> => {
+  const snapshot = await adminDb
+    .collection('companies')
+    .doc(companyId)
+    .collection('equipment')
+    .select('category')
+    .get()
+
+  const counts: Record<string, number> = {}
+  for (const doc of snapshot.docs) {
+    const category = (doc.get('category') as string | undefined) ?? ''
+    counts[category] = (counts[category] ?? 0) + 1
+  }
+  return counts
+})
