@@ -63,6 +63,7 @@
   --danger-text:           #f0c3c4;
   --danger-muted:          #7f4045;  /* disarmed destructive button label */
   --danger-tint:           rgba(229, 72, 77, 0.07);
+  --danger-tint-mid:       rgba(229, 72, 77, 0.15);  /* disarmed destructive button bg */
   --danger-border:         rgba(229, 72, 77, 0.35);
   --danger-border-mid:     rgba(229, 72, 77, 0.45);
   --danger-border-strong:  rgba(229, 72, 77, 0.50);

@@ -1,17 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateUserProfile, deleteAccount, exportUserData } from '@/actions/account'
 import { deleteSession } from '@/actions/auth'
 import { requestEmailChange, requestPasswordReset } from '@/actions/auth-email'
 import { auth } from '@/lib/firebase'
+import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
+import Chip from '@/components/ui/Chip'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import { BOOKING_VIEW_OPTIONS, BOOKING_VIEW_LABELS, type BookingViewOption } from '@/constants/company'
 import styles from './AccountSettingsForm.module.css'
 
 interface AccountSettingsFormProps {
   name: string
   email: string
-  defaultBookingView?: 'list' | 'week' | 'month' | '4weeks'
+  defaultBookingView?: BookingViewOption
 }
 
 export default function AccountSettingsForm({
@@ -22,14 +27,14 @@ export default function AccountSettingsForm({
   const router = useRouter()
 
   const [name, setName] = useState(initialName)
-  const [defaultBookingView, setDefaultBookingView] = useState<'list' | 'week' | 'month' | '4weeks'>(
-    initialView ?? 'list'
-  )
+  const [defaultBookingView, setDefaultBookingView] = useState<BookingViewOption>(initialView ?? 'list')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const [confirmInput, setConfirmInput] = useState('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -38,7 +43,7 @@ export default function AccountSettingsForm({
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
-  // Change-email flow: an inline form revealed by "Change Email →".
+  // Change-email flow: an inline form revealed by "CHANGE EMAIL →".
   const [showEmailChange, setShowEmailChange] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [emailSubmitting, setEmailSubmitting] = useState(false)
@@ -46,8 +51,14 @@ export default function AccountSettingsForm({
   const [emailSent, setEmailSent] = useState(false)
 
   // Change-password flow: sends a reset link to the user's own address.
+  // requestPasswordReset is deliberately enumeration-safe (it never returns an
+  // error), so the confirmation below is shown unconditionally.
   const [passwordSending, setPasswordSending] = useState(false)
-  const [passwordSent, setPasswordSent] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+
+  function clearSaved() {
+    if (saved) setSaved(false)
+  }
 
   async function handleEmailChange() {
     if (emailSubmitting || newEmail.trim().length === 0) return
@@ -76,19 +87,17 @@ export default function AccountSettingsForm({
   async function handlePasswordReset() {
     setPasswordSending(true)
     try {
-      // Reuses the same enumeration-safe action; here we always have the address.
       await requestPasswordReset(email)
-      setPasswordSent(true)
+      setResetSent(true)
     } finally {
       setPasswordSending(false)
     }
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  async function handleSave() {
     setSubmitting(true)
     setError(null)
-    setSuccess(false)
+    setSaved(false)
 
     const result = await updateUserProfile({ name, defaultBookingView })
 
@@ -97,14 +106,22 @@ export default function AccountSettingsForm({
     if (result.error) {
       setError(result.error)
     } else {
-      setSuccess(true)
+      setSaved(true)
+      clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => setSaved(false), 2600)
     }
   }
 
   async function handleSignOut() {
     setSigningOut(true)
-    await deleteSession()
-    router.push('/login')
+    try {
+      await deleteSession()
+      router.push('/login')
+    } catch (err) {
+      console.error('Sign out failed:', err)
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   async function handleExportData() {
@@ -142,278 +159,200 @@ export default function AccountSettingsForm({
 
   return (
     <div className={styles.container}>
-      <form onSubmit={handleSubmit} className={styles.form}>
-
-        {/* Default Booking View */}
+      {/* Name */}
+      <div className={styles.row}>
         <div>
-          <div className={styles.sectionHeader}>
-            <span className={styles.sectionHeaderLabel}>Default Booking View</span>
-            <div className={styles.sectionHeaderLine} />
-          </div>
-          <div className={styles.box}>
-            <p className={styles.boxDescription}>
-              Choose which view opens by default when you navigate to Bookings.
-            </p>
-            <div className={styles.viewToggle}>
-              <button
-                type="button"
-                className={`${styles.viewToggleOption} ${defaultBookingView === 'list' ? styles.viewToggleOptionActive : ''}`}
-                onClick={() => {
-                  setDefaultBookingView('list')
-                  setSuccess(false)
-                }}
-              >
-                List
-              </button>
-              <button
-                type="button"
-                className={`${styles.viewToggleOption} ${styles.viewToggleOptionMiddle} ${defaultBookingView === 'week' ? styles.viewToggleOptionActive : ''}`}
-                onClick={() => {
-                  setDefaultBookingView('week')
-                  setSuccess(false)
-                }}
-              >
-                Week
-              </button>
-              <button
-                type="button"
-                className={`${styles.viewToggleOption} ${styles.viewToggleOptionMiddle} ${defaultBookingView === 'month' ? styles.viewToggleOptionActive : ''}`}
-                onClick={() => {
-                  setDefaultBookingView('month')
-                  setSuccess(false)
-                }}
-              >
-                Month
-              </button>
-              <button
-                type="button"
-                className={`${styles.viewToggleOption} ${styles.viewToggleOptionRight} ${defaultBookingView === '4weeks' ? styles.viewToggleOptionActive : ''}`}
-                onClick={() => {
-                  setDefaultBookingView('4weeks')
-                  setSuccess(false)
-                }}
-              >
-                4 Weeks
-              </button>
-            </div>
-          </div>
+          <div className={styles.rowLabel}>Name</div>
+          <div className={styles.rowHelp}>Shown on bookings you create.</div>
         </div>
-
-        {/* Profile */}
-        <div>
-          <div className={styles.sectionHeader}>
-            <span className={styles.sectionHeaderLabel}>Profile</span>
-            <div className={styles.sectionHeaderLine} />
-          </div>
-          <div className={styles.box}>
-
-            {/* Display Name */}
-            <div className={styles.profileFieldGroup}>
-              <div className={styles.profileNameField}>
-                <label htmlFor="display-name" className={styles.profileFieldLabel}>
-                  Display Name
-                </label>
-                <input
-                  id="display-name"
-                  type="text"
-                  className={styles.profileNameInput}
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value)
-                    setSuccess(false)
-                  }}
-                  maxLength={100}
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div className={styles.profileInfoGroup}>
-              <span className={styles.profileFieldLabel}>Email</span>
-              <p className={styles.profileValue}>{email}</p>
-              {emailSent ? (
-                <p className={styles.profileValue}>
-                  We sent a confirmation link to <strong>{newEmail.trim()}</strong>. The
-                  change takes effect once you click it.
-                </p>
-              ) : !showEmailChange ? (
-                <button
-                  type="button"
-                  className={styles.btnTextLink}
-                  onClick={() => setShowEmailChange(true)}
-                >
-                  Change Email →
-                </button>
-              ) : (
-                <>
-                  <label htmlFor="new-email" className={styles.profileFieldLabel}>
-                    New email
-                  </label>
-                  <input
-                    id="new-email"
-                    type="email"
-                    autoComplete="email"
-                    className={styles.profileNameInput}
-                    value={newEmail}
-                    onChange={(e) => {
-                      setNewEmail(e.target.value)
-                      setEmailError(null)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleEmailChange()
-                      }
-                    }}
-                    disabled={emailSubmitting}
-                  />
-                  {emailError && <div className={styles.errorBanner} style={{ marginTop: 12 }}>{emailError}</div>}
-                  <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                    <button
-                      type="button"
-                      className={styles.btnTextLink}
-                      onClick={handleEmailChange}
-                      disabled={emailSubmitting || newEmail.trim().length === 0}
-                    >
-                      {emailSubmitting ? 'Sending…' : 'Send confirmation →'}
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.btnTextLink}
-                      onClick={() => {
-                        setShowEmailChange(false)
-                        setNewEmail('')
-                        setEmailError(null)
-                      }}
-                      disabled={emailSubmitting}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Password */}
-            <div className={styles.profileInfoGroup}>
-              <span className={styles.profileFieldLabel}>Password</span>
-              <p className={styles.profileValue}>••••••••••••</p>
-              {passwordSent ? (
-                <p className={styles.profileValue}>
-                  We sent a password-reset link to <strong>{email}</strong>.
-                </p>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.btnTextLink}
-                  onClick={handlePasswordReset}
-                  disabled={passwordSending}
-                >
-                  {passwordSending ? 'Sending…' : 'Change Password →'}
-                </button>
-              )}
-            </div>
-
-          </div>
-        </div>
-
-        {error && <div className={styles.errorBanner}>{error}</div>}
-        {success && <div className={styles.successBanner}>Changes saved.</div>}
-
-        <button type="submit" className={styles.btnSave} disabled={submitting}>
-          {submitting ? 'Saving…' : 'Save Changes'}
-        </button>
-      </form>
-
-      <div className={styles.divider} />
-
-      {/* Your Data */}
-      <div>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionHeaderLabel}>Your Data</span>
-          <div className={styles.sectionHeaderLine} />
-        </div>
-        <div className={styles.box}>
-          <p className={styles.boxDescription}>
-            Download a copy of all personal data we hold for your account,
-            including your profile, company memberships, and bookings.
-          </p>
-          <button
-            type="button"
-            className={styles.btnSignOut}
-            onClick={handleExportData}
-            disabled={exporting}
-          >
-            {exporting ? 'Preparing…' : 'Download my data'}
-          </button>
-          {exportError && <div className={styles.errorBanner} style={{ marginTop: 16 }}>{exportError}</div>}
+        <div className={styles.rowControl}>
+          <Input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value)
+              clearSaved()
+            }}
+            maxLength={100}
+            required
+          />
         </div>
       </div>
 
-      <div className={styles.divider} />
-
-      {/* Danger Zone */}
-      <div>
-        <div className={styles.sectionHeader}>
-          <span className={`${styles.sectionHeaderLabel} ${styles.sectionHeaderLabelDanger}`}>
-            Danger Zone
-          </span>
-          <div className={styles.sectionHeaderLine} />
+      {/* Email */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Email</div>
+          <div className={styles.rowHelp}>Used to sign in. Changing it requires confirming the new address.</div>
         </div>
-        <div className={`${styles.box} ${styles.boxDanger}`}>
-
-          {/* Sign Out row */}
-          <div className={styles.dangerRow}>
-            <div>
-              <p className={styles.dangerTitle}>Sign Out</p>
-              <p className={styles.dangerDescription}>Sign out of your account on this device.</p>
+        <div className={styles.rowControl}>
+          <div className={styles.emailValueRow}>
+            <div className={styles.emailBox}>
+              <span className={styles.emailValue}>{email}</span>
+              {!emailSent && (
+                <button
+                  type="button"
+                  className={styles.linkBtn}
+                  onClick={() => setShowEmailChange((v) => !v)}
+                >
+                  {showEmailChange ? 'CANCEL' : 'CHANGE EMAIL →'}
+                </button>
+              )}
             </div>
-            <button
-              type="button"
-              className={styles.btnSignOut}
-              onClick={handleSignOut}
-              disabled={signingOut}
-            >
-              {signingOut ? 'Signing out…' : 'Sign Out'}
-            </button>
+            {showEmailChange && !emailSent && (
+              <div className={styles.inlineRow}>
+                <Input
+                  type="email"
+                  autoComplete="email"
+                  placeholder="new@address.com"
+                  value={newEmail}
+                  onChange={(e) => {
+                    setNewEmail(e.target.value)
+                    setEmailError(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleEmailChange()
+                    }
+                  }}
+                  disabled={emailSubmitting}
+                  className={styles.flexInput}
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleEmailChange}
+                  disabled={emailSubmitting || newEmail.trim().length === 0}
+                >
+                  {emailSubmitting ? 'SENDING…' : 'SEND LINK'}
+                </Button>
+              </div>
+            )}
+            {emailError && <ErrorBanner tone="danger">{emailError}</ErrorBanner>}
+            {emailSent && (
+              <ErrorBanner tone="info">
+                We sent a confirmation link to {newEmail.trim()}. The change takes effect once you click it.
+              </ErrorBanner>
+            )}
           </div>
+        </div>
+      </div>
 
-          {/* Delete Account row */}
-          <div className={styles.dangerRow}>
-            <div>
-              <p className={`${styles.dangerTitle} ${styles.dangerTitleError}`}>Delete Account</p>
-              <p className={`${styles.dangerDescription} ${styles.dangerDescriptionError}`}>
-                Permanently delete your account and all associated data. This cannot be undone.
-              </p>
-            </div>
-            <button
-              type="button"
-              className={styles.btnDanger}
-              onClick={handleDeleteAccount}
-              disabled={confirmInput !== 'DELETE' || deleting}
+      {/* Default view — no design mockup for this row; the design's own
+          viewChips helper exists but is unrendered anywhere. Preserved here
+          per correction: "defaultBookingView stays on the Account form where
+          it already is." Styled to match the surrounding rows. */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Default view</div>
+          <div className={styles.rowHelp}>Choose which view opens by default when you navigate to Bookings.</div>
+        </div>
+        <div className={styles.chipRow}>
+          {BOOKING_VIEW_OPTIONS.map((v) => (
+            <Chip
+              key={v}
+              active={defaultBookingView === v}
+              onClick={() => {
+                setDefaultBookingView(v)
+                clearSaved()
+              }}
             >
-              {deleting ? 'Deleting…' : 'Delete Account'}
-            </button>
-          </div>
+              {BOOKING_VIEW_LABELS[v]}
+            </Chip>
+          ))}
+        </div>
+      </div>
 
-          {/* DELETE confirmation input */}
-          <div className={styles.confirmRow}>
-            <input
-              type="text"
-              className={styles.confirmInput}
-              placeholder='Type "DELETE" to confirm'
+      {/* Password & data */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Password &amp; data</div>
+          <div className={styles.rowHelp}>Reset your password or download everything we store about you.</div>
+        </div>
+        <div className={styles.buttonsRow}>
+          <Button variant="secondary" size="sm" onClick={handlePasswordReset} disabled={passwordSending}>
+            {passwordSending ? 'SENDING…' : 'SEND RESET LINK'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportData} disabled={exporting}>
+            {exporting ? 'PREPARING…' : 'EXPORT MY DATA'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Session & account */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Session &amp; account</div>
+          <div className={styles.rowHelp}>Sign out on this device, or permanently delete your account.</div>
+        </div>
+        <div className={styles.buttonsRow}>
+          <Button variant="secondary" size="sm" onClick={handleSignOut} disabled={signingOut}>
+            {signingOut ? 'SIGNING OUT…' : 'SIGN OUT'}
+          </Button>
+          <Button variant="danger" size="sm" onClick={() => setDeleteOpen((v) => !v)}>
+            DELETE ACCOUNT
+          </Button>
+        </div>
+      </div>
+
+      <div className={styles.saveRow}>
+        {saved && <span className={styles.saveNote}>ACCOUNT SAVED</span>}
+        <Button variant="primary" size="sm" onClick={handleSave} disabled={submitting}>
+          {submitting ? 'SAVING…' : 'SAVE CHANGES'}
+        </Button>
+      </div>
+
+      {/* Mobile-only sticky bar — same handler, duplicated per the desktop
+          row because the design shows the CTA fixed to the viewport bottom
+          on small screens instead of inline. */}
+      <div className={styles.stickyBar}>
+        <span className={styles.saveNote}>{saved ? 'SAVED' : ''}</span>
+        <Button variant="primary" size="lg" fullWidth={false} onClick={handleSave} disabled={submitting}>
+          {submitting ? 'SAVING…' : 'SAVE CHANGES'}
+        </Button>
+      </div>
+
+      {error && <ErrorBanner tone="danger">{error}</ErrorBanner>}
+      {exportError && <ErrorBanner tone="danger">{exportError}</ErrorBanner>}
+
+      {resetSent && (
+        <ErrorBanner
+          tone="info"
+          action={
+            <button type="button" className={styles.dismissBtn} onClick={() => setResetSent(false)}>
+              DISMISS
+            </button>
+          }
+        >
+          Reset link sent to {email}. It expires in 1 hour — check your spam folder if it does not arrive.
+        </ErrorBanner>
+      )}
+
+      {deleteOpen && (
+        <div className={styles.deleteConfirm}>
+          <span className={styles.deleteText}>Type DELETE to permanently remove your account.</span>
+          <div className={styles.deleteInputRow}>
+            <Input
               value={confirmInput}
               onChange={(e) => {
                 setConfirmInput(e.target.value)
                 setDeleteError(null)
               }}
+              placeholder="DELETE"
+              className={styles.deleteInput}
             />
+            <Button
+              variant="danger-solid"
+              size="sm"
+              onClick={handleDeleteAccount}
+              disabled={confirmInput !== 'DELETE' || deleting}
+            >
+              {deleting ? 'DELETING…' : 'CONFIRM'}
+            </Button>
           </div>
-
-          {deleteError && <div className={styles.errorBanner}>{deleteError}</div>}
+          {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
         </div>
-      </div>
+      )}
     </div>
   )
 }
