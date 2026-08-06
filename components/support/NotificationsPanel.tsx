@@ -27,6 +27,7 @@ export default function NotificationsPanel() {
       role="dialog"
       aria-label="Notifications"
       aria-hidden={!notificationsOpen}
+      inert={!notificationsOpen}
     >
       <div className={styles.header}>
         <span className={styles.title}>Notifications</span>
