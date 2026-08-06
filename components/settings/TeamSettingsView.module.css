@@ -75,9 +75,17 @@
 
   .inviteLabel {
     font-size: var(--fs-label);
+    font-weight: var(--fw-bold);
+    text-transform: uppercase;
     letter-spacing: var(--ls-eyebrow);
     color: var(--text-primary);
     margin-right: 0;
+  }
+
+  /* Seat copy: same "no declared weight" treatment as MEMBERS/PENDING above. */
+  .seatCopy {
+    font-weight: var(--fw-regular);
+    letter-spacing: var(--ls-btn);
   }
 
   .inviteRow > .inviteLabel,
@@ -250,6 +258,22 @@
   letter-spacing: var(--ls-eyebrow);
   color: var(--text-weak);
   white-space: nowrap;
+}
+
+/* MEMBERS / PENDING · n headings, design line 178: no font-weight declared
+   (inherits the document default, 400) and a 0.14em tracking — deliberately
+   lighter than the surrounding UI. .groupHeading is shared markup (desktop
+   table and mobile cards both use it), so this is confined to the mobile
+   media query; desktop keeps its existing 500/0.12em look. Placed after the
+   base rule above (same selector, same specificity) so it actually wins —
+   an earlier copy of this rule higher up the file lost to source order. */
+@media (max-width: 768px) {
+  .groupHeading > span:first-child {
+    font-weight: var(--fw-regular);
+    /* Design value 0.14em — no exact match in the tracking scale
+       (--ls-section is 0.16em, --ls-eyebrow is 0.12em), kept literal. */
+    letter-spacing: 0.14em;
+  }
 }
 
 .groupRule {

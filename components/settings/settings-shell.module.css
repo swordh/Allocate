@@ -58,6 +58,28 @@
   color: var(--text-secondary);
 }
 
+/* ── Header meta line: desktop/mobile content swap (Section C) ───────────
+   PageHeader's own .meta div already carries the correct typography for
+   both breakpoints (12px/bold desktop, 11px/--ls-btn/9px-margin mobile —
+   see PageHeader.module.css), so only visibility needs toggling here. */
+.metaDeskOnly {
+  display: inline;
+}
+
+.metaMobileOnly {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .metaDeskOnly {
+    display: none;
+  }
+
+  .metaMobileOnly {
+    display: inline;
+  }
+}
+
 @media (max-width: 768px) {
   .titleBlock {
     padding: 30px var(--page-margin-mobile) 0;

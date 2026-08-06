@@ -5,6 +5,7 @@ import { adminDb } from '@/lib/firebase-admin'
 import { PLAN_CATALOG, type PlanId } from '@/lib/plans'
 import { PageHeader } from '@/components/nav/PageHeader'
 import SettingsTabs from '@/components/settings/SettingsTabs'
+import SettingsSectionMeta from '@/components/settings/SettingsSectionMeta'
 import styles from '@/components/settings/settings-shell.module.css'
 
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +29,18 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         <PageHeader
           title="Settings"
           size="compact"
-          meta={meta}
+          meta={
+            <>
+              {/* Desktop keeps "COMPANY · PLAN · N MEMBERS" (design's desktop
+                  file, unchanged). Mobile shows the active section instead
+                  (design line 53) — a genuine breakpoint difference, not an
+                  inconsistency. Both render, CSS picks one. */}
+              <span className={styles.metaDeskOnly}>{meta}</span>
+              <span className={styles.metaMobileOnly}>
+                <SettingsSectionMeta companyName={companyName} />
+              </span>
+            </>
+          }
           nav={
             <div className={styles.tabRow}>
               <SettingsTabs role={role} />

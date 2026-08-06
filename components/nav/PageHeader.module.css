@@ -30,7 +30,11 @@
 .meta {
   font-family: var(--font-ui);
   font-size: 12px;
-  font-weight: var(--fw-bold);
+  /* Design (12-16 Inställningar.dc.html line 40 / mobile line 53) declares
+     no font-weight here — inherits the document default, 400. Deliberately
+     lighter than the surrounding UI; same class of miss as the MEMBERS
+     heading in TeamSettingsView.module.css. */
+  font-weight: var(--fw-regular);
   letter-spacing: var(--ls-btn-tight);
   color: var(--text-weak);
   margin-top: 10px;

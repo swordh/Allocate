@@ -244,8 +244,49 @@
     align-items: stretch;
     gap: 16px;
     padding: 16px;
+    /* Design (line 259): background #0d0d0f, border rgba(255,255,255,0.05).
+       No token is an exact 0.05 border alpha, so this follows the same
+       approximation already used for member/pending cards in
+       TeamSettingsView (--hairline, 0.06) rather than a new literal. */
+    background: var(--surface);
+    border-color: var(--hairline);
     /* Design: 3px on mobile vs. 2px on desktop (the base rule above). */
     border-left-width: 3px;
+  }
+
+  /* ── Status/current pills (ACTIVE / TRIAL / CURRENT), design line 262 & 292 ──
+     Chip's shared "tag" size is used by other call sites (e.g. the "You" /
+     role pills in TeamSettingsView), so it isn't touched — these selectors
+     are scoped to the two containers the pills sit in here and rely on
+     Chip's existing tone system (accent/danger/neutral) for color/border,
+     which already matches the design per state. Two classes deep to reliably
+     out-specify Chip's own .tag rule regardless of stylesheet load order —
+     same pattern as .roleChipsMobile .roleChip in TeamSettingsView. */
+  .planRowMobile .statusPill,
+  .planCardHeader .statusPill {
+    /* Design value 9px — no matching token (--fs-label-sm is the nearest at 10px). */
+    font-size: 9px;
+    letter-spacing: var(--ls-eyebrow);
+    padding: 4px 7px;
+  }
+
+  /* ── Buttons, design B3 ── */
+
+  .currentCard .manageBillingBtn {
+    font-size: var(--fs-btn-sm);
+    padding: 13px;
+    width: 100%;
+  }
+
+  .planCard .planCta {
+    font-size: var(--fs-btn-sm);
+    padding: 13px;
+  }
+
+  .cycleChips .cycleChip {
+    font-size: var(--fs-label-sm);
+    letter-spacing: var(--ls-btn);
+    padding: 9px 12px;
   }
 
   .currentMeta {

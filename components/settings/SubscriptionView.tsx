@@ -141,7 +141,7 @@ export default function SubscriptionView({
             </div>
             <div className={`${styles.mobileOnly} ${styles.planRowMobile}`}>
               <span className={styles.planNameMobile}>{PLAN_CATALOG[subscription.plan]?.name ?? subscription.plan}</span>
-              <Chip size="tag" tone={display.accent} interactive={false}>
+              <Chip size="tag" tone={display.accent} interactive={false} className={styles.statusPill}>
                 {display.label}
               </Chip>
               <span className={styles.cycleCopyMobile}>{display.cycle}</span>
@@ -158,7 +158,13 @@ export default function SubscriptionView({
             </div>
           ))}
 
-          <Button variant="secondary" size="sm" onClick={handleManage} disabled={loading}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleManage}
+            disabled={loading}
+            className={styles.manageBillingBtn}
+          >
             MANAGE BILLING
           </Button>
         </div>
@@ -178,10 +184,24 @@ export default function SubscriptionView({
           </Chip>
         </div>
         <div className={`${styles.cycleChips} ${styles.mobileOnly}`}>
-          <Chip size="cycle" variant="solid" active={cycle === 'month'} onClick={() => setCycle('month')} disabled={loading}>
+          <Chip
+            size="cycle"
+            variant="solid"
+            active={cycle === 'month'}
+            onClick={() => setCycle('month')}
+            disabled={loading}
+            className={styles.cycleChip}
+          >
             MONTHLY
           </Chip>
-          <Chip size="cycle" variant="solid" active={cycle === 'year'} onClick={() => setCycle('year')} disabled={loading}>
+          <Chip
+            size="cycle"
+            variant="solid"
+            active={cycle === 'year'}
+            onClick={() => setCycle('year')}
+            disabled={loading}
+            className={styles.cycleChip}
+          >
             YEARLY
           </Chip>
         </div>
@@ -211,7 +231,7 @@ export default function SubscriptionView({
                 <div className={styles.planCardHeader}>
                   <span className={styles.planCardName}>{p.name}</span>
                   {isCurrent && (
-                    <Chip size="tag" tone="accent" interactive={false}>
+                    <Chip size="tag" tone="accent" interactive={false} className={styles.statusPill}>
                       CURRENT
                     </Chip>
                   )}
@@ -235,6 +255,7 @@ export default function SubscriptionView({
                 fullWidth
                 disabled={loading || isCurrent}
                 onClick={() => (display.hasSub ? handlePlanChange(id) : router.push('/subscribe'))}
+                className={styles.planCta}
               >
                 {cta}
               </Button>
