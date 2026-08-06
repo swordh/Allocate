@@ -182,10 +182,16 @@ export default function CompanySettingsForm({
         <div className={styles.categoryList}>
           {categories.map((cat) => (
             <div key={cat.id} className={styles.categoryRow}>
-              <span className={styles.categoryName}>{cat.name.toUpperCase()}</span>
-              <span className={styles.categoryMeta}>
-                {pluralize(typeCounts[cat.name] ?? 0, 'TYPE')} · {pluralize(cat.customFieldTemplates.length, 'FIELD')}
-              </span>
+              {/* Name + meta wrap together so mobile can stack them (design:
+                  name on top, meta below at 4px) while desktop keeps its
+                  existing single-line "NAME ... META" row — see
+                  .categoryInfo in CompanySettingsForm.module.css. */}
+              <div className={styles.categoryInfo}>
+                <span className={styles.categoryName}>{cat.name.toUpperCase()}</span>
+                <span className={styles.categoryMeta}>
+                  {pluralize(typeCounts[cat.name] ?? 0, 'TYPE')} · {pluralize(cat.customFieldTemplates.length, 'FIELD')}
+                </span>
+              </div>
               <button
                 type="button"
                 className={styles.removeBtn}
@@ -202,7 +208,7 @@ export default function CompanySettingsForm({
               onChange={(e) => setNewCategoryName(e.target.value)}
               placeholder="New category"
               inputSize="sm"
-              className={styles.flexInput}
+              className={`${styles.flexInput} ${styles.addCategoryInput}`}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
@@ -213,6 +219,7 @@ export default function CompanySettingsForm({
             <Button
               variant="ghost"
               size="sm"
+              className={styles.addCategoryBtn}
               onClick={handleAddCategory}
               disabled={addingCategoryLoading || !newCategoryName.trim()}
             >

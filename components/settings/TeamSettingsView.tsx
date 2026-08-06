@@ -248,6 +248,7 @@ export default function TeamSettingsView({
               type="button"
               size="sm"
               variant="solid"
+              className={styles.roleChip}
               active={inviteRole === role}
               onClick={() => setInviteRole(role)}
             >

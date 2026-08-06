@@ -123,14 +123,29 @@ export default function SubscriptionView({
       {subscription && (
         <div className={styles.currentCard} data-accent={display.accent}>
           <div className={styles.currentMeta}>
-            <span className={styles.eyebrow}>CURRENT PLAN</span>
-            <div className={styles.planRow}>
-              <span className={styles.planName}>{PLAN_CATALOG[subscription.plan]?.name ?? subscription.plan}</span>
+            {/* Desktop: eyebrow, then name+pill, then cycle copy stacked
+                (unchanged). Mobile: a single baseline row — name, pill, a
+                spacer, cycle copy right-aligned, no eyebrow (design line
+                260-265 has none). Two renders, CSS picks one — same
+                desk/mobile split pattern already used for the cycle chips
+                below and throughout TeamSettingsView. */}
+            <div className={styles.deskOnly}>
+              <span className={styles.eyebrow}>CURRENT PLAN</span>
+              <div className={styles.planRow}>
+                <span className={styles.planName}>{PLAN_CATALOG[subscription.plan]?.name ?? subscription.plan}</span>
+                <Chip size="tag" tone={display.accent} interactive={false}>
+                  {display.label}
+                </Chip>
+              </div>
+              <span className={styles.cycleCopy}>{display.cycle}</span>
+            </div>
+            <div className={`${styles.mobileOnly} ${styles.planRowMobile}`}>
+              <span className={styles.planNameMobile}>{PLAN_CATALOG[subscription.plan]?.name ?? subscription.plan}</span>
               <Chip size="tag" tone={display.accent} interactive={false}>
                 {display.label}
               </Chip>
+              <span className={styles.cycleCopyMobile}>{display.cycle}</span>
             </div>
-            <span className={styles.cycleCopy}>{display.cycle}</span>
           </div>
 
           {usage.map((u) => (
@@ -177,22 +192,35 @@ export default function SubscriptionView({
           const p = PLAN_CATALOG[id]
           const isCurrent = display.hasSub && subscription?.plan === id
           const price = cycle === 'month' ? p.priceMonthly : p.priceYearly
+          // Desktop spells out "/ month" / "/ year"; mobile abbreviates to
+          // "/ MO" / "/ YR" per the design (line 531 of the mobile DCLogic).
+          // Two renders, CSS picks one (same deskOnly/mobileOnly pattern
+          // used throughout this file).
           const per = cycle === 'month' ? '/ month' : '/ year'
+          const perMobile = cycle === 'month' ? '/ MO' : '/ YR'
           const cta = getPlanCardCta(id, subscription)
 
           return (
             <div key={id} className={styles.planCard} data-current={isCurrent || undefined}>
-              <div className={styles.planCardHeader}>
-                <span className={styles.planCardName}>{p.name}</span>
-                {isCurrent && (
-                  <Chip size="tag" tone="accent" interactive={false}>
-                    CURRENT
-                  </Chip>
-                )}
-              </div>
-              <div className={styles.planCardPrice}>
-                <span className={styles.priceValue}>{price.toLocaleString('sv-SE')} kr</span>
-                <span className={styles.pricePer}>{per}</span>
+              {/* Wrapped so mobile can fold name+pill and price+unit into one
+                  baseline row (design: name, pill, spacer, price, unit) —
+                  desktop keeps the same two stacked rows via
+                  .planCardTop's own gap reproducing the old parent gap
+                  exactly. See .planCardTop in SubscriptionView.module.css. */}
+              <div className={styles.planCardTop}>
+                <div className={styles.planCardHeader}>
+                  <span className={styles.planCardName}>{p.name}</span>
+                  {isCurrent && (
+                    <Chip size="tag" tone="accent" interactive={false}>
+                      CURRENT
+                    </Chip>
+                  )}
+                </div>
+                <div className={styles.planCardPrice}>
+                  <span className={styles.priceValue}>{price.toLocaleString('sv-SE')} kr</span>
+                  <span className={`${styles.pricePer} ${styles.deskOnly}`}>{per}</span>
+                  <span className={`${styles.pricePer} ${styles.mobileOnly}`}>{perMobile}</span>
+                </div>
               </div>
               <div className={styles.featureList}>
                 {p.features.map((f) => (

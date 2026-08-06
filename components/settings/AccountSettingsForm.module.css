@@ -210,4 +210,18 @@
   .saveRow {
     display: none;
   }
+
+  /* Reserves room for .stickyBar so the last row (Session & account) isn't
+     left partly hidden behind it — the bar is `position:fixed`, so it
+     overlaps scrolled content by design rather than pushing it up.
+     Measured live at 375px: .stickyBar renders 91.5px tall (14px top pad +
+     26px bottom pad + a 51.5px lg button). 116px = that + ~24px breathing
+     room, rounded. Do not remove this thinking it's unused space — without
+     it EXPORT MY DATA / DELETE ACCOUNT sit under the bar at the bottom of
+     scroll. Company's category "+ ADD" row has the same padding for the
+     same reason; Preferences/Team/Subscription have no sticky bar and must
+     not get it. */
+  .container {
+    padding-bottom: 116px;
+  }
 }

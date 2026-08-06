@@ -93,6 +93,13 @@
     flex-basis: 100%;
     max-width: none;
     order: 3;
+    /* Bug: Input's default background is --surface (#0d0d0f) — identical to
+       the card (.inviteRow) it sits in on mobile, so it visually disappears.
+       Design wants it a shade darker than the card, matching the page
+       background instead. Desktop is unaffected — .inviteRow has no
+       background override there, so the input's default --surface already
+       contrasts against the page. */
+    background: var(--bg-page);
   }
 
   .roleChips {
@@ -115,9 +122,36 @@
     display: grid;
   }
 
+  /* Chip's shared "sm" size (10px / 0.08em / 8px 6px) is tuned for the
+     member/pending role chips below, not these invite chips — design wants
+     them a size up. Scoped to this one instance so member/pending chips
+     (and desktop, which never renders roleChipsMobile) are untouched. */
+  .roleChipsMobile .roleChip {
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-btn-tight);
+    padding: 12px 4px;
+  }
+
   .inviteRow > button {
     flex-basis: 100%;
     order: 5;
+  }
+
+  /* Member card role chips: Chip's shared "sm" size already matches the
+     design's font-size/letter-spacing (10px / 0.08em) here — only the
+     padding is off (8px 6px vs the design's 10px 4px). */
+  .roleChipRowMobile .roleChip {
+    padding: 10px 4px;
+  }
+
+  /* Pending card RESEND/REVOKE: Button's shared "xs" size (11px / 0.06em /
+     10px 15px) doesn't match this design spot (10px / 0.08em / 10px 4px).
+     Scoped to .pendingActionsMobile only — the desktop table's
+     .pendingActions uses the same Button size and must keep xs's defaults. */
+  .pendingActionsMobile > button {
+    font-size: var(--fs-label-sm);
+    letter-spacing: var(--ls-btn);
+    padding: 10px 4px;
   }
 }
 
@@ -262,6 +296,7 @@
   letter-spacing: var(--ls-btn-tight);
   color: var(--text-muted);
   font-weight: var(--fw-semibold);
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -371,6 +406,7 @@
   font-size: var(--fs-eyebrow-sm);
   letter-spacing: var(--ls-btn-tight);
   font-weight: var(--fw-semibold);
+  text-transform: uppercase;
 }
 
 .pendingActionsMobile {
