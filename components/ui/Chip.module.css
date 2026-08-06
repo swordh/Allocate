@@ -65,6 +65,16 @@
   cursor: not-allowed;
 }
 
+/* ── Solid variant ─────────────────────────────────────────────────────── */
+/* Active state only — white bg / black text instead of the dark-fill look.
+   Inactive state is identical to the default variant. */
+
+.solid.active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border-color: var(--btn-primary-bg);
+}
+
 /* ── Tag size default look ─────────────────────────────────────────────── */
 /* Non-interactive metadata pills (e.g. "ROLE · CREW") sit brighter than the
    inactive filter-chip look, and never invite hover. */

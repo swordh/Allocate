@@ -3,11 +3,19 @@ import styles from './Chip.module.css'
 
 export type ChipSize = 'md' | 'sm' | 'cycle' | 'tag'
 export type ChipTone = 'neutral' | 'accent' | 'danger'
+export type ChipVariant = 'default' | 'solid'
 
 interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean
   size?: ChipSize
   tone?: ChipTone
+  /**
+   * 'solid' renders the active state as white bg / black text instead of the
+   * default dark-fill active look — the /subscribe screen's cycle toggle
+   * (screen 18) and how chips look on mobile throughout. Inactive state is
+   * unchanged.
+   */
+  variant?: ChipVariant
   /** Set false to render a non-interactive `<span>` — a status/metadata pill, not a toggle. */
   interactive?: boolean
 }
@@ -30,6 +38,7 @@ export default function Chip({
   active = false,
   size = 'md',
   tone = 'neutral',
+  variant = 'default',
   interactive = true,
   className,
   type = 'button',
@@ -40,6 +49,7 @@ export default function Chip({
     styles.chip,
     SIZES[size],
     active ? styles.active : styles.inactive,
+    variant === 'solid' ? styles.solid : '',
     TONES[tone],
     className ?? '',
   ]
