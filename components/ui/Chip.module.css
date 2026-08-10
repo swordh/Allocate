@@ -65,6 +65,16 @@
   cursor: not-allowed;
 }
 
+/* ── Solid variant ─────────────────────────────────────────────────────── */
+/* Active state only — white bg / black text instead of the dark-fill look.
+   Inactive state is identical to the default variant. */
+
+.solid.active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border-color: var(--btn-primary-bg);
+}
+
 /* ── Tag size default look ─────────────────────────────────────────────── */
 /* Non-interactive metadata pills (e.g. "ROLE · CREW") sit brighter than the
    inactive filter-chip look, and never invite hover. */
@@ -82,6 +92,23 @@
 }
 
 .toneDanger {
+  color: var(--danger);
+  border-color: var(--danger-border-mid);
+}
+
+/* `.tag.inactive` above is (0,2,0) — it beats `.toneAccent`/`.toneDanger`
+   (0,1,0) on specificity no matter what order the classes land in the DOM,
+   so a tag chip with an explicit tone still rendered as plain grey. These
+   compound rules exist only to outrank `.tag.inactive` for that combination
+   (0,3,0): they don't touch `.tag.inactive` itself (untoned tags keep their
+   neutral grey) and don't touch other sizes (their tone rules above already
+   win on source order against the lower-specificity `.inactive`). */
+.tag.inactive.toneAccent {
+  color: var(--accent);
+  border-color: var(--accent-border-strong);
+}
+
+.tag.inactive.toneDanger {
   color: var(--danger);
   border-color: var(--danger-border-mid);
 }

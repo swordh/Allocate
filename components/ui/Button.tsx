@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from 'react'
+import Link from 'next/link'
 import styles from './Button.module.css'
 
 export type ButtonVariant =
@@ -12,13 +13,24 @@ export type ButtonVariant =
 
 export type ButtonSize = 'lg' | 'md' | 'sm' | 'xs'
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonOwnProps {
   variant?: ButtonVariant
   size?: ButtonSize
   fullWidth?: boolean
   /** Renders a leading dot, tints the background and forces `disabled`/`aria-busy`. */
   loading?: boolean
 }
+
+interface ButtonAsButtonProps extends ButtonOwnProps, ButtonHTMLAttributes<HTMLButtonElement> {
+  href?: undefined
+}
+
+interface ButtonAsLinkProps extends ButtonOwnProps, AnchorHTMLAttributes<HTMLAnchorElement> {
+  /** Renders a Next `<Link>` with identical styling instead of a `<button>`. */
+  href: string
+}
+
+type ButtonProps = ButtonAsButtonProps | ButtonAsLinkProps
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: styles.primary,
@@ -43,8 +55,6 @@ export default function Button({
   fullWidth = false,
   loading = false,
   className,
-  type = 'button',
-  disabled,
   children,
   ...rest
 }: ButtonProps) {
@@ -59,13 +69,24 @@ export default function Button({
     .filter(Boolean)
     .join(' ')
 
+  if ('href' in rest && rest.href !== undefined) {
+    const { href, ...anchorRest } = rest as ButtonAsLinkProps
+    return (
+      <Link href={href} className={classes} {...anchorRest}>
+        {loading && <span className={styles.loadingDot} aria-hidden="true" />}
+        {children}
+      </Link>
+    )
+  }
+
+  const { type = 'button', disabled, ...buttonRest } = rest as ButtonAsButtonProps
   return (
     <button
       type={type}
       className={classes}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      {...rest}
+      {...buttonRest}
     >
       {loading && <span className={styles.loadingDot} aria-hidden="true" />}
       {children}

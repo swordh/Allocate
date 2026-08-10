@@ -1,0 +1,91 @@
+/* Cancels the app shell's own side padding (app-layout.module.css .main —
+   28px desktop, 22px mobile via --page-margin/--page-margin-mobile) so the
+   insets below are measured from the shell's outer edge, matching the
+   design exactly instead of stacking on top of the shell's padding. Same
+   strategy at both breakpoints: the cancel here is always paired with the
+   full inset re-added by the children below (.titleBlock/.scrollArea), not
+   a delta. */
+.shell {
+  margin: 0 calc(-1 * var(--page-margin));
+}
+
+@media (max-width: 768px) {
+  .shell {
+    margin: 0 calc(-1 * var(--page-margin-mobile));
+  }
+}
+
+/* Wraps the whole PageHeader (title, meta line and the SettingsTabs nav
+   slot together) — the settings body is inset 40px, not the shell's 28px. */
+.titleBlock {
+  padding: 30px 40px 0;
+}
+
+/* Wraps SettingsTabs inside PageHeader's nav slot so it can be hidden on
+   mobile (decision: mobile has no tab rail, sections live in the hamburger
+   sheet instead). PageHeader's own .top margin-bottom already supplies the
+   ~22px gap above the tab row, so no spacing is added here. */
+.tabRow {
+  display: block;
+}
+
+.scrollArea {
+  padding: 0 40px 60px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 34px;
+  margin-top: 34px;
+  border-top: 1px solid var(--border-track);
+}
+
+.footerSpacer {
+  flex: 1;
+}
+
+.footerLink {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-weak);
+}
+
+.footerLink:hover {
+  color: var(--text-secondary);
+}
+
+/* ── Header meta line: mobile-only (Section C) ───────────────────────────
+   Desktop has no meta line — the tab row already carries that context, so
+   showing "COMPANY · PLAN · N MEMBERS" there too was redundant. Mobile still
+   shows the active section name (PageHeader.module.css .meta for weight). */
+.metaMobileOnly {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .metaMobileOnly {
+    display: inline;
+  }
+}
+
+@media (max-width: 768px) {
+  .titleBlock {
+    padding: 30px var(--page-margin-mobile) 0;
+  }
+
+  .tabRow {
+    display: none;
+  }
+
+  .scrollArea {
+    padding: 0 var(--page-margin-mobile) 60px;
+  }
+
+  .footer {
+    display: none;
+  }
+}

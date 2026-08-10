@@ -1,323 +1,439 @@
 .container {
-  max-width: 800px;
-}
-
-/* Internal heading hidden — now handled by PageHeader */
-.heading {
-  display: none;
-}
-
-.subHeading {
-  display: none;
-}
-
-/* Error banner */
-.errorBanner {
-  font-size: var(--font-body);
-  color: var(--error);
-  border: 1px solid var(--error);
-  padding: 12px 16px;
-  margin-bottom: 24px;
-}
-
-/* Section label */
-.sectionLabel {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-  margin-bottom: 16px;
-}
-
-/* Members table */
-.memberTable {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 48px;
-}
-
-.th {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-  text-align: left;
-  padding: 12px 16px;
-}
-
-.memberRow:hover .td,
-.memberRow:hover .tdAction {
-  background: var(--surface-container-low);
-}
-
-.td {
-  padding: 14px 16px;
-  background: var(--surface-container-lowest);
-  font-size: 14px;
-  vertical-align: middle;
-  border-bottom: 2px solid var(--black);
-}
-
-.tdAction {
-  padding: 14px 16px;
-  background: var(--surface-container-lowest);
-  vertical-align: middle;
-  text-align: right;
-  width: 80px;
-  border-bottom: 2px solid var(--black);
-}
-
-/* Loading / empty states */
-.loadingState,
-.emptyState {
-  padding: 24px 0;
-  font-size: 14px;
-  color: var(--on-surface-variant);
-}
-
-.memberName {
-  font-weight: 400;
-  color: var(--white);
-}
-
-.youTag {
-  display: inline-block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--tertiary);
-  border: 1px solid rgba(238, 204, 2, 0.3);
-  padding: 2px 6px;
-  margin-left: 8px;
-}
-
-/* Role badges — text only */
-.roleText {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--white);
-}
-
-.roleTextMember {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
-.btnRemove {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  padding: 0;
-  transition: color 0.1s;
-}
-
-.btnRemove:hover {
-  color: var(--error);
-}
-
-/* Invite section */
-.inviteSection {
-  padding-top: 40px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
+  padding-top: 22px;
+  line-height: 1.3;
+}
+
+/* ── Responsive split ──────────────────────────────────────────────────── */
+/* Desktop table and mobile cards are different DOM shapes (grid row vs.
+   card with an inline confirm), not just a reflowed grid — so both render
+   and CSS picks one, matching the pattern already used for the sticky
+   save bar in CompanySettingsForm. */
+
+.mobileOnly {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .deskOnly {
+    display: none;
+  }
+
+  .mobileOnly {
+    display: block;
+  }
+}
+
+/* ── Invite row ────────────────────────────────────────────────────────── */
+
+.inviteRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-soft);
+  padding: 14px 16px;
 }
 
 .inviteLabel {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
-.inviteForm {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  width: fit-content;
-  max-width: 100%;
-  box-sizing: border-box;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  margin-right: 6px;
 }
 
 .inviteInput {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
-  outline: none;
-  color: var(--white);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 300;
-  padding: 8px 0;
-  width: 320px;
-  min-width: 0;
-  border-radius: 0;
-  transition: border-bottom-color 0.1s;
-  box-sizing: border-box;
+  flex: 1;
+  max-width: 320px;
 }
 
-.inviteInput:focus {
-  border-bottom-color: var(--white);
-}
-
-.inviteInput::placeholder {
-  color: var(--outline);
-}
-
-.btnInvite {
-  background: var(--white);
-  color: var(--on-primary);
-  border: none;
-  padding: 12px 24px;
-  font-family: inherit;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s;
-  margin-left: 16px;
-}
-
-.btnInvite:hover:not(:disabled) {
-  background: var(--secondary);
-}
-
-.btnInvite:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.inviteNote {
-  font-size: 12px;
-  font-weight: 300;
-  color: var(--on-surface-variant);
-}
-
-.roleSelect {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
-  color: var(--on-surface-variant);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  cursor: pointer;
-  outline: none;
-  padding: 4px 0;
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-.roleSelect:focus {
-  border-bottom-color: var(--white);
-  color: var(--white);
-}
-
-.roleSelect:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Pending invitations — TODO(fas-2): restyle with the design's team table */
-.pendingSection {
-  padding-top: 40px;
+.roleChips {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  gap: 4px;
 }
 
-.pendingList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+.roleChipsMobile {
+  display: none;
 }
 
-.pendingRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  background: var(--surface-container-lowest);
-  border-bottom: 2px solid var(--black);
-}
-
-.pendingEmail {
-  font-size: 14px;
-  color: var(--white);
-}
-
-.pendingMeta {
-  font-size: 12px;
-  color: var(--on-surface-variant);
-  flex: 1 1 auto;
+.seatCopy {
+  flex: 1;
   text-align: right;
-  margin-right: 16px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
 }
 
 @media (max-width: 768px) {
-  .pendingRow {
+  .inviteRow {
     flex-wrap: wrap;
+    background: var(--surface);
+    gap: 9px;
   }
 
-  .pendingMeta {
-    text-align: left;
+  .inviteLabel {
+    font-size: var(--fs-label);
+    font-weight: var(--fw-bold);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-primary);
     margin-right: 0;
   }
-}
 
-@media (max-width: 768px) {
-  .container {
-    box-sizing: border-box;
-    max-width: 100%;
+  /* Seat copy: same "no declared weight" treatment as MEMBERS/PENDING above. */
+  .seatCopy {
+    font-weight: var(--fw-regular);
+    letter-spacing: var(--ls-btn);
   }
 
-  .inviteSection {
-    max-width: 100%;
+  .inviteRow > .inviteLabel,
+  .inviteRow > .seatCopy {
+    flex: 0 0 auto;
   }
 
-  .inviteForm {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 12px;
+  .inviteRow > .inviteLabel {
+    flex: 1;
   }
 
   .inviteInput {
-    width: 100%;
-    flex: 1 1 auto;
+    flex-basis: 100%;
+    max-width: none;
+    order: 3;
+    /* Bug: Input's default background is --surface (#0d0d0f) — identical to
+       the card (.inviteRow) it sits in on mobile, so it visually disappears.
+       Design wants it a shade darker than the card, matching the page
+       background instead. Desktop is unaffected — .inviteRow has no
+       background override there, so the input's default --surface already
+       contrasts against the page. */
+    background: var(--bg-page);
   }
 
-  .btnInvite {
-    width: 100%;
-    margin-left: 0;
+  .roleChips {
+    flex-basis: 100%;
+    order: 4;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
   }
 
-  .memberTable {
-    display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  .roleChips > button {
+    flex: 1;
   }
+
+  .roleChipsDesk {
+    display: none;
+  }
+
+  .roleChipsMobile {
+    display: grid;
+  }
+
+  /* Chip's shared "sm" size (10px / 0.08em / 8px 6px) is tuned for the
+     member/pending role chips below, not these invite chips — design wants
+     them a size up. Scoped to this one instance so member/pending chips
+     (and desktop, which never renders roleChipsMobile) are untouched. */
+  .roleChipsMobile .roleChip {
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-btn-tight);
+    padding: 12px 4px;
+  }
+
+  .inviteRow > button {
+    flex-basis: 100%;
+    order: 5;
+  }
+
+  /* Member card role chips: Chip's shared "sm" size already matches the
+     design's font-size/letter-spacing (10px / 0.08em) here — only the
+     padding is off (8px 6px vs the design's 10px 4px). */
+  .roleChipRowMobile .roleChip {
+    padding: 10px 4px;
+  }
+
+  /* Pending card RESEND/REVOKE: Button's shared "xs" size (11px / 0.06em /
+     10px 15px) doesn't match this design spot (10px / 0.08em / 10px 4px).
+     Scoped to .pendingActionsMobile only — the desktop table's
+     .pendingActions uses the same Button size and must keep xs's defaults. */
+  .pendingActionsMobile > button {
+    font-size: var(--fs-label-sm);
+    letter-spacing: var(--ls-btn);
+    padding: 10px 4px;
+  }
+}
+
+/* ── Members: desktop table ───────────────────────────────────────────── */
+
+.memberTable {
+  display: flex;
+  flex-direction: column;
+}
+
+.memberHeader {
+  display: grid;
+  grid-template-columns: 1.3fr 1.6fr 260px 0.8fr 40px;
+  gap: 16px;
+  padding: 0 12px 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-col-header);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-pale);
+}
+
+.memberRow {
+  display: grid;
+  grid-template-columns: 1.3fr 1.6fr 260px 0.8fr 40px;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.memberName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-input);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.memberEmail {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.memberJoined {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-weak);
+}
+
+.roleChipRow {
+  display: flex;
+  gap: 4px;
+}
+
+.roleChip {
+  flex: 1;
+}
+
+.removeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-pale);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.removeBtn:hover {
+  color: var(--danger);
+}
+
+/* ── Members: mobile cards ────────────────────────────────────────────── */
+
+.mobileGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.groupHeading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.groupHeading > span:first-child {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .groupHeading > span:first-child {
+    /* Design value 0.14em — no exact match in the tracking scale
+       (--ls-section is 0.16em, --ls-eyebrow is 0.12em), kept literal. */
+    letter-spacing: 0.14em;
+  }
+}
+
+.groupRule {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.memberCard {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 14px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--border-medium);
+}
+
+.memberCardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.memberCardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.memberCardName {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-input);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.memberCardMeta {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-muted);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roleChipRowMobile {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.inlineConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.inlineConfirmText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  line-height: var(--lh-tight);
+}
+
+.inlineConfirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.inlineConfirmActions > button {
+  width: 100%;
+}
+
+/* ── Pending invitations ───────────────────────────────────────────────── */
+
+.pendingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pendingCopy {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-medium);
+  color: var(--text-placeholder);
+}
+
+.pendingRow {
+  display: grid;
+  grid-template-columns: 1.6fr 100px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.pendingEmail {
+  font-family: var(--font-ui);
+  font-size: var(--fs-input);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.pendingMeta {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+}
+
+.pendingActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pendingCard {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 14px;
+  margin-top: 9px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--border-medium);
+}
+
+.pendingCardInfo {
+  min-width: 0;
+}
+
+.pendingCardEmail {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-section);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pendingCardMeta {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm);
+  letter-spacing: var(--ls-btn-tight);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+
+.pendingActionsMobile {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.pendingActionsMobile > button {
+  width: 100%;
 }

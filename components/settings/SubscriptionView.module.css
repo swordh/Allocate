@@ -1,235 +1,409 @@
 .container {
-  padding: var(--booking-pad-h);
-  max-width: 800px;
-}
-
-.heading {
-  font-size: var(--font-booking-title);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  margin-bottom: 4px;
-  color: var(--white);
-}
-
-.subHeading {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--mid);
-  margin-bottom: 40px;
-}
-
-/* No subscription state */
-.noSubscription {
-  padding: 24px 0;
-}
-
-.noSubText {
-  font-size: var(--font-body);
-  color: var(--mid);
-}
-
-.planPicker {
   display: flex;
-  gap: 12px;
-  margin-top: 16px;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 24px;
+  line-height: 1.3;
 }
 
-.planPickerBtn {
+/* ── Current plan card ─────────────────────────────────────────────────── */
+
+.currentCard {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  border: 1px solid var(--border-medium);
+  border-left: 2px solid var(--text-muted);
+  padding: 22px;
+}
+
+.currentCard[data-accent='accent'] {
+  border-left-color: var(--accent);
+}
+
+/* .planCardTop reproduces the exact spacing the header/price split used to
+   get for free from .planCard's own `gap: 16px` (desktop) /
+   `gap: 13px` (mobile) — see below and the mobile override. */
+.planCardTop {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.currentCard[data-accent='danger'] {
+  border-left-color: var(--danger);
+}
+
+.currentMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 180px;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+}
+
+.planRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.planName {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
+}
+
+.cycleCopy {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-weak);
+}
+
+.usageCol {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  text-align: left;
-  border: 1px solid rgba(71, 71, 71, 0.3);
-  padding: 16px 20px;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.15s ease;
+  gap: 9px;
 }
 
-.planPickerBtnActive {
-  border-color: rgba(238, 204, 2, 0.6);
+.usageLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
 }
 
-.planPickerName {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: var(--white);
+.usageValue {
+  font-family: var(--font-ui);
+  font-size: 19px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
 }
 
-.planPickerMeta {
-  font-size: 12px;
-  color: var(--mid);
+.meterTrack {
+  display: block;
+  height: 3px;
+  background: var(--fill-medium);
+  overflow: hidden;
 }
 
-/* Plan cards (active/trialing branch) — informational, highlights current plan */
-.planPickerGrid {
+.meterFill {
+  display: block;
+  height: 3px;
+  background: var(--text-muted);
+}
+
+.meterFill[data-accent='accent'] {
+  background: var(--accent);
+}
+
+.meterFill[data-accent='danger'] {
+  background: var(--danger);
+}
+
+/* ── Plan picker header ────────────────────────────────────────────────── */
+
+.pickerHeader {
   display: flex;
-  gap: 12px;
-  margin-bottom: 32px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
-.planPickerCard {
-  flex: 1 1 200px;
+.pickerHeading {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
+  color: var(--text-weak);
+}
+
+.cycleChips {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Responsive split ──────────────────────────────────────────────────── */
+/* Desktop and mobile cycle chips differ only in the active-chip look (dark
+   fill vs. solid white/black per the design) — both render, CSS picks one. */
+
+.mobileOnly {
+  display: none;
+}
+
+/* ── Plan cards ────────────────────────────────────────────────────────── */
+
+.planGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.planCard {
+  border: 1px solid var(--border-soft);
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid rgba(71, 71, 71, 0.3);
-  padding: 16px 20px;
-  position: relative;
+  gap: 16px;
 }
 
-.planPickerCardActive {
-  border-color: rgba(238, 204, 2, 0.6);
+.planCard[data-current] {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-tint-weak);
 }
 
-.planPickerCurrent {
-  margin-top: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--accent);
+.planCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* Change-plan action row: button + proration hint */
-.actionRow {
+.planCardName {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
+}
+
+.planCardPrice {
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.actionHint {
-  font-size: 11px;
-  color: var(--dim);
-  font-weight: 300;
+.priceValue {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
 }
 
-/* Current plan block */
-.currentPlanBlock {
-  border: 1px solid rgba(238, 204, 2, 0.3);
-  padding: 28px 32px;
-  margin-bottom: 40px;
+.pricePer {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  color: var(--text-weak);
+}
+
+/* .mobileOnly/.deskOnly default to display:flex for the row-based sections
+   above; .pricePer is an inline baseline sibling of .priceValue, so keep it
+   inline instead of becoming its own flex container. */
+.pricePer.deskOnly {
+  display: inline;
+}
+
+.pricePer.mobileOnly {
+  display: none;
+}
+
+.featureList {
   display: flex;
-  align-items: center;
-  gap: 32px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.planBadge {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  background: var(--accent);
-  color: var(--black);
-  padding: 6px 14px;
-  white-space: nowrap;
+.feature {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: 1.2;
 }
 
-/* Status indicator */
-.planStatus {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.prorationCopy {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-faint);
+  line-height: var(--lh-body);
+  max-width: 640px;
 }
 
-.statusDot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--mid);
-}
+@media (max-width: 768px) {
+  .container {
+    gap: 18px;
+    padding-top: 14px;
+  }
 
-.status_active    { background: var(--accent); }
-.status_trialing  { background: #c8a800; }
-.status_past_due  { background: var(--repair); }
-.status_canceled  { background: var(--mid); }
+  .deskOnly {
+    display: none;
+  }
 
-.statusLabel {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--mid);
-}
+  .mobileOnly {
+    display: flex;
+  }
 
-/* Plan details */
-.planDetails {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--mid);
-}
+  .currentCard {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 16px;
+    /* Design (line 259): background #0d0d0f, border rgba(255,255,255,0.05).
+       No token is an exact 0.05 border alpha, so this follows the same
+       approximation already used for member/pending cards in
+       TeamSettingsView (--hairline, 0.06) rather than a new literal. */
+    background: var(--surface);
+    border-color: var(--hairline);
+    /* Design: 3px on mobile vs. 2px on desktop (the base rule above). */
+    border-left-width: 3px;
+  }
 
-.detailSep {
-  color: var(--dim);
-}
+  /* ── Status/current pills (ACTIVE / TRIAL / CURRENT), design line 262 & 292 ──
+     Chip's shared "tag" size is used by other call sites (e.g. the "You" /
+     role pills in TeamSettingsView), so it isn't touched — these selectors
+     are scoped to the two containers the pills sit in here and rely on
+     Chip's existing tone system (accent/danger/neutral) for color/border,
+     which already matches the design per state. Two classes deep to reliably
+     out-specify Chip's own .tag rule regardless of stylesheet load order —
+     same pattern as .roleChipsMobile .roleChip in TeamSettingsView. */
+  .planRowMobile .statusPill,
+  .planCardHeader .statusPill {
+    /* Design value 9px — no matching token (--fs-label-sm is the nearest at 10px). */
+    font-size: 9px;
+    letter-spacing: var(--ls-eyebrow);
+    padding: 4px 7px;
+  }
 
-/* Trial / renewal notices */
-.trialNotice {
-  margin-left: auto;
-  background: rgba(238, 204, 2, 0.08);
-  border: 1px solid rgba(238, 204, 2, 0.2);
-  padding: 10px 18px;
-  font-size: 11px;
-  color: #c8a800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
+  /* ── Buttons, design B3 ── */
 
-.renewalNotice {
-  font-size: 12px;
-  font-weight: 300;
-  color: var(--mid);
-}
+  .currentCard .manageBillingBtn {
+    font-size: var(--fs-btn-sm);
+    padding: 13px;
+    width: 100%;
+  }
 
-/* Error banner */
-.errorBanner {
-  font-size: var(--font-body);
-  color: var(--repair);
-  border: 1px solid var(--repair);
-  padding: 12px 16px;
-  margin-bottom: 24px;
-}
+  .planCard .planCta {
+    font-size: var(--fs-btn-sm);
+    padding: 13px;
+  }
 
-/* Manage button */
-.btnManage {
-  display: inline-block;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mid);
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--dim);
-  padding-bottom: 2px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
+  .cycleChips .cycleChip {
+    font-size: var(--fs-label-sm);
+    letter-spacing: var(--ls-btn);
+    padding: 9px 12px;
+  }
 
-.btnManage:hover:not(:disabled) {
-  color: var(--white);
-  border-color: var(--mid);
-}
+  .currentMeta {
+    min-width: 0;
+  }
 
-.btnManage:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  /* Single baseline row: name, status pill, spacer, cycle copy right-aligned
+     — see the mobileOnly render in SubscriptionView.tsx. */
+  .planRowMobile {
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .planNameMobile {
+    /* No 21px token in the type scale (18/22 are the nearest neighbours);
+       single-occurrence design value, kept literal like priceValue below. */
+    font-size: 21px;
+    font-weight: var(--fw-display);
+    color: var(--text-primary);
+    flex-shrink: 0;
+  }
+
+  .cycleCopyMobile {
+    margin-left: auto;
+    min-width: 0;
+    flex-shrink: 1;
+    text-align: right;
+    font-family: var(--font-ui);
+    font-size: var(--fs-label-sm);
+    /* Design value 0.05em — no exact match in the tracking scale, kept
+       literal (same call as CompanySettingsForm's .categoryMeta). */
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: var(--fw-semibold);
+    /* SubscriptionView.tsx splits the cycle string on its "·" and inserts a
+       <br/>, forcing "Billed monthly" / "renews ..." onto two lines here —
+       desktop (.cycleCopy) keeps the single-line "·" form (design line 259
+       vs. mobile line 53's stacked form). */
+  }
+
+  /* Usage rows: design is label/value on one baseline row (value right),
+     the meter bar on its own line below. Was stacked label-over-large-value
+     — the bug Joakim flagged. flex-wrap + meterTrack's 100% basis forces
+     the bar onto a second line without changing the DOM. */
+  .usageCol {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    row-gap: 7px;
+    column-gap: 10px;
+  }
+
+  .usageLabel {
+    font-size: var(--fs-label-sm);
+  }
+
+  .usageValue {
+    font-size: var(--fs-input);
+    white-space: nowrap;
+  }
+
+  .meterTrack {
+    flex: 1 1 100%;
+  }
+
+  .planGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .planCard {
+    padding: 16px;
+    gap: 13px;
+  }
+
+  /* Plan card header: one baseline row (name, optional CURRENT pill,
+     spacer, price, unit) instead of the desktop's two stacked rows — the
+     bug Joakim flagged ("rendered the price as a separate large block").
+     .planCardPrice gets pushed right via margin-left: auto. */
+  .planCardTop {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  .planCardPrice {
+    margin-left: auto;
+  }
+
+  .planCardName {
+    /* Design value 17px matches --fs-modal-title exactly, even though that
+       token's name is unrelated to plan cards — reusing it beats adding a
+       near-duplicate. */
+    font-size: var(--fs-modal-title);
+  }
+
+  .priceValue {
+    font-size: 22px;
+  }
+
+  .pricePer {
+    font-size: var(--fs-label);
+  }
+
+  .pricePer.deskOnly {
+    display: none;
+  }
+
+  .pricePer.mobileOnly {
+    display: inline;
+  }
 }

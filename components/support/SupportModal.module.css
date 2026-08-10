@@ -343,10 +343,6 @@
   transition: background 0.1s;
 }
 
-.submitBtn:hover:not(:disabled) {
-  background: var(--secondary);
-}
-
 .submitBtnDisabled {
   background: var(--surface-container);
   color: rgba(255, 255, 255, 0.2);
@@ -382,10 +378,6 @@
   border: none;
   cursor: pointer;
   transition: background 0.1s;
-}
-
-.primaryBtn:hover {
-  background: var(--secondary);
 }
 
 /* Error message */

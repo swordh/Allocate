@@ -16,6 +16,7 @@
   --surface-modal:      #111113;  /* modal / dialog card */
   --surface-modal-alt:  #101012;  /* secondary modal card */
   --surface-selected:   #141414;  /* active chip, selected cell */
+  --surface-sheet:      #0e0e11;  /* mobile bottom sheet (nav menu) */
 
   /* ────────────────────────────── LINES ─────────────────────────────────── */
   --hairline:           rgba(255, 255, 255, 0.06);  /* form-section rules */
@@ -57,12 +58,14 @@
   --accent-border-mid:     rgba(244, 178, 74, 0.40);
   --accent-border-strong:  rgba(244, 178, 74, 0.45);
   --notice-info-text:      #e0d3bd;
+  --warn-muted:            #a8814a;  /* expiring/expired invite meta text */
 
   /* ────────────────────────────── DANGER ────────────────────────────────── */
   --danger:                #e5484d;
   --danger-text:           #f0c3c4;
   --danger-muted:          #7f4045;  /* disarmed destructive button label */
   --danger-tint:           rgba(229, 72, 77, 0.07);
+  --danger-tint-mid:       rgba(229, 72, 77, 0.15);  /* disarmed destructive button bg */
   --danger-border:         rgba(229, 72, 77, 0.35);
   --danger-border-mid:     rgba(229, 72, 77, 0.45);
   --danger-border-strong:  rgba(229, 72, 77, 0.50);
@@ -171,34 +174,32 @@
      ═════════════════════════════════════════════════════════════════════════ */
 
   /* Removed when their last screen is reskinned — phase noted per token. */
-  --white:                     var(--text-primary);    /* phases 2–5 */
-  --black:                     var(--bg-page);         /* phases 2–5 */
-  --on-surface:                var(--text-primary);    /* phase 2 */
-  --on-surface-variant:        var(--text-secondary);  /* phases 2–5 */
-  --outline:                   var(--text-tertiary);   /* phases 2, 4, 5 */
-  --outline-variant:           var(--border);          /* phase 2, 4 */
-  --rule:                      var(--border-strong);   /* phase 2 */
-  --mid:                       var(--text-placeholder);/* phase 2, 4 */
-  --dim:                       var(--text-placeholder);/* phase 2, 4 */
-  --secondary:                 var(--text-bright);     /* phase 2, 4, 5 */
-  --tertiary:                  var(--accent);          /* phase 4 */
-  --error:                     var(--danger);          /* phases 2–5 */
-  --repair:                    var(--danger);          /* phase 3 */
-  --on-primary:                var(--btn-primary-fg);  /* phase 2, 4 */
-  --surface-container-lowest:  var(--surface);         /* phase 2, 3 */
-  --surface-container-low:     var(--surface-raised);  /* phases 2–5 */
-  --surface-container:         var(--surface-raised);  /* phase 2, 4 */
-  --surface-container-high:    var(--surface-raised);  /* phase 2, 3 */
-  --surface-container-highest: var(--surface-raised);  /* phase 2 */
-  --font-subnav:               var(--fs-eyebrow-sm);   /* phase 2 */
+  --white:                     var(--text-primary);    /* phases 3–5 (equipment, bookings, operator) + components/support (untouched, decision 2) */
+  --black:                     var(--bg-page);         /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
+  --on-surface:                var(--text-primary);    /* phase 3 (equipment) */
+  --on-surface-variant:        var(--text-secondary);  /* phases 3–5 (equipment, bookings, operator) */
+  --outline:                   var(--text-tertiary);   /* phases 4–5 (bookings, operator) + components/support (untouched) */
+  --outline-variant:           var(--border);          /* phase 3 (equipment) */
+  --rule:                      var(--border-strong);   /* phases 3–4 (equipment, bookings) */
+  --mid:                       var(--text-placeholder);/* phases 3–4 (equipment, bookings) + components/support (untouched) */
+  --dim:                       var(--text-placeholder);/* phase 4 (bookings) */
+  --secondary:                 var(--text-bright);     /* phases 3–5 (equipment, bookings, operator) */
+  --tertiary:                  var(--accent);          /* phase 4 (bookings) */
+  --error:                     var(--danger);          /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
+  --repair:                    var(--danger);          /* phases 3–4 (equipment, bookings) */
+  --on-primary:                var(--btn-primary-fg);  /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
+  --surface-container-lowest:  var(--surface);         /* phase 5 (operator) + components/support (untouched) */
+  --surface-container-low:     var(--surface-raised);  /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
+  --surface-container:         var(--surface-raised);  /* phases 3–4 (equipment, bookings) + components/support (untouched) */
+  --surface-container-high:    var(--surface-raised);  /* phases 3–4 (equipment, bookings) */
+  --font-subnav:               var(--fs-eyebrow-sm);   /* phase 3 (equipment) */
 
-  /* Old type scale and booking geometry — kept as literals, owned by phase 2/4. */
-  --font-logo:          clamp(90px, 11vw, 148px);
-  --font-stat:          42px;
-  --font-booking-title: 40px;
-  --font-body:          16px;
-  --booking-pad-h:      48px;
-  --booking-pad-v:      24px;
+  /* Old type scale and booking geometry — kept as literals, owner noted per token. */
+  --font-stat:          42px;   /* phases 4–5 (bookings, operator) */
+  --font-booking-title: 40px;   /* phases 3–4 (equipment, bookings) */
+  --font-body:          16px;   /* phase 3 (equipment) */
+  --booking-pad-h:      48px;   /* phases 3–4 (equipment, bookings) */
+  --booking-pad-v:      24px;   /* phase 3 (equipment) */
 }
 
 *, *::before, *::after {
@@ -215,9 +216,9 @@ html {
 body {
   background: var(--bg-page);
   font-family: var(--font-ui);
-  font-weight: 300;
-  font-size: var(--font-body);
-  line-height: 1.4;
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

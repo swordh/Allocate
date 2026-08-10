@@ -4,6 +4,7 @@ import 'server-only'
 
 import { adminDb } from '@/lib/firebase-admin'
 import { parseInviteToken, isInviteExpired } from '@/lib/invite-token'
+import { daysLeftFrom } from '@/lib/invite-status'
 import type { InvitationRole, InvitationMirror, Invitation } from '@/types/invitation'
 
 export type InviteValidation =
@@ -17,12 +18,6 @@ export type InviteValidation =
       daysLeft: number | null
     }
   | { ok: false; reason: 'malformed' | 'not_found' | 'accepted' | 'revoked' | 'expired' }
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000
-
-function daysLeftFrom(expiresAt: string): number {
-  return Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / MS_PER_DAY))
-}
 
 /**
  * Validates an invite token — deliberately public and session-less. The

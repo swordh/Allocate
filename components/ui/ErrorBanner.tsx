@@ -30,8 +30,13 @@ export default function ErrorBanner({
   return (
     <div className={classes} role={tone === 'danger' ? 'alert' : 'status'}>
       <StatusDot size={5} className={styles.dot} />
-      <p className={styles.text}>{children}</p>
-      {action}
+      {/* Text + action share a wrapper so mobile can stack the CTA below the
+          text instead of beside it (design: "CTA stacked below the text,
+          align-self:flex-start") — see .body's mobile override below. */}
+      <div className={styles.body}>
+        <p className={styles.text}>{children}</p>
+        {action}
+      </div>
     </div>
   )
 }

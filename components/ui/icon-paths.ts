@@ -19,6 +19,8 @@ export type IconName =
   | 'calendar'
   | 'construction'
   | 'settings'
+  | 'list'
+  | 'crate'
   | 'bug'
   | 'lightbulb'
   | 'support-agent'
@@ -66,6 +68,17 @@ export const ICON_PATHS: Record<IconName, ReactElement> = {
   settings: g(
     c(12, 12, 3, 'hub'),
     p('M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z', 'cog'),
+  ),
+
+  /** Three descending horizontal rules. Used for BOOKINGS in the mobile nav
+   * sheet — distinct from the calendar glyph used elsewhere for bookings. */
+  list: g(p('M4 7h16', 'a'), p('M4 12h16', 'b'), p('M4 17h10', 'c')),
+
+  /** Open crate: rounded rect with a lid rule. Used for EQUIPMENT in the
+   * mobile nav sheet — distinct from the wrench glyph used elsewhere. */
+  crate: g(
+    createElement('rect', { x: 4, y: 5, width: 16, height: 15, rx: 1.5, key: 'box' }),
+    p('M4 9.5h16', 'lid'),
   ),
 
   bug: g(

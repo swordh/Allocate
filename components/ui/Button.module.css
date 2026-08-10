@@ -119,6 +119,14 @@
   cursor: not-allowed;
 }
 
+/* The armed/disarmed DELETE pattern: a disabled danger-solid button is not
+   the generic neutral disabled look, it's a dimmed red — the design's
+   "type DELETE to confirm" affordance. */
+.dangerSolid:disabled {
+  background: var(--danger-tint-mid);
+  color: var(--danger-muted);
+}
+
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
 .loading,

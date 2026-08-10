@@ -30,7 +30,6 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-.logBtn:hover { background: var(--secondary); }
 
 .filterBar {
   display: flex;
@@ -133,7 +132,6 @@
   cursor: pointer;
   transition: background 0.1s;
 }
-.submitBtn:hover:not(:disabled) { background: var(--secondary); }
 .submitBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .cancelBtn {
