@@ -3,6 +3,7 @@
   flex-direction: column;
   gap: 24px;
   padding-top: 24px;
+  line-height: 1.3;
 }
 
 /* ── Current plan card ─────────────────────────────────────────────────── */
@@ -36,13 +37,14 @@
 .currentMeta {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   min-width: 180px;
 }
 
 .eyebrow {
   font-family: var(--font-ui);
   font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
   letter-spacing: var(--ls-eyebrow);
   color: var(--text-weak);
 }
@@ -77,6 +79,7 @@
 .usageLabel {
   font-family: var(--font-ui);
   font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
   letter-spacing: var(--ls-eyebrow);
   color: var(--text-weak);
 }
@@ -121,6 +124,7 @@
   flex: 1;
   font-family: var(--font-ui);
   font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
   letter-spacing: var(--ls-nav);
   color: var(--text-weak);
 }
@@ -206,7 +210,7 @@
 .featureList {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
 }
 
 .feature {
@@ -214,6 +218,7 @@
   font-size: var(--fs-body-sm);
   font-weight: var(--fw-medium);
   color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .prorationCopy {
@@ -323,10 +328,10 @@
     text-transform: uppercase;
     color: var(--text-muted);
     font-weight: var(--fw-semibold);
-    /* Longer cycle strings ("Billed monthly · renews Sep 5, 2026") don't
-       fit on one line next to the name/pill at 390px — design shows this
-       right-aligned but doesn't force nowrap, so let it wrap rather than
-       overflow the viewport (the bug this replaced: text ran off-screen). */
+    /* SubscriptionView.tsx splits the cycle string on its "·" and inserts a
+       <br/>, forcing "Billed monthly" / "renews ..." onto two lines here —
+       desktop (.cycleCopy) keeps the single-line "·" form (design line 259
+       vs. mobile line 53's stacked form). */
   }
 
   /* Usage rows: design is label/value on one baseline row (value right),

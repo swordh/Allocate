@@ -144,7 +144,14 @@ export default function SubscriptionView({
               <Chip size="tag" tone={display.accent} interactive={false} className={styles.statusPill}>
                 {display.label}
               </Chip>
-              <span className={styles.cycleCopyMobile}>{display.cycle}</span>
+              <span className={styles.cycleCopyMobile}>
+                {display.cycle.split(' · ').map((part, i) => (
+                  <span key={i}>
+                    {i > 0 && <br />}
+                    {part}
+                  </span>
+                ))}
+              </span>
             </div>
           </div>
 

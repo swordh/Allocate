@@ -17,7 +17,11 @@
   line-height: 1;
 }
 
-/* Settings-shell heading size from the design: 34px / 27px mobile. */
+/* Settings-shell heading size from the design: 34px / 27px mobile. The font
+   asset itself is subset to wght 400-800 specifically to match this design
+   (see public/fonts/README.md) — 800 is the heaviest instance available and
+   the one the design actually uses, so this stays on --fw-display rather
+   than the --fw-bold used by other (non-redesigned) page titles. */
 .titleCompact {
   font-family: var(--font-heading);
   font-size: 34px;
@@ -30,11 +34,7 @@
 .meta {
   font-family: var(--font-ui);
   font-size: 12px;
-  /* Design (12-16 Inställningar.dc.html line 40 / mobile line 53) declares
-     no font-weight here — inherits the document default, 400. Deliberately
-     lighter than the surrounding UI; same class of miss as the MEMBERS
-     heading in TeamSettingsView.module.css. */
-  font-weight: var(--fw-regular);
+  font-weight: var(--fw-bold);
   letter-spacing: var(--ls-btn-tight);
   color: var(--text-weak);
   margin-top: 10px;

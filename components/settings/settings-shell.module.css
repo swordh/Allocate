@@ -58,23 +58,15 @@
   color: var(--text-secondary);
 }
 
-/* ── Header meta line: desktop/mobile content swap (Section C) ───────────
-   PageHeader's own .meta div already carries the correct typography for
-   both breakpoints (12px/bold desktop, 11px/--ls-btn/9px-margin mobile —
-   see PageHeader.module.css), so only visibility needs toggling here. */
-.metaDeskOnly {
-  display: inline;
-}
-
+/* ── Header meta line: mobile-only (Section C) ───────────────────────────
+   Desktop has no meta line — the tab row already carries that context, so
+   showing "COMPANY · PLAN · N MEMBERS" there too was redundant. Mobile still
+   shows the active section name (PageHeader.module.css .meta for weight). */
 .metaMobileOnly {
   display: none;
 }
 
 @media (max-width: 768px) {
-  .metaDeskOnly {
-    display: none;
-  }
-
   .metaMobileOnly {
     display: inline;
   }
