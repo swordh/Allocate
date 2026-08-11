@@ -153,6 +153,16 @@
     border-color: var(--btn-primary-bg);
   }
 
+  /* The label row is stepper · label · count · TODAY on one line, so the
+     desktop spacer would push TODAY onto a line of its own. */
+  .spacer {
+    display: none;
+  }
+
+  .today {
+    margin-left: auto;
+  }
+
   .stepper {
     margin-left: 0;
   }

@@ -82,8 +82,26 @@ export default function BookingList({
     return Math.max(0, flat.length - 1)
   }, [groupDates, groupCounts, flat.length, today])
 
-  const todayDate = parseDateString(today)
-  const monthLabel = formatMonthLabel(todayDate.getUTCFullYear(), todayDate.getUTCMonth())
+  // The design's toolbar reads "JUNE 2026 · 4 BOOKINGS" — the month you are
+  // looking at, not the month it happens to be. The feed has no stepper, so the
+  // topmost visible group is what names it.
+  const [topItem, setTopItem] = useState(0)
+
+  const { monthLabel, monthCount } = useMemo(() => {
+    let groupIndex = 0
+    let offset = 0
+    for (let i = 0; i < groupCounts.length; i++) {
+      if (topItem < offset + groupCounts[i]) { groupIndex = i; break }
+      offset += groupCounts[i]
+    }
+    const anchor = groupDates[groupIndex] ?? today
+    const date = parseDateString(anchor)
+    const prefix = anchor.slice(0, 7)
+    return {
+      monthLabel: formatMonthLabel(date.getUTCFullYear(), date.getUTCMonth()),
+      monthCount: bookings.filter((b) => b.startDate.startsWith(prefix)).length,
+    }
+  }, [topItem, groupCounts, groupDates, bookings, today])
 
   if (error) {
     return <p className={styles.error}>Failed to load bookings. Please refresh.</p>
@@ -94,7 +112,7 @@ export default function BookingList({
       <BookingsToolbar
         view="list"
         label={monthLabel}
-        count={bookings.length}
+        count={monthCount}
         onToday={() =>
           virtuosoRef.current?.scrollToIndex({ index: todayIndex, align: 'start', behavior: 'smooth' })
         }
@@ -127,6 +145,7 @@ export default function BookingList({
             style={{ height: 'calc(100svh - 190px)', minHeight: '320px' }}
             groupCounts={groupCounts}
             initialTopMostItemIndex={todayIndex}
+            rangeChanged={({ startIndex }) => setTopItem(startIndex)}
             groupContent={(index) => (
               <div className={styles.groupHeader}>
                 <span className={`${styles.groupLabel} ${groupDates[index] === today ? styles.groupLabelToday : ''}`}>

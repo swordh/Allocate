@@ -69,6 +69,53 @@ export function itemCount(booking: Booking): number {
   return (booking.items ?? []).reduce((sum, i) => sum + (i.quantity ?? 0), 0)
 }
 
+export interface PositionedBooking {
+  booking: Booking
+  /** 0-based column within the range. */
+  colStart: number
+  colSpan: number
+  /** The booking starts before the range and is drawn flush to its left edge. */
+  clipLeft: boolean
+  /** …and the same at the right edge. */
+  clipRight: boolean
+}
+
+/**
+ * Places bookings on a row of day columns, clipped to that row.
+ *
+ * Both grids need this: the week view lays one range across seven columns, and
+ * the month view repeats it per week row, so a booking spanning three weeks
+ * appears once in each with the right edges marked as continuing.
+ *
+ * `startDate`/`endDate` are inclusive in both ends, so a single-day booking is
+ * one column wide.
+ */
+export function positionBookings(
+  bookings: Booking[],
+  rangeStart: string,
+  rangeEnd: string,
+): PositionedBooking[] {
+  const dayIndex = (date: string) =>
+    Math.round(
+      (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000,
+    )
+
+  return bookings
+    .filter((b) => b.startDate <= rangeEnd && b.endDate >= rangeStart)
+    .map((booking) => {
+      const from = booking.startDate < rangeStart ? rangeStart : booking.startDate
+      const to = booking.endDate > rangeEnd ? rangeEnd : booking.endDate
+      const colStart = dayIndex(from)
+      return {
+        booking,
+        colStart,
+        colSpan: dayIndex(to) - colStart + 1,
+        clipLeft: booking.startDate < rangeStart,
+        clipRight: booking.endDate > rangeEnd,
+      }
+    })
+}
+
 /**
  * Greedy lane packing, the same algorithm the design's month view uses.
  *

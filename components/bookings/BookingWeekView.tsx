@@ -18,7 +18,7 @@ import {
   offsetDate,
   parseDateString,
 } from '@/lib/dates'
-import { itemCount, packIntoLanes, statusColor, statusLabel } from '@/lib/bookings/status'
+import { itemCount, packIntoLanes, positionBookings, statusColor, statusLabel } from '@/lib/bookings/status'
 import BookingsToolbar from './BookingsToolbar'
 import WeekDatePicker from './WeekDatePicker'
 import { ownerLabel } from './owner'
@@ -36,8 +36,6 @@ interface BookingWeekViewProps {
   weekStart: string
   weekEnd: string
 }
-
-const DAY_MS = 86_400_000
 
 /**
  * Week view — screen 06.
@@ -85,27 +83,10 @@ export default function BookingWeekView({
     [weekStart, today],
   )
 
-  const blocks = useMemo(() => {
-    const weekStartMs = parseDateString(weekStart).getTime()
-
-    const positioned = bookings
-      .filter((b) => b.startDate <= weekEnd && b.endDate >= weekStart)
-      .map((booking) => {
-        const from = booking.startDate < weekStart ? weekStart : booking.startDate
-        const to = booking.endDate > weekEnd ? weekEnd : booking.endDate
-        const colStart = Math.round((parseDateString(from).getTime() - weekStartMs) / DAY_MS)
-        const colEnd = Math.round((parseDateString(to).getTime() - weekStartMs) / DAY_MS)
-        return {
-          booking,
-          colStart,
-          colSpan: colEnd - colStart + 1,
-          clipLeft: booking.startDate < weekStart,
-          clipRight: booking.endDate > weekEnd,
-        }
-      })
-
-    return packIntoLanes(positioned)
-  }, [bookings, weekStart, weekEnd])
+  const blocks = useMemo(
+    () => packIntoLanes(positionBookings(bookings, weekStart, weekEnd)),
+    [bookings, weekStart, weekEnd],
+  )
 
   const laneCount = blocks.reduce((max, b) => Math.max(max, b.lane + 1), 0)
 

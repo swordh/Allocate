@@ -21,7 +21,7 @@ import {
   parseDateString,
   toDateString,
 } from '@/lib/dates'
-import { bookingsForDay, itemCount, packIntoLanes, statusColor, statusLabel } from '@/lib/bookings/status'
+import { bookingsForDay, itemCount, packIntoLanes, positionBookings, statusColor, statusLabel } from '@/lib/bookings/status'
 import BookingsToolbar from './BookingsToolbar'
 import { ownerLabel } from './owner'
 import type { Booking, UserProfile } from '@/types'
@@ -84,16 +84,22 @@ export default function BookingMonthView({
 
   const bookings = applyOwnerFilter(loading ? initialBookings : live, onlyMine, userId)
 
-  const [selectedDay, setSelectedDay] = useState(
-    today >= gridStart && today <= gridEnd ? today : periodStart,
-  )
+  // The agenda under the mobile grid needs a day to show. Today when the period
+  // contains it, otherwise the first day that actually has something on it —
+  // landing on an empty 1st of the month tells the reader nothing.
+  const [selectedDay, setSelectedDay] = useState(() => {
+    if (today >= gridStart && today <= gridEnd) return today
+    const firstBooked = initialBookings
+      .map((b) => (b.startDate < periodStart ? periodStart : b.startDate))
+      .filter((d) => d <= periodEnd)
+      .sort()[0]
+    return firstBooked ?? periodStart
+  })
 
   const weeks = useMemo(() => {
     return Array.from({ length: rowCount }, (_, row) => {
       const rowStart = offsetDate(gridStart, row * 7)
       const rowEnd = offsetDate(rowStart, 6)
-      const rowStartMs = parseDateString(rowStart).getTime()
-
       const days = Array.from({ length: 7 }, (_, col) => {
         const date = offsetDate(rowStart, col)
         const inPeriod = date >= periodStart && date <= periodEnd
@@ -109,17 +115,7 @@ export default function BookingMonthView({
 
       // Bars are clipped to this row; a booking spanning several weeks appears
       // once per row it touches.
-      const positioned = bookings
-        .filter((b) => b.startDate <= rowEnd && b.endDate >= rowStart)
-        .map((booking) => {
-          const from = booking.startDate < rowStart ? rowStart : booking.startDate
-          const to = booking.endDate > rowEnd ? rowEnd : booking.endDate
-          const colStart = Math.round((parseDateString(from).getTime() - rowStartMs) / 86_400_000)
-          const colEnd = Math.round((parseDateString(to).getTime() - rowStartMs) / 86_400_000)
-          return { booking, colStart, colSpan: colEnd - colStart + 1 }
-        })
-
-      const packed = packIntoLanes(positioned)
+      const packed = packIntoLanes(positionBookings(bookings, rowStart, rowEnd))
       const bars = packed.filter((b) => b.lane < MAX_LANES)
 
       // Everything past the lane cap becomes a per-column "+N more".
