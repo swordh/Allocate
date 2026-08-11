@@ -186,9 +186,8 @@
 }
 
 .typeHeader:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--fill-emphasis);
 }
-
 
 .typeName {
   display: flex;
@@ -264,7 +263,7 @@
    own tone, so the highlight reads as "here is what is inside". */
 .typeBody {
   padding: 4px 18px 18px 44px;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--fill-emphasis);
 }
 
 /* ── Units ───────────────────────────────────────────────────────────────── */

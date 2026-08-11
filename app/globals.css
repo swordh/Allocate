@@ -35,6 +35,7 @@
   --fill-medium:        rgba(255, 255, 255, 0.08);  /* locked input border */
   --fill-active:        rgba(255, 255, 255, 0.12);  /* selected segment */
   --fill-strong:        rgba(255, 255, 255, 0.16);  /* disabled button bg */
+  --fill-emphasis:      rgba(255, 255, 255, 0.18);  /* row hover, expanded row */
 
   /* ─────────────────────────────── TEXT ─────────────────────────────────── */
   --text-primary:       #fff;
