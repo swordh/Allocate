@@ -271,7 +271,10 @@ export async function deactivateEquipment(
   // (Firestore does not support array-contains combined with 'in' in one query.)
   // This check runs outside the transaction — it's a UX guard, not a security
   // boundary, so the TOCTOU window here is acceptable.
-  const ACTIVE_STATUSES = new Set(['pending', 'ready', 'checked_out'])
+  // 'ready' has never been a booking status — see types/booking.ts. Guarding on
+  // it meant every confirmed booking slipped through and equipment that was
+  // booked for next week deleted without a word.
+  const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked_out'])
   const todayStr = new Date().toISOString().slice(0, 10)
 
   const bookingsSnap = await adminDb
