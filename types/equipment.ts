@@ -1,4 +1,9 @@
-export type EquipmentStatus = 'ok' | 'needs_repair' | 'limited_operations'
+// 'ok'           = serviceable
+// 'needs_repair' = BROKEN in the UI. Still listed and still visible in the booking
+//                  picker, but not selectable there. Distinct from availableForBooking:
+//                  false (INACTIVE), which hides the item from booking entirely, and from
+//                  active: false, which is the soft delete.
+export type EquipmentStatus = 'ok' | 'needs_repair'
 
 // 'units'    = one parent doc per equipment type, one subcollection doc per physical unit
 // 'quantity' = one document represents a pool of interchangeable items

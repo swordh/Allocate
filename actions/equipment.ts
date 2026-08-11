@@ -476,7 +476,7 @@ export async function updateUnit(
   const label = (formData.get('label') as string | null)?.trim() ?? ''
   if (!label) return { error: 'Label is required.' }
 
-  const VALID_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair', 'limited_operations']
+  const VALID_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair']
 
   const statusRaw = formData.get('status') as string | null
 
@@ -539,7 +539,7 @@ export async function deactivateUnit(
 // Batch-saves equipment basic fields + all unit changes (updates, creates,
 // deletes) in a single Firestore batch write.
 
-const VALID_UNIT_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair', 'limited_operations']
+const VALID_UNIT_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair']
 
 export interface UnitUpdate {
   id: string

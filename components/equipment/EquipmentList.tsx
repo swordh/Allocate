@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import EquipmentEmpty from './EquipmentEmpty'
 import EquipmentEditModal from './EquipmentEditModal'
-import type { Equipment, EquipmentStatus, Role } from '@/types'
+import type { Equipment, Role } from '@/types'
 import Glyph from '@/components/ui/Glyph'
 import styles from './EquipmentList.module.css'
 
@@ -13,32 +13,6 @@ interface EquipmentListProps {
   companyId: string
   role: Role
   initialEquipment: Equipment[]
-}
-
-// ---------------------------------------------------------------------------
-// Status helpers
-// ---------------------------------------------------------------------------
-
-const UNIT_STATUS_LABELS: Record<EquipmentStatus, string> = {
-  ok:                 'Ok',
-  needs_repair:       'Needs Repair',
-  limited_operations: 'Limited Operations',
-}
-
-function getStatusDotClass(status: EquipmentStatus): string {
-  switch (status) {
-    case 'ok':                 return styles.statusDotOk
-    case 'needs_repair':       return styles.statusDotNeedsRepair
-    case 'limited_operations': return styles.statusDotLimitedOperations
-  }
-}
-
-function getUnitStatusTextClass(status: EquipmentStatus): string {
-  switch (status) {
-    case 'ok':                 return styles.unitStatusOk
-    case 'needs_repair':       return styles.unitStatusNeedsRepair
-    case 'limited_operations': return styles.unitStatusLimitedOperations
-  }
 }
 
 // ---------------------------------------------------------------------------
