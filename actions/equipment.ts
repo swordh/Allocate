@@ -193,6 +193,14 @@ export async function updateEquipment(
     updates['category'] = category
   }
 
+  // The panel's ACTIVE/INACTIVE toggle. Kept on the same partial-update pattern so
+  // callers that don't send it leave the flag alone; toggleEquipmentAvailability
+  // remains available for callers that only want to flip this one field.
+  const rawAvailableForBooking = formData.get('availableForBooking') as string | null
+  if (rawAvailableForBooking !== null) {
+    updates['availableForBooking'] = rawAvailableForBooking === 'true'
+  }
+
   const rawRequiresApproval = formData.get('requiresApproval')
   if (rawRequiresApproval !== null) {
     updates['requiresApproval'] = rawRequiresApproval === 'true'
@@ -230,6 +238,8 @@ export async function updateEquipment(
 
     revalidatePath('/equipment')
     revalidatePath('/settings/equipment')
+    revalidatePath('/bookings')
+    revalidatePath('/bookings/new')
 
     return {}
   } catch (err) {
@@ -441,15 +451,27 @@ export async function createUnit(
   const serialNumber = (formData.get('serialNumber') as string | null)?.trim() || null
   const notes = (formData.get('notes') as string | null)?.trim() || null
 
+  // The panel's three-way status control writes both fields: BROKEN sets
+  // needs_repair, INACTIVE sets availableForBooking false. Absent fields keep the
+  // previous defaults (serviceable, bookable).
+  const statusRaw = formData.get('status') as string | null
+  const status: EquipmentStatus = VALID_UNIT_STATUSES.includes(statusRaw as EquipmentStatus)
+    ? (statusRaw as EquipmentStatus)
+    : 'ok'
+
+  const availableRaw = formData.get('availableForBooking') as string | null
+  const availableForBooking = availableRaw === null ? true : availableRaw === 'true'
+
   const unitRef = parentRef.collection('units').doc()
   await unitRef.set({
     equipmentId,
     companyId,
     label,
     serialNumber,
-    status: 'ok',
+    status,
     notes,
     active: true,
+    availableForBooking,
     createdAt: FieldValue.serverTimestamp(),
     createdBy: session.uid,
   })
@@ -476,20 +498,28 @@ export async function updateUnit(
   const label = (formData.get('label') as string | null)?.trim() ?? ''
   if (!label) return { error: 'Label is required.' }
 
-  const VALID_STATUSES: EquipmentStatus[] = ['ok', 'needs_repair']
-
   const statusRaw = formData.get('status') as string | null
 
-  await unitRef.update({
+  const updates: Record<string, unknown> = {
     label,
     serialNumber: (formData.get('serialNumber') as string | null)?.trim() || null,
-    status: VALID_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'ok',
+    status: VALID_UNIT_STATUSES.includes(statusRaw as EquipmentStatus) ? statusRaw : 'ok',
     notes: (formData.get('notes') as string | null)?.trim() || null,
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: session.uid,
-  })
+  }
+
+  // Only written when the caller sends it, so existing callers keep their value.
+  const availableRaw = formData.get('availableForBooking') as string | null
+  if (availableRaw !== null) {
+    updates.availableForBooking = availableRaw === 'true'
+  }
+
+  await unitRef.update(updates)
 
   revalidatePath('/equipment')
+  revalidatePath('/bookings')
+  revalidatePath('/bookings/new')
 }
 
 // ── deactivateUnit ───────────────────────────────────────────────────────────
