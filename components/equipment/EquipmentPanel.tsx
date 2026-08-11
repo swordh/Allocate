@@ -11,7 +11,6 @@ import ToggleSwitch from '@/components/ui/ToggleSwitch'
 import Glyph from '@/components/ui/Glyph'
 import StatusDot from '@/components/ui/StatusDot'
 import ErrorBanner from '@/components/ui/ErrorBanner'
-import { EDITABLE_STATUSES, type UnitEditableStatus } from './equipment-status'
 import type { UnitBookingState } from '@/hooks/useUnitBookings'
 import type { TrackingType } from '@/types'
 import styles from './EquipmentPanel.module.css'
@@ -34,7 +33,10 @@ export interface TypeDraft {
 export interface UnitDraft {
   label: string
   serialNumber: string
-  status: UnitEditableStatus
+  /** false is INACTIVE: still listed here, gone from the booking form. */
+  availableForBooking: boolean
+  /** BROKEN: listed and shown red in the booking form, but not selectable. */
+  needsRepair: boolean
   notes: string
 }
 
@@ -113,6 +115,9 @@ export default function EquipmentPanel({
 
   return (
     <Sheet docked open onClose={onClose} eyebrow={eyebrow} title={title} footer={footer}>
+      {/* The rhythm between fields lives here, not in Field: a label needs room
+          above it or it reads as a caption for the control before it. */}
+      <div className={styles.form}>
       {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {isUnit && (
@@ -137,22 +142,32 @@ export default function EquipmentPanel({
             />
           </Field>
 
-          <Field label="STATUS">
-            <div className={styles.statusRow} role="group" aria-label="Status">
-              {EDITABLE_STATUSES.map((status) => (
-                <Chip
-                  key={status}
-                  active={unitDraft.status === status}
-                  disabled={!canEdit || busy}
-                  onClick={() => onChange({ status })}
-                  className={`${styles.statusOption} ${styles[`status_${status}`]}`}
-                  aria-pressed={unitDraft.status === status}
-                >
-                  {status}
-                </Chip>
-              ))}
-            </div>
-          </Field>
+          {/* Both labels name what the switch turns ON, so the label never
+              contradicts the knob. Only the hint changes with the state. */}
+          <div className={styles.toggles}>
+            <ToggleSwitch
+              checked={unitDraft.availableForBooking}
+              onChange={(checked) => onChange({ availableForBooking: checked })}
+              label="Available for booking"
+              hint={
+                unitDraft.availableForBooking
+                  ? 'Shows up in the booking form.'
+                  : 'Hidden from the booking form. Still listed here.'
+              }
+              disabled={!canEdit || busy}
+            />
+            <ToggleSwitch
+              checked={unitDraft.needsRepair}
+              onChange={(checked) => onChange({ needsRepair: checked })}
+              label="Broken"
+              hint={
+                unitDraft.needsRepair
+                  ? 'Shown red in the booking form and can’t be selected.'
+                  : 'Nothing wrong with it.'
+              }
+              disabled={!canEdit || busy}
+            />
+          </div>
 
           {unitBooking?.out && (
             <Field label="CURRENTLY OUT ON">
@@ -295,11 +310,11 @@ export default function EquipmentPanel({
             <ToggleSwitch
               checked={!typeDraft.inactive}
               onChange={(checked) => onChange({ inactive: !checked })}
-              label={typeDraft.inactive ? 'Inactive' : 'Active'}
+              label="Available for booking"
               hint={
                 typeDraft.inactive
                   ? 'Hidden from the booking form. Still listed here.'
-                  : 'Available to book.'
+                  : 'Shows up in the booking form, with all its units.'
               }
               disabled={!canEdit || busy}
               className={styles.activeToggle}
@@ -307,6 +322,7 @@ export default function EquipmentPanel({
           )}
         </>
       )}
+      </div>
     </Sheet>
   )
 }

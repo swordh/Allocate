@@ -1,3 +1,17 @@
+/* Field label needs air above it, otherwise it reads as a caption belonging to
+   the control before it rather than a heading for the one after. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .footerSpacer {
   flex: 1;
 }
@@ -15,37 +29,6 @@
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
   color: var(--text-secondary);
-}
-
-/* ── Status picker ───────────────────────────────────────────────────────── */
-/* The design's palette per state. Written as compound selectors so they win
-   against Chip's own .active/.inactive rules regardless of stylesheet order. */
-
-.statusRow {
-  display: flex;
-  gap: 8px;
-}
-
-.statusOption {
-  flex: 1;
-}
-
-.statusOption.status_AVAILABLE[aria-pressed='true'] {
-  background: var(--surface-selected);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-.statusOption.status_INACTIVE[aria-pressed='true'] {
-  background: transparent;
-  color: var(--text-pale);
-  border-color: var(--fill-medium);
-}
-
-.statusOption.status_BROKEN[aria-pressed='true'] {
-  background: var(--status-broken-bg);
-  color: var(--danger);
-  border-color: var(--danger);
 }
 
 /* ── Category / tracking chip rows ───────────────────────────────────────── */

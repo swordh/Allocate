@@ -30,7 +30,6 @@ import EquipmentPanel, {
 import {
   isTypeInactive,
   unitDisplayStatus,
-  unitEditableStatus,
   unitStatusFields,
   type UnitDisplayStatus,
 } from './equipment-status'
@@ -61,6 +60,7 @@ interface VisibleUnit {
 interface VisibleType {
   equipment: Equipment
   units: VisibleUnit[]
+  available: number
   outCount: number
   total: number
 }
@@ -94,11 +94,13 @@ function typeDraftFrom(equipment: Equipment): TypeDraft {
 }
 
 function unitDraftFrom(unit: EquipmentUnit | null): UnitDraft {
-  if (!unit) return { label: '', serialNumber: '', status: 'AVAILABLE', notes: '' }
+  if (!unit) {
+    return { label: '', serialNumber: '', availableForBooking: true, needsRepair: false, notes: '' }
+  }
   return {
     label: unit.label,
     serialNumber: unit.serialNumber ?? '',
-    status: unitEditableStatus(unit),
+    ...unitStatusFields(unit),
     notes: unit.notes ?? '',
   }
 }
@@ -256,13 +258,12 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         setPanelError('Unit ID is required.')
         return false
       }
-      const fields = unitStatusFields(d.status)
       const form = new FormData()
       form.set('label', d.label)
       form.set('serialNumber', d.serialNumber)
       form.set('notes', d.notes)
-      form.set('status', fields.status)
-      form.set('availableForBooking', String(fields.availableForBooking))
+      form.set('status', d.needsRepair ? 'needs_repair' : 'ok')
+      form.set('availableForBooking', String(d.availableForBooking))
 
       const result =
         panel.mode === 'add'
@@ -400,10 +401,14 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
 
       const category = item.category || 'Uncategorized'
       const list = byCategory.get(category) ?? []
+      const booked = quantityOnBooking.get(item.id) ?? 0
       list.push({
         equipment: item,
         units,
-        outCount: allUnits.filter((u) => u.status === 'OUT').length,
+        available: isQuantity
+          ? Math.max(0, item.totalQuantity - booked)
+          : allUnits.filter((u) => u.status === 'AVAILABLE').length,
+        outCount: isQuantity ? booked : allUnits.filter((u) => u.status === 'OUT').length,
         total: isQuantity ? item.totalQuantity : allUnits.length,
       })
       byCategory.set(category, list)
@@ -416,7 +421,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         unitCount: types.reduce((sum, t) => sum + t.total, 0),
       }))
       .sort((a, b) => a.category.localeCompare(b.category))
-  }, [equipment, unitBookings, normalizedQuery, filter, filterActive])
+  }, [equipment, unitBookings, quantityOnBooking, normalizedQuery, filter, filterActive])
 
   const totals = useMemo(() => {
     let types = 0
@@ -461,10 +466,17 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
       <PageHeader
         title="Equipment"
         size="compact"
-        meta={`${totals.types} TYPES · ${totals.units} UNITS · ${totals.available} AVAILABLE`}
+        meta={`${totals.types} TYPES · ${totals.units} UNITS`}
         actions={
           canEdit ? (
-            <Button variant="primary" size="sm" onClick={openNewType}>
+            // Desktop only — on mobile the hamburger menu already carries this
+            // action, and a second one crowds the title row.
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openNewType}
+              className={styles.desktopOnlyAction}
+            >
               NEW EQUIPMENT
             </Button>
           ) : (
@@ -543,7 +555,11 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                     />
                     <span className={styles.groupName}>{group.category}</span>
                     <span className={styles.groupCount}>
-                      {group.types.length} TYPES · {group.unitCount} UNITS
+                      <b>{group.types.length}</b>
+                      <span className={styles.groupCountWord}> TYPES</span>
+                      {' · '}
+                      <b>{group.unitCount}</b>
+                      <span className={styles.groupCountWord}> UNITS</span>
                     </span>
                   </button>
 
@@ -680,21 +696,38 @@ function TypeRow({
   onOpenUnit,
   onAdjustQuantity,
 }: TypeRowProps) {
-  const { equipment: item, units, outCount, total } = type
+  const { equipment: item, units, available, outCount, total } = type
   const isQuantity = item.trackingType !== 'units'
   const inactive = isTypeInactive(item)
 
-  const summary = isQuantity
-    ? `${total} IN STOCK · ${quantityBooked} ON BOOKING`
-    : `${total} UNIT${total === 1 ? '' : 'S'}${outCount ? ` · ${outCount} OUT` : ''}`
+  // One summary for both tracking types — a pool of 12 sandbags and a shelf of
+  // 12 lenses answer the same question.
+  const summary = (
+    <>
+      <b>
+        {available}/{total}
+      </b>{' '}
+      AVAILABLE
+      {outCount > 0 && (
+        <>
+          {' · '}
+          <b>{outCount}</b> OUT
+        </>
+      )}
+    </>
+  )
 
   return (
-    <div className={styles.type} data-inactive={inactive || undefined}>
+    <div className={styles.type} data-inactive={inactive || undefined} data-open={open || undefined}>
       <div className={styles.typeHeader}>
         <button type="button" className={styles.typeName} onClick={onOpenType}>
-          {item.name}
-          {inactive && <span className={styles.typeBadge}>INACTIVE</span>}
-          {isQuantity && <span className={styles.typeBadge}>QTY</span>}
+          <span className={styles.typeNameRow}>
+            {item.name}
+            {inactive && <span className={styles.typeBadge}>INACTIVE</span>}
+            {isQuantity && <span className={styles.typeBadge}>QTY</span>}
+          </span>
+          {/* Desktop keeps this on the right of the row (see .typeToggle). */}
+          <span className={styles.typeSummaryStacked}>{summary}</span>
         </button>
         <button
           type="button"

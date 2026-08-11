@@ -155,6 +155,7 @@
   margin-left: auto;
   font-family: var(--font-ui);
   font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
   letter-spacing: var(--ls-btn-tight);
   color: var(--text-faint);
   white-space: nowrap;
@@ -188,10 +189,15 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* An open type is lifted out of the stack, header and unit tray together. */
+.type[data-open] {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .typeName {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   padding: 14px 0;
@@ -203,6 +209,22 @@
   font-size: 16px;
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
+}
+
+.typeNameRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Under the name on mobile, in the row on desktop — only one is ever shown. */
+.typeSummaryStacked {
+  display: none;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .typeBadge {
@@ -229,6 +251,7 @@
 .typeSummary {
   font-family: var(--font-ui);
   font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.04em;
   color: var(--text-muted);
   white-space: nowrap;
@@ -419,12 +442,34 @@
     display: none;
   }
 
+  .desktopOnlyAction {
+    display: none;
+  }
+
   .typeHeader {
     padding-left: 26px;
   }
 
+  .typeSummaryStacked {
+    display: block;
+  }
+
+  .typeToggle .typeSummary {
+    display: none;
+  }
+
   .typeToggle {
     padding: 15px 14px;
+  }
+
+  /* "4 TYPES · 41 UNITS" won't fit beside the category name at 390px — the
+     design drops to "4 · 41U" there. */
+  .groupCountWord {
+    display: none;
+  }
+
+  .groupCount::after {
+    content: 'U';
   }
 
   .typeBody {

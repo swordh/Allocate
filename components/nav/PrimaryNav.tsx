@@ -63,19 +63,13 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
             </button>
           </div>
 
-          {isActive('/equipment') && role === 'admin' ? (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => window.dispatchEvent(new Event('equipment:open-add'))}
-            >
-              NEW EQUIPMENT
-            </Button>
-          ) : (
-            <Button variant="primary" size="sm" href="/bookings/new">
-              NEW BOOKING
-            </Button>
-          )}
+          {/* NEW BOOKING on every screen, per the design. The equipment page
+              carries its own NEW EQUIPMENT button in the page header — this bar
+              used to swap to it there, which put two identical buttons on top
+              of each other. */}
+          <Button variant="primary" size="sm" href="/bookings/new">
+            NEW BOOKING
+          </Button>
         </div>
       </div>
     </nav>

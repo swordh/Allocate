@@ -13,37 +13,24 @@ import type { Equipment, EquipmentUnit } from '@/types'
  */
 export type UnitDisplayStatus = 'AVAILABLE' | 'INACTIVE' | 'BROKEN' | 'OUT'
 
-/** The three states the panel's status control writes. OUT is derived, never picked. */
-export type UnitEditableStatus = Exclude<UnitDisplayStatus, 'OUT'>
+/** The panel edits the two stored fields directly, one toggle each. */
+export interface UnitStatusFields {
+  availableForBooking: boolean
+  needsRepair: boolean
+}
 
-export const EDITABLE_STATUSES: UnitEditableStatus[] = ['AVAILABLE', 'INACTIVE', 'BROKEN']
+export function unitStatusFields(unit: EquipmentUnit): UnitStatusFields {
+  return {
+    availableForBooking: unit.availableForBooking !== false,
+    needsRepair: unit.status === 'needs_repair',
+  }
+}
 
 export function unitDisplayStatus(unit: EquipmentUnit, isOut = false): UnitDisplayStatus {
   if (isOut) return 'OUT'
-  return unitEditableStatus(unit)
-}
-
-export function unitEditableStatus(unit: EquipmentUnit): UnitEditableStatus {
   if (unit.status === 'needs_repair') return 'BROKEN'
   if (unit.availableForBooking === false) return 'INACTIVE'
   return 'AVAILABLE'
-}
-
-/** The two stored fields behind an editable status. */
-export function unitStatusFields(status: UnitEditableStatus): {
-  status: EquipmentUnit['status']
-  availableForBooking: boolean
-} {
-  switch (status) {
-    case 'BROKEN':
-      // Booking-visible on purpose: a broken unit shows up red in the picker so
-      // people can see it exists, it just can't be selected.
-      return { status: 'needs_repair', availableForBooking: true }
-    case 'INACTIVE':
-      return { status: 'ok', availableForBooking: false }
-    case 'AVAILABLE':
-      return { status: 'ok', availableForBooking: true }
-  }
 }
 
 /** Equipment types only carry the INACTIVE flag — no repair state at type level. */
