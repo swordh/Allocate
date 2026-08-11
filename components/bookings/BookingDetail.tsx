@@ -1,10 +1,16 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { cancelBooking, approveBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
-import BookingStatusBadge from './BookingStatusBadge'
+import Button from '@/components/ui/Button'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import Glyph from '@/components/ui/Glyph'
+import StatusDot from '@/components/ui/StatusDot'
+import { cancelBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
+import { formatCompactRange, formatDayFull, formatStampInZone } from '@/lib/dates'
+import { itemCount, statusColor, statusLabel } from '@/lib/bookings/status'
 import type { Booking, Equipment, Role, UserProfile } from '@/types'
 import styles from './BookingDetail.module.css'
 
@@ -13,456 +19,226 @@ interface BookingDetailProps {
   equipment: Equipment[]
   sessionUid: string
   role: Role
+  timezone: string
   userProfile?: UserProfile | null
 }
 
+interface DetailLine {
+  key: string
+  name: string
+  quantity: number
+  /** "#01", "#01, #03", or "—" for quantity-tracked equipment. */
+  units: string
+}
+
 /**
- * Booking detail — Client Component.
- * Handles approve/reject/cancel mutations with optimistic UI.
+ * Booking detail — screen 10.
+ *
+ * No approve/reject UI: `requiresApproval`, `approvalStatus` and the two
+ * server actions stay in place, they simply have no surface until after MVP
+ * (decision 1). The check-out pick list that used to live here is gone too,
+ * per the 2026-08-11 decision — the design has no place for it.
  */
 export default function BookingDetail({
   booking,
   equipment,
   sessionUid,
   role,
+  timezone,
   userProfile,
 }: BookingDetailProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [actionError, setActionError] = useState<string | null>(null)
-  const [showRejectForm, setShowRejectForm] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
-  const [pickedItems, setPickedItems] = useState<Set<string>>(new Set())
+  const [cancelOpen, setCancelOpen] = useState(false)
 
-  const isOwner  = booking.userId === sessionUid
-  const isAdmin  = role === 'admin'
-  const canCancel =
-    (isOwner || isAdmin) &&
-    (booking.status === 'pending' || booking.status === 'confirmed')
+  const isOwner = booking.userId === sessionUid
+  const isAdmin = role === 'admin'
+  const isOpen = booking.status === 'pending' || booking.status === 'confirmed'
+
+  const canEdit = (isOwner || isAdmin) && isOpen
+  const canCancel = (isOwner || isAdmin) && isOpen
   const canCheckOut = isAdmin && booking.status === 'confirmed'
-  const canCheckIn  = isAdmin && booking.status === 'checked_out'
-  const canEdit =
-    (isOwner || isAdmin) &&
-    (booking.status === 'pending' || booking.status === 'confirmed')
-  const canApprove =
-    (isAdmin || booking.approverId === sessionUid) &&
-    booking.status === 'pending' &&
-    booking.approvalStatus === 'pending'
+  const canCheckIn = isAdmin && booking.status === 'checked_out'
 
-  const canPickList =
-    booking.status === 'confirmed' || booking.status === 'checked_out'
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
-
-  function handleCancel() {
+  function run(action: () => Promise<{ error?: string }>, onDone: () => void) {
     setActionError(null)
     startTransition(async () => {
-      const result = await cancelBooking(booking.id)
-      if (result.error) {
-        setActionError(result.error)
+      const result = await action()
+      if (result.error) setActionError(result.error)
+      else onDone()
+    })
+  }
+
+  // Equipment grouped by category, then by equipment, with the units of each
+  // line collected — one row per piece of equipment, as the design draws it.
+  const groups = useMemo(() => {
+    const byCategory = new Map<string, Map<string, DetailLine>>()
+
+    for (const item of booking.items ?? []) {
+      const gear = equipment.find((e) => e.id === item.equipmentId)
+      const category = gear?.category || 'UNCATEGORISED'
+      const name = gear?.name || 'Deleted equipment'
+
+      let lines = byCategory.get(category)
+      if (!lines) {
+        lines = new Map()
+        byCategory.set(category, lines)
+      }
+
+      const unitLabel = item.unitId
+        ? gear?.units?.find((u) => u.id === item.unitId)?.label ?? '#??'
+        : ''
+
+      const existing = lines.get(item.equipmentId)
+      if (existing) {
+        existing.quantity += item.quantity
+        if (unitLabel) existing.units = existing.units === '—' ? unitLabel : `${existing.units}, ${unitLabel}`
       } else {
-        router.push('/bookings')
+        lines.set(item.equipmentId, {
+          key: item.equipmentId,
+          name,
+          quantity: item.quantity,
+          units: unitLabel || '—',
+        })
       }
-    })
-  }
+    }
 
-  function handleCheckOut() {
-    setActionError(null)
-    startTransition(async () => {
-      const result = await checkOutBooking(booking.id)
-      if (result.error) {
-        setActionError(result.error)
-      } else {
-        router.refresh()
-      }
-    })
-  }
+    return Array.from(byCategory.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([category, lines]) => ({ category, lines: Array.from(lines.values()) }))
+  }, [booking.items, equipment])
 
-  function handleCheckIn() {
-    setActionError(null)
-    startTransition(async () => {
-      const result = await checkInBooking(booking.id)
-      if (result.error) {
-        setActionError(result.error)
-      } else {
-        router.refresh()
-      }
-    })
-  }
-
-  function handleApprove() {
-    setActionError(null)
-    startTransition(async () => {
-      const result = await approveBooking(booking.id, true)
-      if (result.error) {
-        setActionError(result.error)
-      } else {
-        router.refresh()
-      }
-    })
-  }
-
-  function handleReject() {
-    setActionError(null)
-    startTransition(async () => {
-      const result = await approveBooking(booking.id, false, rejectionReason || undefined)
-      if (result.error) {
-        setActionError(result.error)
-      } else {
-        setShowRejectForm(false)
-        router.refresh()
-      }
-    })
-  }
-
-  function togglePickedItem(key: string) {
-    setPickedItems((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
-  }
-
-  // ---------------------------------------------------------------------------
-  // Equipment lookup
-  // ---------------------------------------------------------------------------
-
-  function findEquipment(id: string): Equipment | undefined {
-    return equipment.find((e) => e.id === id)
-  }
-
-  // Group pick-list items by equipment, preserving first-seen order and each
-  // item's original index (used for the pick-state key).
-  const pickGroups = (() => {
-    const order: string[] = []
-    const map = new Map<string, Array<{ item: (typeof booking.items)[number]; index: number }>>()
-    booking.items.forEach((item, index) => {
-      if (!map.has(item.equipmentId)) {
-        map.set(item.equipmentId, [])
-        order.push(item.equipmentId)
-      }
-      map.get(item.equipmentId)!.push({ item, index })
-    })
-    return order.map((equipmentId) => ({ equipmentId, entries: map.get(equipmentId)! }))
-  })()
-
-  // ---------------------------------------------------------------------------
-  // Date formatting
-  // ---------------------------------------------------------------------------
-
-  function formatDate(dateStr: string): string {
-    const d = new Date(dateStr + 'T00:00:00')
-    return d.toLocaleDateString('en-GB', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    })
-  }
-
-  const dateRange =
-    booking.startDate === booking.endDate
-      ? formatDate(booking.startDate)
-      : `${formatDate(booking.startDate)} — ${formatDate(booking.endDate)}`
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const typeCount = groups.reduce((sum, g) => sum + g.lines.length, 0)
+  const color = statusColor(booking.status)
+  const timeLabel = booking.startTime && booking.endTime ? null : 'Full day'
 
   return (
-    <div className={styles.container}>
-      {/* Header */}
-      <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <Link href="/bookings" className={styles.backLink}>
-            &larr; Bookings
-          </Link>
-          <h1 className={styles.title}>{booking.projectName}</h1>
-          <div className={styles.meta}>
-            <BookingStatusBadge
-              status={booking.status}
-              approvalStatus={booking.approvalStatus}
-            />
-            <span className={styles.bookedBy}>
-              Booked by {userProfile?.name ?? booking.userName}
-            </span>
-          </div>
-        </div>
-        <div className={styles.headerRight}>
-          {canEdit && (
-            <Link
-              href={`/bookings/${booking.id}?edit=1`}
-              className={styles.editLink}
-            >
-              Edit
-            </Link>
-          )}
-        </div>
-      </div>
+    <div className={styles.page}>
+      <Link href="/bookings" className={styles.back}>
+        <Glyph char="‹" /> BACK TO BOOKINGS
+      </Link>
 
-      {actionError && (
-        <div className={styles.errorBanner}>{actionError}</div>
-      )}
+      <h1 className={styles.title}>{booking.projectName}</h1>
+
+      {actionError && <ErrorBanner>{actionError}</ErrorBanner>}
 
       <div className={styles.body}>
-        {/* Left column: pick list + ancillary info */}
-        <div className={styles.details}>
-          {/* Pick List */}
-          <div className={styles.section}>
-            <div className={styles.pickListHeader}>
-              <div className={styles.sectionLabel}>Pick List</div>
-              {canPickList && (
-                <div className={styles.pickListProgress}>
-                  {pickedItems.size} / {booking.items.length} items
+        <div className={styles.main}>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>WHEN</h2>
+            <div className={styles.whenRow}>
+              <div className={styles.dateCard}>
+                <span className={styles.dateLabel}>PICKUP</span>
+                <span className={styles.dateValue}>{formatDayFull(booking.startDate)}</span>
+                <span className={styles.dateHint}>{timeLabel ?? booking.startTime}</span>
+              </div>
+              <Glyph char="→" className={styles.arrow} />
+              <div className={styles.dateCard}>
+                <span className={styles.dateLabel}>RETURN</span>
+                <span className={styles.dateValue}>{formatDayFull(booking.endDate)}</span>
+                <span className={styles.dateHint}>{timeLabel ?? booking.endTime}</span>
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHead}>
+              <h2 className={styles.sectionTitle}>EQUIPMENT</h2>
+              <span className={styles.sectionMeta}>
+                {itemCount(booking)} ITEMS · {typeCount} {typeCount === 1 ? 'TYPE' : 'TYPES'}
+              </span>
+            </div>
+
+            {groups.map((group) => (
+              <div key={group.category} className={styles.group}>
+                <p className={styles.groupLabel}>{group.category.toUpperCase()}</p>
+                <div className={styles.lines}>
+                  {group.lines.map((line) => (
+                    <div key={line.key} className={styles.line}>
+                      <span className={styles.lineName}>{line.name}</span>
+                      <span className={styles.lineUnits}>{line.units}</span>
+                      <span className={styles.lineQty}>×{line.quantity}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-            <ul className={styles.pickList}>
-              {pickGroups.map((group) => {
-                const eq = findEquipment(group.equipmentId)
-                const eqName = eq
-                  ? eq.active !== false
-                    ? eq.name
-                    : `${eq.name} (deleted)`
-                  : group.equipmentId
-
-                // Unit-tracked equipment: equipment name as a header, each unit as
-                // its own checkable sub-row.
-                if (eq?.trackingType === 'units') {
-                  return (
-                    <li key={group.equipmentId} className={styles.pickGroup}>
-                      <div className={styles.pickGroupHeader}>
-                        <span className={styles.pickItemName}>{eqName}</span>
-                        {eq?.category && (
-                          <span className={styles.pickItemMeta}>{eq.category}</span>
-                        )}
-                      </div>
-                      <ul className={styles.pickGroupUnits}>
-                        {group.entries.map(({ item, index }) => {
-                          const key = `${item.equipmentId}-${index}`
-                          const isPicked = pickedItems.has(key)
-                          const unit = eq?.units?.find((u) => u.id === item.unitId) ?? null
-                          return (
-                            <li
-                              key={key}
-                              className={`${styles.pickItem} ${styles.pickSubItem} ${canPickList ? styles.pickItemInteractive : ''}`}
-                              onClick={() => canPickList && togglePickedItem(key)}
-                            >
-                              <span
-                                className={`${styles.pickCheckbox} ${isPicked ? styles.pickCheckboxChecked : ''}`}
-                                aria-hidden="true"
-                              >
-                                {isPicked && <span className={styles.pickCheckIcon}>&#10003;</span>}
-                              </span>
-                              <span className={styles.pickItemContent}>
-                                <span
-                                  className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
-                                >
-                                  {unit
-                                    ? unit.active !== false
-                                      ? unit.label
-                                      : `${unit.label} (deleted)`
-                                    : (item.unitId ?? '—')}
-                                  {unit?.serialNumber ? ` · ${unit.serialNumber}` : ''}
-                                </span>
-                              </span>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </li>
-                  )
-                }
-
-                // Quantity-tracked equipment: a single checkable row.
-                const { item, index } = group.entries[0]
-                const key = `${item.equipmentId}-${index}`
-                const isPicked = pickedItems.has(key)
-                return (
-                  <li
-                    key={key}
-                    className={`${styles.pickItem} ${canPickList ? styles.pickItemInteractive : ''}`}
-                    onClick={() => canPickList && togglePickedItem(key)}
-                  >
-                    <span
-                      className={`${styles.pickCheckbox} ${isPicked ? styles.pickCheckboxChecked : ''}`}
-                      aria-hidden="true"
-                    >
-                      {isPicked && <span className={styles.pickCheckIcon}>&#10003;</span>}
-                    </span>
-                    <span className={styles.pickItemContent}>
-                      <span
-                        className={`${styles.pickItemName} ${isPicked ? styles.pickItemNamePicked : ''}`}
-                      >
-                        {eqName}
-                      </span>
-                      <span className={styles.pickItemMeta}>
-                        {eq?.category ?? ''}
-                        {item.quantity > 1
-                          ? <span className={styles.pickItemQty}>&times;{item.quantity}</span>
-                          : null}
-                      </span>
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          {/* Rejection reason — hidden for MVP
-          {booking.approvalStatus === 'rejected' && booking.rejectionReason && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Rejection Reason</div>
-              <div className={`${styles.sectionValue} ${styles.rejectionText}`}>
-                {booking.rejectionReason}
               </div>
-            </div>
-          )}
-          */}
+            ))}
+          </section>
 
-          {/* Cancellation info */}
-          {booking.status === 'cancelled' && booking.cancelledAt && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Cancelled</div>
-              <div className={styles.sectionValue}>
-                {new Date(booking.cancelledAt).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Created at */}
-          <div className={styles.section}>
-            <div className={styles.sectionLabel}>Created</div>
-            <div className={styles.sectionValue}>
-              {booking.createdAt
-                ? new Date(booking.createdAt).toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })
-                : '—'}
-            </div>
-          </div>
-        </div>
-
-        {/* Right column: summary + actions */}
-        <div className={styles.actions}>
-          {/* Date range */}
-          <div className={styles.actionSection}>
-            <div className={styles.sectionLabel}>Date Range</div>
-            <div className={styles.sectionValue}>{dateRange}</div>
-          </div>
-
-          {/* Time */}
-          {(booking.startTime || booking.endTime) && (
-            <div className={styles.actionSection}>
-              <div className={styles.sectionLabel}>Time</div>
-              <div className={styles.sectionValue}>
-                {booking.startTime ?? '—'} &rarr; {booking.endTime ?? '—'}
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
           {booking.notes && (
-            <div className={styles.actionSection}>
-              <div className={styles.sectionLabel}>Notes</div>
-              <div className={styles.sectionValue}>{booking.notes}</div>
-            </div>
-          )}
-
-          <div className={styles.actionDivider} />
-
-          {/* Approve / Reject — hidden for MVP, re-enable in Phase 5
-          {canApprove && (
-            <div className={styles.approvalSection}>
-              <div className={styles.approvalLabel}>Approval Required</div>
-              <div className={styles.approvalButtons}>
-                <button
-                  className={styles.approveBtn}
-                  onClick={handleApprove}
-                  disabled={isPending}
-                >
-                  Approve
-                </button>
-                <button
-                  className={styles.rejectBtn}
-                  onClick={() => setShowRejectForm((v) => !v)}
-                  disabled={isPending}
-                >
-                  Reject
-                </button>
-              </div>
-              {showRejectForm && (
-                <div className={styles.rejectForm}>
-                  <label className={styles.rejectLabel} htmlFor="rejectionReason">
-                    Reason (optional)
-                  </label>
-                  <textarea
-                    id="rejectionReason"
-                    className={styles.rejectTextarea}
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                    rows={3}
-                    maxLength={500}
-                    placeholder="Explain why the booking was rejected..."
-                  />
-                  <button
-                    className={styles.rejectConfirmBtn}
-                    onClick={handleReject}
-                    disabled={isPending}
-                  >
-                    Confirm Rejection
-                  </button>
-                </div>
-              )}
-            </div>
-          )} */}
-
-          {/* Check out */}
-          {canCheckOut && (
-            <button
-              className={styles.checkOutBtn}
-              onClick={handleCheckOut}
-              disabled={isPending}
-            >
-              Check Out
-            </button>
-          )}
-
-          {/* Check in */}
-          {canCheckIn && (
-            <button
-              className={styles.checkInBtn}
-              onClick={handleCheckIn}
-              disabled={isPending}
-            >
-              Check In
-            </button>
-          )}
-
-          {/* Cancel booking */}
-          {canCancel && (
-            <button
-              className={styles.cancelBtn}
-              onClick={handleCancel}
-              disabled={isPending}
-            >
-              Cancel Booking
-            </button>
+            <section className={`${styles.section} ${styles.sectionLast}`}>
+              <h2 className={styles.sectionTitle}>NOTES</h2>
+              <p className={styles.notes}>{booking.notes}</p>
+            </section>
           )}
         </div>
+
+        <aside className={styles.aside}>
+          <div>
+            <p className={styles.asideLabel}>STATUS</p>
+            <p className={styles.status} style={{ color }}>
+              <StatusDot size={7} />
+              {statusLabel(booking.status)}
+            </p>
+          </div>
+
+          <div>
+            <p className={styles.asideLabel}>CREATED BY</p>
+            <p className={styles.creator}>{userProfile?.name ?? 'Deleted user'}</p>
+            {booking.createdAt && (
+              <p className={styles.created}>{formatStampInZone(booking.createdAt, timezone)}</p>
+            )}
+          </div>
+
+          <div className={styles.divider} />
+
+          <div className={styles.actions}>
+            {canCheckOut && (
+              <Button fullWidth onClick={() => run(() => checkOutBooking(booking.id), router.refresh)} disabled={isPending}>
+                CHECK OUT
+              </Button>
+            )}
+            {canCheckIn && (
+              <Button fullWidth onClick={() => run(() => checkInBooking(booking.id), router.refresh)} disabled={isPending}>
+                CHECK IN
+              </Button>
+            )}
+            {canEdit && (
+              <Button variant="secondary" size="sm" fullWidth href={`/bookings/${booking.id}?edit=1`}>
+                EDIT BOOKING
+              </Button>
+            )}
+            {canCancel && (
+              <Button variant="danger" size="sm" fullWidth onClick={() => setCancelOpen(true)} disabled={isPending}>
+                CANCEL BOOKING
+              </Button>
+            )}
+
+            {(canCheckOut || canCheckIn) && (
+              <p className={styles.actionHint}>
+                Admin actions for a {statusLabel(booking.status).toLowerCase()} booking
+              </p>
+            )}
+          </div>
+        </aside>
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        title="CANCEL BOOKING?"
+        body={`Cancelling this booking (${formatCompactRange(booking.startDate, booking.endDate)}) will release all reserved equipment. This can't be undone.`}
+        confirmLabel="YES, CANCEL"
+        cancelLabel="GO BACK"
+        busy={isPending}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={() =>
+          run(() => cancelBooking(booking.id), () => {
+            setCancelOpen(false)
+            router.push('/bookings')
+          })
+        }
+      />
     </div>
   )
 }

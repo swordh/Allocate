@@ -1,282 +1,223 @@
 'use client'
 
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Icon from '@/components/ui/Icon'
+import Glyph from '@/components/ui/Glyph'
+import StatusDot from '@/components/ui/StatusDot'
 import { useBookings } from '@/hooks/useBookings'
-import type { Booking } from '@/types'
+import { useBookingFilters, applyOwnerFilter } from '@/hooks/useBookingFilters'
+import {
+  WEEKDAYS_SHORT,
+  formatCompactRange,
+  formatSpanLabel,
+  getISOWeek,
+  getISOWeekYear,
+  isWeekend,
+  offsetDate,
+  parseDateString,
+} from '@/lib/dates'
+import { itemCount, packIntoLanes, statusColor, statusLabel } from '@/lib/bookings/status'
+import BookingsToolbar from './BookingsToolbar'
+import WeekDatePicker from './WeekDatePicker'
+import { ownerLabel } from './owner'
+import type { Booking, UserProfile } from '@/types'
 import styles from './BookingWeekView.module.css'
-
-// ---------------------------------------------------------------------------
-// Time grid constants
-// ---------------------------------------------------------------------------
-
-const START_HOUR = 0
-const END_HOUR   = 24
-const HOURS      = END_HOUR - START_HOUR  // 24
-const CELL_H     = 48
-const TOTAL_H    = HOURS * CELL_H         // 1152px
-
-function timeToTop(time: string | null | undefined): number {
-  if (!time) return 0
-  const [h, m] = time.split(':').map(Number)
-  return ((h - START_HOUR) + m / 60) * CELL_H
-}
-
-function timeToPx(start: string | null | undefined, end: string | null | undefined): number {
-  if (!start || !end) return TOTAL_H
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return ((eh - sh) + (em - sm) / 60) * CELL_H
-}
-
-function statusClass(status: string): string {
-  switch (status) {
-    case 'checked_out': return styles.blockCheckedOut
-    case 'confirmed':   return styles.blockConfirmed
-    case 'returned':    return styles.blockReturned
-    default:            return styles.blockPending
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Date helpers
-// ---------------------------------------------------------------------------
-
-function getDaysOfWeek(weekStart: string): string[] {
-  const days: string[] = []
-  const start = new Date(weekStart + 'T00:00:00')
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start)
-    d.setDate(start.getDate() + i)
-    days.push(toDateString(d))
-  }
-  return days
-}
-
-function toDateString(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function todayString(): string {
-  return toDateString(new Date())
-}
-
-function isWeekend(dateStr: string): boolean {
-  const d = new Date(dateStr + 'T00:00:00').getDay()
-  return d === 0 || d === 6
-}
-
-function getISOWeek(date: Date): number {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
-  const week1 = new Date(d.getFullYear(), 0, 4)
-  return (
-    1 +
-    Math.round(
-      ((d.getTime() - week1.getTime()) / 86400000 -
-        3 +
-        ((week1.getDay() + 6) % 7)) /
-        7,
-    )
-  )
-}
-
-function adjacentWeek(weekStart: string, direction: 'prev' | 'next'): { week: number; year: number } {
-  const d = new Date(weekStart + 'T00:00:00')
-  d.setDate(d.getDate() + (direction === 'next' ? 7 : -7))
-  return { week: getISOWeek(d), year: d.getFullYear() }
-}
-
-function formatMonthYear(weekStart: string): string {
-  const d = new Date(weekStart + 'T00:00:00')
-  return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
-}
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface BookingWeekViewProps {
   companyId: string
+  userId: string
+  today: string
   initialBookings: Booking[]
+  userProfiles: Record<string, UserProfile | null>
   weekNumber: number
   year: number
   weekStart: string
   weekEnd: string
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
+const DAY_MS = 86_400_000
 
-function ColHeader({ day, isToday, weekend }: { day: string; isToday: boolean; weekend: boolean }) {
-  const d    = new Date(day + 'T00:00:00')
-  const num  = d.getDate()
-  const abbr = d.toLocaleDateString('en-GB', { weekday: 'short' }).toUpperCase()
-  return (
-    <div className={[styles.colHeader, isToday ? styles.colHeaderToday : '', weekend ? styles.colHeaderWeekend : ''].join(' ')}>
-      <span className={styles.colHeaderDayNum}>{num}</span>
-      <span className={styles.colHeaderWeekday}>{abbr}</span>
-    </div>
-  )
-}
-
-function CurrentTimeLine() {
-  const now = new Date()
-  const top = ((now.getHours() - START_HOUR) + now.getMinutes() / 60) * CELL_H
-  return (
-    <div className={styles.timeLine} style={{ top }}>
-      <div className={styles.timeLineDot} />
-    </div>
-  )
-}
-
-function BookingBlock({ booking }: { booking: Booking }) {
-  const top    = timeToTop(booking.startTime)
-  const height = Math.max(timeToPx(booking.startTime, booking.endTime), 20)
-  return (
-    <Link
-      href={`/bookings/${booking.id}`}
-      className={`${styles.bookingBlock} ${statusClass(booking.status)}`}
-      style={{ top, height }}
-    >
-      {booking.projectName}
-    </Link>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
+/**
+ * Week view — screen 06.
+ *
+ * Seven day columns, no time axis. A booking is one block spanning whole days;
+ * blocks that would collide are packed into lanes, and a booking that runs past
+ * either edge of the week is drawn flush to that edge with its full range shown
+ * as text rather than being cut off silently.
+ */
 export default function BookingWeekView({
   companyId,
+  userId,
+  today,
   initialBookings,
+  userProfiles,
   weekNumber,
   weekStart,
   weekEnd,
 }: BookingWeekViewProps) {
   const router = useRouter()
+  const { showCancelled, onlyMine, filterParams } = useBookingFilters()
 
-  const { bookings: liveBookings, loading } = useBookings(companyId, {
+  const { bookings: live, loading } = useBookings(companyId, {
     startDate: weekStart,
-    endDate:   weekEnd,
+    endDate: weekEnd,
+    includeCancelled: showCancelled,
   })
 
-  const bookings = loading ? initialBookings : liveBookings
-  const days     = useMemo(() => getDaysOfWeek(weekStart), [weekStart])
-  const today    = todayString()
+  // The server-rendered seed covers the first paint; after that the listener is
+  // authoritative, including when it legitimately returns nothing.
+  const bookings = applyOwnerFilter(loading ? initialBookings : live, onlyMine, userId)
 
-  function bookingsForDay(dayStr: string): Booking[] {
-    return bookings.filter(
-      (b) => b.startDate <= dayStr && b.endDate >= dayStr && b.status !== 'cancelled',
-    )
+  const days = useMemo(
+    () =>
+      WEEKDAYS_SHORT.map((dow, i) => {
+        const date = offsetDate(weekStart, i)
+        return {
+          dow,
+          date,
+          dayNumber: parseDateString(date).getUTCDate(),
+          isToday: date === today,
+          weekend: isWeekend(date),
+        }
+      }),
+    [weekStart, today],
+  )
+
+  const blocks = useMemo(() => {
+    const weekStartMs = parseDateString(weekStart).getTime()
+
+    const positioned = bookings
+      .filter((b) => b.startDate <= weekEnd && b.endDate >= weekStart)
+      .map((booking) => {
+        const from = booking.startDate < weekStart ? weekStart : booking.startDate
+        const to = booking.endDate > weekEnd ? weekEnd : booking.endDate
+        const colStart = Math.round((parseDateString(from).getTime() - weekStartMs) / DAY_MS)
+        const colEnd = Math.round((parseDateString(to).getTime() - weekStartMs) / DAY_MS)
+        return {
+          booking,
+          colStart,
+          colSpan: colEnd - colStart + 1,
+          clipLeft: booking.startDate < weekStart,
+          clipRight: booking.endDate > weekEnd,
+        }
+      })
+
+    return packIntoLanes(positioned)
+  }, [bookings, weekStart, weekEnd])
+
+  const laneCount = blocks.reduce((max, b) => Math.max(max, b.lane + 1), 0)
+
+  function goToWeek(monday: string) {
+    const params = new URLSearchParams(filterParams)
+    params.set('week', String(getISOWeek(monday)))
+    params.set('year', String(getISOWeekYear(monday)))
+    router.push(`/bookings/week?${params}`)
   }
-
-  // Week nav
-  const prevWeek = adjacentWeek(weekStart, 'prev')
-  const nextWeek = adjacentWeek(weekStart, 'next')
-
-  function navigate(week: number, yr: number) {
-    router.push(`/bookings/week?week=${week}&year=${yr}`)
-  }
-
-  const dateInputRef = useRef<HTMLInputElement>(null)
-
-  // Auto-scroll to current time (or 07:00 for non-current weeks)
-  const calWrapRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (days.includes(today)) {
-      const now     = new Date()
-      const lineTop = (now.getHours() + now.getMinutes() / 60) * CELL_H
-      calWrapRef.current?.scrollTo({ top: Math.max(0, lineTop - 100) })
-    } else {
-      calWrapRef.current?.scrollTo({ top: Math.max(0, 7 * CELL_H - 100) })
-    }
-  }, [weekStart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={styles.container}>
-      {/* Nav bar */}
-      <div className={styles.navBar}>
-        <button className={styles.navBtn} onClick={() => navigate(prevWeek.week, prevWeek.year)}>←</button>
-        <label className={styles.weekLabelWrap}>
-          <span className={styles.weekLabel}>
-            W.{String(weekNumber).padStart(2, '0')} — {formatMonthYear(weekStart)}
-          </span>
-          <input
-            ref={dateInputRef}
-            type="date"
-            onChange={(e) => {
-              if (!e.target.value) return
-              const d = new Date(e.target.value + 'T00:00:00')
-              navigate(getISOWeek(d), d.getFullYear())
-            }}
-            className={styles.overlayDateInput}
+    <>
+      <BookingsToolbar
+        view="week"
+        label={formatSpanLabel(weekStart, weekEnd)}
+        count={bookings.length}
+        onPrev={() => goToWeek(offsetDate(weekStart, -7))}
+        onNext={() => goToWeek(offsetDate(weekStart, 7))}
+        onToday={() => goToWeek(today)}
+        badge={
+          <WeekDatePicker
+            label={`W ${weekNumber}`}
+            weekStart={weekStart}
+            today={today}
+            onPickWeek={goToWeek}
           />
-        </label>
-        <button className={styles.navBtn} onClick={() => navigate(nextWeek.week, nextWeek.year)}>→</button>
-        <button
-          className={styles.todayBtn}
-          onClick={() => navigate(getISOWeek(new Date()), new Date().getFullYear())}
-        >
-          Today
-        </button>
-      </div>
+        }
+      />
 
-      {/* Time-grid calendar — horizontally scrollable on mobile */}
-      <div className={styles.calWrap} ref={calWrapRef}>
-        <div className={styles.calGrid}>
-          {/* Header row: empty corner + 7 day headers */}
-          <div className={styles.cornerHeader} />
-          {days.map((day) => (
-            <ColHeader
-              key={day}
-              day={day}
-              isToday={day === today}
-              weekend={isWeekend(day)}
-            />
-          ))}
-
-          {/* Time column */}
-          <div className={styles.timeCol}>
-            {Array.from({ length: HOURS }, (_, i) => (
-              <div key={i} className={styles.timeLabel}>
-                {String(START_HOUR + i).padStart(2, '0')}:00
+      <div className={styles.scroller}>
+        <div className={styles.canvas}>
+          <div className={styles.dayHeader}>
+            {days.map((day) => (
+              <div key={day.date} className={`${styles.dayCell} ${day.isToday ? styles.dayCellToday : ''}`}>
+                <span className={styles.dow}>{day.dow}</span>
+                <span className={`${styles.dayNumber} ${day.weekend ? styles.weekendNumber : ''}`}>
+                  {day.dayNumber}
+                </span>
               </div>
             ))}
           </div>
 
-          {/* Day columns */}
-          {days.map((day) => (
-            <div
-              key={day}
-              className={`${styles.dayCol} ${isWeekend(day) ? styles.dayColWeekend : ''}`}
-            style={{ height: TOTAL_H }}
-            >
-              {Array.from({ length: HOURS }, (_, i) => (
-                <div key={i} className={styles.hourCell}>
-                  <div className={styles.halfLine} />
-                </div>
+          {/* The block layer is absolutely positioned over the column washes so
+              a multi-day block is not clipped by any single column, which means
+              the columns have to be told how tall the deepest lane stack is. */}
+          <div className={styles.grid} style={{ '--lanes': laneCount } as CSSProperties}>
+            <div className={styles.columns} aria-hidden="true">
+              {days.map((day) => (
+                <div
+                  key={day.date}
+                  className={`${styles.column} ${
+                    day.isToday ? styles.columnToday : day.weekend ? styles.columnWeekend : ''
+                  }`}
+                />
               ))}
-              {bookingsForDay(day).map((b) => (
-                <BookingBlock key={b.id} booking={b} />
-              ))}
-              {day === today && <CurrentTimeLine />}
             </div>
-          ))}
+
+            <div className={styles.blocks}>
+              {blocks.map(({ booking, colStart, colSpan, clipLeft, clipRight, lane }) => {
+                const color = statusColor(booking.status)
+                const muted = booking.status === 'returned' || booking.status === 'cancelled'
+                return (
+                  <Link
+                    key={booking.id}
+                    href={`/bookings/${booking.id}`}
+                    className={`${styles.block} ${muted ? styles.blockMuted : ''} ${
+                      clipLeft ? styles.clipLeft : ''
+                    } ${clipRight ? styles.clipRight : ''}`}
+                    style={{
+                      gridColumn: `${colStart + 1} / span ${colSpan}`,
+                      gridRow: lane + 1,
+                      borderLeftColor: color,
+                    }}
+                  >
+                    <span className={styles.blockTop}>
+                      <span className={styles.blockTitle}>{booking.projectName}</span>
+                      {(clipLeft || clipRight) && (
+                        <span className={styles.rangeBadge} style={{ color }}>
+                          {formatCompactRange(booking.startDate, booking.endDate)}
+                        </span>
+                      )}
+                    </span>
+
+                    <span className={styles.blockMeta}>
+                      <span className={styles.status} style={{ color }}>
+                        <StatusDot size={6} />
+                        {statusLabel(booking.status)}
+                      </span>
+                      <span className={styles.metaItem}>
+                        <Icon name="crate" size={11} strokeWidth={2} aria-hidden />
+                        {itemCount(booking)}
+                      </span>
+                    </span>
+
+                    <span className={styles.owner}>{ownerLabel(booking, userId, userProfiles)}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
         </div>
+
+        <p className={styles.scrollHint} aria-hidden="true">
+          <Glyph char="‹" />
+          <Glyph char="›" />
+          SWIPE FOR WEEK
+        </p>
       </div>
 
-      {/* Empty state */}
-      {bookings.filter((b) => b.status !== 'cancelled').length === 0 && (
-        <div className={styles.emptyState}>
-          <p>No bookings this week.</p>
-          <Link href="/bookings/new" className={styles.emptyAction}>New Booking</Link>
-        </div>
+      {bookings.length === 0 && (
+        <p className={styles.empty}>No bookings this week</p>
       )}
-    </div>
+    </>
   )
 }

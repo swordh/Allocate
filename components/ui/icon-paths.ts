@@ -33,6 +33,7 @@ export type IconName =
   | 'add'
   | 'external-link'
   | 'search'
+  | 'eye'
 
 const p = (d: string, key?: string) => createElement('path', { d, key })
 const c = (cx: number, cy: number, r: number, key?: string) =>
@@ -142,4 +143,7 @@ export const ICON_PATHS: Record<IconName, ReactElement> = {
   ),
 
   search: g(c(11, 11, 7, 'lens'), p('M20 20l-4-4', 'handle')),
+
+  // The SHOW CANCELLED filter in the mobile nav sheet (screen 08 Mobil).
+  eye: g(p('M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', 'outline'), c(12, 12, 3, 'pupil')),
 }

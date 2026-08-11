@@ -77,6 +77,32 @@
   --status-out-bg:     rgba(244, 178, 74, 0.08);
   --status-broken-bg:  rgba(229, 72, 77, 0.08);
 
+  /* ────────────────────────── BOOKING STATUS ────────────────────────────── */
+  /* `statusPalette` from screens 06/07/08, held identical across week, month
+     and list. CHECKED OUT and PENDING share the amber on purpose — that is the
+     design's default palette, not a mistake. */
+  --booking-checked-out:  #f4b24a;
+  --booking-confirmed:    #d8d9df;
+  --booking-pending:      #f4b24a;
+  --booking-returned:     #9a9ba2;
+  --booking-cancelled:    #6f7078;
+
+  /* Block/row surfaces. The design expresses these as a lightness percentage
+     plus a hover boost: 12 % + 7 % in week, list and every mobile screen,
+     10 % + 8 % for the denser bars in the desktop month grid. */
+  --booking-block-bg:        #1f1f1f;
+  --booking-block-bg-hover:  #303030;
+  --booking-bar-bg:          #1a1a1a;
+  --booking-bar-bg-hover:    #2e2e2e;
+
+  /* Day-column washes in the week and month grids. */
+  --booking-col-bg:          rgba(255, 255, 255, 0.018);
+  --booking-col-bg-weekend:  rgba(255, 255, 255, 0.008);
+  --booking-col-bg-today:    rgba(244, 178, 74, 0.04);
+
+  /* The in-between days of a selected range in the booking form's calendar. */
+  --booking-range-fill:      rgba(244, 178, 74, 0.16);
+
   /* ────────────────────────────── BUTTON ────────────────────────────────── */
   --btn-primary-bg:   #fff;
   --btn-primary-fg:   #000;
@@ -183,29 +209,29 @@
   /* Removed when their last screen is reskinned — phase noted per token.
      Phase 3 shipped 2026-08-11: --on-surface, --outline-variant, --font-subnav,
      --font-body and --booking-pad-v had no users left once the equipment screen
-     was rebuilt and are gone. The rest lost their equipment references only, so
-     the annotations below no longer list phase 3. */
-  --white:                     var(--text-primary);    /* phases 4–5 (bookings, operator) + components/support (untouched, decision 2) */
-  --black:                     var(--bg-page);         /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --on-surface-variant:        var(--text-secondary);  /* phases 4–5 (bookings, operator) */
-  --outline:                   var(--text-tertiary);   /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --rule:                      var(--border-strong);   /* phase 4 (bookings) */
-  --mid:                       var(--text-placeholder);/* phase 4 (bookings) + components/support (untouched) */
-  --dim:                       var(--text-placeholder);/* phase 4 (bookings) */
-  --secondary:                 var(--text-bright);     /* phases 4–5 (bookings, operator) */
-  --tertiary:                  var(--accent);          /* phase 4 (bookings) */
-  --error:                     var(--danger);          /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --repair:                    var(--danger);          /* phase 4 (bookings) */
-  --on-primary:                var(--btn-primary-fg);  /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --surface-container-lowest:  var(--surface);         /* phase 5 (operator) + components/support (untouched) */
-  --surface-container-low:     var(--surface-raised);  /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --surface-container:         var(--surface-raised);  /* phase 4 (bookings) + components/support (untouched) */
-  --surface-container-high:    var(--surface-raised);  /* phase 4 (bookings) */
+     was rebuilt and are gone.
+     Phase 4 shipped the bookings screens and took --rule, --tertiary, --repair,
+     --surface-container-high, --font-booking-title, --dim and --booking-pad-h
+     with them. Everything still listed below has an owner outside bookings, so
+     the block cannot be deleted until phase 5 reskins app/operator/** — and
+     components/support/** is deliberately untouched (decision 2), so its
+     references outlive phase 5 too. Two of these live in .tsx inline styles,
+     not CSS modules: app/operator/customers/[companyId]/CustomerDetailView.tsx
+     and app/operator/feedback/FeedbackListView.tsx. A CSS-only grep misses them. */
+  --white:                     var(--text-primary);    /* phase 5 (operator) + bookings/new + components/support */
+  --black:                     var(--bg-page);         /* phase 5 (operator) + components/support */
+  --on-surface-variant:        var(--text-secondary);  /* phase 5 (operator) */
+  --outline:                   var(--text-tertiary);   /* phase 5 (operator) + components/support */
+  --mid:                       var(--text-placeholder);/* components/support */
+  --secondary:                 var(--text-bright);     /* phase 5 (operator) + bookings-layout */
+  --error:                     var(--danger);          /* phase 5 (operator) + components/support */
+  --on-primary:                var(--btn-primary-fg);  /* phase 5 (operator) + components/support */
+  --surface-container-lowest:  var(--surface);         /* phase 5 (operator) + components/support */
+  --surface-container-low:     var(--surface-raised);  /* phase 5 (operator) + components/support */
+  --surface-container:         var(--surface-raised);  /* components/support */
 
-  /* Old type scale and booking geometry — kept as literals, owner noted per token. */
-  --font-stat:          42px;   /* phases 4–5 (bookings, operator) */
-  --font-booking-title: 40px;   /* phase 4 (bookings) */
-  --booking-pad-h:      48px;   /* phase 4 (bookings) */
+  /* Old type scale — kept as a literal, owner noted. */
+  --font-stat:          42px;   /* phase 5 (operator) */
 }
 
 *, *::before, *::after {

@@ -1,556 +1,292 @@
-/* -----------------------------------------------------------------------
-   Booking Detail — Rhythmic Industrialism redesign
-   ----------------------------------------------------------------------- */
+/* Booking detail — screen 10. */
 
-.container {
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
+/* The design insets this screen 56px from the shell edge; `main` already
+   supplies 28px, so this adds the other 28px. */
+.page {
+  padding: 26px 28px 40px;
 }
 
-/* Header — no border-bottom per spec */
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 40px;
-}
-
-.headerLeft {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.headerRight {
-  display: flex;
-  gap: 12px;
+.back {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-nav);
+  text-decoration: none;
+  color: var(--text-muted);
 }
 
-.backLink {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--outline);
-  transition: color 0.1s;
-}
-
-.backLink:hover {
-  color: var(--white);
+.back:hover {
+  color: var(--text-primary);
 }
 
 .title {
-  font-size: var(--font-booking-title);
-  font-weight: 700;
+  margin: 16px 0 0;
+  font-family: var(--font-heading);
+  font-size: 56px;
+  line-height: 0.92;
+  letter-spacing: var(--ls-display);
+  font-weight: var(--fw-display);
   text-transform: uppercase;
-  letter-spacing: -0.02em;
-  color: var(--white);
-  line-height: 1;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
-.meta {
+.body {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  padding-top: 22px;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  padding-right: 52px;
+}
+
+/* ── sections ───────────────────────────────────────────────────────────── */
+
+.section {
+  padding: var(--section-pad-v) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sectionLast {
+  padding-bottom: 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  margin-bottom: 24px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  color: var(--text-primary);
+}
+
+.sectionHead .sectionTitle {
+  margin-bottom: 0;
+}
+
+.sectionMeta {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
+}
+
+/* ── when ───────────────────────────────────────────────────────────────── */
+
+.whenRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dateCard {
+  flex: 1;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+
+.dateLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-weak);
+}
+
+.dateValue {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.dateHint {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  color: var(--text-muted);
+}
+
+.arrow {
+  color: var(--text-pale);
+}
+
+/* ── equipment ──────────────────────────────────────────────────────────── */
+
+.group {
+  margin-bottom: 14px;
+}
+
+.groupLabel {
+  margin-bottom: 8px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.14em;
+  color: var(--text-weak);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.line {
   display: flex;
   align-items: center;
   gap: 16px;
+  padding: 13px 16px;
+  background: var(--fill-active);
+  border-left: 3px solid var(--accent);
 }
 
-.bookedBy {
-  font-size: 12px;
-  color: var(--on-surface-variant);
-  font-weight: 400;
-}
-
-.editLink {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--outline);
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  padding: 6px 16px;
-  transition: color 0.1s, border-color 0.1s;
-}
-
-.editLink:hover {
-  color: var(--white);
-  border-color: var(--white);
-}
-
-.errorBanner {
-  padding: 12px 16px;
-  background: rgba(204, 51, 51, 0.12);
-  border-bottom: 1px solid var(--error);
-  color: var(--error);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-/* Body: column on mobile, row on desktop */
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: 48px;
-}
-
-@media (min-width: 768px) {
-  .body {
-    flex-direction: row;
-    align-items: flex-start;
-  }
-}
-
-/* -----------------------------------------------------------------------
-   Left column: pick list + ancillary info
-   ----------------------------------------------------------------------- */
-
-.details {
+.lineName {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  padding-bottom: 48px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: 15px;
+  color: var(--text-primary);
 }
 
-@media (min-width: 768px) {
-  .details {
-    padding-right: 48px;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 0;
-  }
+.lineUnits {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sectionLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--on-surface-variant);
-}
-
-.sectionValue {
-  font-size: 16px;
-  color: var(--white);
-  line-height: 1.4;
-}
-
-.rejectionText {
-  color: var(--error);
-}
-
-/* -----------------------------------------------------------------------
-   Pick List
-   ----------------------------------------------------------------------- */
-
-.pickListHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.pickListProgress {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
+.lineQty {
+  width: 34px;
+  text-align: right;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 15px;
   color: var(--accent);
 }
 
-.pickList {
-  list-style: none;
+/* ── notes ──────────────────────────────────────────────────────────────── */
+
+.notes {
+  max-width: 60ch;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-medium);
+  font-size: 15px;
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+/* ── aside ──────────────────────────────────────────────────────────────── */
+
+.aside {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 26px;
+  padding: var(--section-pad-v) 0 0 40px;
+  border-left: 1px solid var(--border-subtle);
+  align-self: start;
 }
 
-.pickItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+.asideLabel {
+  margin-bottom: 9px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  letter-spacing: 0.14em;
+  color: var(--text-pale);
 }
 
-.pickItem:first-child {
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.pickItemInteractive {
-  cursor: pointer;
-}
-
-.pickItemInteractive:hover .pickCheckbox {
-  border-color: rgba(145, 145, 145, 0.7);
-}
-
-/* Custom checkbox */
-.pickCheckbox {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  display: flex;
+.status {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  margin-top: 2px;
-  transition: background 0.1s, border-color 0.1s;
+  gap: 9px;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: var(--fw-bold);
 }
 
-.pickCheckboxChecked {
-  background: var(--accent);
-  border-color: var(--accent);
+.creator {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
 }
 
-.pickCheckIcon {
-  font-size: 10px;
-  font-weight: 900;
-  color: var(--on-primary);
-  line-height: 1;
+.created {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  color: var(--text-weak);
 }
 
-.pickItemContent {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1;
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
 }
-
-.pickItemName {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--white);
-  line-height: 1.2;
-  transition: opacity 0.1s;
-}
-
-.pickItemNamePicked {
-  opacity: 0.45;
-  text-decoration: line-through;
-}
-
-.pickItemMeta {
-  font-size: 11px;
-  color: var(--on-surface-variant);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pickItemQty {
-  font-weight: 700;
-}
-
-.pickItemUnit {
-  /* inherits meta styles */
-}
-
-/* Grouped unit-tracked equipment: name header + indented unit sub-rows */
-.pickGroup {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.pickGroup:first-child {
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.pickGroupHeader {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 12px 0 8px;
-}
-
-.pickGroupUnits {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin-left: 14px;
-  padding-left: 14px;
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-/* Unit sub-rows sit inside a group; drop the group's own first/last hairlines */
-.pickSubItem {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.pickGroupUnits .pickSubItem:first-child {
-  border-top: none;
-}
-
-.pickGroupUnits .pickSubItem:last-child {
-  border-bottom: none;
-  padding-bottom: 12px;
-}
-
-/* -----------------------------------------------------------------------
-   Right column: summary + actions
-   ----------------------------------------------------------------------- */
 
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding-bottom: 48px;
-}
-
-@media (min-width: 768px) {
-  .actions {
-    width: 320px;
-    flex-shrink: 0;
-    position: sticky;
-    top: 96px;
-    padding-bottom: 0;
-  }
-}
-
-.actionSection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.actionSection:first-child {
-  padding-top: 0;
-}
-
-.actionDivider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 8px 0 16px;
-}
-
-/* -----------------------------------------------------------------------
-   Action buttons (unchanged styles, moved to right column)
-   ----------------------------------------------------------------------- */
-
-/* Approval section */
-.approvalSection {
-  display: flex;
-  flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  background: var(--surface-container);
 }
 
-.approvalLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant);
+.actionHint {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  line-height: var(--lh-tight);
+  text-align: center;
+  color: var(--text-pale);
 }
 
-.approvalButtons {
-  display: flex;
-  gap: 8px;
-}
+/* ── mobile ─────────────────────────────────────────────────────────────── */
 
-.approveBtn {
-  flex: 1;
-  background: var(--white);
-  color: var(--on-primary);
-  padding: 12px 32px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: none;
-  border-radius: 0;
-  cursor: pointer;
-  transition: background 0.1s;
-}
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 0 40px;
+  }
 
-.approveBtn:hover:not(:disabled) {
-  background: var(--secondary);
-}
+  .title {
+    font-size: 32px;
+    line-height: 1;
+  }
 
-.approveBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  .body {
+    grid-template-columns: 1fr;
+  }
 
-.rejectBtn {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  background: none;
-  color: var(--white);
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  padding: 10px;
-  transition: color 0.1s, border-color 0.1s;
-}
+  .main {
+    padding-right: 0;
+  }
 
-.rejectBtn:not(:disabled):hover {
-  border-color: var(--white);
-}
+  .aside {
+    padding: var(--section-pad-v) 0 0;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
 
-.rejectBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  .whenRow {
+    gap: 10px;
+  }
 
-/* Rejection form */
-.rejectForm {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-top: 1px solid rgba(71, 71, 71, 0.3);
-  padding-top: 12px;
-}
-
-.rejectLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant);
-}
-
-.rejectTextarea {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.4);
-  color: var(--white);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 8px 0;
-  outline: none;
-  resize: vertical;
-  transition: border-bottom-color 0.1s;
-  line-height: 1.4;
-  width: 100%;
-}
-
-.rejectTextarea:focus {
-  border-bottom-color: var(--white);
-}
-
-.rejectTextarea::placeholder {
-  color: var(--outline);
-}
-
-.rejectConfirmBtn {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  background: none;
-  color: var(--error);
-  border: 1px solid var(--error);
-  padding: 8px 16px;
-  transition: opacity 0.1s;
-}
-
-.rejectConfirmBtn:not(:disabled):hover {
-  opacity: 0.8;
-}
-
-.rejectConfirmBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Cancel button — ghost secondary */
-.cancelBtn {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  background: none;
-  color: var(--white);
-  border: 1px solid rgba(145, 145, 145, 0.4);
-  padding: 12px 24px;
-  width: 100%;
-  text-align: left;
-  transition: color 0.1s, border-color 0.1s;
-  margin-top: 8px;
-}
-
-.cancelBtn:not(:disabled):hover {
-  color: var(--error);
-  border-color: var(--error);
-}
-
-.cancelBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Check Out button — filled accent (primary action) */
-.checkOutBtn {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  background: var(--accent);
-  color: var(--on-primary);
-  border: none;
-  padding: 12px 24px;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  transition: opacity 0.1s;
-  margin-top: 8px;
-}
-
-.checkOutBtn:not(:disabled):hover {
-  opacity: 0.85;
-}
-
-.checkOutBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Check In button — filled accent (same weight as check-out) */
-.checkInBtn {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  background: var(--accent);
-  color: var(--on-primary);
-  border: none;
-  padding: 12px 24px;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  transition: opacity 0.1s;
-  margin-top: 8px;
-}
-
-.checkInBtn:not(:disabled):hover {
-  opacity: 0.85;
-}
-
-.checkInBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Legacy — kept for backward compat with approval tag in pick list area */
-.approvalTag {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--outline);
-  border: 1px solid rgba(145, 145, 145, 0.3);
-  padding: 2px 6px;
+  .dateValue {
+    font-size: 16px;
+  }
 }

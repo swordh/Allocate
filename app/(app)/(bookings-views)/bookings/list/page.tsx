@@ -1,31 +1,35 @@
-import { getVerifiedSession } from '@/lib/dal'
 import { getBookings } from '@/lib/queries/bookings'
-import { getUserProfile } from '@/lib/queries/users'
+import { getBookingViewContext, getOwnerProfiles } from '@/lib/bookings/view-context'
+import { offsetDate } from '@/lib/dates'
 import BookingList from '@/components/bookings/BookingList'
-import type { UserProfile } from '@/types'
 
-export default async function BookingsListPage() {
-  const session = await getVerifiedSession()
-  const initialBookings = await getBookings(session.activeCompanyId)
+/** How far back the feed reaches. Forward is unbounded. */
+const HISTORY_DAYS = 90
 
-  // Fetch UserProfile for each unique userId in the bookings
-  const uniqueUserIds = Array.from(new Set(initialBookings.map(b => b.userId).filter((id): id is string => id !== null && id !== undefined)))
-  const userProfilesArray = await Promise.all(
-    uniqueUserIds.map(uid => getUserProfile(uid)),
-  )
+export default async function BookingsListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cancelled?: string }>
+}) {
+  const { companyId, userId, role, today } = await getBookingViewContext()
+  const sp = await searchParams
 
-  const userProfiles: Record<string, UserProfile | null> = {}
-  uniqueUserIds.forEach((uid, idx) => {
-    userProfiles[uid] = userProfilesArray[idx]
+  // The feed used to fetch the entire collection unbounded, which grew without
+  // limit for any company that had been running a while.
+  const initialBookings = await getBookings(companyId, {
+    startDate: offsetDate(today, -HISTORY_DAYS),
+    includeCancelled: sp.cancelled === '1',
   })
 
   return (
     <BookingList
-      companyId={session.activeCompanyId}
-      userId={session.uid}
-      role={session.role}
+      companyId={companyId}
+      userId={userId}
+      role={role}
+      today={today}
+      historyStart={offsetDate(today, -HISTORY_DAYS)}
       initialBookings={initialBookings}
-      userProfiles={userProfiles}
+      userProfiles={await getOwnerProfiles(initialBookings)}
     />
   )
 }

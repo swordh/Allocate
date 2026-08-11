@@ -1,0 +1,173 @@
+/* The shared bookings toolbar — screens 06/07/08, the row under the app header.
+   Horizontal page padding comes from the app shell's `main`, so only the
+   vertical rhythm (22px above, 18px below) lives here. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 0 18px;
+  flex-shrink: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ── period stepper ─────────────────────────────────────────────────────── */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.stepBtn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.stepBtn:hover {
+  background: var(--fill);
+  color: var(--text-primary);
+}
+
+/* ── labels ─────────────────────────────────────────────────────────────── */
+
+.periodLabel {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.count {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-btn);
+  color: var(--text-pale);
+  white-space: nowrap;
+}
+
+/* ── filters ────────────────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The filter pills are wider and set in 12px, where the shared Chip is 11px
+   with tighter padding. The class is doubled to outrank Chip's own .active /
+   .inactive rules regardless of stylesheet order. */
+.filter.filter {
+  padding: 8px 14px;
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-btn);
+  background: transparent;
+  color: var(--text-tertiary);
+  border-color: var(--border-medium);
+}
+
+.filter.filter:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.filter.filter[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── today ──────────────────────────────────────────────────────────────── */
+
+.today {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 0 6px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-nav);
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.today:hover {
+  color: var(--accent-hover);
+}
+
+/* ── mobile ─────────────────────────────────────────────────────────────── */
+/* The view switcher becomes its own horizontally scrollable chip row, the
+   period stepper and TODAY share the row below it, and the filters move into
+   the nav sheet (screen 08 Mobil). */
+
+@media (max-width: 768px) {
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 0 0 12px;
+  }
+
+  .switcher {
+    order: -1;
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    padding: 0 0 4px;
+    background: transparent;
+    border: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .switcher::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .switcher > button {
+    padding: 9px 18px;
+    background: var(--fill);
+    border: 1px solid var(--border-track);
+  }
+
+  .switcher > button[aria-checked='true'] {
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-fg);
+    border-color: var(--btn-primary-bg);
+  }
+
+  .stepper {
+    margin-left: 0;
+  }
+
+  .stepBtn {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  .filters {
+    display: none;
+  }
+
+  .periodLabel {
+    font-size: 14px;
+  }
+}

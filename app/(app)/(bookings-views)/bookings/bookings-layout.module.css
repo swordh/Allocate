@@ -1,36 +1,29 @@
-.contentWidth {
-  max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
-}
+/* Mobile floating action button — screens 06/07/08 (Mobil) draw NEW BOOKING as
+   a square white FAB in the bottom-right corner. On desktop the same action
+   lives in PrimaryNav, so this is hidden above the breakpoint. */
 
-/* Mobile-only primary action button under the Bookings page title */
-.mobileNewBooking {
+.fab {
   display: none;
-  padding: 0 0 32px;
 }
 
 @media (max-width: 768px) {
-  .mobileNewBooking {
-    display: block;
+  .fab {
+    position: fixed;
+    right: var(--page-margin-mobile);
+    bottom: 28px;
+    z-index: var(--z-sticky);
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 15px 20px;
+    font-family: var(--font-ui);
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-body-sm);
+    letter-spacing: var(--ls-btn-tight);
+    text-decoration: none;
+    color: var(--btn-primary-fg);
+    background: var(--btn-primary-bg);
+    border: none;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
   }
-}
-
-.mobileNewBookingBtn {
-  background: var(--white);
-  color: var(--on-primary);
-  padding: 8px 20px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: none;
-  cursor: pointer;
-  transition: background 0.1s;
-  text-decoration: none;
-  display: inline-block;
-}
-
-.mobileNewBookingBtn:hover {
-  background: var(--secondary);
 }
