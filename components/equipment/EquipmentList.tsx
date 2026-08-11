@@ -759,25 +759,30 @@ function TypeRow({
           {isQuantity ? (
             <div className={styles.quantityRow}>
               <span className={styles.quantityLabel}>QUANTITY</span>
-              <button
-                type="button"
-                className={styles.quantityStep}
-                onClick={() => onAdjustQuantity(-1)}
-                disabled={!canEdit || busy || item.totalQuantity <= 1}
-                aria-label={`Decrease quantity of ${item.name}`}
-              >
-                –
-              </button>
+              {/* Non-admins get the number alone — no editing entry points. */}
+              {canEdit && (
+                <button
+                  type="button"
+                  className={styles.quantityStep}
+                  onClick={() => onAdjustQuantity(-1)}
+                  disabled={busy || item.totalQuantity <= 1}
+                  aria-label={`Decrease quantity of ${item.name}`}
+                >
+                  –
+                </button>
+              )}
               <span className={styles.quantityValue}>{item.totalQuantity}</span>
-              <button
-                type="button"
-                className={styles.quantityStep}
-                onClick={() => onAdjustQuantity(1)}
-                disabled={!canEdit || busy}
-                aria-label={`Increase quantity of ${item.name}`}
-              >
-                +
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  className={styles.quantityStep}
+                  onClick={() => onAdjustQuantity(1)}
+                  disabled={busy}
+                  aria-label={`Increase quantity of ${item.name}`}
+                >
+                  +
+                </button>
+              )}
               <span className={styles.quantityBooked}>{quantityBooked} on booking</span>
             </div>
           ) : (
