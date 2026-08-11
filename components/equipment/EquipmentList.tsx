@@ -1,12 +1,40 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
-import EquipmentEmpty from './EquipmentEmpty'
-import EquipmentEditModal from './EquipmentEditModal'
-import type { Equipment, Role } from '@/types'
+import { useCategories } from '@/hooks/useCategories'
+import { useUnitBookings, type UnitBookingState } from '@/hooks/useUnitBookings'
+import {
+  createEquipment,
+  updateEquipment,
+  deactivateEquipment,
+  createUnit,
+  updateUnit,
+  deactivateUnit,
+} from '@/actions/equipment'
+import { PageHeader } from '@/components/nav/PageHeader'
+import Button from '@/components/ui/Button'
+import Chip from '@/components/ui/Chip'
+import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
+import Modal from '@/components/ui/Modal'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import EmptyState from '@/components/ui/EmptyState'
+import EquipmentPanel, {
+  type PanelDraft,
+  type PanelState,
+  type TypeDraft,
+  type UnitDraft,
+} from './EquipmentPanel'
+import {
+  isTypeInactive,
+  unitDisplayStatus,
+  unitEditableStatus,
+  unitStatusFields,
+  type UnitDisplayStatus,
+} from './equipment-status'
+import type { Equipment, EquipmentUnit, Role } from '@/types'
 import styles from './EquipmentList.module.css'
 
 interface EquipmentListProps {
@@ -15,9 +43,65 @@ interface EquipmentListProps {
   initialEquipment: Equipment[]
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+type StatusFilter = 'ALL' | 'OUT' | 'INACTIVE' | 'BROKEN'
+
+const FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'ALL', label: 'ALL' },
+  { key: 'OUT', label: 'OUT NOW' },
+  { key: 'INACTIVE', label: 'INACTIVE' },
+  { key: 'BROKEN', label: 'BROKEN' },
+]
+
+interface VisibleUnit {
+  unit: EquipmentUnit
+  status: UnitDisplayStatus
+  booking: UnitBookingState | null
+}
+
+interface VisibleType {
+  equipment: Equipment
+  units: VisibleUnit[]
+  outCount: number
+  total: number
+}
+
+interface VisibleGroup {
+  category: string
+  types: VisibleType[]
+  unitCount: number
+}
+
+function emptyTypeDraft(category: string): TypeDraft {
+  return {
+    name: '',
+    category,
+    description: '',
+    inactive: false,
+    trackingType: 'units',
+    totalQuantity: 1,
+  }
+}
+
+function typeDraftFrom(equipment: Equipment): TypeDraft {
+  return {
+    name: equipment.name,
+    category: equipment.category,
+    description: equipment.description ?? '',
+    inactive: isTypeInactive(equipment),
+    trackingType: equipment.trackingType,
+    totalQuantity: equipment.totalQuantity,
+  }
+}
+
+function unitDraftFrom(unit: EquipmentUnit | null): UnitDraft {
+  if (!unit) return { label: '', serialNumber: '', status: 'AVAILABLE', notes: '' }
+  return {
+    label: unit.label,
+    serialNumber: unit.serialNumber ?? '',
+    status: unitEditableStatus(unit),
+    notes: unit.notes ?? '',
+  }
+}
 
 export default function EquipmentList({ companyId, role, initialEquipment }: EquipmentListProps) {
   // Real-time listener replaces the server-fetched initial data.
@@ -25,32 +109,337 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const { equipment: liveEquipment, loading, error } = useEquipment(companyId)
   const equipment = loading ? initialEquipment : liveEquipment
 
-  // ?add=1 in the URL (from the mobile menu CTA) opens the add modal on mount.
-  const searchParams = useSearchParams()
-  const openOnMount = role === 'admin' && searchParams.get('add') === '1'
+  const { unitBookings, quantityOnBooking } = useUnitBookings(companyId)
+  const { categories } = useCategories(companyId)
 
-  const [unifiedModalOpen, setUnifiedModalOpen] = useState(false)
-  const [unifiedModalEquipment, setUnifiedModalEquipment] = useState<Equipment | undefined>(undefined)
+  const canEdit = role === 'admin'
+
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<StatusFilter>('ALL')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [openTypeId, setOpenTypeId] = useState<string | null>(null)
+
+  const [panel, setPanel] = useState<PanelState | null>(null)
+  const [draft, setDraft] = useState<PanelDraft | null>(null)
+  const [initialDraft, setInitialDraft] = useState<PanelDraft | null>(null)
+  /** Where to go once the unsaved-changes prompt is answered. */
+  const [pendingSwitch, setPendingSwitch] = useState<{ panel: PanelState | null; draft: PanelDraft | null } | null>(null)
+  const [deletePrompt, setDeletePrompt] = useState(false)
+  const [forcePrompt, setForcePrompt] = useState<{ count: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [panelError, setPanelError] = useState<string | null>(null)
+
+  const categoryNames = useMemo(() => {
+    const fromCategories = categories.map((c) => c.name)
+    const fromEquipment = equipment.map((e) => e.category).filter(Boolean)
+    return Array.from(new Set([...fromCategories, ...fromEquipment])).sort()
+  }, [categories, equipment])
+
+  // ── Panel plumbing ───────────────────────────────────────────────────────
+  // draft vs initialDraft is the dirty check; every entry point goes through
+  // switchPanel so an unsaved edit can never be dropped silently.
+
+  const dirty = panel !== null && JSON.stringify(draft) !== JSON.stringify(initialDraft)
+
+  function applyPanel(next: { panel: PanelState | null; draft: PanelDraft | null }) {
+    setPanel(next.panel)
+    setDraft(next.draft)
+    setInitialDraft(next.draft)
+    setPanelError(null)
+  }
+
+  function switchPanel(next: { panel: PanelState | null; draft: PanelDraft | null }) {
+    if (dirty) {
+      setPendingSwitch(next)
+      return
+    }
+    applyPanel(next)
+  }
+
+  function openNewType() {
+    switchPanel({
+      panel: { kind: 'newType' },
+      draft: emptyTypeDraft(categoryNames[0] ?? ''),
+    })
+  }
+
+  function openTypePanel(item: Equipment) {
+    switchPanel({
+      panel: { kind: 'type', equipmentId: item.id, category: item.category },
+      draft: typeDraftFrom(item),
+    })
+  }
+
+  function openUnitPanel(item: Equipment, unit: EquipmentUnit | null) {
+    switchPanel({
+      panel: unit
+        ? { kind: 'unit', mode: 'edit', equipmentId: item.id, unitId: unit.id }
+        : { kind: 'unit', mode: 'add', equipmentId: item.id },
+      draft: unitDraftFrom(unit),
+    })
+  }
+
+  function closePanel() {
+    switchPanel({ panel: null, draft: null })
+  }
+
+  // ?add=1 in the URL (from the mobile menu CTA) opens the create panel on mount.
+  const searchParams = useSearchParams()
+  const openOnMount = canEdit && searchParams.get('add') === '1'
 
   useEffect(() => {
-    if (openOnMount) setUnifiedModalOpen(true)
+    if (openOnMount) openNewType()
+    // Mount-only: the CTA sets the param once, and re-running would fight the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openOnMount])
 
   useEffect(() => {
-    const handler = () => { setUnifiedModalEquipment(undefined); setUnifiedModalOpen(true) }
+    const handler = () => openNewType()
     window.addEventListener('equipment:open-add', handler)
     return () => window.removeEventListener('equipment:open-add', handler)
-  }, [])
+  })
 
-  function openAddModal() {
-    setUnifiedModalEquipment(undefined)
-    setUnifiedModalOpen(true)
+  // ── Saving ───────────────────────────────────────────────────────────────
+
+  /** Returns true when the write succeeded. */
+  async function save(): Promise<boolean> {
+    if (!panel || !draft) return false
+
+    setBusy(true)
+    setPanelError(null)
+
+    try {
+      if (panel.kind === 'newType') {
+        const d = draft as TypeDraft
+        if (!d.name.trim()) {
+          setPanelError('Name is required.')
+          return false
+        }
+        if (!d.category) {
+          setPanelError('Pick a category.')
+          return false
+        }
+        const form = new FormData()
+        form.set('name', d.name)
+        form.set('category', d.category)
+        form.set('description', d.description)
+        form.set('trackingType', d.trackingType)
+        form.set('totalQuantity', String(d.totalQuantity))
+        const result = await createEquipment(form)
+        if ('error' in result) {
+          setPanelError(result.error)
+          return false
+        }
+        return true
+      }
+
+      if (panel.kind === 'type') {
+        const d = draft as TypeDraft
+        if (!d.name.trim()) {
+          setPanelError('Name is required.')
+          return false
+        }
+        const form = new FormData()
+        form.set('name', d.name)
+        form.set('description', d.description)
+        form.set('availableForBooking', String(!d.inactive))
+        const result = await updateEquipment(panel.equipmentId, form)
+        if (result.error) {
+          setPanelError(result.error)
+          return false
+        }
+        return true
+      }
+
+      const d = draft as UnitDraft
+      if (!d.label.trim()) {
+        setPanelError('Unit ID is required.')
+        return false
+      }
+      const fields = unitStatusFields(d.status)
+      const form = new FormData()
+      form.set('label', d.label)
+      form.set('serialNumber', d.serialNumber)
+      form.set('notes', d.notes)
+      form.set('status', fields.status)
+      form.set('availableForBooking', String(fields.availableForBooking))
+
+      const result =
+        panel.mode === 'add'
+          ? await createUnit(panel.equipmentId, form)
+          : await updateUnit(panel.equipmentId, panel.unitId!, form)
+
+      if (result && 'error' in result) {
+        setPanelError(result.error)
+        return false
+      }
+      return true
+    } finally {
+      setBusy(false)
+    }
   }
 
-  function openEditModal(item: Equipment) {
-    setUnifiedModalEquipment(item)
-    setUnifiedModalOpen(true)
+  async function onSave() {
+    const ok = await save()
+    if (ok) applyPanel({ panel: null, draft: null })
   }
+
+  async function onSaveAndSwitch() {
+    const next = pendingSwitch
+    if (!next) return
+    const ok = await save()
+    if (!ok) return
+    setPendingSwitch(null)
+    applyPanel(next)
+  }
+
+  function onDiscardAndSwitch() {
+    const next = pendingSwitch
+    setPendingSwitch(null)
+    if (next) applyPanel(next)
+  }
+
+  // ── Deleting ─────────────────────────────────────────────────────────────
+  // Delete is the soft delete (active: false): gone from this list and from the
+  // booking form, still in Firestore so old bookings can name it.
+
+  async function runDelete(force: boolean) {
+    if (!panel) return
+
+    setBusy(true)
+    setPanelError(null)
+
+    try {
+      if (panel.kind === 'type') {
+        const result = await deactivateEquipment(panel.equipmentId, force)
+        if ('requiresForce' in result) {
+          setDeletePrompt(false)
+          setForcePrompt({ count: result.affectedBookingCount })
+          return
+        }
+        if ('error' in result) {
+          setPanelError(result.error)
+          setDeletePrompt(false)
+          return
+        }
+      } else if (panel.kind === 'unit' && panel.unitId) {
+        const result = await deactivateUnit(panel.equipmentId, panel.unitId, force)
+        if (result && 'requiresForce' in result) {
+          setDeletePrompt(false)
+          setForcePrompt({ count: result.futureBookingCount })
+          return
+        }
+        if (result && 'error' in result) {
+          setPanelError(result.error)
+          setDeletePrompt(false)
+          return
+        }
+      }
+
+      setDeletePrompt(false)
+      setForcePrompt(null)
+      applyPanel({ panel: null, draft: null })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function adjustQuantity(item: Equipment, delta: number) {
+    const next = item.totalQuantity + delta
+    if (next < 1) return
+
+    setBusy(true)
+    try {
+      const form = new FormData()
+      form.set('totalQuantity', String(next))
+      await updateEquipment(item.id, form)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── Filtering and grouping ───────────────────────────────────────────────
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filterActive = normalizedQuery !== '' || filter !== 'ALL'
+
+  const groups: VisibleGroup[] = useMemo(() => {
+    const matchesFilter = (status: UnitDisplayStatus) =>
+      filter === 'ALL' || status === filter
+
+    const byCategory = new Map<string, VisibleType[]>()
+
+    for (const item of equipment) {
+      const nameHit =
+        normalizedQuery === '' || item.name.toLowerCase().includes(normalizedQuery)
+
+      const allUnits: VisibleUnit[] = (item.units ?? []).map((unit) => {
+        const booking = unitBookings.get(unit.id) ?? null
+        return { unit, status: unitDisplayStatus(unit, !!booking?.out), booking }
+      })
+
+      const units = allUnits.filter(({ unit, status }) => {
+        if (!matchesFilter(status)) return false
+        if (normalizedQuery === '') return true
+        return (
+          nameHit ||
+          unit.label.toLowerCase().includes(normalizedQuery) ||
+          (unit.serialNumber ?? '').toLowerCase().includes(normalizedQuery)
+        )
+      })
+
+      const isQuantity = item.trackingType !== 'units'
+
+      // A filter or a search hides everything it doesn't match, so the hits are
+      // visible without opening anything. Quantity types have no units to match
+      // on, so they survive on their name alone and only under ALL.
+      if (filterActive) {
+        const quantityHit = isQuantity && nameHit && filter === 'ALL'
+        if (!quantityHit && units.length === 0) continue
+      }
+
+      const category = item.category || 'Uncategorized'
+      const list = byCategory.get(category) ?? []
+      list.push({
+        equipment: item,
+        units,
+        outCount: allUnits.filter((u) => u.status === 'OUT').length,
+        total: isQuantity ? item.totalQuantity : allUnits.length,
+      })
+      byCategory.set(category, list)
+    }
+
+    return Array.from(byCategory.entries())
+      .map(([category, types]) => ({
+        category,
+        types: types.sort((a, b) => a.equipment.name.localeCompare(b.equipment.name)),
+        unitCount: types.reduce((sum, t) => sum + t.total, 0),
+      }))
+      .sort((a, b) => a.category.localeCompare(b.category))
+  }, [equipment, unitBookings, normalizedQuery, filter, filterActive])
+
+  const totals = useMemo(() => {
+    let types = 0
+    let units = 0
+    let available = 0
+
+    for (const item of equipment) {
+      types += 1
+      if (item.trackingType !== 'units') {
+        units += item.totalQuantity
+        available += Math.max(0, item.totalQuantity - (quantityOnBooking.get(item.id) ?? 0))
+        continue
+      }
+      for (const unit of item.units ?? []) {
+        units += 1
+        if (unitDisplayStatus(unit, !!unitBookings.get(unit.id)?.out) === 'AVAILABLE') available += 1
+      }
+    }
+
+    return { types, units, available }
+  }, [equipment, unitBookings, quantityOnBooking])
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (error) {
     return (
@@ -63,142 +452,330 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
     )
   }
 
-  // Group equipment by category
-  const grouped = equipment.reduce<Record<string, Equipment[]>>((acc, item) => {
-    const cat = item.category || 'Uncategorized'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(item)
-    return acc
-  }, {})
-
-  const categories = Object.keys(grouped).sort()
+  const inventoryEmpty = equipment.length === 0
+  const noMatches = !inventoryEmpty && groups.length === 0
+  const activeUnitId = panel?.kind === 'unit' ? panel.unitId : undefined
 
   return (
     <>
-      {/* Mobile-only primary action under the page title */}
-      {role === 'admin' && (
-        <div className={styles.mobileAction}>
-          <button className={styles.mobileActionBtn} onClick={openAddModal}>
-            New Equipment
-          </button>
-        </div>
-      )}
+      <PageHeader
+        title="Equipment"
+        size="compact"
+        meta={`${totals.types} TYPES · ${totals.units} UNITS · ${totals.available} AVAILABLE`}
+        actions={
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openNewType}>
+              NEW EQUIPMENT
+            </Button>
+          ) : (
+            <Chip size="tag" interactive={false}>
+              VIEW ONLY · {role.toUpperCase()}
+            </Chip>
+          )
+        }
+      />
 
-      {equipment.length === 0 ? (
-        <EquipmentEmpty role={role} onAddClick={openAddModal} />
-      ) : (
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <Icon name="search" size={14} className={styles.searchIcon} />
+          <input
+            className={styles.searchInput}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search equipment or unit ID"
+            aria-label="Search equipment or unit ID"
+          />
+        </div>
+        <div className={styles.filters}>
+          {FILTERS.map((f) => (
+            <Chip
+              key={f.key}
+              active={filter === f.key}
+              onClick={() => setFilter(f.key)}
+              aria-pressed={filter === f.key}
+            >
+              {f.label}
+            </Chip>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.layout}>
         <div className={styles.list}>
-          {categories.map((cat) => {
-            const items = grouped[cat]
+          {inventoryEmpty || noMatches ? (
+            <EmptyState
+              eyebrow={inventoryEmpty ? 'NO INVENTORY YET' : 'NO MATCHES'}
+              heading={inventoryEmpty ? 'Add your first equipment' : 'Nothing matches that'}
+              body={
+                inventoryEmpty
+                  ? 'Group gear into equipment types — cameras, lenses, lighting — then add the individual units you own. Everything you add here becomes bookable.'
+                  : 'Try another name or unit ID, or clear the status filter.'
+              }
+              action={
+                inventoryEmpty && canEdit ? (
+                  <Button variant="primary" size="sm" onClick={openNewType}>
+                    NEW EQUIPMENT
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            groups.map((group) => {
+              const open = filterActive || !collapsed[group.category]
+              return (
+                <section key={group.category} className={styles.group}>
+                  <button
+                    type="button"
+                    className={styles.groupHeader}
+                    onClick={() =>
+                      setCollapsed((prev) => ({ ...prev, [group.category]: open }))
+                    }
+                    aria-expanded={open}
+                  >
+                    {/* Rotation lives in the CSS module, not on Glyph's rotate
+                        prop — that writes an inline transform that would beat
+                        the open-state rule. */}
+                    <Glyph
+                      char="›"
+                      className={`${styles.groupChevron} ${open ? styles.chevronOpen : ''}`}
+                    />
+                    <span className={styles.groupName}>{group.category}</span>
+                    <span className={styles.groupCount}>
+                      {group.types.length} TYPES · {group.unitCount} UNITS
+                    </span>
+                  </button>
 
-            // Separate quantity items (flat) from unit-tracked items (group header + unit rows)
-            const quantityItems = items.filter((i) => i.trackingType === 'quantity' || !i.trackingType)
-            const unitItems = items.filter((i) => i.trackingType === 'units')
-
-            return (
-              <section key={cat} className={styles.category}>
-                <div className={styles.categoryHeader}>
-                  <h2 className={styles.categoryHeaderLabel}>{cat}</h2>
-                  <div className={styles.categoryHeaderRule} />
-                  <span className={styles.categoryHeaderCount}>{items.length}</span>
-                </div>
-
-                {/* Quantity items render flat */}
-                {quantityItems.map((item) => (
-                  <div key={item.id} className={styles.row}>
-                    <div className={`${styles.rowLeft} ${styles.rowLeftQty}`}>
-                      <span className={styles.name}>{item.name}</span>
-                      {item.trackingType === 'quantity' && (
-                        <>
-                          <span className={styles.trackingTypeBadge}>Qty</span>
-                          <span className={styles.quantityInfo}>
-                            <strong>{item.totalQuantity}</strong> available
-                          </span>
-                        </>
-                      )}
-                      {!item.trackingType && (
-                        <span className={styles.legacyBadge}>Legacy</span>
-                      )}
+                  {open && (
+                    <div className={styles.types}>
+                      {group.types.map((type) => (
+                        <TypeRow
+                          key={type.equipment.id}
+                          type={type}
+                          open={filterActive || openTypeId === type.equipment.id}
+                          canEdit={canEdit}
+                          busy={busy}
+                          activeUnitId={activeUnitId}
+                          quantityBooked={quantityOnBooking.get(type.equipment.id) ?? 0}
+                          onToggle={() =>
+                            setOpenTypeId((prev) =>
+                              prev === type.equipment.id ? null : type.equipment.id,
+                            )
+                          }
+                          onOpenType={() => openTypePanel(type.equipment)}
+                          onOpenUnit={(unit) => openUnitPanel(type.equipment, unit)}
+                          onAdjustQuantity={(delta) => adjustQuantity(type.equipment, delta)}
+                        />
+                      ))}
                     </div>
-                    {role === 'admin' && (
-                      <div className={styles.rowActions}>
-                        <button
-                          className={styles.editBtn}
-                          onClick={() => openEditModal(item)}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {/* Unit-tracked items — collapsible group with unified edit modal */}
-                {unitItems.map((eq) => (
-                  <details key={eq.id} className={styles.group}>
-                    <summary className={styles.groupHeader}>
-                      <div className={styles.rowLeft}>
-                        <Glyph char="›" className={styles.chevron} />
-                        <span className={styles.name}>{eq.name}</span>
-                        <span className={styles.trackingTypeBadge}>Units</span>
-                      </div>
-                      {role === 'admin' && (
-                        <div className={styles.rowActions}>
-                          <button
-                            className={styles.editBtn}
-                            onClick={(e) => { e.preventDefault(); openEditModal(eq) }}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      )}
-                    </summary>
-
-                    {/* Unit rows */}
-                    {(eq.units ?? []).map((unit) => (
-                      <div key={unit.id} className={styles.unitRow}>
-                        <div className={styles.rowLeft}>
-                          {/* Status dot hidden for MVP — <span className={`${styles.statusDot} ${getStatusDotClass(unit.status)}`} /> */}
-                          <span className={styles.unitName}>{unit.label}</span>
-                          {unit.serialNumber && (
-                            <span className={styles.serialNumber}>S/N {unit.serialNumber}</span>
-                          )}
-                        </div>
-                        {/* Status text hidden for MVP
-                        <div className={styles.unitRowRight}>
-                          <span className={`${styles.unitStatusText} ${getUnitStatusTextClass(unit.status)}`}>
-                            {UNIT_STATUS_LABELS[unit.status]}
-                          </span>
-                        </div>
-                        */}
-                      </div>
-                    ))}
-
-                    {/* Add unit — opens edit modal */}
-                    {role === 'admin' && (
-                      <div className={styles.addUnitRow}>
-                        <button
-                          className={styles.addUnitLink}
-                          onClick={(e) => { e.preventDefault(); openEditModal(eq) }}
-                        >
-                          + Add Unit
-                        </button>
-                      </div>
-                    )}
-                  </details>
-                ))}
-              </section>
-            )
-          })}
+                  )}
+                </section>
+              )
+            })
+          )}
         </div>
-      )}
 
-      <EquipmentEditModal
-        isOpen={unifiedModalOpen}
-        onClose={() => setUnifiedModalOpen(false)}
-        companyId={companyId}
-        equipment={unifiedModalEquipment}
+        <aside className={styles.panelColumn}>
+          {panel && draft ? (
+              <EquipmentPanel
+                panel={panel}
+                draft={draft}
+                categories={categoryNames}
+                canEdit={canEdit}
+                busy={busy}
+                error={panelError}
+                unitBooking={activeUnitId ? unitBookings.get(activeUnitId) ?? null : null}
+                onChange={(patch) => setDraft((prev) => ({ ...(prev as PanelDraft), ...patch }))}
+                onSave={onSave}
+                onDelete={() => setDeletePrompt(true)}
+                onClose={closePanel}
+              />
+          ) : (
+            !inventoryEmpty && (
+              <div className={styles.panelPlaceholder}>
+                <span className={styles.panelPlaceholderTitle}>No unit selected</span>
+                <span className={styles.panelPlaceholderBody}>
+                  Click a unit tag, or &ldquo;+ ADD UNIT&rdquo;, to view or edit its properties here.
+                </span>
+              </div>
+            )
+          )}
+        </aside>
+      </div>
+
+      {/* Three-way prompt: ConfirmDialog only carries two actions. */}
+      <Modal
+        open={pendingSwitch !== null}
+        onClose={() => setPendingSwitch(null)}
+        title="Unsaved changes"
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setPendingSwitch(null)} disabled={busy}>
+              CANCEL
+            </Button>
+            <Button variant="danger" size="sm" onClick={onDiscardAndSwitch} disabled={busy}>
+              DON&apos;T SAVE
+            </Button>
+            <Button variant="primary" size="sm" onClick={onSaveAndSwitch} loading={busy}>
+              SAVE
+            </Button>
+          </>
+        }
+      >
+        You have unsaved changes. What would you like to do?
+      </Modal>
+
+      <ConfirmDialog
+        open={deletePrompt}
+        title="Delete this?"
+        body="It disappears from your inventory and from the booking form. Existing bookings keep their history."
+        confirmLabel="DELETE"
+        busy={busy}
+        onConfirm={() => runDelete(false)}
+        onCancel={() => setDeletePrompt(false)}
+      />
+
+      <ConfirmDialog
+        open={forcePrompt !== null}
+        title="Booked right now"
+        body={
+          forcePrompt
+            ? `This is on ${forcePrompt.count} active booking${forcePrompt.count === 1 ? '' : 's'}. Delete it anyway?`
+            : undefined
+        }
+        confirmLabel="DELETE ANYWAY"
+        busy={busy}
+        onConfirm={() => runDelete(true)}
+        onCancel={() => setForcePrompt(null)}
       />
     </>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface TypeRowProps {
+  type: VisibleType
+  open: boolean
+  canEdit: boolean
+  busy: boolean
+  activeUnitId?: string
+  quantityBooked: number
+  onToggle: () => void
+  onOpenType: () => void
+  onOpenUnit: (unit: EquipmentUnit | null) => void
+  onAdjustQuantity: (delta: number) => void
+}
+
+function TypeRow({
+  type,
+  open,
+  canEdit,
+  busy,
+  activeUnitId,
+  quantityBooked,
+  onToggle,
+  onOpenType,
+  onOpenUnit,
+  onAdjustQuantity,
+}: TypeRowProps) {
+  const { equipment: item, units, outCount, total } = type
+  const isQuantity = item.trackingType !== 'units'
+  const inactive = isTypeInactive(item)
+
+  const summary = isQuantity
+    ? `${total} IN STOCK · ${quantityBooked} ON BOOKING`
+    : `${total} UNIT${total === 1 ? '' : 'S'}${outCount ? ` · ${outCount} OUT` : ''}`
+
+  return (
+    <div className={styles.type} data-inactive={inactive || undefined}>
+      <div className={styles.typeHeader}>
+        <button type="button" className={styles.typeName} onClick={onOpenType}>
+          {item.name}
+          {inactive && <span className={styles.typeBadge}>INACTIVE</span>}
+          {isQuantity && <span className={styles.typeBadge}>QTY</span>}
+        </button>
+        <button
+          type="button"
+          className={styles.typeToggle}
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={open ? `Collapse ${item.name}` : `Expand ${item.name}`}
+        >
+          <span className={styles.typeSummary}>{summary}</span>
+          <Glyph
+            char="›"
+            className={`${styles.typeChevron} ${open ? styles.chevronOpen : ''}`}
+          />
+        </button>
+      </div>
+
+      {open && (
+        <div className={styles.typeBody}>
+          {isQuantity ? (
+            <div className={styles.quantityRow}>
+              <span className={styles.quantityLabel}>QUANTITY</span>
+              <button
+                type="button"
+                className={styles.quantityStep}
+                onClick={() => onAdjustQuantity(-1)}
+                disabled={!canEdit || busy || item.totalQuantity <= 1}
+                aria-label={`Decrease quantity of ${item.name}`}
+              >
+                –
+              </button>
+              <span className={styles.quantityValue}>{item.totalQuantity}</span>
+              <button
+                type="button"
+                className={styles.quantityStep}
+                onClick={() => onAdjustQuantity(1)}
+                disabled={!canEdit || busy}
+                aria-label={`Increase quantity of ${item.name}`}
+              >
+                +
+              </button>
+              <span className={styles.quantityBooked}>{quantityBooked} on booking</span>
+            </div>
+          ) : (
+            <div className={styles.units}>
+              {units.map(({ unit, status, booking }) => (
+                <button
+                  key={unit.id}
+                  type="button"
+                  className={`${styles.unitChip} ${styles[`unit_${status}`]}`}
+                  data-active={activeUnitId === unit.id || undefined}
+                  onClick={() => onOpenUnit(unit)}
+                  title={unitTooltip(unit, status, booking)}
+                >
+                  {unit.label}
+                </button>
+              ))}
+              {canEdit && (
+                <button type="button" className={styles.addUnit} onClick={() => onOpenUnit(null)}>
+                  + ADD UNIT
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function unitTooltip(
+  unit: EquipmentUnit,
+  status: UnitDisplayStatus,
+  booking: UnitBookingState | null,
+): string {
+  const parts: string[] = []
+  if (unit.serialNumber) parts.push(`S/N ${unit.serialNumber}`)
+  parts.push(
+    status === 'OUT' && booking?.out
+      ? `OUT — ${booking.out.projectName} until ${booking.out.dueLabel}`
+      : status,
+  )
+  if (unit.notes) parts.push(unit.notes)
+  const next = booking?.upcoming[0]
+  if (next) parts.push(`next: ${next.projectName} ${next.rangeLabel}`)
+  return parts.join(' · ')
 }

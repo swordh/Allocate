@@ -70,6 +70,12 @@
   --danger-border-mid:     rgba(229, 72, 77, 0.45);
   --danger-border-strong:  rgba(229, 72, 77, 0.50);
 
+  /* ───────────────────────── EQUIPMENT STATUS ───────────────────────────── */
+  /* The unit status palette from screen 11. AVAILABLE and INACTIVE reuse
+     existing surface/border tokens; these two tints have no equivalent. */
+  --status-out-bg:     rgba(244, 178, 74, 0.08);
+  --status-broken-bg:  rgba(229, 72, 77, 0.08);
+
   /* ────────────────────────────── BUTTON ────────────────────────────────── */
   --btn-primary-bg:   #fff;
   --btn-primary-fg:   #000;
@@ -173,33 +179,32 @@
      DO NOT add new usages of anything below this line.
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* Removed when their last screen is reskinned — phase noted per token. */
-  --white:                     var(--text-primary);    /* phases 3–5 (equipment, bookings, operator) + components/support (untouched, decision 2) */
-  --black:                     var(--bg-page);         /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
-  --on-surface:                var(--text-primary);    /* phase 3 (equipment) */
-  --on-surface-variant:        var(--text-secondary);  /* phases 3–5 (equipment, bookings, operator) */
+  /* Removed when their last screen is reskinned — phase noted per token.
+     Phase 3 shipped 2026-08-11: --on-surface, --outline-variant, --font-subnav,
+     --font-body and --booking-pad-v had no users left once the equipment screen
+     was rebuilt and are gone. The rest lost their equipment references only, so
+     the annotations below no longer list phase 3. */
+  --white:                     var(--text-primary);    /* phases 4–5 (bookings, operator) + components/support (untouched, decision 2) */
+  --black:                     var(--bg-page);         /* phases 4–5 (bookings, operator) + components/support (untouched) */
+  --on-surface-variant:        var(--text-secondary);  /* phases 4–5 (bookings, operator) */
   --outline:                   var(--text-tertiary);   /* phases 4–5 (bookings, operator) + components/support (untouched) */
-  --outline-variant:           var(--border);          /* phase 3 (equipment) */
-  --rule:                      var(--border-strong);   /* phases 3–4 (equipment, bookings) */
-  --mid:                       var(--text-placeholder);/* phases 3–4 (equipment, bookings) + components/support (untouched) */
+  --rule:                      var(--border-strong);   /* phase 4 (bookings) */
+  --mid:                       var(--text-placeholder);/* phase 4 (bookings) + components/support (untouched) */
   --dim:                       var(--text-placeholder);/* phase 4 (bookings) */
-  --secondary:                 var(--text-bright);     /* phases 3–5 (equipment, bookings, operator) */
+  --secondary:                 var(--text-bright);     /* phases 4–5 (bookings, operator) */
   --tertiary:                  var(--accent);          /* phase 4 (bookings) */
-  --error:                     var(--danger);          /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
-  --repair:                    var(--danger);          /* phases 3–4 (equipment, bookings) */
-  --on-primary:                var(--btn-primary-fg);  /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
+  --error:                     var(--danger);          /* phases 4–5 (bookings, operator) + components/support (untouched) */
+  --repair:                    var(--danger);          /* phase 4 (bookings) */
+  --on-primary:                var(--btn-primary-fg);  /* phases 4–5 (bookings, operator) + components/support (untouched) */
   --surface-container-lowest:  var(--surface);         /* phase 5 (operator) + components/support (untouched) */
-  --surface-container-low:     var(--surface-raised);  /* phases 3–5 (equipment, bookings, operator) + components/support (untouched) */
-  --surface-container:         var(--surface-raised);  /* phases 3–4 (equipment, bookings) + components/support (untouched) */
-  --surface-container-high:    var(--surface-raised);  /* phases 3–4 (equipment, bookings) */
-  --font-subnav:               var(--fs-eyebrow-sm);   /* phase 3 (equipment) */
+  --surface-container-low:     var(--surface-raised);  /* phases 4–5 (bookings, operator) + components/support (untouched) */
+  --surface-container:         var(--surface-raised);  /* phase 4 (bookings) + components/support (untouched) */
+  --surface-container-high:    var(--surface-raised);  /* phase 4 (bookings) */
 
   /* Old type scale and booking geometry — kept as literals, owner noted per token. */
   --font-stat:          42px;   /* phases 4–5 (bookings, operator) */
-  --font-booking-title: 40px;   /* phases 3–4 (equipment, bookings) */
-  --font-body:          16px;   /* phase 3 (equipment) */
-  --booking-pad-h:      48px;   /* phases 3–4 (equipment, bookings) */
-  --booking-pad-v:      24px;   /* phase 3 (equipment) */
+  --font-booking-title: 40px;   /* phase 4 (bookings) */
+  --booking-pad-h:      48px;   /* phase 4 (bookings) */
 }
 
 *, *::before, *::after {

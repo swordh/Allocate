@@ -32,6 +32,7 @@ export type IconName =
   | 'delete'
   | 'add'
   | 'external-link'
+  | 'search'
 
 const p = (d: string, key?: string) => createElement('path', { d, key })
 const c = (cx: number, cy: number, r: number, key?: string) =>
@@ -139,4 +140,6 @@ export const ICON_PATHS: Record<IconName, ReactElement> = {
     p('M15 3h6v6', 'corner'),
     p('M10 14 21 3', 'arrow'),
   ),
+
+  search: g(c(11, 11, 7, 'lens'), p('M20 20l-4-4', 'handle')),
 }

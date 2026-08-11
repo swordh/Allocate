@@ -1,0 +1,146 @@
+.footerSpacer {
+  flex: 1;
+}
+
+.readOnlyNote {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
+}
+
+.readOnlyValue {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+/* ── Status picker ───────────────────────────────────────────────────────── */
+/* The design's palette per state. Written as compound selectors so they win
+   against Chip's own .active/.inactive rules regardless of stylesheet order. */
+
+.statusRow {
+  display: flex;
+  gap: 8px;
+}
+
+.statusOption {
+  flex: 1;
+}
+
+.statusOption.status_AVAILABLE[aria-pressed='true'] {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.statusOption.status_INACTIVE[aria-pressed='true'] {
+  background: transparent;
+  color: var(--text-pale);
+  border-color: var(--fill-medium);
+}
+
+.statusOption.status_BROKEN[aria-pressed='true'] {
+  background: var(--status-broken-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ── Category / tracking chip rows ───────────────────────────────────────── */
+
+.chipWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── Booking references ──────────────────────────────────────────────────── */
+
+.bookingList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bookingRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--surface-selected);
+  border: 1px solid var(--fill-weak);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--transition);
+}
+
+.bookingRow:hover {
+  background: var(--surface-raised);
+}
+
+.booking_out {
+  border-left: 3px solid var(--accent);
+}
+
+.booking_upcoming {
+  border-left: 3px solid var(--text-body);
+}
+
+.bookingMain {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bookingProject {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookingMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bookingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-body);
+}
+
+.booking_out .bookingStatus {
+  color: var(--accent);
+}
+
+.bookingChevron {
+  color: var(--text-placeholder);
+  font-size: 16px;
+}
+
+.activeToggle {
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .bookingMeta {
+    font-size: var(--fs-label-sm);
+  }
+}
