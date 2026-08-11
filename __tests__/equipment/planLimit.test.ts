@@ -591,6 +591,36 @@ describe('deactivateEquipment — counter document decrement', () => {
     vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
   })
 
+  // ── Active-booking guard ──────────────────────────────────────────────────
+  //
+  // The guard used to test for a 'ready' status, which has never existed (see
+  // types/booking.ts). Every confirmed booking slipped through it, so equipment
+  // booked for next week deleted silently.
+
+  it('requires force when a confirmed booking still references the equipment', async () => {
+    wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+      hasActiveBookings: true,
+    })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ requiresForce: true, affectedBookingCount: 1 })
+  })
+
+  it('deletes without asking when force is passed', async () => {
+    wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+      hasActiveBookings: true,
+    })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID, true)
+
+    expect(result).toEqual({ success: true })
+  })
+
   // ── Active equipment: decrement counter ───────────────────────────────────
 
   it.todo(

@@ -7,8 +7,12 @@ interface EmptyStateProps {
   body?: string
   /** Typically a Button. */
   action?: ReactNode
-  /** 'inline' is the compact no-results treatment inside an existing list. */
-  variant?: 'block' | 'inline'
+  /**
+   * 'inline' is the compact no-results treatment inside an existing list.
+   * 'framed' is the dashed-border card the design uses when a whole page has
+   * nothing in it yet — bigger heading, more air.
+   */
+  variant?: 'block' | 'inline' | 'framed'
   className?: string
 }
 
@@ -20,11 +24,9 @@ export default function EmptyState({
   variant = 'block',
   className,
 }: EmptyStateProps) {
-  const classes = [
-    styles.empty,
-    variant === 'inline' ? styles.inline : styles.block,
-    className ?? '',
-  ]
+  const VARIANTS = { block: styles.block, inline: styles.inline, framed: styles.framed }
+
+  const classes = [styles.empty, VARIANTS[variant], className ?? '']
     .filter(Boolean)
     .join(' ')
 

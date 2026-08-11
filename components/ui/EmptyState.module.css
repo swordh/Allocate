@@ -16,6 +16,53 @@
   padding: 40px 0;
 }
 
+/* A whole page with nothing in it: dashed frame, display-face heading. */
+.framed {
+  gap: 14px;
+  padding: 96px 40px;
+  border: 1px dashed var(--border-medium);
+}
+
+.framed .eyebrow {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.14em;
+  color: var(--text-pale);
+}
+
+.framed .heading {
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: var(--fw-display);
+}
+
+.framed .body {
+  color: var(--text-weak);
+  text-wrap: pretty;
+}
+
+.framed .action {
+  margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .framed {
+    padding: 52px 24px;
+    gap: 12px;
+  }
+
+  .framed .eyebrow {
+    font-size: var(--fs-eyebrow-sm);
+  }
+
+  .framed .heading {
+    font-size: 20px;
+  }
+
+  .framed .body {
+    font-size: var(--fs-body-sm);
+  }
+}
+
 .eyebrow {
   font-size: var(--fs-eyebrow-sm);
   font-weight: var(--fw-bold);

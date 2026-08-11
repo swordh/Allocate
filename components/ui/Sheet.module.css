@@ -19,11 +19,27 @@
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 22px var(--page-margin);
   border-bottom: 1px solid var(--hairline);
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-weak);
 }
 
 .title {
@@ -33,6 +49,16 @@
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
   color: var(--text-primary);
+}
+
+/* When the panel carries an eyebrow it is a page-level editor, not a dialog
+   strip: the title takes the display face at the design's 22px. */
+.heading .eyebrow + .title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: var(--fw-display);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .close {
@@ -63,6 +89,42 @@
   border-top: 1px solid var(--hairline);
 }
 
+/* Docked: on desktop the panel is a column in the page, not an overlay. The
+   caller owns the column; `.overlay` collapses to a plain static wrapper, which
+   is also why its click-to-dismiss stops firing here. */
+@media (min-width: 769px) {
+  .docked {
+    position: static;
+    display: block;
+    background: none;
+  }
+
+  .docked .panel {
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+    background: none;
+    border-left: none;
+  }
+
+  .docked .header {
+    padding: 0 0 22px;
+    border-bottom: none;
+  }
+
+  .docked .body {
+    padding: 0;
+  }
+
+  .docked .footer {
+    padding: 22px 0 26px;
+    margin-top: auto;
+  }
+}
+
 /* Mobile: the same panel becomes a bottom drawer. */
 @media (max-width: 768px) {
   .overlay {
@@ -74,6 +136,7 @@
     width: 100%;
     height: auto;
     max-height: 85vh;
+    background: var(--surface-sheet);
     border-left: none;
     border-top: 1px solid var(--border-subtle);
   }

@@ -602,6 +602,19 @@
   cursor: not-allowed;
 }
 
+/* Broken units stay visible so people can see the unit exists — red, and not
+   selectable. Distinct from INACTIVE, which never reaches this list. */
+.unitChipBroken {
+  border-color: var(--danger);
+  background: var(--status-broken-bg);
+  cursor: not-allowed;
+}
+
+.unitChipBroken .unitName,
+.unitChipBroken .unitState {
+  color: var(--danger);
+}
+
 .unitName {
   font-weight: 700;
   color: #fff;

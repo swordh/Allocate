@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createBooking, updateBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
 import { useToast } from '@/lib/toast-context'
 import BookingCalendar from './BookingCalendar'
-import type { Booking, Equipment } from '@/types'
+import type { Booking, Equipment, EquipmentUnit } from '@/types'
 import type { ConflictResult, BookedSummary } from '@/actions/bookings'
 import styles from './BookingForm.module.css'
 
@@ -237,11 +237,15 @@ export default function BookingForm({
     setConflictResult(null)
   }
 
+  // availableForBooking === false is INACTIVE: hidden from this picker entirely.
+  // A broken unit is a different thing — it stays listed so people can see it
+  // exists, marked red and not selectable (see isBroken at the chip below).
   function sortedUnits(eq: Equipment): NonNullable<typeof eq.units> {
     const bookable = (eq.units ?? []).filter((u) => u.availableForBooking !== false)
     const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-    const available   = bookable.filter((u) => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
-    const unavailable = bookable.filter((u) =>  booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
+    const blocked = (u: EquipmentUnit) => booked.has(u.id) || u.status === 'needs_repair'
+    const available   = bookable.filter((u) => !blocked(u)).sort((a, b) => a.label.localeCompare(b.label))
+    const unavailable = bookable.filter((u) =>  blocked(u)).sort((a, b) => a.label.localeCompare(b.label))
     return [...available, ...unavailable]
   }
 
@@ -503,7 +507,9 @@ export default function BookingForm({
                               const selectedUnitIds = getSelectedUnitIds(eq.id)
                               const isUnitOpen = unitOpen.has(eq.id)
                               const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-                              const availableUnits = units.filter((u) => !bookedUnitIds.has(u.id))
+                              const availableUnits = units.filter(
+                                (u) => !bookedUnitIds.has(u.id) && u.status !== 'needs_repair',
+                              )
                               const availCount = bookedSummary !== null ? availableUnits.length : units.length
 
                               return (
@@ -548,12 +554,13 @@ export default function BookingForm({
                                       {units.map((unit) => {
                                         const isBooked = bookedUnitIds.has(unit.id)
                                         const isOn = selectedUnitIds.includes(unit.id)
+                                        const isBroken = unit.status === 'needs_repair'
                                         return (
                                           <button
                                             key={unit.id}
                                             type="button"
-                                            disabled={isBooked && !isOn}
-                                            className={`${styles.unitChip} ${isOn ? styles.unitChipOn : ''} ${isBooked && !isOn ? styles.unitChipBad : ''}`}
+                                            disabled={isBroken || (isBooked && !isOn)}
+                                            className={`${styles.unitChip} ${isOn ? styles.unitChipOn : ''} ${isBroken ? styles.unitChipBroken : ''} ${isBooked && !isOn ? styles.unitChipBad : ''}`}
                                             onClick={() => isOn ? deselectUnit(eq.id, unit.id) : selectUnit(eq.id, unit.id)}
                                           >
                                             <span className={styles.unitName}>{unit.label}</span>
@@ -561,7 +568,7 @@ export default function BookingForm({
                                               <span className={styles.unitSn}>{unit.serialNumber}</span>
                                             )}
                                             <span className={styles.unitState}>
-                                              {isBooked ? 'BOOKED' : isOn ? '✓' : '+'}
+                                              {isBroken ? 'BROKEN' : isBooked ? 'BOOKED' : isOn ? '✓' : '+'}
                                             </span>
                                           </button>
                                         )
