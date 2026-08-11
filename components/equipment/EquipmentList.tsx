@@ -532,6 +532,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         <div className={styles.list}>
           {inventoryEmpty || noMatches ? (
             <EmptyState
+              variant="framed"
               eyebrow={inventoryEmpty ? 'NO INVENTORY YET' : 'NO MATCHES'}
               heading={inventoryEmpty ? 'Add your first equipment' : 'Nothing matches that'}
               body={
