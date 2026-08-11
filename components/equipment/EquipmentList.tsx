@@ -364,8 +364,22 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const filterActive = normalizedQuery !== '' || filter !== 'ALL'
 
   const groups: VisibleGroup[] = useMemo(() => {
-    const matchesFilter = (status: UnitDisplayStatus) =>
-      filter === 'ALL' || status === filter
+    // Filter on the underlying fields, not on the display label. A unit that is
+    // both checked out and broken shows as OUT — one label, by precedence — but
+    // it still has to answer to the BROKEN filter.
+    const unitMatchesFilter = ({ unit, booking }: VisibleUnit) => {
+      switch (filter) {
+        case 'ALL':      return true
+        case 'OUT':      return !!booking?.out
+        case 'BROKEN':   return unit.status === 'needs_repair'
+        case 'INACTIVE': return unit.availableForBooking === false
+      }
+    }
+
+    // A type carries its own state too: INACTIVE is the only one that exists at
+    // type level. Quantity types have no units, so this is their only way in.
+    const typeMatchesFilter = (item: Equipment) =>
+      filter === 'ALL' || (filter === 'INACTIVE' && isTypeInactive(item))
 
     const byCategory = new Map<string, VisibleType[]>()
 
@@ -378,24 +392,26 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         return { unit, status: unitDisplayStatus(unit, !!booking?.out), booking }
       })
 
-      const units = allUnits.filter(({ unit, status }) => {
-        if (!matchesFilter(status)) return false
-        if (normalizedQuery === '') return true
-        return (
-          nameHit ||
-          unit.label.toLowerCase().includes(normalizedQuery) ||
-          (unit.serialNumber ?? '').toLowerCase().includes(normalizedQuery)
-        )
-      })
+      const matchesQuery = ({ unit }: VisibleUnit) =>
+        normalizedQuery === '' ||
+        nameHit ||
+        unit.label.toLowerCase().includes(normalizedQuery) ||
+        (unit.serialNumber ?? '').toLowerCase().includes(normalizedQuery)
+
+      // When the type itself is what matched, show all of it — the whole type is
+      // inactive, not particular units.
+      const typeHit = typeMatchesFilter(item)
+      const units = allUnits.filter(
+        (u) => (typeHit || unitMatchesFilter(u)) && matchesQuery(u),
+      )
 
       const isQuantity = item.trackingType !== 'units'
 
       // A filter or a search hides everything it doesn't match, so the hits are
-      // visible without opening anything. Quantity types have no units to match
-      // on, so they survive on their name alone and only under ALL.
+      // visible without opening anything.
       if (filterActive) {
-        const quantityHit = isQuantity && nameHit && filter === 'ALL'
-        if (!quantityHit && units.length === 0) continue
+        const keepOnTypeAlone = typeHit && nameHit
+        if (!keepOnTypeAlone && units.length === 0) continue
       }
 
       const category = item.category || 'Uncategorized'
