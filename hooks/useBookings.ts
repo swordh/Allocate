@@ -32,6 +32,7 @@ function docToBooking(id: string, data: Record<string, unknown>): Booking {
     notes:            (data.notes as string)            ?? '',
     items:            (data.items as BookingItem[])     ?? [],
     equipmentIds:     (data.equipmentIds as string[])   ?? [],
+    unitIds:          (data.unitIds as string[])        ?? [],
     startDate:        (data.startDate as string)        ?? '',
     endDate:          (data.endDate as string)          ?? '',
     startTime:        (data.startTime as string | null) ?? null,
