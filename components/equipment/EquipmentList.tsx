@@ -61,7 +61,6 @@ interface VisibleType {
   equipment: Equipment
   units: VisibleUnit[]
   available: number
-  outCount: number
   total: number
 }
 
@@ -408,7 +407,6 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         available: isQuantity
           ? Math.max(0, item.totalQuantity - booked)
           : allUnits.filter((u) => u.status === 'AVAILABLE').length,
-        outCount: isQuantity ? booked : allUnits.filter((u) => u.status === 'OUT').length,
         total: isQuantity ? item.totalQuantity : allUnits.length,
       })
       byCategory.set(category, list)
@@ -696,29 +694,24 @@ function TypeRow({
   onOpenUnit,
   onAdjustQuantity,
 }: TypeRowProps) {
-  const { equipment: item, units, available, outCount, total } = type
+  const { equipment: item, units, available, total } = type
   const isQuantity = item.trackingType !== 'units'
   const inactive = isTypeInactive(item)
 
   // One summary for both tracking types — a pool of 12 sandbags and a shelf of
-  // 12 lenses answer the same question.
+  // 12 lenses answer the same question. What is out is already implied by the
+  // count, and the OUT chips below name the actual units.
   const summary = (
     <>
       <b>
         {available}/{total}
       </b>{' '}
       AVAILABLE
-      {outCount > 0 && (
-        <>
-          {' · '}
-          <b>{outCount}</b> OUT
-        </>
-      )}
     </>
   )
 
   return (
-    <div className={styles.type} data-inactive={inactive || undefined} data-open={open || undefined}>
+    <div className={styles.type} data-inactive={inactive || undefined}>
       <div className={styles.typeHeader}>
         <button type="button" className={styles.typeName} onClick={onOpenType}>
           <span className={styles.typeNameRow}>

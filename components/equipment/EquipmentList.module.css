@@ -189,10 +189,6 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* An open type is lifted out of the stack, header and unit tray together. */
-.type[data-open] {
-  background: rgba(255, 255, 255, 0.18);
-}
 
 .typeName {
   display: flex;
@@ -264,8 +260,11 @@
   transition: transform var(--transition);
 }
 
+/* Only the expanded row lights up — the type row it hangs off keeps the stack's
+   own tone, so the highlight reads as "here is what is inside". */
 .typeBody {
   padding: 4px 18px 18px 44px;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* ── Units ───────────────────────────────────────────────────────────────── */

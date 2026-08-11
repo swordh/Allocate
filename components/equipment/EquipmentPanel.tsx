@@ -152,7 +152,7 @@ export default function EquipmentPanel({
               hint={
                 unitDraft.availableForBooking
                   ? 'Shows up in the booking form.'
-                  : 'Hidden from the booking form. Still listed here.'
+                  : 'Hidden from the booking form.'
               }
               disabled={!canEdit || busy}
             />
@@ -162,7 +162,7 @@ export default function EquipmentPanel({
               label="Broken"
               hint={
                 unitDraft.needsRepair
-                  ? 'Shown red in the booking form and can’t be selected.'
+                  ? 'Not available for booking'
                   : 'Nothing wrong with it.'
               }
               disabled={!canEdit || busy}
@@ -313,8 +313,8 @@ export default function EquipmentPanel({
               label="Available for booking"
               hint={
                 typeDraft.inactive
-                  ? 'Hidden from the booking form. Still listed here.'
-                  : 'Shows up in the booking form, with all its units.'
+                  ? 'Hidden from the booking form.'
+                  : 'Shows up in the booking form.'
               }
               disabled={!canEdit || busy}
               className={styles.activeToggle}
