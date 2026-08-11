@@ -57,6 +57,18 @@
   padding-bottom: 60px;
 }
 
+.layout[data-full] {
+  grid-template-columns: 1fr;
+}
+
+.layout[data-full] .list {
+  padding-right: 0;
+}
+
+.layout[data-full] .panelColumn {
+  display: none;
+}
+
 .list {
   display: flex;
   flex-direction: column;

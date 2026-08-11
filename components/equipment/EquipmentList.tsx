@@ -500,7 +500,9 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
         </div>
       </div>
 
-      <div className={styles.layout}>
+      {/* With nothing to select from, the panel column is dead width — the
+          empty state takes the full row until there is a panel to show. */}
+      <div className={styles.layout} data-full={inventoryEmpty && !panel ? '' : undefined}>
         <div className={styles.list}>
           {inventoryEmpty || noMatches ? (
             <EmptyState
