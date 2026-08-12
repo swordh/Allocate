@@ -250,7 +250,7 @@ function BookingRow({
           </span>
           <span className={styles.metaItem}>
             <Icon name="crate" size={13} strokeWidth={2} aria-hidden />
-            {itemCount(booking)} items
+            {itemCount(booking)} {itemCount(booking) === 1 ? 'item' : 'items'}
           </span>
         </span>
       </span>

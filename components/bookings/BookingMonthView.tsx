@@ -15,6 +15,7 @@ import {
   formatMonthLabel,
   formatSpanLabel,
   getISOWeek,
+  getISOWeekYear,
   getMondayString,
   isWeekend,
   offsetDate,
@@ -233,17 +234,25 @@ export default function BookingMonthView({
                   )
                 })}
 
-                {week.overflow.map((o) => (
-                  <button
-                    key={`${week.key}-more-${o.col}`}
-                    type="button"
-                    className={styles.more}
-                    style={{ gridColumn: o.col + 1, gridRow: MAX_LANES + 1 }}
-                    onClick={() => setSelectedDay(offsetDate(week.key, o.col))}
-                  >
-                    +{o.count} more
-                  </button>
-                ))}
+                {/* The bars layer is desktop-only, so this takes you to the
+                    week view for that day — where every lane fits — rather
+                    than to the mobile agenda, which is not on screen here. */}
+                {week.overflow.map((o) => {
+                  const day = offsetDate(week.key, o.col)
+                  const params = new URLSearchParams(filterParams)
+                  params.set('week', String(getISOWeek(day)))
+                  params.set('year', String(getISOWeekYear(day)))
+                  return (
+                    <Link
+                      key={`${week.key}-more-${o.col}`}
+                      href={`/bookings/week?${params}`}
+                      className={styles.more}
+                      style={{ gridColumn: o.col + 1, gridRow: MAX_LANES + 1 }}
+                    >
+                      +{o.count} more
+                    </Link>
+                  )
+                })}
               </div>
             </div>
           </div>
