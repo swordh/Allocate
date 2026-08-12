@@ -5,7 +5,7 @@ import { getEquipment } from '@/lib/queries/equipment'
 import { getUserProfile } from '@/lib/queries/users'
 import { getCompany } from '@/lib/queries/company'
 import BookingDetail from '@/components/bookings/BookingDetail'
-import BookingFormPage from '@/components/bookings/BookingFormPage'
+import BookingForm from '@/components/bookings/BookingForm'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 import type { UserProfile } from '@/types'
 
@@ -40,15 +40,16 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
       // itself filters it out of what can be added.
       getEquipment(session.activeCompanyId, { includeInactive: true }),
     ])
-    const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
-
     return (
-      <BookingFormPage
+      <BookingForm
         companyId={session.activeCompanyId}
         equipment={equipment}
         defaultStartDate={booking.startDate}
         defaultEndDate={booking.endDate}
-        timeSlotMinutes={timeSlotMinutes}
+        timeSlotMinutes={
+          company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
+        }
+        timezone={company?.preferences?.timezone ?? DEFAULT_COMPANY_PREFERENCES.timezone}
         booking={booking}
         bookingId={booking.id}
       />

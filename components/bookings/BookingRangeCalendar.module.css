@@ -1,0 +1,109 @@
+/* Inline range calendar in the booking form — screen 09, DATES. */
+
+.calendar {
+  width: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.navBtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.navBtn:hover {
+  background: var(--fill);
+  color: var(--text-primary);
+}
+
+.monthLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
+  color: var(--text-primary);
+}
+
+.dowRow,
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dowRow {
+  margin-bottom: 8px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label-sm);
+  letter-spacing: var(--ls-btn);
+  color: var(--text-pale);
+  text-align: center;
+}
+
+.day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-body-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.day:hover {
+  background: var(--fill);
+}
+
+/* Pickup and return are filled; the days between them carry the wash. */
+.edge {
+  background: var(--accent);
+  color: var(--btn-primary-fg);
+}
+
+.edge:hover {
+  background: var(--accent-hover);
+}
+
+.inRange {
+  background: var(--booking-range-fill);
+  color: var(--accent);
+}
+
+.today {
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .dowRow,
+  .days {
+    gap: 3px;
+  }
+
+  .day {
+    font-size: var(--fs-body);
+  }
+
+  .navBtn {
+    width: 30px;
+    height: 30px;
+  }
+}
