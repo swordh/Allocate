@@ -45,6 +45,7 @@
 
 .groupLabel {
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-tab);
   letter-spacing: 0.14em;
   color: var(--text-weak);
@@ -106,6 +107,7 @@
   flex-wrap: wrap;
   margin-top: var(--meta-gap);
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-tab);
   letter-spacing: 0.05em;
   text-transform: uppercase;

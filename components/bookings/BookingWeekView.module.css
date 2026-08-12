@@ -33,6 +33,7 @@
 
 .dow {
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-label);
   letter-spacing: var(--ls-eyebrow);
   color: var(--text-weak);

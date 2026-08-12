@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { GroupedVirtuoso, type GroupedVirtuosoHandle } from 'react-virtuoso'
 import Icon from '@/components/ui/Icon'
@@ -48,6 +48,7 @@ export default function BookingList({
   const { showCancelled, onlyMine } = useBookingFilters()
   const [compact, setCompact] = useState(false)
   const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
+  const scrollerRef = useRef<HTMLElement | null>(null)
 
   const { bookings: live, loading, error } = useBookings(companyId, {
     includeCancelled: showCancelled,
@@ -84,24 +85,37 @@ export default function BookingList({
 
   // The design's toolbar reads "JUNE 2026 · 4 BOOKINGS" — the month you are
   // looking at, not the month it happens to be. The feed has no stepper, so the
-  // topmost visible group is what names it.
-  const [topItem, setTopItem] = useState(0)
+  // day group currently pinned to the top of the scroller names it.
+  //
+  // Measured from the DOM rather than taken from Virtuoso's rangeChanged: that
+  // callback reports the *rendered* range, which includes the overscan above
+  // the viewport, and for a list short enough to render in one go it never
+  // moves off zero at all.
+  const [anchorDate, setAnchorDate] = useState(today)
+
+  const readAnchor = useCallback((scroller: HTMLElement | null) => {
+    if (!scroller) return
+    const top = scroller.getBoundingClientRect().top
+    let pinned: string | null = null
+    for (const header of scroller.querySelectorAll<HTMLElement>('[data-group-date]')) {
+      if (header.getBoundingClientRect().top <= top + 1) pinned = header.dataset.groupDate ?? null
+      else break
+    }
+    setAnchorDate(pinned ?? groupDates[0] ?? today)
+  }, [groupDates, today])
 
   const { monthLabel, monthCount } = useMemo(() => {
-    let groupIndex = 0
-    let offset = 0
-    for (let i = 0; i < groupCounts.length; i++) {
-      if (topItem < offset + groupCounts[i]) { groupIndex = i; break }
-      offset += groupCounts[i]
-    }
-    const anchor = groupDates[groupIndex] ?? today
-    const date = parseDateString(anchor)
-    const prefix = anchor.slice(0, 7)
+    const date = parseDateString(anchorDate)
+    const prefix = anchorDate.slice(0, 7)
     return {
       monthLabel: formatMonthLabel(date.getUTCFullYear(), date.getUTCMonth()),
       monthCount: bookings.filter((b) => b.startDate.startsWith(prefix)).length,
     }
-  }, [topItem, groupCounts, groupDates, bookings, today])
+  }, [anchorDate, bookings])
+
+  useEffect(() => {
+    readAnchor(scrollerRef.current)
+  }, [readAnchor, groupCounts])
 
   if (error) {
     return <p className={styles.error}>Failed to load bookings. Please refresh.</p>
@@ -145,9 +159,15 @@ export default function BookingList({
             style={{ height: 'calc(100svh - 190px)', minHeight: '320px' }}
             groupCounts={groupCounts}
             initialTopMostItemIndex={todayIndex}
-            rangeChanged={({ startIndex }) => setTopItem(startIndex)}
+            scrollerRef={(el) => {
+              const scroller = el as HTMLElement | null
+              if (!scroller || scroller === scrollerRef.current) return
+              scrollerRef.current = scroller
+              scroller.addEventListener('scroll', () => readAnchor(scroller), { passive: true })
+              readAnchor(scroller)
+            }}
             groupContent={(index) => (
-              <div className={styles.groupHeader}>
+              <div className={styles.groupHeader} data-group-date={groupDates[index]}>
                 <span className={`${styles.groupLabel} ${groupDates[index] === today ? styles.groupLabelToday : ''}`}>
                   {formatDayLabel(groupDates[index])}
                 </span>

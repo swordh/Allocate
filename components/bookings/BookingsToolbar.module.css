@@ -55,6 +55,7 @@
 
 .count {
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-tab);
   letter-spacing: var(--ls-btn);
   color: var(--text-pale);
@@ -99,6 +100,7 @@
   gap: 6px;
   padding: 0 0 0 6px;
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-tab);
   letter-spacing: var(--ls-nav);
   color: var(--accent);

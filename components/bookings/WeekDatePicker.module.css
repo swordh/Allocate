@@ -74,6 +74,7 @@
 
 .dow {
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: 9px;
   letter-spacing: 0.05em;
   color: var(--text-faint);
@@ -87,6 +88,7 @@
 .day {
   padding: 5px 0;
   font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
   font-size: var(--fs-label);
   text-align: center;
   color: var(--text-body);
