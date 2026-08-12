@@ -406,14 +406,19 @@ export default function BookingForm({
               are the same nodes, in a Sheet instead of in the column. */}
           {isMobile ? (
             <div className={styles.pills}>
-              <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
-                <Icon name="calendar" size={14} strokeWidth={2} className={styles.pillIcon} aria-hidden />
-                {pickup === ret ? formatDayShort(pickup) : formatCompactRange(pickup, ret)}
-              </button>
-              <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
-                <Icon name="schedule" size={14} strokeWidth={2} aria-hidden />
-                {timeLabel}
-              </button>
+              {/* Only the date and time pills scroll; the notes button is a
+                  sibling outside that track, pinned to the right edge. */}
+              <div className={styles.pillTrack}>
+                <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
+                  <Icon name="calendar" size={14} strokeWidth={2} className={styles.pillIcon} aria-hidden />
+                  {pickup === ret ? formatDayShort(pickup) : formatCompactRange(pickup, ret)}
+                </button>
+                <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
+                  <Icon name="schedule" size={14} strokeWidth={2} aria-hidden />
+                  {timeLabel}
+                </button>
+              </div>
+
               <button
                 type="button"
                 className={`${styles.pillIconOnly} ${notes.trim() ? styles.pillHasNotes : ''}`}
