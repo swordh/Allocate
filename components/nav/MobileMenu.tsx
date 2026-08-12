@@ -8,7 +8,8 @@ import type { Role } from '@/types'
 import { deleteSession } from '@/actions/auth'
 import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
-import { TOP_NAV, BOOKINGS_ITEMS, settingsItemsForRole } from './nav-items'
+import { useBookingFilters } from '@/hooks/useBookingFilters'
+import { TOP_NAV, settingsItemsForRole } from './nav-items'
 import styles from './MobileMenu.module.css'
 
 interface MobileMenuProps {
@@ -32,6 +33,7 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
   const router = useRouter()
   const sheetRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const { showCancelled, onlyMine, toggleCancelled, toggleOnlyMine } = useBookingFilters()
 
   // Auto-close when the route changes.
   useEffect(() => { setOpen(false) }, [pathname])
@@ -155,23 +157,33 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
               </div>
             )}
 
+            {/* Booking filters. The design puts them here rather than on the
+                page (screen 08 Mobil, "FILTER"), because the toolbar's own
+                filter pills are desktop-only. `Active bookings only` from the
+                design file is deliberately not built — decision 2026-08-11. */}
             {isBookings && (
               <div className={styles.group}>
-                <p className={styles.groupLabel}>View</p>
-                <div className={styles.cardList}>
-                  {BOOKINGS_ITEMS.map((item) => {
-                    const active = isSubActive(item.href)
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`${styles.card} ${active ? styles.cardActive : ''}`}
-                      >
-                        <span className={styles.cardLabel}>{item.label.toUpperCase()}</span>
-                        <Glyph char="›" className={styles.cardChevron} />
-                      </Link>
-                    )
-                  })}
+                <p className={styles.groupLabel}>Filter</p>
+                <div className={styles.filterList}>
+                  {[
+                    { key: 'cancelled', icon: 'eye' as const, label: 'Show cancelled', on: showCancelled, toggle: toggleCancelled },
+                    { key: 'mine', icon: 'person' as const, label: 'Only mine', on: onlyMine, toggle: toggleOnlyMine },
+                  ].map((filter) => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      role="switch"
+                      aria-checked={filter.on}
+                      onClick={filter.toggle}
+                      className={`${styles.filterRow} ${filter.on ? styles.filterRowOn : ''}`}
+                    >
+                      <Icon name={filter.icon} size={18} strokeWidth={1.9} />
+                      <span className={styles.filterLabel}>{filter.label}</span>
+                      <span className={styles.filterTrack} aria-hidden="true">
+                        <span className={styles.filterKnob} />
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -194,22 +206,13 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
               </div>
             </div>
 
-            {/* Create CTA — the design puts this as a FAB on the Bookings/
-                Equipment pages themselves, not in this sheet, and no FAB
-                exists there yet, so it stays here as the only mobile entry
-                point until that's built. Flagged for follow-up. */}
-            {(isBookings || (isEquipment && role === 'admin')) && (
+            {/* Create CTA — bookings now has its own FAB on the page (phase 4),
+                so only equipment still needs an entry point here. */}
+            {isEquipment && role === 'admin' && (
               <div className={styles.sheetFooter}>
-                {isBookings && (
-                  <Link href="/bookings/new" className={styles.ctaBtn}>
-                    New Booking
-                  </Link>
-                )}
-                {isEquipment && role === 'admin' && (
-                  <Link href="/equipment?add=1" className={styles.ctaBtn}>
-                    New Equipment
-                  </Link>
-                )}
+                <Link href="/equipment?add=1" className={styles.ctaBtn}>
+                  New Equipment
+                </Link>
               </div>
             )}
           </div>
