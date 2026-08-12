@@ -10,7 +10,7 @@ import Glyph from '@/components/ui/Glyph'
 import StatusDot from '@/components/ui/StatusDot'
 import { cancelBooking, checkOutBooking, checkInBooking } from '@/actions/bookings'
 import { formatCompactRange, formatDayFull, formatStampInZone } from '@/lib/dates'
-import { itemCount, statusColor, statusLabel } from '@/lib/bookings/status'
+import { statusColor, statusLabel } from '@/lib/bookings/status'
 import type { Booking, Equipment, Role, UserProfile } from '@/types'
 import styles from './BookingDetail.module.css'
 
@@ -109,7 +109,6 @@ export default function BookingDetail({
       .map(([category, lines]) => ({ category, lines: Array.from(lines.values()) }))
   }, [booking.items, equipment])
 
-  const typeCount = groups.reduce((sum, g) => sum + g.lines.length, 0)
   const color = statusColor(booking.status)
   const timeLabel = booking.startTime && booking.endTime ? null : 'Full day'
 
@@ -118,6 +117,20 @@ export default function BookingDetail({
       <Link href="/bookings" className={styles.back}>
         <Glyph char="‹" /> BACK TO BOOKINGS
       </Link>
+
+      <div className={styles.mobileHeader}>
+        <Link href="/bookings" className={styles.mobileBack} aria-label="Back to bookings">
+          <Glyph char="‹" />
+        </Link>
+        <span className={styles.mobileTitle}>Booking</span>
+      </div>
+
+      {/* On mobile the status leads, above the title. On desktop it lives in
+          the aside, so this copy is hidden there and vice versa. */}
+      <p className={`${styles.status} ${styles.statusLead}`} style={{ color }}>
+        <StatusDot size={8} />
+        {statusLabel(booking.status)}
+      </p>
 
       <h1 className={styles.title}>{booking.projectName}</h1>
 
@@ -143,12 +156,7 @@ export default function BookingDetail({
           </section>
 
           <section className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h2 className={styles.sectionTitle}>EQUIPMENT</h2>
-              <span className={styles.sectionMeta}>
-                {itemCount(booking)} ITEMS · {typeCount} {typeCount === 1 ? 'TYPE' : 'TYPES'}
-              </span>
-            </div>
+            <h2 className={styles.sectionTitle}>EQUIPMENT</h2>
 
             {groups.map((group) => (
               <div key={group.category} className={styles.group}>
@@ -172,6 +180,19 @@ export default function BookingDetail({
               <p className={styles.notes}>{booking.notes}</p>
             </section>
           )}
+
+          <section className={styles.creditSection}>
+            <div>
+              <p className={styles.asideLabel}>CREATED BY</p>
+              <p className={styles.credit}>{userProfile?.name ?? 'Deleted user'}</p>
+            </div>
+            {booking.createdAt && (
+              <div>
+                <p className={styles.asideLabel}>CREATED</p>
+                <p className={styles.credit}>{formatStampInZone(booking.createdAt, timezone)}</p>
+              </div>
+            )}
+          </section>
         </div>
 
         <aside className={styles.aside}>
@@ -204,16 +225,22 @@ export default function BookingDetail({
                 CHECK IN
               </Button>
             )}
-            {canEdit && (
-              <Button variant="secondary" size="sm" fullWidth href={`/bookings/${booking.id}?edit=1`}>
-                EDIT BOOKING
-              </Button>
-            )}
-            {canCancel && (
-              <Button variant="danger" size="sm" fullWidth onClick={() => setCancelOpen(true)} disabled={isPending}>
-                CANCEL BOOKING
-              </Button>
-            )}
+            {/* `display: contents` on desktop, so these stack with the rest;
+                a two-up row inside the fixed bar on mobile. */}
+            <div className={styles.secondaryRow}>
+              {canEdit && (
+                <Button variant="secondary" size="sm" fullWidth href={`/bookings/${booking.id}?edit=1`}>
+                  <span className={styles.longLabel}>EDIT BOOKING</span>
+                  <span className={styles.shortLabel}>EDIT</span>
+                </Button>
+              )}
+              {canCancel && (
+                <Button variant="danger" size="sm" fullWidth onClick={() => setCancelOpen(true)} disabled={isPending}>
+                  <span className={styles.longLabel}>CANCEL BOOKING</span>
+                  <span className={styles.shortLabel}>CANCEL</span>
+                </Button>
+              )}
+            </div>
 
             {(canCheckOut || canCheckIn) && (
               <p className={styles.actionHint}>

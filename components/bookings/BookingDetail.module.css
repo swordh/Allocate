@@ -297,3 +297,140 @@
     font-size: 16px;
   }
 }
+
+/* ── mobile structure ───────────────────────────────────────────────────── */
+/* Screen 10 (Mobil) is not the desktop layout stacked: the status leads above
+   the title, CREATED BY / CREATED move to a two-up section at the foot of the
+   page, and the actions become a fixed bar. */
+
+.mobileHeader,
+.statusLead,
+.creditSection {
+  display: none;
+}
+
+.shortLabel {
+  display: none;
+}
+
+/* The two secondary actions stack with everything else above the breakpoint. */
+.secondaryRow {
+  display: contents;
+}
+
+@media (max-width: 768px) {
+  .back {
+    display: none;
+  }
+
+  .mobileHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 12px;
+  }
+
+  .mobileBack {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    font-size: 18px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-medium);
+  }
+
+  .mobileTitle {
+    font-family: var(--font-ui);
+    font-weight: var(--fw-bold);
+    font-size: 19px;
+    color: var(--text-primary);
+  }
+
+  .statusLead {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 12px;
+    font-family: var(--font-ui);
+    font-size: var(--fs-tab);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-eyebrow);
+  }
+
+  .title {
+    margin-top: 10px;
+    font-size: 52px;
+    line-height: 0.9;
+  }
+
+  .section {
+    padding: 24px 0;
+  }
+
+  .sectionTitle {
+    font-size: var(--fs-tab);
+    margin-bottom: 16px;
+  }
+
+  .creditSection {
+    display: flex;
+    gap: 40px;
+    padding: 24px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .credit {
+    font-family: var(--font-ui);
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-body);
+    color: var(--text-primary);
+  }
+
+  /* The aside keeps only its actions here — status and the credits are already
+     on the page — and becomes the fixed bar the design draws. */
+  .aside {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    gap: 10px;
+    padding: 16px var(--page-margin-mobile) calc(16px + env(safe-area-inset-bottom));
+    background: var(--bg-root);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .aside > div:not(.actions) {
+    display: none;
+  }
+
+  .actionHint {
+    display: none;
+  }
+
+  .secondaryRow {
+    display: flex;
+    gap: 10px;
+  }
+
+  .secondaryRow > * {
+    flex: 1;
+  }
+
+  .longLabel {
+    display: none;
+  }
+
+  .shortLabel {
+    display: inline;
+  }
+
+  /* Room for the fixed bar. */
+  .main {
+    padding-bottom: 150px;
+  }
+}
