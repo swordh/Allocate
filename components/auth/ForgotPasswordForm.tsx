@@ -3,72 +3,111 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { requestPasswordReset } from '@/actions/auth-email'
-import styles from './Auth.module.css'
+import AuthShell from './AuthShell'
+import AuthCard from './AuthCard'
+import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
+import Field from '@/components/ui/Field'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import styles from './ForgotPasswordForm.module.css'
+
+const THROTTLED_MESSAGE = 'Too many reset requests. Wait 15 minutes before trying again.'
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const [throttled, setThrottled] = useState(false)
+
+  async function send() {
+    setLoading(true)
+    const result = await requestPasswordReset(email.trim())
+    setLoading(false)
+    if (result.throttled) {
+      setThrottled(true)
+      setSent(false)
+      return
+    }
+    setThrottled(false)
+    setSent(true)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
-    try {
-      // Always resolves with { ok: true } — the action never reveals whether
-      // the address has an account (enumeration protection).
-      await requestPasswordReset(email.trim())
-      setSent(true)
-    } finally {
-      setLoading(false)
-    }
+    await send()
   }
 
   if (sent) {
     return (
-      <div className={styles.page}>
-        <div className={styles.formCard}>
-          <h1 className={styles.pageTitle}>CHECK YOUR EMAIL</h1>
-          <p>
-            If an account exists for <strong>{email.trim()}</strong>, we’ve sent a
-            link to reset your password.
-          </p>
-          <p className={styles.footer}>
-            <Link href="/login">Back to sign in</Link>
-          </p>
-        </div>
-      </div>
+      <AuthShell>
+        <AuthCard width={400} gap={24}>
+          <div className={styles.sentTitleBlock}>
+            <span className={styles.eyebrow}>LINK SENT</span>
+            <h1 className={styles.sentTitle}>Check your inbox</h1>
+            <span className={styles.sentBody}>
+              We sent a reset link to <strong>{email.trim()}</strong>. It expires in 60 minutes
+              and can only be used once.
+            </span>
+          </div>
+
+          <div className={styles.actions}>
+            <Button variant="secondary" size="lg" fullWidth loading={loading} onClick={send}>
+              {loading ? 'Sending…' : 'Resend link'}
+            </Button>
+            <Link className={styles.linkButton} href="/login">
+              Back to sign in
+            </Link>
+          </div>
+
+          <span className={styles.fineprint}>
+            Nothing after a few minutes? Check spam, or ask an admin in your workspace to confirm
+            the address on your account.
+          </span>
+        </AuthCard>
+      </AuthShell>
     )
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.formCard}>
-        <h1 className={styles.pageTitle}>RESET PASSWORD</h1>
+    <AuthShell>
+      <AuthCard width={400}>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title}>Reset password</h1>
+          <span className={styles.subtitle}>
+            Enter your email and we&apos;ll send a link to set a new password.
+          </span>
+        </div>
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="email">Email</label>
-            <input
+          {throttled && <ErrorBanner tone="danger">{THROTTLED_MESSAGE}</ErrorBanner>}
+
+          <Field label="Email" htmlFor="email">
+            <Input
               id="email"
-              className={styles.input}
+              inputSize="lg"
               type="email"
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
+              invalid={throttled}
+              busy={loading}
             />
-          </div>
+          </Field>
 
-          <button className={styles.submitBtn} type="submit" disabled={loading}>
-            {loading ? 'Sending…' : 'Send reset link'}
-          </button>
+          <Button type="submit" size="lg" fullWidth loading={loading}>
+            {loading ? 'Sending link…' : 'Email me a reset link'}
+          </Button>
         </form>
 
-        <p className={styles.footer}>
-          <Link href="/login">Back to sign in</Link>
-        </p>
-      </div>
-    </div>
+        <span className={styles.footerText}>
+          Remembered it?{' '}
+          <Link className={styles.link} href="/login">
+            Back to sign in
+          </Link>
+        </span>
+      </AuthCard>
+    </AuthShell>
   )
 }

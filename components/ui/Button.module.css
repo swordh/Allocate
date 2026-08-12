@@ -1,0 +1,147 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* ── Sizes ─────────────────────────────────────────────────────────────── */
+
+.lg {
+  padding: 15px;
+  font-size: var(--fs-body-sm);
+  letter-spacing: var(--ls-btn);
+}
+
+@media (max-width: 480px) {
+  .lg {
+    padding: 16px;
+    letter-spacing: var(--ls-btn-tight);
+  }
+}
+
+.md {
+  padding: 12px 20px;
+  font-size: var(--fs-btn);
+  letter-spacing: var(--ls-btn);
+}
+
+.sm {
+  padding: 11px 18px;
+  font-size: var(--fs-btn);
+  letter-spacing: var(--ls-btn-tight);
+}
+
+.xs {
+  padding: 10px 15px;
+  font-size: var(--fs-btn-sm);
+  letter-spacing: var(--ls-btn-tight);
+}
+
+/* ── Variants ──────────────────────────────────────────────────────────── */
+
+.primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+}
+
+.secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.secondaryAlt {
+  background: transparent;
+  color: var(--text-tertiary);
+  border-color: var(--border-medium);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-dashed);
+}
+
+.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger-border-strong);
+}
+
+.dangerSolid {
+  background: var(--danger);
+  color: var(--text-primary);
+}
+
+.quiet {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--text-pale);
+}
+
+/* ── Hover ─────────────────────────────────────────────────────────────── */
+/*
+ * The design specifies no hover state for the primary button, so it stays
+ * flat. The outlined variants brighten their border and label only.
+ */
+
+.secondary:hover:not(:disabled),
+.secondaryAlt:hover:not(:disabled),
+.ghost:hover:not(:disabled),
+.quiet:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-emphasis);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-tint);
+}
+
+/* ── Disabled ──────────────────────────────────────────────────────────── */
+
+.button:disabled {
+  background: var(--btn-disabled-bg);
+  color: var(--btn-disabled-fg);
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+/* The armed/disarmed DELETE pattern: a disabled danger-solid button is not
+   the generic neutral disabled look, it's a dimmed red — the design's
+   "type DELETE to confirm" affordance. */
+.dangerSolid:disabled {
+  background: var(--danger-tint-mid);
+  color: var(--danger-muted);
+}
+
+/* ── Loading ───────────────────────────────────────────────────────────── */
+
+.loading,
+.loading:disabled {
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--btn-primary-fg);
+  border-color: transparent;
+  cursor: progress;
+}
+
+.loadingDot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-circle);
+  background: var(--btn-primary-fg);
+  flex-shrink: 0;
+}

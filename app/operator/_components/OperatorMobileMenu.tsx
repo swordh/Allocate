@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { deleteSession } from '@/actions/auth'
+import Icon from '@/components/ui/Icon'
 import styles from './OperatorMobileMenu.module.css'
 
 const NAV_ITEMS = [
@@ -60,7 +61,7 @@ export default function OperatorMobileMenu({ open, onClose }: OperatorMobileMenu
             onClick={onClose}
             aria-label="Close navigation menu"
           >
-            <span className="material-symbols-outlined">close</span>
+            <Icon name="close" size={24} />
           </button>
         </div>
 

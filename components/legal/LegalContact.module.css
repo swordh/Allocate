@@ -1,0 +1,35 @@
+.card {
+  border: 1px solid var(--border);
+  padding: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 56px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+}
+
+.value {
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-bright);
+}
+
+.value a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.value a:hover {
+  text-decoration: underline;
+}

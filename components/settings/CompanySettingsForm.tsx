@@ -1,42 +1,73 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { updateCompanySettings, addCategory, removeCategory } from '@/actions/company'
-import type { Category, CategoryFieldTemplate } from '@/types'
+import { TIMEZONE_OPTIONS } from '@/constants/company'
+import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
+import Select from '@/components/ui/Select'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import type { Category } from '@/types'
 import styles from './CompanySettingsForm.module.css'
+
+function pluralize(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 'S'}`
+}
 
 interface CompanySettingsFormProps {
   name: string
   categories: Category[]
+  typeCounts: Record<string, number>
+  timezone?: string
 }
 
 export default function CompanySettingsForm({
   name: initialName,
   categories: initialCategories,
+  typeCounts,
+  timezone: initialTimezone,
 }: CompanySettingsFormProps) {
   const [companyName, setCompanyName] = useState(initialName)
-  const [categories, setCategories] = useState<Category[]>([...(initialCategories ?? [])].sort((a, b) => a.name.localeCompare(b.name)))
+  const [categories, setCategories] = useState<Category[]>(
+    [...(initialCategories ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  )
+  const [timezone, setTimezone] = useState(initialTimezone ?? 'UTC')
+  const [detectedTz, setDetectedTz] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  // Inline add-category state
-  const [addingCategory, setAddingCategory] = useState(false)
+  // New-category input.
   const [newCategoryName, setNewCategoryName] = useState('')
   const [addingCategoryLoading, setAddingCategoryLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  // Remove-category confirmation.
+  const [removeTarget, setRemoveTarget] = useState<Category | null>(null)
+  const [removing, setRemoving] = useState(false)
+
+  useEffect(() => {
+    try {
+      setDetectedTz(Intl.DateTimeFormat().resolvedOptions().timeZone)
+    } catch {
+      setDetectedTz(null)
+    }
+  }, [])
+
+  function clearSaved() {
+    if (saved) setSaved(false)
+  }
+
+  async function handleSave() {
     setSubmitting(true)
     setError(null)
-    setSuccess(false)
+    setSaved(false)
 
     const result = await updateCompanySettings({
       name: companyName,
-      categoryTemplates: categories.map((cat) => ({
-        categoryId: cat.id,
-        templates: cat.customFieldTemplates,
-      })),
+      categoryTemplates: [],
+      timezone,
     })
 
     setSubmitting(false)
@@ -44,7 +75,9 @@ export default function CompanySettingsForm({
     if (result.error) {
       setError(result.error)
     } else {
-      setSuccess(true)
+      setSaved(true)
+      clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => setSaved(false), 2600)
     }
   }
 
@@ -52,6 +85,7 @@ export default function CompanySettingsForm({
     const trimmed = newCategoryName.trim()
     if (!trimmed) return
     setAddingCategoryLoading(true)
+    setError(null)
 
     const result = await addCategory(trimmed)
 
@@ -69,282 +103,159 @@ export default function CompanySettingsForm({
       }
       setCategories((prev) => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)))
       setNewCategoryName('')
-      setAddingCategory(false)
-      setSuccess(false)
     }
   }
 
-  async function handleRemoveCategory(categoryId: string) {
-    const result = await removeCategory(categoryId)
+  async function handleConfirmRemove() {
+    if (!removeTarget) return
+    setRemoving(true)
+    setError(null)
+
+    const result = await removeCategory(removeTarget.id)
+
+    setRemoving(false)
+
     if (result.error) {
       setError(result.error)
     } else {
-      setCategories((prev) => prev.filter((c) => c.id !== categoryId))
-      setSuccess(false)
+      setCategories((prev) => prev.filter((c) => c.id !== removeTarget.id))
     }
+    setRemoveTarget(null)
   }
 
-  function handleAddField(categoryId: string) {
-    setCategories((prev) =>
-      prev.map((cat) =>
-        cat.id === categoryId
-          ? {
-              ...cat,
-              customFieldTemplates: [
-                ...cat.customFieldTemplates,
-                { id: crypto.randomUUID(), label: '', type: 'text', defaultValue: '', options: [] },
-              ],
-            }
-          : cat
-      )
-    )
-    setSuccess(false)
-  }
-
-  function handleRemoveField(categoryId: string, fieldId: string) {
-    setCategories((prev) =>
-      prev.map((cat) =>
-        cat.id === categoryId
-          ? {
-              ...cat,
-              customFieldTemplates: cat.customFieldTemplates.filter((f) => f.id !== fieldId),
-            }
-          : cat
-      )
-    )
-    setSuccess(false)
-  }
-
-  function handleFieldChange(
-    categoryId: string,
-    fieldId: string,
-    key: keyof CategoryFieldTemplate,
-    value: string | boolean | string[]
-  ) {
-    setCategories((prev) =>
-      prev.map((cat) =>
-        cat.id === categoryId
-          ? {
-              ...cat,
-              customFieldTemplates: cat.customFieldTemplates.map((f) =>
-                f.id === fieldId ? { ...f, [key]: value } : f
-              ),
-            }
-          : cat
-      )
-    )
-    setSuccess(false)
-  }
+  const tzChanged = timezone !== (initialTimezone ?? 'UTC')
 
   return (
     <div className={styles.container}>
-      <form onSubmit={handleSubmit} className={styles.form}>
+      {/* Company name */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Company name</div>
+          <div className={styles.rowHelp}>Shown on bookings and invitations.</div>
+        </div>
+        <div className={styles.rowControl}>
+          <Input
+            value={companyName}
+            onChange={(e) => {
+              setCompanyName(e.target.value)
+              clearSaved()
+            }}
+            maxLength={100}
+            required
+          />
+        </div>
+      </div>
 
-        {/* Company Name */}
-        <div className={styles.companyNameSection}>
-          <div className={styles.companyNameField}>
-            <label htmlFor="company-name" className={styles.fieldLabel}>
-              Company Name
-            </label>
-            <input
-              id="company-name"
-              type="text"
-              className={styles.fieldInput}
-              value={companyName}
-              onChange={(e) => {
-                setCompanyName(e.target.value)
-                setSuccess(false)
-              }}
-              maxLength={100}
-              required
-            />
+      {/* Time zone */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Time zone</div>
+          <div className={styles.rowHelp}>
+            All pickup and return times are shown in this zone.
+            {tzChanged && ' Changing this shifts every existing booking time on screen.'}
           </div>
         </div>
+        <div className={styles.tzControl}>
+          <Select
+            value={timezone}
+            onChange={(e) => {
+              setTimezone(e.target.value)
+              clearSaved()
+            }}
+          >
+            {TIMEZONE_OPTIONS.map(({ label, value }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+          {detectedTz && <span className={styles.detectedTz}>Detected on this device: {detectedTz}</span>}
+        </div>
+      </div>
 
-        {/* Custom Fields */}
-        <div className={styles.customFieldsSection}>
-          <div className={styles.sectionHeader}>
-            <span className={styles.sectionHeaderLabel}>Custom Fields</span>
-            <div className={styles.sectionHeaderLine} />
-          </div>
-          <p className={styles.customFieldsDescription}>
-            Define custom fields per equipment category. These fields appear when adding or editing equipment in that category.
-          </p>
-
+      {/* Equipment categories */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Equipment categories</div>
+          <div className={styles.rowHelp}>Manage the categories equipment can be organized into.</div>
+        </div>
+        <div className={styles.categoryList}>
           {categories.map((cat) => (
-            <details key={cat.id} className={styles.categoryDetails} open>
-              <summary className={styles.categorySummary}>
+            <div key={cat.id} className={styles.categoryRow}>
+              {/* Name + meta wrap together so mobile can stack them (design:
+                  name on top, meta below at 4px) while desktop keeps its
+                  existing single-line "NAME ... META" row — see
+                  .categoryInfo in CompanySettingsForm.module.css. */}
+              <div className={styles.categoryInfo}>
                 <span className={styles.categoryName}>{cat.name.toUpperCase()}</span>
-                <button
-                  type="button"
-                  className={styles.btnRemoveCategory}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    handleRemoveCategory(cat.id)
-                  }}
-                >
-                  × REMOVE CATEGORY
-                </button>
-              </summary>
-              <div className={styles.categoryBody}>
-                {cat.customFieldTemplates.map((field) => (
-                  <div key={field.id} className={styles.fieldRow}>
-                    <select
-                      value={field.type}
-                      onChange={(e) =>
-                        handleFieldChange(cat.id, field.id, 'type', e.target.value)
-                      }
-                      className={styles.fieldTypeSelect}
-                    >
-                      <option value="text">Text</option>
-                      <option value="boolean">Boolean</option>
-                      <option value="list">List/Dropdown</option>
-                      <option value="value">Numeric Range</option>
-                    </select>
-
-                    <input
-                      type="text"
-                      className={styles.fieldNameInput}
-                      placeholder="Field label"
-                      value={field.label}
-                      onChange={(e) =>
-                        handleFieldChange(cat.id, field.id, 'label', e.target.value)
-                      }
-                    />
-
-                    {field.type === 'text' && (
-                      <input
-                        type="text"
-                        className={styles.fieldDefaultInput}
-                        placeholder="Default value"
-                        value={typeof field.defaultValue === 'string' ? field.defaultValue : ''}
-                        onChange={(e) =>
-                          handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
-                        }
-                      />
-                    )}
-
-                    {field.type === 'boolean' && (
-                      <div className={styles.booleanToggleRow}>
-                        <button
-                          type="button"
-                          className={`${styles.toggle} ${field.defaultValue === true ? styles.toggleOn : ''}`}
-                          onClick={() =>
-                            handleFieldChange(cat.id, field.id, 'defaultValue', field.defaultValue !== true)
-                          }
-                          role="switch"
-                          aria-checked={field.defaultValue === true}
-                        />
-                      </div>
-                    )}
-
-                    {field.type === 'list' && (
-                      <input
-                        type="text"
-                        className={styles.fieldOptionsInput}
-                        placeholder="Options (comma or space-separated)"
-                        value={field.options?.join(', ') || ''}
-                        onChange={(e) => {
-                          const opts = e.target.value
-                            .split(/[,\s]+/)
-                            .map(s => s.trim())
-                            .filter(s => s.length > 0);
-                          handleFieldChange(cat.id, field.id, 'options', opts);
-                        }}
-                      />
-                    )}
-
-                    {field.type === 'value' && (
-                      <input
-                        type="text"
-                        className={styles.fieldDefaultInput}
-                        placeholder="Min value (e.g., 0)"
-                        value={typeof field.defaultValue === 'string' ? field.defaultValue : ''}
-                        onChange={(e) =>
-                          handleFieldChange(cat.id, field.id, 'defaultValue', e.target.value)
-                        }
-                      />
-                    )}
-
-                    <button
-                      type="button"
-                      className={styles.btnRemoveField}
-                      onClick={() => handleRemoveField(cat.id, field.id)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                <div className={styles.addFieldRow}>
-                  <button
-                    type="button"
-                    className={styles.btnAddField}
-                    onClick={() => handleAddField(cat.id)}
-                  >
-                    + ADD CUSTOM FIELD
-                  </button>
-                </div>
+                <span className={styles.categoryMeta}>
+                  {pluralize(typeCounts[cat.name] ?? 0, 'TYPE')} · {pluralize(cat.customFieldTemplates.length, 'FIELD')}
+                </span>
               </div>
-            </details>
-          ))}
-
-          {addingCategory ? (
-            <div className={styles.addCategoryInline}>
-              <input
-                type="text"
-                className={styles.addCategoryInput}
-                placeholder="Category name"
-                value={newCategoryName}
-                autoFocus
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleAddCategory()
-                  }
-                  if (e.key === 'Escape') {
-                    setAddingCategory(false)
-                    setNewCategoryName('')
-                  }
-                }}
-              />
               <button
                 type="button"
-                className={styles.btnAddCategoryConfirm}
-                onClick={handleAddCategory}
-                disabled={addingCategoryLoading || !newCategoryName.trim()}
+                className={styles.removeBtn}
+                onClick={() => setRemoveTarget(cat)}
+                aria-label={`Remove ${cat.name}`}
               >
-                {addingCategoryLoading ? 'Adding…' : 'Add'}
-              </button>
-              <button
-                type="button"
-                className={styles.btnAddCategoryCancel}
-                onClick={() => {
-                  setAddingCategory(false)
-                  setNewCategoryName('')
-                }}
-              >
-                Cancel
+                ✕
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              className={styles.btnAddCategory}
-              onClick={() => setAddingCategory(true)}
+          ))}
+          <div className={styles.addCategoryRow}>
+            <Input
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="New category"
+              inputSize="sm"
+              className={`${styles.flexInput} ${styles.addCategoryInput}`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleAddCategory()
+                }
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className={styles.addCategoryBtn}
+              onClick={handleAddCategory}
+              disabled={addingCategoryLoading || !newCategoryName.trim()}
             >
-              + ADD CATEGORY
-            </button>
-          )}
+              {addingCategoryLoading ? 'ADDING…' : '+ ADD'}
+            </Button>
+          </div>
         </div>
+      </div>
 
-        {error && <div className={styles.errorBanner}>{error}</div>}
-        {success && <div className={styles.successBanner}>Changes saved.</div>}
+      <div className={styles.saveRow}>
+        {saved && <span className={styles.saveNote}>COMPANY SETTINGS SAVED</span>}
+        <Button variant="primary" size="sm" onClick={handleSave} disabled={submitting}>
+          {submitting ? 'SAVING…' : 'SAVE CHANGES'}
+        </Button>
+      </div>
 
-        <button type="submit" className={styles.btnSave} disabled={submitting}>
-          {submitting ? 'Saving…' : 'Save Changes'}
-        </button>
-      </form>
+      <div className={styles.stickyBar}>
+        <span className={styles.saveNote}>{saved ? 'SAVED' : ''}</span>
+        <Button variant="primary" size="lg" onClick={handleSave} disabled={submitting}>
+          {submitting ? 'SAVING…' : 'SAVE CHANGES'}
+        </Button>
+      </div>
+
+      {error && <ErrorBanner tone="danger">{error}</ErrorBanner>}
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title={`Remove ${removeTarget?.name ?? ''}?`}
+        body="Equipment already assigned to this category keeps its value, but the category will no longer be selectable. This can't be undone."
+        confirmLabel="REMOVE"
+        cancelLabel="CANCEL"
+        tone="danger"
+        busy={removing}
+        onConfirm={handleConfirmRemove}
+        onCancel={() => setRemoveTarget(null)}
+      />
     </div>
   )
 }

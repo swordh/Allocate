@@ -5,7 +5,7 @@ import { getEquipment } from '@/lib/queries/equipment'
 import { getUserProfile } from '@/lib/queries/users'
 import { getCompany } from '@/lib/queries/company'
 import BookingDetail from '@/components/bookings/BookingDetail'
-import BookingFormPage from '@/components/bookings/BookingFormPage'
+import BookingForm from '@/components/bookings/BookingForm'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 import type { UserProfile } from '@/types'
 
@@ -35,18 +35,21 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
   if (isEditing) {
     const [company, equipment] = await Promise.all([
       getCompany(session.activeCompanyId),
-      // Booking form must only show active equipment so users can't re-book deleted items.
-      getEquipment(session.activeCompanyId),
+      // Inactive equipment is included so a booking that already holds
+      // soft-deleted gear can still name it while being edited; the picker
+      // itself filters it out of what can be added.
+      getEquipment(session.activeCompanyId, { includeInactive: true }),
     ])
-    const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
-
     return (
-      <BookingFormPage
+      <BookingForm
         companyId={session.activeCompanyId}
         equipment={equipment}
         defaultStartDate={booking.startDate}
         defaultEndDate={booking.endDate}
-        timeSlotMinutes={timeSlotMinutes}
+        timeSlotMinutes={
+          company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
+        }
+        timezone={company?.preferences?.timezone ?? DEFAULT_COMPANY_PREFERENCES.timezone}
         booking={booking}
         bookingId={booking.id}
       />
@@ -58,8 +61,11 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
     userProfile = await getUserProfile(booking.userId)
   }
 
-  // Fetch with inactive so deleted equipment/units are still named in the pick list.
-  const equipment = await getEquipment(session.activeCompanyId, { includeInactive: true })
+  // Fetch with inactive so deleted equipment and units are still named here.
+  const [equipment, company] = await Promise.all([
+    getEquipment(session.activeCompanyId, { includeInactive: true }),
+    getCompany(session.activeCompanyId),
+  ])
 
   return (
     <BookingDetail
@@ -67,6 +73,7 @@ export default async function BookingDetailPage({ params, searchParams }: Bookin
       equipment={equipment}
       sessionUid={session.uid}
       role={session.role}
+      timezone={company?.preferences?.timezone ?? DEFAULT_COMPANY_PREFERENCES.timezone}
       userProfile={userProfile}
     />
   )

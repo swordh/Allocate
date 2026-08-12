@@ -1,0 +1,31 @@
+.rail {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tab {
+  padding: 13px 18px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.tab:hover {
+  color: var(--text-secondary);
+}
+
+.active,
+.active:hover {
+  color: var(--text-primary);
+  border-bottom-color: var(--text-primary);
+}

@@ -3,8 +3,8 @@
 .savingOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 8, 8, 0.88);
-  z-index: 200;
+  background: var(--overlay-scrim);
+  z-index: var(--z-toast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,13 +15,14 @@
   align-items: center;
   gap: 14px;
   padding: 20px 32px;
-  background: var(--surface-container-low);
-  border: 1px solid var(--outline-variant);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav);
   text-transform: uppercase;
-  color: var(--on-surface-variant);
+  color: var(--text-secondary);
 }
 
 /* ── Inline toasts (success / error) ────────────────────────────────────────── */
@@ -31,7 +32,7 @@
   bottom: 32px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 200;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -44,22 +45,23 @@
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
   text-transform: uppercase;
   pointer-events: all;
   white-space: nowrap;
 }
 
 .success {
-  background: var(--white);
-  color: var(--black);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
 }
 
 .error {
-  background: var(--repair);
-  color: var(--white);
+  background: var(--danger);
+  color: var(--text-primary);
 }
 
 .message {
@@ -85,8 +87,8 @@
 .spinner {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
-  background: var(--on-surface-variant);
+  border-radius: var(--radius-circle);
+  background: var(--text-secondary);
   animation: pulse 1s ease-in-out infinite;
 }
 

@@ -16,19 +16,21 @@ export function verifyEmailEmail(data: VerifyEmailData): RenderedEmail {
   const subject = 'Confirm your email address';
 
   const text = [
-    'Confirm your email address to finish setting up your Allocate account.',
+    'Confirm this address to finish setting up your Allocate account. The link is valid for one hour.',
     '',
     `Confirm your email: ${verifyUrl}`,
     '',
-    'If you didn’t create an Allocate account, you can safely ignore this email.',
+    "If you didn't create an Allocate account, you can safely ignore this email.",
   ].join('\n');
 
   const html = renderLayout({
-    heading: 'Confirm your email address',
-    introHtml: 'Confirm your email address to finish setting up your Allocate account.',
-    buttonLabel: 'Confirm email',
+    preheader: 'Confirm your email address to finish setting up your Allocate account',
+    eyebrow: 'ACCOUNT SETUP',
+    hero: ['Confirm', 'your email'],
+    bodyHtml: 'Confirm this address to finish setting up your Allocate account. The link is valid for one hour.',
+    buttonLabel: 'CONFIRM EMAIL',
     buttonUrl: verifyUrl,
-    footnote: 'If you didn’t create an Allocate account, you can safely ignore this email.',
+    footerSentence: "If you didn't create an Allocate account, you can safely ignore this email.",
   });
 
   return { subject, html, text };

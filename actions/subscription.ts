@@ -5,6 +5,8 @@ import { stripe } from '@/lib/stripe'
 import { adminDb } from '@/lib/firebase-admin'
 import Stripe from 'stripe'
 import type { Plan } from '@/lib/subscription'
+import { PLAN_LIMITS } from '@/lib/subscription'
+import type { BillingInterval } from '@/types'
 
 const PRICE_ENV_BY_PLAN: Record<Plan, { month?: string; year?: string }> = {
   starter: {
@@ -132,13 +134,28 @@ export async function createPortalSession(): Promise<{ url: string } | { error: 
   }
 }
 
-// Opens the Billing Portal deep-linked straight to the subscription-update
-// (plan change) flow. The portal applies the change immediately with proration;
-// the customer.subscription.updated webhook then syncs plan/limits to Firestore.
-export async function createPlanChangeSession(): Promise<{ url: string } | { error: string }> {
+// Opens the Billing Portal deep-linked straight to the subscription-update-
+// confirm flow for a specific target price. The design's per-card UPGRADE
+// CTA plus the MONTHLY/YEARLY cycle chips imply a concrete (plan, interval)
+// target rather than the portal's generic "pick anything" flow, so this
+// resolves the target price up front and hands it to Stripe directly. The
+// portal applies the change immediately with proration; the
+// customer.subscription.updated webhook then syncs plan/limits to Firestore.
+export async function createPlanChangeSession(
+  plan: Plan,
+  interval: BillingInterval,
+): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
-  console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_plan_change_session' })
+  console.log('[actions/subscription]', {
+    uid: session.uid.slice(0, 8) + '...',
+    action: 'create_plan_change_session',
+    plan,
+    interval,
+  })
+
+  const priceId = interval === 'month' ? PRICE_ENV_BY_PLAN[plan].month : PRICE_ENV_BY_PLAN[plan].year
+  if (!priceId) return { error: 'Stripe price not configured' }
 
   try {
     const companyId = session.activeCompanyId
@@ -152,12 +169,43 @@ export async function createPlanChangeSession(): Promise<{ url: string } | { err
       return { error: 'No active subscription found' }
     }
 
+    // Downgrade guard: nothing stops a plan change today that would strand a
+    // company above the target plan's caps. Count current usage and block
+    // server-side before the portal ever opens — the portal itself has no
+    // idea about equipment/member counts.
+    const targetLimits = PLAN_LIMITS[plan]
+    const [equipmentCounterSnap, membersCountSnap] = await Promise.all([
+      adminDb.doc(`companies/${companyId}/_meta/equipmentCount`).get(),
+      adminDb.collection(`companies/${companyId}/members`).count().get(),
+    ])
+
+    const equipmentCount = (equipmentCounterSnap.data()?.count as number | undefined) ?? 0
+    const memberCount = membersCountSnap.data().count
+
+    const excessEquipment = Math.max(0, equipmentCount - targetLimits.equipment)
+    const excessUsers = Math.max(0, memberCount - targetLimits.users)
+
+    if (excessEquipment > 0 || excessUsers > 0) {
+      const parts: string[] = []
+      if (excessEquipment > 0) parts.push(`remove ${excessEquipment} equipment item${excessEquipment === 1 ? '' : 's'}`)
+      if (excessUsers > 0) parts.push(`remove ${excessUsers} user${excessUsers === 1 ? '' : 's'}`)
+      return { error: `To switch to this plan, ${parts.join(' and ')} first.` }
+    }
+
+    // subscription_update_confirm needs the current subscription item id.
+    const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId)
+    const itemId = subscription.items.data[0]?.id
+    if (!itemId) return { error: 'No active subscription found' }
+
     const params: Stripe.BillingPortal.SessionCreateParams = {
       customer: stripeCustomerId,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription`,
       flow_data: {
-        type: 'subscription_update',
-        subscription_update: { subscription: stripeSubscriptionId },
+        type: 'subscription_update_confirm',
+        subscription_update_confirm: {
+          subscription: stripeSubscriptionId,
+          items: [{ id: itemId, price: priceId, quantity: 1 }],
+        },
       },
     }
 

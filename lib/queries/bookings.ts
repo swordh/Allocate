@@ -12,6 +12,7 @@ function docToBooking(doc: FirebaseFirestore.DocumentSnapshot): Booking {
     notes:           data.notes           ?? '',
     items:           data.items           ?? [],
     equipmentIds:    data.equipmentIds    ?? [],
+    unitIds:         data.unitIds         ?? [],
     startDate:       data.startDate       ?? '',
     endDate:         data.endDate         ?? '',
     startTime:       data.startTime       ?? null,
@@ -32,14 +33,26 @@ function docToBooking(doc: FirebaseFirestore.DocumentSnapshot): Booking {
 
 export interface GetBookingsOptions {
   includeCancelled?: boolean
-  startDate?: string  // "YYYY-MM-DD" lower bound (inclusive)
-  endDate?: string    // "YYYY-MM-DD" upper bound (inclusive)
+  /** Window start "YYYY-MM-DD", inclusive. */
+  startDate?: string
+  /** Window end "YYYY-MM-DD", inclusive. */
+  endDate?: string
 }
 
 /**
- * One-shot fetch of bookings for a company.
- * Ordered by startDate descending (most recent first).
+ * One-shot fetch of bookings for a company, ordered by startDate descending.
  * Cancelled bookings are excluded by default.
+ *
+ * `startDate`/`endDate` describe a window the booking must **overlap**, not one
+ * it must fit inside. Until phase 4 this filtered on `startDate >= from` and
+ * `endDate <= to`, which silently dropped every booking that straddled the edge
+ * of the window — precisely the multi-week blocks the week and month grids have
+ * to draw clipped at their boundary.
+ *
+ * Only `endDate` is bounded server-side (one range field, so the existing
+ * single-field index covers it); the start edge is trimmed in memory. That is
+ * the same shape `hooks/useBookings.ts` uses for the live listener, so the SSR
+ * seed and the first snapshot agree.
  *
  * Wrapped in React.cache so multiple Server Components calling this in the
  * same render pass share one Firestore read.
@@ -52,23 +65,27 @@ export const getBookings = cache(async (
     .collection('companies')
     .doc(companyId)
     .collection('bookings')
-    .orderBy('startDate', 'desc')
 
   if (options.startDate) {
-    query = query.where('startDate', '>=', options.startDate)
-  }
-  if (options.endDate) {
-    query = query.where('endDate', '<=', options.endDate)
+    // A booking overlaps the window if it has not already ended before it.
+    query = query.where('endDate', '>=', options.startDate).orderBy('endDate', 'asc')
+  } else {
+    query = query.orderBy('startDate', 'desc')
   }
 
   const snapshot = await query.get()
-  const bookings = snapshot.docs.map(docToBooking)
+  let bookings = snapshot.docs.map(docToBooking)
 
-  if (!options.includeCancelled) {
-    return bookings.filter((b) => b.status !== 'cancelled')
+  if (options.endDate) {
+    // …and if it has already begun by the time the window closes.
+    bookings = bookings.filter((b) => b.startDate <= options.endDate!)
   }
 
-  return bookings
+  if (!options.includeCancelled) {
+    bookings = bookings.filter((b) => b.status !== 'cancelled')
+  }
+
+  return bookings.sort((a, b) => b.startDate.localeCompare(a.startDate))
 })
 
 /**

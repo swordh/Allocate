@@ -4,6 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { updateOperatorNotes } from './actions'
+import Icon from '@/components/ui/Icon'
+import Glyph from '@/components/ui/Glyph'
 import styles from './detail.module.css'
 
 interface Subscription {
@@ -97,7 +99,7 @@ export default function CustomerDetailView({
   return (
     <div>
       <Link href="/operator/customers" className={styles.backLink}>
-        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>arrow_back</span>
+        <Glyph char="‹" />
         Customers
       </Link>
 
@@ -138,7 +140,7 @@ export default function CustomerDetailView({
                     className={`${styles.infoValueMono} ${styles.infoValueLink}`}
                   >
                     {company.stripeCustomerId}
-                    <span className="material-symbols-outlined" style={{ fontSize: '13px', marginLeft: '4px', verticalAlign: 'middle' }}>open_in_new</span>
+                    <Icon name="external-link" size={13} style={{ marginLeft: '4px' }} />
                   </a>
                 ) : (
                   <p className={`${styles.infoValueMono} ${styles.infoValueMuted}`}>—</p>

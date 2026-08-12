@@ -1,9 +1,10 @@
+import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
 import { getCompany } from '@/lib/queries/company'
-import BookingFormPage from '@/components/bookings/BookingFormPage'
-import { redirect } from 'next/navigation'
+import BookingForm from '@/components/bookings/BookingForm'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
+import { todayInTimezone } from '@/lib/dates'
 
 export default async function NewBookingPage() {
   const session = await getVerifiedSession()
@@ -17,15 +18,20 @@ export default async function NewBookingPage() {
     getCompany(session.activeCompanyId),
   ])
 
-  const timeSlotMinutes = company?.preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
+  const preferences = company?.preferences
+  const timezone = preferences?.timezone ?? DEFAULT_COMPANY_PREFERENCES.timezone
+  const today = todayInTimezone(timezone)
 
   return (
-    <BookingFormPage
+    <BookingForm
       companyId={session.activeCompanyId}
       equipment={equipment}
-      defaultStartDate=""
-      defaultEndDate=""
-      timeSlotMinutes={timeSlotMinutes}
+      defaultStartDate={today}
+      defaultEndDate={today}
+      timeSlotMinutes={
+        preferences?.bookingTimeSlotMinutes ?? DEFAULT_COMPANY_PREFERENCES.bookingTimeSlotMinutes
+      }
+      timezone={timezone}
     />
   )
 }

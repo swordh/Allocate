@@ -1,0 +1,42 @@
+.shell {
+  min-height: 100vh;
+  background: var(--bg-page);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+}
+
+@media (max-width: 480px) {
+  .shell {
+    /* The mobile design files use a 22px content margin, not the desktop 24px. */
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+}
+
+.legalFooter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  padding: 22px;
+  border-top: 1px solid var(--hairline);
+}
+
+.legalFooter a {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
+  transition: color var(--transition);
+}
+
+.legalFooter a:hover {
+  color: var(--text-primary);
+}

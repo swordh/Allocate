@@ -1,0 +1,122 @@
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-display-auth);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .title {
+    font-size: 29px;
+    line-height: 1;
+    font-weight: var(--fw-display);
+    letter-spacing: var(--ls-display);
+  }
+}
+
+/* ── Mode tabs ─────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tab {
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-transform: uppercase;
+  padding: 12px 8px;
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  color: var(--text-weak);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.tabActive {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  border-color: var(--border-emphasis);
+}
+
+/* ── Forms ─────────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.createGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.spanTwo {
+  grid-column: span 2;
+}
+
+.inviteFields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.inviteResolvedFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.explainer {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: var(--lh-body-loose);
+}
+
+.explainer code {
+  font-family: ui-monospace, Menlo, monospace;
+  color: var(--text-secondary);
+}
+
+/* Inline (desktop) copy of the submit actions — `AuthCard`'s `stickyActions`
+   carries the mobile fixed-bar copy of the same buttons. */
+.desktopActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .desktopActions {
+    display: none;
+  }
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+.link {
+  color: var(--accent);
+}
+
+.link:hover {
+  color: var(--accent-hover);
+}
+
+.legal {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-faint);
+  line-height: var(--lh-body);
+}

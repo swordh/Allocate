@@ -1,5 +1,5 @@
 import { RenderedEmail } from '../send';
-import { renderLayout, escapeHtml } from './_shared';
+import { renderLayout } from './_shared';
 
 export interface ChangeEmailData {
   verifyUrl: string;
@@ -18,19 +18,25 @@ export function changeEmailEmail(data: ChangeEmailData): RenderedEmail {
   const subject = 'Confirm your new email address';
 
   const text = [
-    `You asked to change your Allocate sign-in email to ${newEmail}.`,
+    'You asked to sign in to Allocate with this address instead. Confirm the change below — the link is valid for one hour.',
+    '',
+    `New address: ${newEmail}`,
     '',
     `Confirm the change: ${verifyUrl}`,
     '',
-    'If you didn’t request this, you can safely ignore this email — nothing will change.',
+    "If you didn't request this, you can safely ignore this email — nothing will change.",
   ].join('\n');
 
   const html = renderLayout({
-    heading: 'Confirm your new email address',
-    introHtml: `You asked to change your Allocate sign-in email to <strong>${escapeHtml(newEmail)}</strong>.`,
-    buttonLabel: 'Confirm change',
+    preheader: 'Confirm the new sign-in address for your Allocate account',
+    eyebrow: 'EMAIL CHANGE',
+    hero: ['Confirm', 'new email'],
+    bodyHtml:
+      'You asked to sign in to Allocate with this address instead. Confirm the change below — the link is valid for one hour.',
+    dataRow: { label: 'NEW ADDRESS', value: newEmail },
+    buttonLabel: 'CONFIRM CHANGE',
     buttonUrl: verifyUrl,
-    footnote: 'If you didn’t request this, you can safely ignore this email — nothing will change.',
+    footerSentence: "If you didn't request this, you can safely ignore this email — nothing will change.",
   });
 
   return { subject, html, text };

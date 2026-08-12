@@ -1,242 +1,390 @@
-/* -----------------------------------------------------------------------
-   Booking Month View — calendar grid
-   ----------------------------------------------------------------------- */
+/* Month view — screen 07, and 4 WEEKS reusing it (decision 6).
+   Desktop draws week rows of bars; mobile draws day cells with status dots and
+   an agenda for the selected day (screen 07 Mobil). */
 
-.container {
-  width: 100%;
+.desktop {
+  display: block;
+  padding-bottom: 30px;
 }
 
-/* Nav bar */
-.navBar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px var(--booking-pad-h);
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+.mobile {
+  display: none;
 }
 
-.navBtn {
-  background: none;
-  border: 1px solid #2A2A2A;
-  color: #919191;
-  font-size: 16px;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+/* ── weekday header ─────────────────────────────────────────────────────── */
+
+.weekdayHeader {
+  display: grid;
+  grid-template-columns: 52px repeat(7, 1fr);
+  gap: 1px;
+  flex-shrink: 0;
 }
 
-.navBtn:hover {
-  color: #fff;
-  border-color: #fff;
+.gutterHead {
+  border-top: 1px solid var(--border-subtle);
 }
 
-.monthLabel {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #919191;
-  min-width: 200px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
+.weekdayCell {
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.monthLabelWrap {
+.weekday {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+.weekdayWeekend {
+  color: var(--text-pale);
+}
+
+/* ── week row ───────────────────────────────────────────────────────────── */
+
+.weekRow {
   position: relative;
-  display: inline-block;
-  cursor: pointer;
+  min-height: 130px;
+  border-top: 1px solid var(--fill);
 }
 
-.overlayDateInput {
+.dayLayer {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  border: none;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  -webkit-appearance: none;
-  appearance: none;
+  display: grid;
+  grid-template-columns: 52px repeat(7, 1fr);
+  gap: 1px;
 }
 
-.todayBtn {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #919191;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: color 0.15s ease;
+.gutter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 9px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
 }
 
-.todayBtn:hover {
-  color: #fff;
+.dayCell {
+  padding: 8px 8px 0;
+  background: var(--booking-col-bg);
 }
 
-/* -----------------------------------------------------------------------
-   7-column calendar grid
-   ----------------------------------------------------------------------- */
+.dayCellWeekend {
+  background: var(--booking-col-bg-weekend);
+}
 
-.grid {
+.dayCellToday {
+  background: var(--booking-col-bg-today);
+}
+
+.dayNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-circle);
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-body-sm);
+  color: var(--text-secondary);
+}
+
+.dayNumberWeekend {
+  color: var(--text-faint);
+}
+
+.dayNumberOutside {
+  color: var(--text-placeholder);
+}
+
+/* Today is a filled amber disc with black text. The confirmed status colour is
+   a flat light grey (--booking-confirmed) with no disc, so the two markers in
+   this grid cannot be mistaken for each other. */
+.dayNumberToday {
+  background: var(--accent);
+  color: var(--btn-primary-fg);
+}
+
+/* ── bars ───────────────────────────────────────────────────────────────── */
+
+.barLayer {
+  position: relative;
+  margin-left: 53px;
+  padding: 38px 4px 8px;
+}
+
+.barGrid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  border-left: 1px solid rgba(71, 71, 71, 0.2);
-  border-top: 1px solid rgba(71, 71, 71, 0.2);
-}
-
-/* Weekday header row */
-.dayHeader {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #919191;
-  padding: 8px 10px;
-  border-right: 1px solid rgba(71, 71, 71, 0.2);
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
-  text-align: center;
-}
-
-.dayHeaderWeekend {
-  opacity: 0.4;
-}
-
-/* -----------------------------------------------------------------------
-   Day cells
-   ----------------------------------------------------------------------- */
-
-.day {
-  border-right: 1px solid rgba(71, 71, 71, 0.2);
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
-  padding: 10px;
-  min-height: 100px;
-  display: flex;
-  flex-direction: column;
+  grid-auto-rows: 22px;
   gap: 4px;
 }
 
-.dayWeekend {
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.dayOutOfMonth {
-  opacity: 0.25;
-}
-
-/* Date number */
-.dayNum {
-  font-size: 14px;
-  font-weight: 700;
-  color: #919191;
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  text-align: center;
-  line-height: 24px;
-  flex-shrink: 0;
-}
-
-.dayNumToday {
-  background: #EECC02;
-  color: #221b00;
-}
-
-/* -----------------------------------------------------------------------
-   Booking rows (dot + name)
-   ----------------------------------------------------------------------- */
-
-.dayBookings {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 2px;
-}
-
-.bookingRow {
+.bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  text-decoration: none;
+  gap: 7px;
+  padding: 4px 9px;
   overflow: hidden;
+  text-decoration: none;
+  background: var(--booking-bar-bg);
+  border-left: 3px solid var(--accent);
+  opacity: 0.92;
+  transition: background var(--transition);
 }
 
-.bookingDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+.bar:hover {
+  background: var(--booking-bar-bg-hover);
+  opacity: 1;
+}
+
+.barMuted {
+  opacity: 0.5;
+}
+
+.barDot {
   flex-shrink: 0;
 }
 
-.bookingName {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.125em;
-  color: #919191;
+.barTitle {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-label);
+  color: var(--text-bright);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.barMuted .barTitle {
+  color: var(--text-tertiary);
+}
+
+.barMeta {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
   white-space: nowrap;
-  transition: color 0.1s;
 }
 
-.bookingRow:hover .bookingName {
-  color: #fff;
-}
-
-/* Status dot colours */
-.dotCheckedOut { background: #EECC02; }
-.dotConfirmed  { background: #ffffff; }
-.dotPending    { background: rgba(145, 145, 145, 0.5); }
-.dotReturned   { background: #474747; }
-
-.moreBookings {
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #919191;
-  padding: 1px 0;
-}
-
-/* -----------------------------------------------------------------------
-   Empty state
-   ----------------------------------------------------------------------- */
-
-.emptyState {
-  padding: 60px var(--booking-pad-h);
+.more {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  color: #919191;
-  font-size: 14px;
-}
-
-.emptyAction {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #fff;
-  border: 1px solid #fff;
-  padding: 8px 20px;
+  align-items: center;
   text-decoration: none;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  padding: 2px 9px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.emptyAction:hover {
-  color: #EECC02;
-  border-color: #EECC02;
+.more:hover {
+  color: var(--text-primary);
+}
+
+/* ── mobile ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .desktop {
+    display: none;
+  }
+
+  .mobile {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .narrowHeader {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 0 2px 8px;
+    text-align: center;
+  }
+
+  .narrowHeader .weekday {
+    font-size: var(--fs-label-sm);
+    letter-spacing: var(--ls-nav);
+  }
+
+  .cellGrid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    padding-bottom: 8px;
+  }
+
+  .cell {
+    position: relative;
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 7px;
+    overflow: hidden;
+    background: var(--booking-col-bg);
+    border: 1px solid var(--fill);
+    cursor: pointer;
+  }
+
+  .cellWeekend {
+    background: var(--booking-col-bg-weekend);
+  }
+
+  .cellOutside {
+    background: transparent;
+    cursor: default;
+  }
+
+  .cellSelected {
+    background: rgba(244, 178, 74, 0.10);
+    border-color: var(--accent-border-strong);
+  }
+
+  .cellNumber {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-circle);
+    font-family: var(--font-ui);
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-body-sm);
+    color: var(--text-body);
+  }
+
+  .dots {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 6px;
+    margin-top: 5px;
+  }
+
+  .dotsMore {
+    font-family: var(--font-ui);
+    font-size: 8px;
+    font-weight: var(--fw-bold);
+    line-height: 1;
+    color: var(--text-weak);
+  }
+
+  /* ── agenda ───────────────────────────────────────────────────────────── */
+
+  .agenda {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 0 110px;
+    border-top: 1px solid var(--border-track);
+  }
+
+  .agendaHead {
+    font-family: var(--font-ui);
+    font-weight: var(--fw-bold);
+    font-size: 15px;
+    color: var(--text-primary);
+  }
+
+  .agendaEmpty {
+    padding: 26px 0;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: var(--fs-tab);
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.04em;
+    color: var(--text-pale);
+  }
+
+  .agendaRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 13px;
+    text-decoration: none;
+    background: var(--booking-block-bg);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--accent);
+  }
+
+  .agendaRowMuted {
+    opacity: 0.5;
+  }
+
+  .agendaMain {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .agendaTitle {
+    display: block;
+    font-family: var(--font-ui);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-body);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agendaMeta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 5px;
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .status,
+  .metaItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .agendaRange {
+    flex-shrink: 0;
+    padding: 3px 6px;
+    font-family: var(--font-ui);
+    font-size: 8px;
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-btn-tight);
+    background: var(--hairline);
+    white-space: nowrap;
+  }
+
+  .agendaOwner {
+    flex-shrink: 0;
+    font-family: var(--font-ui);
+    font-size: var(--fs-label-sm);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
 }

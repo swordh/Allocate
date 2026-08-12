@@ -1,0 +1,99 @@
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--danger);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  /* 34px is a one-off design value, distinct from the 36px primary auth heading. */
+  font-size: 34px;
+  line-height: var(--lh-auth);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .title {
+    font-size: 29px;
+    line-height: var(--lh-auth);
+    font-weight: var(--fw-display);
+    letter-spacing: var(--ls-display);
+  }
+}
+
+.body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: var(--lh-body-loose);
+}
+
+.body strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.failedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .desktopActions {
+    display: none;
+  }
+}
+
+.checking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--accent);
+}
+
+.checkingDot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.footerText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-faint);
+  line-height: var(--lh-body);
+}
+
+.link {
+  font: inherit;
+  color: var(--accent);
+}
+
+.link:hover {
+  color: var(--accent-hover);
+}

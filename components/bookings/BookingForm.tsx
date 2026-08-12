@@ -1,23 +1,26 @@
 'use client'
 
-import { useState, useMemo, useTransition, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Button from '@/components/ui/Button'
+import Chip from '@/components/ui/Chip'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import Glyph from '@/components/ui/Glyph'
+import Icon from '@/components/ui/Icon'
+import Sheet from '@/components/ui/Sheet'
+import Textarea from '@/components/ui/Textarea'
+import ToggleSwitch from '@/components/ui/ToggleSwitch'
 import { createBooking, updateBooking, checkConflict, getBookedSummary } from '@/actions/bookings'
+import type { BookedSummary, ConflictResult } from '@/actions/bookings'
 import { useToast } from '@/lib/toast-context'
-import BookingCalendar from './BookingCalendar'
-import type { Booking, Equipment } from '@/types'
-import type { ConflictResult, BookedSummary } from '@/actions/bookings'
+import { useIsMobile } from '@/hooks/useIsMobile'
+import { formatCompactRange, formatDayShort, formatDayFull, todayInTimezone } from '@/lib/dates'
+import BookingRangeCalendar from './BookingRangeCalendar'
+import type { Booking, Equipment, EquipmentUnit } from '@/types'
 import styles from './BookingForm.module.css'
 
-interface BookingFormProps {
-  companyId: string
-  equipment: Equipment[]
-  defaultStartDate: string
-  defaultEndDate: string
-  timeSlotMinutes: number
-  booking?: Booking
-  bookingId?: string
-}
+/** How long to sit still before re-checking availability. */
+const AVAILABILITY_DEBOUNCE_MS = 400
 
 interface SelectedItem {
   equipmentId: string
@@ -25,658 +28,643 @@ interface SelectedItem {
   quantity: number
 }
 
-// ── helpers ─────────────────────────────────────────────────────────────────
-
-const MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
-
-function fromKey(k: string): Date {
-  const [y, m, d] = k.split('-').map(Number)
-  return new Date(y, m - 1, d)
+interface BookingFormProps {
+  companyId: string
+  equipment: Equipment[]
+  defaultStartDate: string
+  defaultEndDate: string
+  timeSlotMinutes: number
+  timezone: string
+  booking?: Booking
+  bookingId?: string
 }
 
-function fmtDate(k: string | null): string {
-  if (!k) return ''
-  const d = fromKey(k)
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
-}
-
-function daysBetween(s: string, e: string): number {
-  return Math.round((fromKey(e).getTime() - fromKey(s).getTime()) / 86400000) + 1
-}
-
-function generateTimeOptions(slotMinutes: number): string[] {
-  const step = slotMinutes >= 60 ? 60 : slotMinutes
-  const options: string[] = []
-  for (let h = 6; h <= 23; h++) {
-    for (let m = 0; m < 60; m += step) {
-      options.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-    }
-  }
-  return options
-}
-
-function groupByCategory(equipment: Equipment[]): Map<string, Equipment[]> {
-  const map = new Map<string, Equipment[]>()
-  for (const item of equipment) {
-    if (!map.has(item.category)) map.set(item.category, [])
-    map.get(item.category)!.push(item)
-  }
-  return map
-}
-
-// ── sub-components ───────────────────────────────────────────────────────────
-
-function AvailBadge({ available, total, hasDates }: { available: number; total: number; hasDates: boolean }) {
-  const tone = available <= 0 ? 'none' : available <= Math.max(1, Math.floor(total * 0.34)) ? 'low' : 'ok'
-  return (
-    <span className={`${styles.avail} ${tone === 'none' ? styles.availNone : tone === 'low' ? styles.availLow : ''}`}>
-      <i className={styles.availDot} />
-      <b>{available}</b> available
-      {hasDates && available < total && <span className={styles.availOf}> of {total}</span>}
-    </span>
-  )
-}
-
-function Stepper({ value, min = 0, max = 99, onChange }: { value: number; min?: number; max?: number; onChange: (n: number) => void }) {
-  return (
-    <div className={styles.stepper} onClick={(e) => e.stopPropagation()}>
-      <button type="button" className={styles.stepBtn} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}>–</button>
-      <span className={styles.stepVal}>{value}</span>
-      <button type="button" className={styles.stepBtn} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}>+</button>
-    </div>
-  )
-}
-
-// ── main component ───────────────────────────────────────────────────────────
-
+/**
+ * New / edit booking — screen 09.
+ *
+ * One responsive component, not two code paths (decision 11): the same state
+ * and the same handlers drive both widths, and the only difference is that
+ * mobile puts the dates and notes panels in a bottom Sheet instead of in the
+ * column. `useIsMobile` picks the container; everything else is CSS.
+ */
 export default function BookingForm({
   companyId,
   equipment,
   defaultStartDate,
   defaultEndDate,
   timeSlotMinutes,
+  timezone,
   booking,
   bookingId,
 }: BookingFormProps) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const { showToast, dismissToast } = useToast()
 
-  const initialItems: SelectedItem[] = booking
-    ? booking.items.map((i) => ({ equipmentId: i.equipmentId, unitId: i.unitId, quantity: i.quantity }))
-    : []
+  const today = useMemo(() => todayInTimezone(timezone), [timezone])
 
-  // ── form state ──────────────────────────────────────────────────────────
+  // ── state ───────────────────────────────────────────────────────────────
   const [projectName, setProjectName] = useState(booking?.projectName ?? '')
-  const [startDate, setStartDate]     = useState(booking?.startDate ?? defaultStartDate)
-  const [endDate, setEndDate]         = useState(booking?.endDate ?? defaultEndDate)
-  const [fullDay, setFullDay]         = useState(booking ? (!booking.startTime && !booking.endTime) : false)
-  const [startTime, setStartTime]     = useState(booking ? (booking.startTime ?? '') : '08:00')
-  const [endTime, setEndTime]         = useState(booking ? (booking.endTime ?? '') : '18:00')
-  const [notes, setNotes]             = useState(booking?.notes ?? '')
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(initialItems)
+  const [notes, setNotes] = useState(booking?.notes ?? '')
 
-  // ── availability + conflict state ───────────────────────────────────────
-  const [error, setError]                     = useState<string | null>(null)
-  const [conflictResult, setConflictResult]   = useState<ConflictResult | null>(null)
-  const [isCheckingConflict, setIsCheckingConflict] = useState(false)
-  const [bookedSummary, setBookedSummary]     = useState<Record<string, BookedSummary> | null>(null)
-  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
-  const [isPending, startTransition]          = useTransition()
+  const [pickup, setPickup] = useState(booking?.startDate ?? defaultStartDate ?? today)
+  const [ret, setRet] = useState(booking?.endDate ?? defaultEndDate ?? today)
+  const [picking, setPicking] = useState<'pickup' | 'ret'>('pickup')
 
-  // ── accordion state ─────────────────────────────────────────────────────
-  const bookableEquipment = useMemo(() => equipment.filter((e) => e.availableForBooking !== false), [equipment])
-  const grouped = useMemo(() => groupByCategory(bookableEquipment), [bookableEquipment])
-  const sortedCategories = useMemo(() => Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)), [grouped])
+  // -1 is the "Full Day" company preference: the whole time UI is off.
+  const timesDisabled = timeSlotMinutes === -1
+  const [fullDay, setFullDay] = useState(
+    booking ? !booking.startTime && !booking.endTime : true,
+  )
+  const [pickupTime, setPickupTime] = useState(booking?.startTime || '08:00')
+  const [retTime, setRetTime] = useState(booking?.endTime || '18:00')
 
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() => {
-    const first = sortedCategories[0]?.[0]
-    return first ? { [first]: true } : {}
-  })
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>(
+    booking?.items.map((i) => ({ equipmentId: i.equipmentId, unitId: i.unitId, quantity: i.quantity })) ?? [],
+  )
 
-  // ── unit-chip open state ─────────────────────────────────────────────────
-  const [unitOpen, setUnitOpen] = useState<Set<string>>(() => {
-    const s = new Set<string>()
-    initialItems.filter((i) => i.unitId).forEach((i) => s.add(i.equipmentId))
-    return s
-  })
+  const [query, setQuery] = useState('')
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false)
+  const [catOpen, setCatOpen] = useState<Record<string, boolean>>({})
+  const [unitsOpen, setUnitsOpen] = useState<Record<string, boolean>>({})
 
-  // ── time options ─────────────────────────────────────────────────────────
-  const timeOptions = useMemo(() => generateTimeOptions(timeSlotMinutes), [timeSlotMinutes])
+  const [bookedSummary, setBookedSummary] = useState<Record<string, BookedSummary> | null>(null)
+  const [checkingAvail, setCheckingAvail] = useState(false)
+  const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const [sheet, setSheet] = useState<'dates' | 'notes' | null>(null)
 
-  // ── load availability on mount ──────────────────────────────────────────
-  const effectiveStart = booking?.startDate ?? defaultStartDate
-  const effectiveEnd   = booking?.endDate   ?? defaultEndDate
+  const effectiveStartTime = fullDay || timesDisabled ? null : pickupTime || null
+  const effectiveEndTime = fullDay || timesDisabled ? null : retTime || null
+
+  // ── availability ────────────────────────────────────────────────────────
+  // Every date or time change re-asks the server what is left. Debounced so
+  // dragging across a range is one lookup, not one per day.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
-    if (!effectiveStart || !effectiveEnd) return
-    setIsLoadingAvailability(true)
-    getBookedSummary(companyId, effectiveStart, effectiveEnd, bookingId, booking?.startTime ?? null, booking?.endTime ?? null)
-      .then(setBookedSummary)
-      .finally(() => setIsLoadingAvailability(false))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!pickup || !ret) return
+    setCheckingAvail(true)
+    clearTimeout(debounceRef.current)
 
-  // ── refresh on time change ───────────────────────────────────────────────
-  useEffect(() => {
-    if (!startDate || !endDate) return
-    const eff = endDate < startDate ? startDate : endDate
-    const st = fullDay ? null : (startTime || null)
-    const et = fullDay ? null : (endTime || null)
-    setIsLoadingAvailability(true)
-    getBookedSummary(companyId, startDate, eff, bookingId, st, et)
-      .then(setBookedSummary)
-      .finally(() => setIsLoadingAvailability(false))
-    if (selectedItems.length > 0) {
-      setIsCheckingConflict(true)
-      checkConflict(companyId, startDate, eff, selectedItems, bookingId, st, et)
-        .then(setConflictResult)
-        .finally(() => setIsCheckingConflict(false))
+    debounceRef.current = setTimeout(() => {
+      getBookedSummary(companyId, pickup, ret, bookingId, effectiveStartTime, effectiveEndTime)
+        .then(setBookedSummary)
+        .finally(() => setCheckingAvail(false))
+    }, AVAILABILITY_DEBOUNCE_MS)
+
+    return () => clearTimeout(debounceRef.current)
+  }, [companyId, bookingId, pickup, ret, effectiveStartTime, effectiveEndTime])
+
+  // ── equipment model ─────────────────────────────────────────────────────
+  // availableForBooking === false is INACTIVE: hidden from this picker
+  // entirely. A broken unit is a different thing — it stays listed so people
+  // can see it exists, struck through and not selectable.
+  const bookable = useMemo(
+    () => equipment.filter((e) => e.active !== false && e.availableForBooking !== false),
+    [equipment],
+  )
+
+  function unitsOf(eq: Equipment): EquipmentUnit[] {
+    return (eq.units ?? []).filter((u) => u.availableForBooking !== false)
+  }
+
+  function blockedUnitIds(eq: Equipment): Set<string> {
+    return new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
+  }
+
+  function totalOf(eq: Equipment): number {
+    return eq.trackingType === 'units' ? unitsOf(eq).length : eq.totalQuantity
+  }
+
+  function bookedOf(eq: Equipment): number {
+    if (eq.trackingType === 'units') {
+      const blocked = blockedUnitIds(eq)
+      return unitsOf(eq).filter((u) => blocked.has(u.id) || u.status === 'needs_repair').length
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startTime, endTime, fullDay])
+    return bookedSummary?.[eq.id]?.quantity ?? 0
+  }
 
-  // ── date change ──────────────────────────────────────────────────────────
-  async function handleDateChange(newStart: string, newEnd: string | null) {
-    const s = newStart
-    const e = newEnd ?? newStart
-    setStartDate(s)
-    setEndDate(e)
-    const st = fullDay ? null : (startTime || null)
-    const et = fullDay ? null : (endTime || null)
-    setIsLoadingAvailability(true)
-    getBookedSummary(companyId, s, e, bookingId, st, et)
-      .then(setBookedSummary)
-      .finally(() => setIsLoadingAvailability(false))
-    if (selectedItems.length > 0) {
-      setIsCheckingConflict(true)
-      try {
-        const result = await checkConflict(companyId, s, e, selectedItems, bookingId, st, et)
-        setConflictResult(result)
-      } finally {
-        setIsCheckingConflict(false)
+  function quantityOf(eq: Equipment): number {
+    if (eq.trackingType === 'units') {
+      return selectedItems.filter((i) => i.equipmentId === eq.id && i.unitId).length
+    }
+    return selectedItems.find((i) => i.equipmentId === eq.id && !i.unitId)?.quantity ?? 0
+  }
+
+  const totalItems = selectedItems.reduce((sum, i) => sum + i.quantity, 0)
+
+  // ── selection ───────────────────────────────────────────────────────────
+  function setQuantity(eq: Equipment, next: number) {
+    const max = Math.max(0, totalOf(eq) - bookedOf(eq))
+    const qty = Math.max(0, Math.min(max, next))
+    setConflictResult(null)
+
+    if (eq.trackingType === 'units') {
+      // Unit-tracked equipment has no quantity of its own — the stepper picks
+      // and releases units so every item stays valid for the server.
+      const blocked = blockedUnitIds(eq)
+      const free = unitsOf(eq).filter((u) => !blocked.has(u.id) && u.status !== 'needs_repair')
+      const chosen = selectedItems.filter((i) => i.equipmentId === eq.id && i.unitId).map((i) => i.unitId!)
+
+      if (qty > chosen.length) {
+        const toAdd = free.filter((u) => !chosen.includes(u.id)).slice(0, qty - chosen.length)
+        setSelectedItems((prev) => [
+          ...prev,
+          ...toAdd.map((u) => ({ equipmentId: eq.id, unitId: u.id, quantity: 1 })),
+        ])
+      } else if (qty < chosen.length) {
+        const drop = new Set(chosen.slice(qty))
+        setSelectedItems((prev) => prev.filter((i) => !(i.equipmentId === eq.id && i.unitId && drop.has(i.unitId))))
       }
-    }
-  }
-
-  // ── selection helpers ────────────────────────────────────────────────────
-  const conflictIds = useMemo(() => {
-    if (!conflictResult?.hasConflict) return new Set<string>()
-    return new Set(conflictResult.conflicts.map((c) => c.equipmentId))
-  }, [conflictResult])
-
-  function getQuantity(id: string): number {
-    return selectedItems.find((i) => i.equipmentId === id && !i.unitId)?.quantity ?? 0
-  }
-
-  function getSelectedUnitIds(equipmentId: string): string[] {
-    return selectedItems
-      .filter((i) => i.equipmentId === equipmentId && i.unitId)
-      .map((i) => i.unitId as string)
-  }
-
-  function setQuantity(id: string, qty: number) {
-    setSelectedItems((prev) => {
-      if (qty <= 0) return prev.filter((i) => !(i.equipmentId === id && !i.unitId))
-      const exists = prev.some((i) => i.equipmentId === id && !i.unitId)
-      if (exists) return prev.map((i) => (i.equipmentId === id && !i.unitId ? { ...i, quantity: qty } : i))
-      return [...prev, { equipmentId: id, quantity: qty }]
-    })
-    setConflictResult(null)
-  }
-
-  function selectUnit(equipmentId: string, unitId: string) {
-    setSelectedItems((prev) => {
-      if (prev.some((i) => i.equipmentId === equipmentId && i.unitId === unitId)) return prev
-      return [...prev, { equipmentId, unitId, quantity: 1 }]
-    })
-    setConflictResult(null)
-  }
-
-  function deselectUnit(equipmentId: string, unitId: string) {
-    setSelectedItems((prev) => prev.filter((i) => !(i.equipmentId === equipmentId && i.unitId === unitId)))
-    setConflictResult(null)
-  }
-
-  function sortedUnits(eq: Equipment): NonNullable<typeof eq.units> {
-    const bookable = (eq.units ?? []).filter((u) => u.availableForBooking !== false)
-    const booked = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-    const available   = bookable.filter((u) => !booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
-    const unavailable = bookable.filter((u) =>  booked.has(u.id)).sort((a, b) => a.label.localeCompare(b.label))
-    return [...available, ...unavailable]
-  }
-
-  // ── full day toggle ──────────────────────────────────────────────────────
-  function toggleFullDay() {
-    if (!fullDay) {
-      setStartTime('')
-      setEndTime('')
-    } else {
-      setStartTime('08:00')
-      setEndTime('18:00')
-    }
-    setFullDay(!fullDay)
-  }
-
-  // ── submit ───────────────────────────────────────────────────────────────
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-
-    if (selectedItems.length === 0) {
-      setError('Select at least one equipment item.')
       return
     }
 
-    if (startDate && endDate) {
-      const st = fullDay ? null : (startTime || null)
-      const et = fullDay ? null : (endTime || null)
-      const result = await checkConflict(companyId, startDate, endDate, selectedItems, bookingId, st, et)
-      setConflictResult(result)
-      if (result.hasConflict) {
-        setError('Equipment is not available for the selected dates. Check conflicts below.')
-        return
+    setSelectedItems((prev) => {
+      if (qty <= 0) return prev.filter((i) => !(i.equipmentId === eq.id && !i.unitId))
+      if (prev.some((i) => i.equipmentId === eq.id && !i.unitId)) {
+        return prev.map((i) => (i.equipmentId === eq.id && !i.unitId ? { ...i, quantity: qty } : i))
       }
+      return [...prev, { equipmentId: eq.id, quantity: qty }]
+    })
+  }
+
+  function toggleUnit(eq: Equipment, unit: EquipmentUnit) {
+    setConflictResult(null)
+    setSelectedItems((prev) => {
+      const exists = prev.some((i) => i.equipmentId === eq.id && i.unitId === unit.id)
+      if (exists) return prev.filter((i) => !(i.equipmentId === eq.id && i.unitId === unit.id))
+      return [...prev, { equipmentId: eq.id, unitId: unit.id, quantity: 1 }]
+    })
+  }
+
+  // ── filtering ───────────────────────────────────────────────────────────
+  const q = query.trim().toLowerCase()
+
+  const categories = useMemo(() => {
+    const byCategory = new Map<string, Equipment[]>()
+    for (const eq of bookable) {
+      const list = byCategory.get(eq.category)
+      if (list) list.push(eq)
+      else byCategory.set(eq.category, [eq])
+    }
+
+    return Array.from(byCategory.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, items]) => {
+        let matching = items.filter(
+          (eq) => !q || eq.name.toLowerCase().includes(q) || name.toLowerCase().includes(q),
+        )
+        if (showSelectedOnly) matching = matching.filter((eq) => quantityOf(eq) > 0)
+        return { name, items: matching }
+      })
+      .filter((cat) => cat.items.length > 0)
+    // quantityOf reads selectedItems, so the list has to recompute with it.
+  }, [bookable, q, showSelectedOnly, selectedItems, bookedSummary])
+
+  // Searching forces the matching categories open — a hit inside a collapsed
+  // group is not a hit anyone can see.
+  const forcedOpen = q.length > 0 || showSelectedOnly
+
+  // ── submit ──────────────────────────────────────────────────────────────
+  const hasName = projectName.trim().length > 0
+  const ready = hasName && totalItems > 0
+  const readyHint = !hasName
+    ? 'Add a project name to continue'
+    : 'Select at least one item to continue'
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (!ready) return
+
+    const conflict = await checkConflict(
+      companyId, pickup, ret, selectedItems, bookingId, effectiveStartTime, effectiveEndTime,
+    )
+    setConflictResult(conflict)
+    if (conflict.hasConflict) {
+      setError('Some equipment is no longer available for these dates.')
+      return
     }
 
     const formData = new FormData()
     formData.set('projectName', projectName)
-    formData.set('startDate', startDate)
-    formData.set('endDate', endDate)
-    if (!fullDay && startTime) formData.set('startTime', startTime)
-    if (!fullDay && endTime)   formData.set('endTime', endTime)
+    formData.set('startDate', pickup)
+    formData.set('endDate', ret)
+    if (effectiveStartTime) formData.set('startTime', effectiveStartTime)
+    if (effectiveEndTime) formData.set('endTime', effectiveEndTime)
     formData.set('notes', notes)
     formData.set('items', JSON.stringify(selectedItems))
 
-    if (bookingId) {
-      const toastId = showToast('saving', 'Saving changes...')
-      startTransition(async () => {
-        const result = await updateBooking(bookingId, formData)
-        dismissToast(toastId)
-        if (result.error) {
-          setError(result.error)
-          showToast('error', result.error, 5000)
-        } else {
-          showToast('success', 'Booking updated', 3000)
-          router.push(`/bookings/${bookingId}`)
-        }
-      })
-    } else {
-      const toastId = showToast('saving', 'Saving booking...')
-      startTransition(async () => {
-        const result = await createBooking(formData)
-        dismissToast(toastId)
-        if ('error' in result) {
-          setError(result.error)
-          showToast('error', result.error, 5000)
-        } else {
-          showToast('success', 'Booking created', 3000)
-          router.push(`/bookings/${result.bookingId}`)
-        }
-      })
-    }
+    // 'saving' renders the design's blocking overlay with the spinner, so this
+    // is the toast context rather than a second implementation of it.
+    const toastId = showToast('saving', bookingId ? 'Saving changes…' : 'Booking is being created…')
+
+    startTransition(async () => {
+      const result = bookingId
+        ? await updateBooking(bookingId, formData)
+        : await createBooking(formData)
+
+      dismissToast(toastId)
+
+      if ('error' in result && result.error) {
+        setError(result.error)
+        showToast('error', result.error, 5000)
+        return
+      }
+
+      showToast('success', bookingId ? 'Booking updated' : 'Booking created', 3000)
+      router.push(bookingId ? `/bookings/${bookingId}` : `/bookings/${(result as { bookingId: string }).bookingId}`)
+    })
   }
 
-  // ── derived values ───────────────────────────────────────────────────────
-  const itemCount = selectedItems.length
-  const canCreate = !!projectName.trim() && !!startDate && !!endDate && itemCount > 0
-  const hasDates  = !!startDate
+  // ── panels ──────────────────────────────────────────────────────────────
+  const whenLabel = pickup === ret ? formatDayFull(pickup) : `${formatCompactRange(pickup, ret)} ${ret.slice(0, 4)}`
+  const timeLabel = fullDay || timesDisabled ? 'Full day' : `${pickupTime} → ${retTime}`
 
-  const dateHint = startDate
-    ? fmtDate(startDate) +
-      (endDate && endDate !== startDate ? ' → ' + fmtDate(endDate) : '') +
-      ' · ' + daysBetween(startDate, endDate || startDate) +
-      (daysBetween(startDate, endDate || startDate) === 1 ? ' day' : ' days')
-    : null
+  const readout = (
+    <div className={styles.readout}>
+      <div className={styles.dateCard}>
+        <span className={styles.dateCardLabel}>PICKUP</span>
+        <span className={styles.dateCardValue}>{formatDayShort(pickup)}</span>
+      </div>
+      <Glyph char="→" className={styles.arrow} />
+      <div className={styles.dateCard}>
+        <span className={styles.dateCardLabel}>RETURN</span>
+        <span className={styles.dateCardValue}>{formatDayShort(ret)}</span>
+      </div>
+    </div>
+  )
 
-  // ── render ───────────────────────────────────────────────────────────────
+  const datesPanel = (
+    <div className={styles.datesGrid}>
+      {readout}
+
+      <div className={styles.calendarCell}>
+        <BookingRangeCalendar
+          pickup={pickup}
+          ret={ret}
+          picking={picking}
+          today={today}
+          onChange={(next) => {
+            setPickup(next.pickup)
+            setRet(next.ret)
+            setPicking(next.picking)
+            setConflictResult(null)
+          }}
+        />
+      </div>
+
+      <div className={styles.datesSide}>
+        {!timesDisabled && (
+          <>
+            <div className={styles.fullDayRow}>
+              <ToggleSwitch checked={fullDay} onChange={setFullDay} label="Full day" />
+              <span className={styles.fullDayHint}>
+                {fullDay ? 'booked for the whole day' : 'set specific pickup & return times'}
+              </span>
+            </div>
+
+            <div className={`${styles.times} ${fullDay ? styles.timesOff : ''}`}>
+              <label className={styles.timeField}>
+                <span className={styles.fieldLabel}>PICKUP TIME</span>
+                <span className={styles.timeInputWrap}>
+                  <input
+                    type="time"
+                    className={styles.timeInput}
+                    value={fullDay ? '' : pickupTime}
+                    step={timeSlotMinutes * 60}
+                    disabled={fullDay}
+                    onChange={(e) => e.target.value && setPickupTime(e.target.value)}
+                  />
+                  {fullDay && <span className={styles.timeDash}>—</span>}
+                </span>
+              </label>
+
+              <label className={styles.timeField}>
+                <span className={styles.fieldLabel}>RETURN TIME</span>
+                <span className={styles.timeInputWrap}>
+                  <input
+                    type="time"
+                    className={styles.timeInput}
+                    value={fullDay ? '' : retTime}
+                    step={timeSlotMinutes * 60}
+                    disabled={fullDay}
+                    onChange={(e) => e.target.value && setRetTime(e.target.value)}
+                  />
+                  {fullDay && <span className={styles.timeDash}>—</span>}
+                </span>
+              </label>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+
+  const notesPanel = (
+    <Textarea
+      className={styles.notes}
+      placeholder="Anything the crew should know…"
+      value={notes}
+      onChange={(e) => setNotes(e.target.value)}
+      rows={4}
+    />
+  )
+
   return (
-    <form onSubmit={handleSubmit} className={styles.form}>
-      <div className={styles.main}>
+    <form className={styles.page} onSubmit={handleSubmit}>
+      <header className={styles.header}>
+        <button type="button" className={styles.back} onClick={() => router.back()} aria-label="Go back">
+          <Glyph char="‹" />
+        </button>
+        <h1 className={styles.title}>{bookingId ? 'EDIT BOOKING' : 'NEW BOOKING'}</h1>
+        <span className={styles.draft}>{bookingId ? 'EDITING' : 'DRAFT · NOT SAVED'}</span>
+      </header>
 
-        {/* Page head */}
-        <div className={styles.pageHead}>
-          <h1 className={styles.h1}>{bookingId ? 'EDIT BOOKING' : 'NEW BOOKING'}</h1>
-          <div className={styles.rule} />
-        </div>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
-        {error && <div className={styles.errorBanner}>{error}</div>}
-
-        {/* 01 — PROJECT */}
-        <section className={styles.section}>
-          <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>PROJECT</h2>
-          </div>
-          <div className={styles.secBody}>
+      <div className={styles.body}>
+        <div className={styles.main}>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>PROJECT</h2>
+            <label className={styles.fieldLabel} htmlFor="projectName">
+              PROJECT NAME <span className={styles.required}>*</span>
+            </label>
             <input
-              className={styles.bigfield}
-              type="text"
+              id="projectName"
+              className={styles.projectInput}
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="Project name"
               maxLength={200}
-              required
             />
-          </div>
-        </section>
+          </section>
 
-        {/* 02 — DATES */}
-        <section className={styles.section}>
-          <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>DATES</h2>
-            {dateHint && <span className={styles.secHint}>{dateHint}</span>}
-          </div>
-          <div className={styles.secBody}>
-            <div className={styles.scheduleGrid}>
-              <div className={styles.calWrap}>
-                <BookingCalendar
-                  start={startDate || null}
-                  end={endDate || null}
-                  onChange={(s, e) => handleDateChange(s, e)}
-                />
+          {/* Mobile keeps dates and notes behind quick pills; the panels below
+              are the same nodes, in a Sheet instead of in the column. */}
+          {isMobile ? (
+            <div className={styles.pills}>
+              {/* Only the date and time pills scroll; the notes button is a
+                  sibling outside that track, pinned to the right edge. */}
+              <div className={styles.pillTrack}>
+                <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
+                  <Icon name="calendar" size={14} strokeWidth={2} className={styles.pillIcon} aria-hidden />
+                  {pickup === ret ? formatDayShort(pickup) : formatCompactRange(pickup, ret)}
+                </button>
+                <button type="button" className={styles.pill} onClick={() => setSheet('dates')}>
+                  <Icon name="schedule" size={14} strokeWidth={2} aria-hidden />
+                  {timeLabel}
+                </button>
               </div>
-              <div className={styles.schedSide}>
-                {/* Date readouts */}
-                <div className={styles.dateRow}>
-                  <div className={styles.datebox}>
-                    <label className={styles.datelabel}>PICKUP</label>
-                    <span className={startDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(startDate) || '--'}
-                    </span>
-                  </div>
-                  <div className={styles.datebox}>
-                    <label className={styles.datelabel}>RETURN</label>
-                    <span className={endDate ? styles.dateVal : styles.dateValDim}>
-                      {fmtDate(endDate) || '--'}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Full day toggle */}
-                {timeSlotMinutes !== -1 && (
-                  <div className={styles.fulldayRow}>
-                    <button
-                      type="button"
-                      className={`${styles.check} ${fullDay ? styles.checkOn : ''}`}
-                      onClick={toggleFullDay}
-                    >
-                      <span className={styles.checkBox}>
-                        {fullDay && (
-                          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                            <path d="M2 7L5 10L11 2.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" />
-                          </svg>
-                        )}
-                      </span>
-                      <span className={styles.checkLabel}>Full day</span>
-                    </button>
-                    <span className={styles.fulldayNote}>
-                      {fullDay ? 'Booked for the full day' : 'Set specific times below'}
-                    </span>
-                  </div>
-                )}
-
-                {/* Time pickers */}
-                {timeSlotMinutes !== -1 && !fullDay && (
-                  <div className={styles.timeRow}>
-                    <div className={styles.timebox}>
-                      <label className={styles.datelabel}>PICKUP TIME</label>
-                      <select
-                        className={styles.timeSelect}
-                        value={startTime}
-                        onChange={(e) => setStartTime(e.target.value)}
-                      >
-                        <option value="">--:--</option>
-                        {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <div className={styles.timeSep}>→</div>
-                    <div className={styles.timebox}>
-                      <label className={styles.datelabel}>RETURN TIME</label>
-                      <select
-                        className={styles.timeSelect}
-                        value={endTime}
-                        onChange={(e) => setEndTime(e.target.value)}
-                      >
-                        <option value="">--:--</option>
-                        {timeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                className={`${styles.pillIconOnly} ${notes.trim() ? styles.pillHasNotes : ''}`}
+                onClick={() => setSheet('notes')}
+                aria-label="Notes"
+              >
+                <Icon name="note" size={16} strokeWidth={1.8} aria-hidden />
+              </button>
             </div>
-          </div>
-        </section>
+          ) : (
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>DATES</h2>
+              {datesPanel}
+            </section>
+          )}
 
-        {/* 03 — EQUIPMENT */}
-        <section className={styles.section}>
-          <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>EQUIPMENT</h2>
-            {itemCount > 0 && (
-              <span className={styles.secHint}>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
-            )}
-            {(isCheckingConflict || isLoadingAvailability) && (
-              <span className={styles.secChecking}>checking…</span>
-            )}
-            <span className={`${styles.secTag} ${!hasDates ? styles.secTagMuted : ''}`}>
-              {hasDates ? `AVAILABILITY · ${fmtDate(startDate)}` : 'SELECT DATES FOR LIVE AVAILABILITY'}
-            </span>
-          </div>
-          <div className={styles.secBody}>
-            {bookableEquipment.length === 0 ? (
-              <div className={styles.emptyMsg}>
-                {equipment.length === 0
-                  ? 'No equipment added. Add equipment on the equipment page.'
-                  : 'No equipment available for booking right now.'}
+          <section className={styles.section}>
+            <div className={styles.sectionHead}>
+              <h2 className={styles.sectionTitle}>EQUIPMENT</h2>
+              {checkingAvail && (
+                <span className={styles.checking}>
+                  <span className={styles.spinner} aria-hidden />
+                  Checking availability…
+                </span>
+              )}
+            </div>
+
+            <div className={styles.searchRow}>
+              <div className={styles.search}>
+                <Icon name="search" size={16} strokeWidth={2} className={styles.searchIcon} aria-hidden />
+                <input
+                  className={styles.searchInput}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search equipment"
+                  aria-label="Search equipment"
+                />
+                {query && (
+                  <button type="button" className={styles.clear} onClick={() => setQuery('')} aria-label="Clear search">
+                    ✕
+                  </button>
+                )}
               </div>
-            ) : (
-              <div className={styles.cats}>
-                {sortedCategories.map(([cat, items]) => {
-                  const isOpen = !!openCats[cat]
-                  const selCount = items.reduce((n, it) => {
-                    const qty = getQuantity(it.id)
-                    const unitCount = getSelectedUnitIds(it.id).length
-                    return n + (qty > 0 ? 1 : 0) + unitCount
-                  }, 0)
-                  return (
-                    <div key={cat} className={`${styles.cat} ${isOpen ? styles.catOpen : ''}`}>
-                      <button
-                        type="button"
-                        className={styles.catHead}
-                        onClick={() => setOpenCats({ ...openCats, [cat]: !isOpen })}
-                      >
-                        <svg className={styles.catChev} width="11" height="7" viewBox="0 0 11 7" fill="none">
-                          <path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.7" />
-                        </svg>
-                        <span className={styles.catName}>{cat}</span>
-                        <span className={styles.catMeta}>
-                          {selCount > 0 && <em className={styles.catBadge}>{selCount}</em>}
-                          <span className={styles.catCount}>{items.length}</span>
-                        </span>
-                      </button>
-                      {isOpen && (
-                        <div className={styles.catBody}>
-                          {items.map((eq) => {
-                            const hasConflict = conflictIds.has(eq.id)
 
-                            if (eq.trackingType === 'units') {
-                              const units = sortedUnits(eq)
-                              const selectedUnitIds = getSelectedUnitIds(eq.id)
-                              const isUnitOpen = unitOpen.has(eq.id)
-                              const bookedUnitIds = new Set(bookedSummary?.[eq.id]?.unitIds ?? [])
-                              const availableUnits = units.filter((u) => !bookedUnitIds.has(u.id))
-                              const availCount = bookedSummary !== null ? availableUnits.length : units.length
+              <ToggleSwitch
+                className={styles.selectedToggle}
+                checked={showSelectedOnly}
+                onChange={setShowSelectedOnly}
+                label={totalItems > 0 ? `Show selected only · ${totalItems}` : 'No items selected yet'}
+              />
+            </div>
 
-                              return (
-                                <div
-                                  key={eq.id}
-                                  className={`${styles.eq} ${selectedUnitIds.length > 0 ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
+            {categories.map((cat) => {
+              const open = forcedOpen || !!catOpen[cat.name]
+              const catCount = cat.items.reduce((sum, eq) => sum + quantityOf(eq), 0)
+              return (
+                <div key={cat.name} className={styles.category}>
+                  <button
+                    type="button"
+                    className={styles.categoryHead}
+                    style={catCount > 0 ? { borderLeftColor: 'var(--accent)' } : undefined}
+                    onClick={() => setCatOpen((prev) => ({ ...prev, [cat.name]: !open }))}
+                    aria-expanded={open}
+                  >
+                    <span>{cat.name.toUpperCase()}</span>
+                    <span className={`${styles.chevron} ${open ? styles.chevronOpen : ''}`} aria-hidden>▾</span>
+                  </button>
+
+                  {open && (
+                    <div>
+                      {cat.items.map((eq) => {
+                        const total = totalOf(eq)
+                        const booked = bookedOf(eq)
+                        const available = Math.max(0, total - booked)
+                        const qty = quantityOf(eq)
+                        const soldOut = available === 0
+                        const units = unitsOf(eq)
+                        const hasUnits = eq.trackingType === 'units' && units.length > 0
+                        const showUnits = hasUnits && !!unitsOpen[eq.id]
+                        const blocked = blockedUnitIds(eq)
+                        const conflicted = conflictResult?.conflicts.some((c) => c.equipmentId === eq.id)
+
+                        const unitsToggle = hasUnits ? (
+                          <Chip
+                            className={styles.unitsBtn}
+                            active={showUnits}
+                            onClick={() => setUnitsOpen((p) => ({ ...p, [eq.id]: !showUnits }))}
+                          >
+                            {showUnits ? 'HIDE UNITS' : 'SELECT UNITS'}
+                          </Chip>
+                        ) : null
+
+                        return (
+                          <div key={eq.id}>
+                            <div
+                              className={styles.item}
+                              style={qty > 0 ? { borderLeftColor: 'var(--accent)' } : undefined}
+                            >
+                              <div className={styles.itemMain}>
+                                <span className={`${styles.itemName} ${soldOut ? styles.itemNameOff : ''}`}>
+                                  {eq.name}
+                                </span>
+                                <span
+                                  className={`${styles.avail} ${soldOut || conflicted ? styles.availNone : ''} ${
+                                    checkingAvail ? styles.availChecking : ''
+                                  }`}
                                 >
-                                  <div className={styles.eqMain}>
-                                    <div className={styles.eqInfo}>
-                                      <span className={styles.eqName}>{eq.name}</span>
-                                    </div>
-                                    <div className={styles.eqRight}>
-                                      <AvailBadge
-                                        available={availCount}
-                                        total={units.length}
-                                        hasDates={hasDates && bookedSummary !== null}
-                                      />
-                                      <button
-                                        type="button"
-                                        className={`${styles.unitToggle} ${selectedUnitIds.length > 0 ? styles.unitToggleOn : ''}`}
-                                        onClick={() => {
-                                          const next = !isUnitOpen
-                                          setUnitOpen((prev) => {
-                                            const s = new Set(prev)
-                                            if (next) s.add(eq.id); else s.delete(eq.id)
-                                            return s
-                                          })
-                                        }}
-                                      >
-                                        {selectedUnitIds.length > 0 ? `${selectedUnitIds.length} SELECTED` : 'SELECT'}
-                                        <svg
-                                          width="10" height="6" viewBox="0 0 11 7" fill="none"
-                                          style={{ transform: isUnitOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
-                                        >
-                                          <path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.6" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {isUnitOpen && (
-                                    <div className={styles.units}>
-                                      {units.map((unit) => {
-                                        const isBooked = bookedUnitIds.has(unit.id)
-                                        const isOn = selectedUnitIds.includes(unit.id)
-                                        return (
-                                          <button
-                                            key={unit.id}
-                                            type="button"
-                                            disabled={isBooked && !isOn}
-                                            className={`${styles.unitChip} ${isOn ? styles.unitChipOn : ''} ${isBooked && !isOn ? styles.unitChipBad : ''}`}
-                                            onClick={() => isOn ? deselectUnit(eq.id, unit.id) : selectUnit(eq.id, unit.id)}
-                                          >
-                                            <span className={styles.unitName}>{unit.label}</span>
-                                            {unit.serialNumber && (
-                                              <span className={styles.unitSn}>{unit.serialNumber}</span>
-                                            )}
-                                            <span className={styles.unitState}>
-                                              {isBooked ? 'BOOKED' : isOn ? '✓' : '+'}
-                                            </span>
-                                          </button>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            }
+                                  {checkingAvail
+                                    ? 'Checking availability…'
+                                    : soldOut
+                                      ? 'FULLY BOOKED FOR THESE DATES'
+                                      : `${available} of ${total} available`}
+                                </span>
+                                {isMobile && unitsToggle}
+                              </div>
 
-                            // quantity equipment
-                            const qty = getQuantity(eq.id)
-                            const qtyBooked = bookedSummary?.[eq.id]?.quantity ?? 0
-                            const qtyAvail = Math.max(0, eq.totalQuantity - qtyBooked)
-                            const displayAvail = bookedSummary !== null ? qtyAvail : eq.totalQuantity
+                              <div className={styles.itemActions}>
+                                {!isMobile && unitsToggle}
 
-                            return (
-                              <div
-                                key={eq.id}
-                                className={`${styles.eq} ${qty > 0 ? styles.eqActive : ''} ${hasConflict ? styles.eqConflict : ''}`}
-                              >
-                                <div className={styles.eqMain}>
-                                  <div className={styles.eqInfo}>
-                                    <span className={styles.eqName}>{eq.name}</span>
-                                  </div>
-                                  <div className={styles.eqRight}>
-                                    <AvailBadge
-                                      available={displayAvail}
-                                      total={eq.totalQuantity}
-                                      hasDates={hasDates && bookedSummary !== null}
-                                    />
-                                    <Stepper
-                                      value={qty}
-                                      min={0}
-                                      max={qtyAvail + qty}
-                                      onChange={(n) => setQuantity(eq.id, n)}
-                                    />
-                                  </div>
+                                <div className={styles.stepper}>
+                                  <button
+                                    type="button"
+                                    className={styles.stepBtn}
+                                    onClick={() => setQuantity(eq, qty - 1)}
+                                    disabled={qty <= 0}
+                                    aria-label={`Remove one ${eq.name}`}
+                                  >
+                                    −
+                                  </button>
+                                  <span className={`${styles.qty} ${qty > 0 ? styles.qtyOn : ''}`}>{qty}</span>
+                                  <button
+                                    type="button"
+                                    className={styles.stepBtn}
+                                    onClick={() => setQuantity(eq, qty + 1)}
+                                    disabled={qty >= available}
+                                    aria-label={`Add one ${eq.name}`}
+                                  >
+                                    +
+                                  </button>
                                 </div>
                               </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                            </div>
+
+                            {showUnits && (
+                              <div className={styles.units}>
+                                {units.map((unit) => {
+                                  const taken = blocked.has(unit.id) || unit.status === 'needs_repair'
+                                  const picked = selectedItems.some(
+                                    (i) => i.equipmentId === eq.id && i.unitId === unit.id,
+                                  )
+                                  return (
+                                    <Chip
+                                      key={unit.id}
+                                      className={`${styles.unitChip} ${taken ? styles.unitTaken : ''}`}
+                                      active={picked}
+                                      disabled={taken}
+                                      onClick={() => toggleUnit(eq, unit)}
+                                    >
+                                      {unit.label}
+                                    </Chip>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {categories.length === 0 && (
+              <p className={styles.noResults}>
+                {showSelectedOnly ? 'No items selected yet' : `No equipment matches "${query}"`}
+              </p>
             )}
+          </section>
 
-            {conflictResult?.hasConflict && (
-              <div className={styles.conflictNotice}>
-                <div className={styles.conflictTitle}>Conflicts found</div>
-                {conflictResult.conflicts.map((c) => {
-                  const eq = equipment.find((e) => e.id === c.equipmentId)
-                  return (
-                    <div key={c.equipmentId} className={styles.conflictItem}>
-                      <span>{eq?.name ?? c.equipmentId}</span>
-                      {c.reason === 'insufficient_quantity' && c.available !== undefined && (
-                        <span className={styles.conflictDetail}>Only {c.available} available</span>
-                      )}
-                      {c.reason === 'already_booked' && (
-                        <span className={styles.conflictDetail}>Already booked</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </section>
+          {!isMobile && (
+            <section className={`${styles.section} ${styles.sectionLast}`}>
+              <label className={styles.fieldLabel} htmlFor="notes">
+                NOTES <span className={styles.optional}>(optional)</span>
+              </label>
+              {notesPanel}
+            </section>
+          )}
+        </div>
 
-        {/* 04 — NOTES */}
-        <section className={styles.section}>
-          <div className={styles.secHead}>
-            <h2 className={styles.secTitle}>NOTES</h2>
-          </div>
-          <div className={styles.secBody}>
-            <textarea
-              className={styles.notes}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Delivery details, crew, special handling…"
-              maxLength={2000}
-              rows={3}
-            />
-          </div>
-        </section>
+        <aside className={styles.summary}>
+          <p className={styles.summaryTitle}>SUMMARY</p>
 
-        <div className={styles.footSpacer} />
+          <div>
+            <p className={styles.summaryLabel}>PROJECT</p>
+            <p className={`${styles.summaryValue} ${hasName ? '' : styles.summaryPlaceholder}`}>
+              {hasName ? projectName : 'Untitled project'}
+            </p>
+          </div>
+
+          <div>
+            <p className={styles.summaryLabel}>WHEN</p>
+            <p className={styles.summaryValue}>{whenLabel}</p>
+            <p className={styles.summaryHint}>{timeLabel}</p>
+          </div>
+
+          <div className={styles.divider} />
+
+          <div className={styles.actions}>
+            <Button type="submit" fullWidth disabled={!ready || isPending}>
+              {bookingId ? 'SAVE CHANGES' : 'CREATE BOOKING'}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" fullWidth onClick={() => router.back()}>
+              CANCEL
+            </Button>
+            {!ready && <p className={styles.readyHint}>{readyHint}</p>}
+          </div>
+        </aside>
       </div>
 
-      {/* Sticky action bar */}
-      <div className={styles.actionbar}>
-        <div className={styles.actionSummary}>
-          {startDate
-            ? <strong className={styles.asStrong}>{fmtDate(startDate)}{endDate && endDate !== startDate ? '–' + fmtDate(endDate) : ''}</strong>
-            : <span className={styles.asDim}>No dates</span>
-          }
-          <i className={styles.asDiv} />
-          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
-        </div>
-        <div className={styles.actionBtns}>
-          <button type="button" className={styles.btnGhost} onClick={() => router.back()}>
-            CANCEL
-          </button>
-          <button
-            type="submit"
-            className={`${styles.btnPrimary} ${!canCreate ? styles.btnDisabled : ''}`}
-            disabled={!canCreate || isPending}
-          >
-            {isPending ? 'SAVING…' : bookingId ? 'UPDATE BOOKING' : 'CREATE BOOKING'}
-          </button>
-        </div>
+      {/* Mobile action bar — the toggle doubles as the way to review what is
+          selected, which is why there is no separate cart (design decision). */}
+      <div className={styles.mobileBar}>
+        <ToggleSwitch
+          className={styles.mobileToggle}
+          checked={showSelectedOnly}
+          onChange={setShowSelectedOnly}
+          label={totalItems > 0 ? `Show selected only · ${totalItems}` : 'No items selected yet'}
+        />
+        <Button type="submit" disabled={!ready || isPending}>
+          {bookingId ? 'SAVE' : 'CREATE'}
+        </Button>
       </div>
+
+      <Sheet
+        open={sheet === 'dates'}
+        onClose={() => setSheet(null)}
+        title="Dates & time"
+        dismissLabel="DONE"
+      >
+        {datesPanel}
+      </Sheet>
+
+      <Sheet open={sheet === 'notes'} onClose={() => setSheet(null)} title="Notes" dismissLabel="DONE">
+        {notesPanel}
+      </Sheet>
     </form>
   )
 }

@@ -1,0 +1,175 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--overlay-scrim);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidepanel-width);
+  max-width: 100%;
+  height: 100%;
+  background: var(--surface-modal);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px var(--page-margin);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-weak);
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+/* When the panel carries an eyebrow it is a page-level editor, not a dialog
+   strip: the title takes the display face at the design's 22px. */
+.heading .eyebrow + .title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: var(--fw-display);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.close {
+  display: flex;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.close:hover {
+  color: var(--text-primary);
+}
+
+/* Text dismiss — "DONE" on the booking form's drawers. */
+.dismiss {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  color: var(--accent);
+  transition: color var(--transition);
+}
+
+.dismiss:hover {
+  color: var(--accent-hover);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--section-pad-v) var(--page-margin);
+}
+
+.footer {
+  display: flex;
+  gap: 10px;
+  padding: 18px var(--page-margin);
+  border-top: 1px solid var(--hairline);
+}
+
+/* Docked: on desktop the panel is a column in the page, not an overlay. The
+   caller owns the column; `.overlay` collapses to a plain static wrapper, which
+   is also why its click-to-dismiss stops firing here. */
+@media (min-width: 769px) {
+  .docked {
+    position: static;
+    display: block;
+    background: none;
+  }
+
+  .docked .panel {
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+    background: none;
+    border-left: none;
+  }
+
+  .docked .header {
+    padding: 0 0 22px;
+    border-bottom: none;
+  }
+
+  .docked .body {
+    padding: 0;
+  }
+
+  .docked .footer {
+    padding: 22px 0 26px;
+    margin-top: auto;
+  }
+}
+
+/* Mobile: the same panel becomes a bottom drawer. */
+@media (max-width: 768px) {
+  .overlay {
+    align-items: flex-end;
+    justify-content: stretch;
+    /* The drawer covers the page rather than sitting beside it, so the scrim
+       blurs what is behind it — as every mobile overlay in the design does. */
+    backdrop-filter: blur(3px);
+  }
+
+  .panel {
+    width: 100%;
+    height: auto;
+    max-height: 85vh;
+    background: var(--surface-sheet);
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .header,
+  .body,
+  .footer {
+    padding-left: var(--page-margin-mobile);
+    padding-right: var(--page-margin-mobile);
+  }
+
+  .footer {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+}

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { deleteSession } from '@/actions/auth'
+import Icon from '@/components/ui/Icon'
 import styles from './OperatorTopBar.module.css'
 
 const NAV_LINKS = [
@@ -50,7 +51,7 @@ export default function OperatorTopBar({ onMenuOpen }: OperatorTopBarProps) {
           onClick={onMenuOpen}
           aria-label="Open navigation menu"
         >
-          <span className="material-symbols-outlined">menu</span>
+          <Icon name="menu" size={24} />
         </button>
       </div>
     </nav>
