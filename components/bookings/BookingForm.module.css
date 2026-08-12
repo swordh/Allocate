@@ -122,23 +122,38 @@
 
 /* ── dates ──────────────────────────────────────────────────────────────── */
 
+/* Three siblings — readout, calendar, controls — so mobile can reorder them
+   without moving anything in the DOM. Desktop keeps the design's two columns:
+   calendar on the left spanning both rows, readout above the controls on the
+   right. */
 .datesGrid {
   display: grid;
   grid-template-columns: 300px 1fr;
-  gap: 36px;
+  grid-template-rows: auto 1fr;
+  gap: 20px 36px;
+}
+
+.calendarCell {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.readout {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .datesSide {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.readout {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
 
 .dateCard {
   flex: 1;
@@ -698,15 +713,43 @@
     margin-bottom: 12px;
   }
 
-  /* The show-selected toggle moves to the action bar, where it doubles as the
-     way to review the selection. */
-  .selectedToggle {
+  /* Screen 09 (Mobil) orders the drawer readout first, then the calendar,
+     then the full-day toggle and the time fields. */
+  .datesGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .readout {
+    order: 1;
+  }
+
+  .calendarCell {
+    order: 2;
+  }
+
+  .datesSide {
+    order: 3;
+  }
+
+  /* No helper line beside the toggle on mobile — the design has none. */
+  .fullDayHint {
     display: none;
   }
 
-  .datesGrid {
-    grid-template-columns: 1fr;
-    gap: 18px;
+  /* Doubled so it outranks ToggleSwitch's own .row regardless of the order the
+     two CSS modules land in. The selection toggle lives in the action bar on
+     mobile, not beside the search field. */
+  .selectedToggle.selectedToggle {
+    display: none;
+  }
+
+  /* SELECT UNITS sits under the availability line here, not in the action
+     cluster, so it needs its own spacing. */
+  .unitsBtn.unitsBtn {
+    display: inline-flex;
+    margin-top: 9px;
   }
 
   .summary {

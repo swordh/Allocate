@@ -75,6 +75,24 @@
   color: var(--text-primary);
 }
 
+/* Text dismiss — "DONE" on the booking form's drawers. */
+.dismiss {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  color: var(--accent);
+  transition: color var(--transition);
+}
+
+.dismiss:hover {
+  color: var(--accent-hover);
+}
+
 .body {
   flex: 1;
   min-height: 0;
@@ -130,6 +148,9 @@
   .overlay {
     align-items: flex-end;
     justify-content: stretch;
+    /* The drawer covers the page rather than sitting beside it, so the scrim
+       blurs what is behind it — as every mobile overlay in the design does. */
+    backdrop-filter: blur(3px);
   }
 
   .panel {

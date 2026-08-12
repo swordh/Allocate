@@ -283,34 +283,40 @@ export default function BookingForm({
   const whenLabel = pickup === ret ? formatDayFull(pickup) : `${formatCompactRange(pickup, ret)} ${ret.slice(0, 4)}`
   const timeLabel = fullDay || timesDisabled ? 'Full day' : `${pickupTime} → ${retTime}`
 
+  const readout = (
+    <div className={styles.readout}>
+      <div className={styles.dateCard}>
+        <span className={styles.dateCardLabel}>PICKUP</span>
+        <span className={styles.dateCardValue}>{formatDayShort(pickup)}</span>
+      </div>
+      <Glyph char="→" className={styles.arrow} />
+      <div className={styles.dateCard}>
+        <span className={styles.dateCardLabel}>RETURN</span>
+        <span className={styles.dateCardValue}>{formatDayShort(ret)}</span>
+      </div>
+    </div>
+  )
+
   const datesPanel = (
     <div className={styles.datesGrid}>
-      <BookingRangeCalendar
-        pickup={pickup}
-        ret={ret}
-        picking={picking}
-        today={today}
-        onChange={(next) => {
-          setPickup(next.pickup)
-          setRet(next.ret)
-          setPicking(next.picking)
-          setConflictResult(null)
-        }}
-      />
+      {readout}
+
+      <div className={styles.calendarCell}>
+        <BookingRangeCalendar
+          pickup={pickup}
+          ret={ret}
+          picking={picking}
+          today={today}
+          onChange={(next) => {
+            setPickup(next.pickup)
+            setRet(next.ret)
+            setPicking(next.picking)
+            setConflictResult(null)
+          }}
+        />
+      </div>
 
       <div className={styles.datesSide}>
-        <div className={styles.readout}>
-          <div className={styles.dateCard}>
-            <span className={styles.dateCardLabel}>PICKUP</span>
-            <span className={styles.dateCardValue}>{formatDayShort(pickup)}</span>
-          </div>
-          <Glyph char="→" className={styles.arrow} />
-          <div className={styles.dateCard}>
-            <span className={styles.dateCardLabel}>RETURN</span>
-            <span className={styles.dateCardValue}>{formatDayShort(ret)}</span>
-          </div>
-        </div>
-
         {!timesDisabled && (
           <>
             <div className={styles.fullDayRow}>
@@ -414,7 +420,7 @@ export default function BookingForm({
                 onClick={() => setSheet('notes')}
                 aria-label="Notes"
               >
-                <Icon name="list" size={16} strokeWidth={1.8} aria-hidden />
+                <Icon name="note" size={16} strokeWidth={1.8} aria-hidden />
               </button>
             </div>
           ) : (
@@ -490,6 +496,16 @@ export default function BookingForm({
                         const blocked = blockedUnitIds(eq)
                         const conflicted = conflictResult?.conflicts.some((c) => c.equipmentId === eq.id)
 
+                        const unitsToggle = hasUnits ? (
+                          <Chip
+                            className={styles.unitsBtn}
+                            active={showUnits}
+                            onClick={() => setUnitsOpen((p) => ({ ...p, [eq.id]: !showUnits }))}
+                          >
+                            {showUnits ? 'HIDE UNITS' : 'SELECT UNITS'}
+                          </Chip>
+                        ) : null
+
                         return (
                           <div key={eq.id}>
                             <div
@@ -509,20 +525,13 @@ export default function BookingForm({
                                     ? 'Checking availability…'
                                     : soldOut
                                       ? 'FULLY BOOKED FOR THESE DATES'
-                                      : `${available} of ${total} available${booked ? ` · ${booked} booked` : ''}`}
+                                      : `${available} of ${total} available`}
                                 </span>
+                                {isMobile && unitsToggle}
                               </div>
 
                               <div className={styles.itemActions}>
-                                {hasUnits && (
-                                  <Chip
-                                    className={styles.unitsBtn}
-                                    active={showUnits}
-                                    onClick={() => setUnitsOpen((p) => ({ ...p, [eq.id]: !showUnits }))}
-                                  >
-                                    {showUnits ? 'HIDE UNITS' : 'SELECT UNITS'}
-                                  </Chip>
-                                )}
+                                {!isMobile && unitsToggle}
 
                                 <div className={styles.stepper}>
                                   <button
@@ -643,11 +652,12 @@ export default function BookingForm({
         open={sheet === 'dates'}
         onClose={() => setSheet(null)}
         title="Dates & time"
+        dismissLabel="DONE"
       >
         {datesPanel}
       </Sheet>
 
-      <Sheet open={sheet === 'notes'} onClose={() => setSheet(null)} title="Notes">
+      <Sheet open={sheet === 'notes'} onClose={() => setSheet(null)} title="Notes" dismissLabel="DONE">
         {notesPanel}
       </Sheet>
     </form>

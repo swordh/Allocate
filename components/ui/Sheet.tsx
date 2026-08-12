@@ -19,6 +19,12 @@ interface SheetProps {
    * covering it. The caller owns the column; the panel fills it.
    */
   docked?: boolean
+  /**
+   * Replaces the ✕ with a text dismiss, e.g. "DONE". The booking form's date
+   * and notes drawers are filled in and confirmed rather than closed, and the
+   * design labels them accordingly; an editor panel keeps the icon.
+   */
+  dismissLabel?: string
   className?: string
 }
 
@@ -36,6 +42,7 @@ export default function Sheet({
   children,
   footer,
   docked = false,
+  dismissLabel,
   className,
 }: SheetProps) {
   // A docked panel is only modal on mobile, where it covers the page.
@@ -96,11 +103,11 @@ export default function Sheet({
             </div>
             <button
               type="button"
-              className={styles.close}
+              className={dismissLabel ? styles.dismiss : styles.close}
               onClick={onClose}
-              aria-label="Close"
+              aria-label={dismissLabel ? undefined : 'Close'}
             >
-              <Icon name="close" size={18} />
+              {dismissLabel ?? <Icon name="close" size={18} />}
             </button>
           </div>
         )}

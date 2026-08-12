@@ -34,6 +34,7 @@ export type IconName =
   | 'external-link'
   | 'search'
   | 'eye'
+  | 'note'
 
 const p = (d: string, key?: string) => createElement('path', { d, key })
 const c = (cx: number, cy: number, r: number, key?: string) =>
@@ -146,4 +147,11 @@ export const ICON_PATHS: Record<IconName, ReactElement> = {
 
   // The SHOW CANCELLED filter in the mobile nav sheet (screen 08 Mobil).
   eye: g(p('M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', 'outline'), c(12, 12, 3, 'pupil')),
+
+  // The notes drawer trigger on the mobile booking form (screen 09 Mobil).
+  note: g(
+    p('M6 4h9l3 3v13H6z', 'page'),
+    p('M15 4v3h3', 'fold'),
+    p('M9 12h6M9 16h6', 'lines'),
+  ),
 }
