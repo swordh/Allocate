@@ -1,10 +1,16 @@
 /**
- * inviteUser — seat guard (commit 5, redesign phase 2).
+ * inviteUsers — seat guard.
  *
  * Members + pending invitations count against subscription.limits.users.
+ * The old per-address `inviteUser` used three count() aggregates for this;
+ * `inviteUsers` instead reads the full members and pending-invitations
+ * collections once (bounded — max ~30 members) and derives both the exact
+ * counts and the email sets needed for classification from the same reads.
+ *
  * An expired-but-still-`pending` invitation must not permanently consume a
- * seat — it's excluded via a `.count()` aggregate on `expiresAt < now`
- * rather than fetched and filtered in memory.
+ * seat, so wired pending docs must be real documents with an `expiresAt`
+ * field — `computeSeatsUsed` (lib/invite-recipients.ts) filters them out
+ * in memory rather than via a `count()` aggregate.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -26,10 +32,10 @@ vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))
 
-import { inviteUser } from '@/actions/team'
+import { inviteUsers } from '@/actions/team'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import { wireDb, filterValue, type DocMap, type QueryResolver } from '../helpers/firestore'
+import { wireDb, type DocMap, type QueryDocInput, type QueryResolver } from '../helpers/firestore'
 
 const COMPANY_ID = 'company-A'
 const EMAIL = 'newcrew@example.com'
@@ -66,49 +72,33 @@ function wire({
     },
   }
 
+  const activeCount = pendingCount - expiredCount
+  const activePending: QueryDocInput[] = Array.from({ length: activeCount }, (_, i) => ({
+    id: `active${i}`,
+    data: { email: `active${i}@example.com`, status: 'pending', expiresAt: '2099-01-01T00:00:00.000Z' },
+  }))
+  const expiredPending: QueryDocInput[] = Array.from({ length: expiredCount }, (_, i) => ({
+    id: `expired${i}`,
+    data: { email: `expired${i}@example.com`, status: 'pending', expiresAt: '2020-01-01T00:00:00.000Z' },
+  }))
+
   const query: QueryResolver = (ctx) => {
     if (ctx.path === `companies/${COMPANY_ID}/members`) {
-      // Distinguish the "already a member?" lookup (has an email filter,
-      // always empty here) from the seat-guard member count (no filter).
-      if (ctx.filters.some((f) => f.field === 'email')) return []
-      return Array.from({ length: memberCount }, (_, i) => ({ id: `m${i}`, data: {} }))
+      return Array.from({ length: memberCount }, (_, i) => ({
+        id: `m${i}`,
+        data: { email: `member${i}@example.com` },
+      }))
     }
     if (ctx.path === `companies/${COMPANY_ID}/invitations`) {
-      const expiresAtFilter = filterValue(ctx, 'expiresAt')
-      if (expiresAtFilter !== undefined) {
-        // status == pending AND expiresAt < now — the expired-pending count
-        return Array.from({ length: expiredCount }, (_, i) => ({ id: `exp${i}`, data: {} }))
-      }
-      if (ctx.filters.some((f) => f.field === 'status')) {
-        // Either the "already pending for this email" lookup (limit(1), no
-        // results expected here) or the total-pending count.
-        if (ctx.filters.some((f) => f.field === 'email')) return []
-        return Array.from({ length: pendingCount }, (_, i) => ({ id: `p${i}`, data: {} }))
-      }
+      return [...activePending, ...expiredPending]
     }
     return []
   }
 
-  const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
-
-  const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
-  const collectionWithAdd = vi.fn((path: string) => {
-    const chain = innerCollection(path)
-    chain['add'] = vi.fn().mockResolvedValue({ id: 'mail-1' })
-    return chain
-  })
-  ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithAdd
-
-  return wired
+  return wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
 }
 
-function makeFormData(email: string): FormData {
-  const fd = new FormData()
-  fd.set('email', email)
-  return fd
-}
-
-describe('inviteUser — seat guard', () => {
+describe('inviteUsers — seat guard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -122,20 +112,20 @@ describe('inviteUser — seat guard', () => {
 
   it('blocks a new invite when members + active pending invitations reach the limit', async () => {
     stubSession()
-    wire({ memberCount: 3, pendingCount: 2, expiredCount: 0, limit: 5 })
+    const { batch } = wire({ memberCount: 3, pendingCount: 2, expiredCount: 0, limit: 5 })
 
-    const result = await inviteUser(makeFormData(EMAIL))
+    const result = await inviteUsers([EMAIL], 'crew')
 
     expect(result.error).toMatch(/seat limit reached/i)
+    expect(batch.set).not.toHaveBeenCalled()
   })
 
   it('allows a new invite when expired pending invitations free up a seat', async () => {
-    // 3 members + 2 pending, but 1 of the pending is expired — active seats
-    // used = 3 + (2 - 1) = 4, under the limit of 5.
+    // 3 members + 2 pending, 1 expired — active seats used = 3 + 1 = 4, under limit 5.
     stubSession()
     const { batch } = wire({ memberCount: 3, pendingCount: 2, expiredCount: 1, limit: 5 })
 
-    const result = await inviteUser(makeFormData(EMAIL))
+    const result = await inviteUsers([EMAIL], 'crew')
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalled()
@@ -145,9 +135,30 @@ describe('inviteUser — seat guard', () => {
     stubSession()
     const { batch } = wire({ memberCount: 1, pendingCount: 0, expiredCount: 0, limit: 5 })
 
-    const result = await inviteUser(makeFormData(EMAIL))
+    const result = await inviteUsers([EMAIL], 'crew')
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalled()
+  })
+
+  it('skips the guard and logs when subscription.limits.users is missing', async () => {
+    stubSession()
+    const docs: DocMap = {
+      [`companies/${COMPANY_ID}/members/admin-1`]: { name: 'Admin One' },
+      [`companies/${COMPANY_ID}`]: { name: 'Nordfilm AB' }, // no subscription field
+    }
+    const query: QueryResolver = () => []
+    const { batch } = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await inviteUsers([EMAIL], 'crew')
+
+    expect(result.error).toBeUndefined()
+    expect(batch.set).toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[actions/team]',
+      expect.objectContaining({ action: 'invite_users_seat_guard' }),
+    )
+    errorSpy.mockRestore()
   })
 })
