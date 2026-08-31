@@ -47,7 +47,7 @@ interface TeamSettingsViewProps {
   currentUserId: string
   pendingInvites: PublicInvitation[]
   members: TeamMember[]
-  /** members + active (non-expired) pending invites — matches inviteUser's seat guard exactly. */
+  /** members + active (non-expired) pending invites — matches inviteUsers' seat guard exactly. */
   seatsUsed: number
   /** subscription.limits.users, or null if the field is missing. */
   seatLimit: number | null
