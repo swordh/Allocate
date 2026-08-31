@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { adminDb } from '@/lib/firebase-admin'
 import { listMembers } from '@/lib/queries/members'
+import { computeSeatsUsed } from '@/lib/invite-recipients'
 import TeamSettingsView from '@/components/settings/TeamSettingsView'
 import type { Invitation, PublicInvitation } from '@/types/invitation'
 
@@ -29,17 +30,11 @@ export default async function TeamSettingsPage() {
     ({ token: _token, ...publicInvite }) => publicInvite,
   )
 
-  // Seat count shown in the UI must match what `inviteUser`'s seat guard
+  // Seat count shown in the UI must match what `inviteUsers`'s seat guard
   // (actions/team.ts) actually enforces: members + PENDING invitations that
-  // have not expired. An expired-but-still-`pending` invite (nothing sweeps
-  // its status) does not consume a seat. Same "expiresAt < now" comparison
-  // as the guard, done in memory here rather than a second count() query
-  // since pendingInvites is already fetched.
-  const nowIso = new Date().toISOString()
-  const activePendingCount = pendingInvites.filter(
-    (invite) => !invite.expiresAt || invite.expiresAt >= nowIso,
-  ).length
-  const seatsUsed = members.length + activePendingCount
+  // have not expired. Shared with the server via `computeSeatsUsed` so the
+  // page and the guard can't drift.
+  const seatsUsed = computeSeatsUsed(members.length, pendingInvites)
 
   const seatLimit = (companySnap.data()?.subscription?.limits?.users as number | undefined) ?? null
 

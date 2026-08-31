@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { inviteUser, removeMember, updateMemberRole, revokeInvitation, resendInvitation } from '@/actions/team'
+import { inviteUsers, removeMember, updateMemberRole, revokeInvitation, resendInvitation } from '@/actions/team'
 import { inviteMeta, daysLeftFrom } from '@/lib/invite-status'
 import Chip from '@/components/ui/Chip'
 import Input from '@/components/ui/Input'
@@ -107,33 +107,41 @@ export default function TeamSettingsView({
     setInviting(true)
     setInviteError(null)
 
-    const formData = new FormData()
-    formData.set('email', inviteEmail)
-    formData.set('role', inviteRole)
-
-    const result = await inviteUser(formData)
+    const result = await inviteUsers([inviteEmail], inviteRole)
 
     setInviting(false)
 
-    if (!result.invitation) {
-      setInviteError(result.error ?? 'Something went wrong. Please try again.')
+    if (result.error) {
+      setInviteError(result.error)
       return
     }
 
-    // Round-trip the server's actual document — append a new row, or update
-    // the existing one in place when this was a resend (same email already
-    // had a pending invite). Only a genuinely new invite consumes a seat.
-    const { invitation, created } = result
+    const invitations = result.invitations ?? []
+    if (invitations.length === 0) {
+      // The single submitted address was skipped — already a member, or
+      // already has a pending invite (never silently resent, see actions/team.ts).
+      const reason = result.skipped?.[0]?.reason
+      setInviteError(
+        reason === 'member'
+          ? 'That person is already a member of this company.'
+          : 'That person has already been invited.',
+      )
+      return
+    }
+
+    // Round-trip the server's actual document(s) — append new rows. Every
+    // returned invitation is genuinely new (there's no resend branch left),
+    // so seatsUsed always grows by exactly the number returned.
     setInvites((prev) => {
-      const idx = prev.findIndex((inv) => inv.id === invitation.id)
-      if (idx === -1) return [...prev, invitation]
       const next = [...prev]
-      next[idx] = invitation
+      for (const invitation of invitations) {
+        const idx = next.findIndex((inv) => inv.id === invitation.id)
+        if (idx === -1) next.push(invitation)
+        else next[idx] = invitation
+      }
       return next
     })
-    if (created) {
-      setSeatsUsed((prev) => prev + 1)
-    }
+    setSeatsUsed((prev) => prev + invitations.length)
     setInviteEmail('')
   }
 
