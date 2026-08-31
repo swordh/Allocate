@@ -265,7 +265,11 @@ export function seatPreview(input: SeatPreviewInput): SeatPreview {
   const overLimit = seatsLeft !== null && newCount > seatsLeft
   const canSubmit = newCount > 0 && !overLimit
 
-  const buttonLabel = newCount === 1 ? 'SEND INVITE' : `SEND ${newCount} INVITES`
+  // `newCount <= 1` rather than `=== 1`: with an empty field (the state this
+  // row spends most of its life in) newCount is 0, and "SEND 0 INVITES" is a
+  // nonsense label for a form nobody has typed into yet. The button is
+  // disabled at 0 either way — this is purely what it reads.
+  const buttonLabel = newCount <= 1 ? 'SEND INVITE' : `SEND ${newCount} INVITES`
   const infoLine = buildInfoLine(total, invitedCount, memberCount)
   const warning =
     seatsLeft !== null && newCount > seatsLeft
