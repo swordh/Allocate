@@ -132,7 +132,7 @@ export default function TermsPage() {
           columns={[
             {
               label: 'EMAIL',
-              value: <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>,
+              value: <a href="mailto:support@allocate.at">support@allocate.at</a>,
             },
           ]}
         />
