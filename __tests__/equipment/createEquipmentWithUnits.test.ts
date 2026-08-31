@@ -289,8 +289,17 @@ describe('input validation', () => {
       expect((result as { error: string }).error).toContain('status')
     })
 
+    it('rejects the retired limited_operations status', async () => {
+      const result = await createEquipmentWithUnits(VALID_FIELDS, [
+        { ...VALID_UNIT, status: 'limited_operations' as never },
+      ])
+
+      expect(result).toHaveProperty('error')
+      expect((result as { error: string }).error).toContain('status')
+    })
+
     it('accepts all valid status values', async () => {
-      const validStatuses = ['ok', 'needs_repair', 'limited_operations'] as const
+      const validStatuses = ['ok', 'needs_repair'] as const
 
       for (const status of validStatuses) {
         vi.clearAllMocks()

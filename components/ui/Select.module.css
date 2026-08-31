@@ -1,0 +1,28 @@
+.select {
+  composes: input from './Input.module.css';
+  appearance: none;
+  cursor: pointer;
+  /* The design's timezone field shows the resolved value dimmed like a
+     read-only input rather than user-entered text. */
+  color: var(--text-secondary);
+}
+
+.select:disabled {
+  cursor: not-allowed;
+}
+
+.lg {
+  composes: lg from './Input.module.css';
+}
+
+.md {
+  composes: md from './Input.module.css';
+}
+
+.sm {
+  composes: sm from './Input.module.css';
+}
+
+.invalid {
+  composes: invalid from './Input.module.css';
+}

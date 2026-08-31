@@ -1,197 +1,173 @@
 .wrapper {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 48px 24px;
+  min-height: 100vh;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 34px;
+  padding: 72px 100px 90px;
 }
 
-.heading {
-  font-size: var(--font-booking-title);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  margin-bottom: 4px;
-  color: var(--white);
+.logo {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 19px;
+  letter-spacing: 0.025em;
+  color: var(--text-primary);
 }
 
-.subHeading {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--mid);
-  margin-bottom: 40px;
-}
-
-.planCard {
-  border: 1px solid rgba(238, 204, 2, 0.3);
-  padding: 24px 28px;
-  margin-bottom: 32px;
-}
-
-.planGrid {
+.intro {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 32px;
+  align-items: center;
+  text-align: center;
 }
 
-.planOption {
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--accent);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 44px;
+  line-height: 1;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.subheading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: 1.65;
+  max-width: 520px;
+  text-wrap: pretty;
+}
+
+.cycleToggle {
+  display: flex;
+  gap: 8px;
+  border: 1px solid var(--border-medium);
+  padding: 4px;
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+}
+
+.planCard {
+  border: 1px solid var(--border-medium);
+  padding: 28px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  text-align: left;
-  border: 1px solid rgba(71, 71, 71, 0.3);
-  padding: 20px 24px;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.15s ease;
+  gap: 18px;
 }
 
-.planOptionActive {
-  border-color: rgba(238, 204, 2, 0.6);
+.planCard[data-recommended] {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-tint-weak);
 }
 
-.planOptionHeader {
+.planCardHeader {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
 }
 
 .planName {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: var(--white);
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
 }
 
 .planPrice {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--white);
-}
-
-.planPriceUnit {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--mid);
-}
-
-.planBadge {
-  display: inline-block;
-  background: var(--accent);
-  color: var(--on-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  padding: 6px 14px;
-}
-
-.planFeatures {
-  margin-top: 16px;
-  font-size: 13px;
-  color: var(--mid);
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.priceValue {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
+}
+
+.pricePer {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  color: var(--text-weak);
+}
+
+.featureList {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.featureSep {
-  color: var(--dim);
+.feature {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
 }
 
-.sectionLabel {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--mid);
-}
+@media (max-width: 768px) {
+  .wrapper {
+    padding: 24px 22px 40px;
+    align-items: stretch;
+    gap: 24px;
+  }
 
-.rule {
-  flex-grow: 1;
-  height: 1px;
-  background: rgba(71, 71, 71, 0.2);
-}
+  .logo {
+    align-self: flex-start;
+  }
 
-.intervalToggle {
-  display: flex;
-}
+  .intro {
+    align-items: flex-start;
+    text-align: left;
+  }
 
-.intervalBtn {
-  flex: 1;
-  padding: 14px 0;
-  border: 1px solid rgba(71, 71, 71, 0.3);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  background: transparent;
-  color: var(--mid);
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
+  .heading {
+    font-size: 30px;
+  }
 
-.intervalBtn + .intervalBtn {
-  border-left: none;
-}
+  .subheading {
+    max-width: none;
+  }
 
-.intervalBtnActive {
-  border-color: rgba(238, 204, 2, 0.6);
-  color: var(--white);
-}
+  .cycleToggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
 
-.intervalBtnActive + .intervalBtn {
-  border-left: 1px solid rgba(71, 71, 71, 0.3);
-}
+  .planGrid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 
-.yearlyLabel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
+  .planCard {
+    padding: 22px;
+    gap: 16px;
+  }
 
-.savingsBadge {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  color: #c8a800;
-}
-
-.errorBanner {
-  font-size: 14px;
-  color: var(--repair);
-  border: 1px solid var(--repair);
-  padding: 12px 16px;
-  margin-top: 16px;
-}
-
-.btnSubscribe {
-  width: 100%;
-  padding: 16px 0;
-  margin-top: 24px;
-  background: var(--accent);
-  color: var(--on-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  transition: opacity 0.15s ease;
-}
-
-.btnSubscribe:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  .priceValue {
+    font-size: 30px;
+  }
 }

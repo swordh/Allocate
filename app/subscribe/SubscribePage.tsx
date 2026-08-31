@@ -3,97 +3,110 @@
 import { useState } from 'react'
 import { createCheckoutSession } from '@/actions/subscription'
 import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
+import Button from '@/components/ui/Button'
+import Chip from '@/components/ui/Chip'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import type { BillingInterval } from '@/types'
 import s from './SubscribePage.module.css'
 
-export default function SubscribePage() {
-  const [plan, setPlan] = useState<PlanId>('starter')
-  const [interval, setInterval] = useState<'month' | 'year'>('month')
-  const [loading, setLoading] = useState(false)
+interface SubscribePageProps {
+  companyName: string
+}
+
+export default function SubscribePage({ companyName }: SubscribePageProps) {
+  const [cycle, setCycle] = useState<BillingInterval>('month')
+  const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleSubscribe() {
-    setLoading(true)
+  async function handleSelect(plan: PlanId) {
+    setLoadingPlan(plan)
     setError(null)
-    const result = await createCheckoutSession(interval, plan)
+    const result = await createCheckoutSession(cycle, plan)
     if ('url' in result) {
       window.location.href = result.url
     } else {
       setError(result.error)
-      setLoading(false)
+      setLoadingPlan(null)
     }
   }
 
   return (
     <div className={s.wrapper}>
-      <h1 className={s.heading}>Subscribe</h1>
-      <p className={s.subHeading}>Get started with Allocate</p>
+      <span className={s.logo}>ALLOCATE</span>
 
-      <div className={s.sectionLabel}>
-        <span>Plan</span>
-        <div className={s.rule} />
+      <div className={s.intro}>
+        <span className={s.eyebrow}>NO ACTIVE SUBSCRIPTION</span>
+        <h1 className={s.heading}>Choose a plan</h1>
+        <p className={s.subheading}>
+          {companyName || 'Your company'} needs an active plan to create bookings. Pick a plan below — you can
+          change or cancel it any time from Settings.
+        </p>
+      </div>
+
+      <div className={s.cycleToggle}>
+        <Chip
+          size="cycle"
+          variant="solid"
+          active={cycle === 'month'}
+          onClick={() => setCycle('month')}
+          disabled={loadingPlan !== null}
+        >
+          MONTHLY
+        </Chip>
+        <Chip
+          size="cycle"
+          variant="solid"
+          active={cycle === 'year'}
+          onClick={() => setCycle('year')}
+          disabled={loadingPlan !== null}
+        >
+          YEARLY — 2 MONTHS FREE
+        </Chip>
       </div>
 
       <div className={s.planGrid}>
         {PLAN_ORDER.map((id) => {
           const p = PLAN_CATALOG[id]
-          const price = interval === 'month' ? p.priceMonthly : p.priceYearly
+          const price = cycle === 'month' ? p.priceMonthly : p.priceYearly
+          const per = cycle === 'month' ? '/ month' : '/ year'
+          const recommended = id === 'basic'
+
           return (
-            <button
-              key={id}
-              type="button"
-              className={`${s.planOption} ${plan === id ? s.planOptionActive : ''}`}
-              onClick={() => setPlan(id)}
-              aria-pressed={plan === id}
-            >
-              <div className={s.planOptionHeader}>
+            <div key={id} className={s.planCard} data-recommended={recommended || undefined}>
+              <div className={s.planCardHeader}>
                 <span className={s.planName}>{p.name}</span>
-                <span className={s.planPrice}>
-                  {price} kr
-                  <span className={s.planPriceUnit}>/{interval === 'month' ? 'mo' : 'yr'}</span>
-                </span>
+                {recommended && (
+                  <Chip size="tag" tone="accent" interactive={false}>
+                    RECOMMENDED
+                  </Chip>
+                )}
               </div>
-              <div className={s.planFeatures}>
-                <span>{p.equipment} equipment items</span>
-                <span className={s.featureSep}>·</span>
-                <span>{p.users} members</span>
+              <div className={s.planPrice}>
+                <span className={s.priceValue}>{price.toLocaleString('sv-SE')} kr</span>
+                <span className={s.pricePer}>{per}</span>
               </div>
-            </button>
+              <div className={s.featureList}>
+                {p.features.map((f) => (
+                  <span key={f} className={s.feature}>
+                    — {f}
+                  </span>
+                ))}
+              </div>
+              <Button
+                variant={recommended ? 'primary' : 'secondary'}
+                size="md"
+                fullWidth
+                disabled={loadingPlan !== null}
+                onClick={() => handleSelect(id)}
+              >
+                {loadingPlan === id ? 'REDIRECTING…' : `SELECT ${p.name.toUpperCase()}`}
+              </Button>
+            </div>
           )
         })}
       </div>
 
-      <div className={s.sectionLabel}>
-        <span>Billing interval</span>
-        <div className={s.rule} />
-      </div>
-
-      <div className={s.intervalToggle}>
-        <button
-          className={`${s.intervalBtn} ${interval === 'month' ? s.intervalBtnActive : ''}`}
-          onClick={() => setInterval('month')}
-        >
-          Monthly
-        </button>
-        <button
-          className={`${s.intervalBtn} ${interval === 'year' ? s.intervalBtnActive : ''}`}
-          onClick={() => setInterval('year')}
-        >
-          <span className={s.yearlyLabel}>
-            Yearly
-            <span className={s.savingsBadge}>Save 20%</span>
-          </span>
-        </button>
-      </div>
-
-      {error && <div className={s.errorBanner}>{error}</div>}
-
-      <button
-        className={s.btnSubscribe}
-        onClick={handleSubscribe}
-        disabled={loading}
-      >
-        {loading ? 'Redirecting to Stripe…' : 'Subscribe'}
-      </button>
+      {error && <ErrorBanner tone="danger">{error}</ErrorBanner>}
     </div>
   )
 }

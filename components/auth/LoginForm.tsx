@@ -7,7 +7,17 @@ import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { createSession } from '@/actions/auth'
 import { sendVerificationEmail } from '@/actions/auth-email'
-import styles from './Auth.module.css'
+import AuthShell from './AuthShell'
+import AuthCard from './AuthCard'
+import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
+import Field from '@/components/ui/Field'
+import ErrorBanner from '@/components/ui/ErrorBanner'
+import styles from './LoginForm.module.css'
+
+// The design's `locked` state (15-minute lockout, "Two attempts left…" copy)
+// is intentionally not built — redesign decision 3. Firebase's existing
+// auth/too-many-requests behaviour is kept as-is with neutral copy instead.
 
 export default function LoginForm() {
   const router = useRouter()
@@ -39,9 +49,9 @@ export default function LoginForm() {
       // SDK v9+ unifies them into auth/invalid-credential to prevent enumeration.
       const code = (err as { code?: string }).code ?? ''
       if (code === 'auth/invalid-credential') {
-        setError('Invalid email or password.')
+        setError("That email and password don't match.")
       } else if (code === 'auth/too-many-requests') {
-        setError('Too many attempts. Try again later.')
+        setError('Too many attempts. Wait a few minutes and try again.')
       } else {
         setError('Something went wrong. Please try again.')
       }
@@ -51,59 +61,67 @@ export default function LoginForm() {
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.formCard}>
-        <h1 className={styles.pageTitle}>SIGN IN</h1>
+    <AuthShell>
+      <AuthCard width={400}>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title}>Sign in</h1>
+          <span className={styles.subtitle}>Use the email address your workspace invited.</span>
+        </div>
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
-          {error && (
-            <div className={styles.error} role="alert" aria-live="assertive">
-              {error}
-            </div>
-          )}
+          {error && <ErrorBanner tone="danger">{error}</ErrorBanner>}
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="email">Email</label>
-            <input
-              id="email"
-              className={styles.input}
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={loading}
-            />
+          <div className={styles.fieldsGroup}>
+            <Field label="Email" htmlFor="email">
+              <Input
+                id="email"
+                inputSize="lg"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={loading}
+                busy={loading}
+              />
+            </Field>
+
+            <Field
+              label="Password"
+              htmlFor="password"
+              labelAction={
+                <Link className={styles.forgotLink} href="/forgot-password">
+                  FORGOT?
+                </Link>
+              }
+            >
+              <Input
+                id="password"
+                inputSize="lg"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={loading}
+                invalid={!!error}
+                busy={loading}
+              />
+            </Field>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="password">Password</label>
-            <input
-              id="password"
-              className={styles.input}
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-            />
-          </div>
-
-          <button className={styles.submitBtn} type="submit" disabled={loading}>
+          <Button type="submit" size="lg" fullWidth loading={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
 
-        <p className={styles.footer}>
-          <Link href="/forgot-password">Forgot password?</Link>
-        </p>
-
-        <p className={styles.footer}>
-          No account?{' '}
-          <Link href="/signup">Create one</Link>
-        </p>
-      </div>
-    </div>
+        <span className={styles.footerText}>
+          No account yet?{' '}
+          <Link className={styles.link} href="/signup">
+            Create an account
+          </Link>
+        </span>
+      </AuthCard>
+    </AuthShell>
   )
 }

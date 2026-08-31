@@ -1,812 +1,791 @@
-/* -----------------------------------------------------------------------
-   BookingForm — New Booking redesign
-   ----------------------------------------------------------------------- */
+/* New / edit booking — screen 09.
+   One component at both widths: below the breakpoint the dates and notes
+   panels move into a Sheet and the summary column is replaced by the fixed
+   action bar. */
 
-.form {
-  width: 100%;
+.page {
+  padding: 34px 28px 0;
 }
 
-/* ── main content column ──────────────────────────────────────────────── */
-
-.main {
-  max-width: calc(1000px + 96px);
-  margin: 0 auto;
-  padding: 0 0 0;
-}
-
-/* ── page head ──────────────────────────────────────────────────────────── */
-
-.pageHead {
-  padding-top: 18px;
-  margin-bottom: 8px;
-}
-
-.h1 {
-  font-size: 70px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 0.92;
-  text-transform: uppercase;
-  margin: 0 0 26px;
-}
-
-@media (max-width: 768px) {
-  .h1 {
-    font-size: 42px;
-  }
-}
-
-.rule {
-  height: 1px;
-  background: #2b2b2b;
-  margin-bottom: 8px;
-}
-
-/* ── error banner ────────────────────────────────────────────────────────── */
-
-.errorBanner {
-  padding: 12px 16px;
-  background: rgba(204, 51, 51, 0.12);
-  border: 1px solid #cc3333;
-  color: #cc3333;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-
-/* ── sections ────────────────────────────────────────────────────────────── */
-
-.section {
-  padding: 34px 0;
-  border-bottom: 1px solid #1d1d1d;
-}
-
-@media (max-width: 768px) {
-  .section {
-    padding: 26px 0;
-  }
-}
-
-.secHead {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
-}
-
-.secTitle {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  margin: 0;
-  line-height: 1;
-}
-
-.secHint {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.secChecking {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.37);
-  text-transform: uppercase;
-}
-
-.secTag {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--tertiary, #EECC02);
-  white-space: nowrap;
-  text-transform: uppercase;
-}
-
-.secTagMuted {
-  color: rgba(255, 255, 255, 0.37);
-}
-
-.secBody {
-  /* wrapper for section content */
-}
-
-/* ── 01 project field ────────────────────────────────────────────────────── */
-
-.bigfield {
-  width: 100%;
-  background: none;
-  border: none;
-  border-bottom: 2px solid #2b2b2b;
-  color: #fff;
-  font-family: inherit;
-  font-size: clamp(26px, 4vw, 40px);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  padding: 6px 2px 14px;
-  outline: none;
-  transition: border-color 0.12s;
-}
-
-.bigfield::placeholder {
-  color: #3a3a3a;
-}
-
-.bigfield:focus {
-  border-color: var(--tertiary, #EECC02);
-}
-
-/* ── 02 schedule grid ────────────────────────────────────────────────────── */
-
-.scheduleGrid {
-  display: grid;
-  grid-template-columns: minmax(280px, 340px) 1fr;
-  gap: 40px;
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .scheduleGrid {
-    grid-template-columns: 1fr;
-    gap: 26px;
-  }
-}
-
-.calWrap {
-  background: #141414;
-  padding: 22px 22px 26px;
-}
-
-.schedSide {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  padding-top: 2px;
-}
-
-/* date readouts */
-.dateRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.datebox {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.datelabel {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.55);
-  text-transform: uppercase;
-}
-
-.dateVal {
-  font-size: 20px;
-  font-weight: 700;
-  border-bottom: 1px solid #2b2b2b;
-  padding-bottom: 10px;
-}
-
-.dateValDim {
-  font-size: 20px;
-  font-weight: 500;
-  border-bottom: 1px solid #2b2b2b;
-  padding-bottom: 10px;
-  color: #3f3f3f;
-}
-
-/* full day toggle */
-.fulldayRow {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 0;
-  border-top: 1px solid #1d1d1d;
-  border-bottom: 1px solid #1d1d1d;
-}
-
-.fulldayNote {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.37);
-  letter-spacing: 0.04em;
-}
-
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  background: none;
-  border: none;
-  padding: 0;
-  color: #fff;
-  cursor: pointer;
-  font-family: inherit;
-  flex-shrink: 0;
-}
-
-.checkBox {
-  width: 22px;
-  height: 22px;
-  border: 2px solid #2b2b2b;
-  display: grid;
-  place-items: center;
-  color: #000;
-  flex-shrink: 0;
-  transition: background 0.1s, border-color 0.1s;
-}
-
-.checkOn .checkBox {
-  background: var(--tertiary, #EECC02);
-  border-color: var(--tertiary, #EECC02);
-}
-
-.checkLabel {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-/* time row */
-.timeRow {
+.header {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
-}
-
-.timebox {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.timeSep {
-  color: rgba(255, 255, 255, 0.37);
-  font-size: 18px;
+  justify-content: space-between;
+  gap: 16px;
   padding-bottom: 10px;
-  flex-shrink: 0;
 }
 
-.timeSelect {
-  width: 100%;
-  background: #141414;
-  border: 1px solid #2b2b2b;
-  color: #fff;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  padding: 12px 14px;
-  outline: none;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  transition: border-color 0.12s;
+.back {
+  display: none;
 }
 
-.timeSelect:hover,
-.timeSelect:focus {
-  border-color: var(--tertiary, #EECC02);
+.title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-display-h1);
+  line-height: var(--lh-display);
+  letter-spacing: var(--ls-display);
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
 }
 
-/* ── 03 equipment ────────────────────────────────────────────────────────── */
-
-.emptyMsg {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.37);
-  padding: 16px 0;
+.draft {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-btn);
+  color: var(--text-pale);
+  white-space: nowrap;
 }
 
-/* accordion */
-.cats {
+.body {
+  display: grid;
+  grid-template-columns: 1fr var(--sidepanel-width);
+  padding-top: 26px;
+}
+
+.main {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-right: 52px;
 }
 
-.cat {
-  /* wrapper */
+/* ── sections ───────────────────────────────────────────────────────────── */
+
+.section {
+  padding: var(--section-pad-v) 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.catHead {
+.sectionLast {
+  padding-bottom: 40px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.sectionTitle {
+  margin-bottom: 24px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-section);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  color: var(--text-primary);
+}
+
+.sectionHead .sectionTitle {
+  margin-bottom: 0;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 10px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+}
+
+.required {
+  color: var(--accent);
+}
+
+.optional {
+  color: var(--text-pale);
+}
+
+.projectInput {
+  width: 100%;
+  padding: 15px 16px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-input-lg);
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  outline: none;
+}
+
+.projectInput:focus {
+  border-color: var(--accent-border-mid);
+}
+
+.notes {
+  width: 100%;
+  min-height: 90px;
+}
+
+/* ── dates ──────────────────────────────────────────────────────────────── */
+
+/* Three siblings — readout, calendar, controls — so mobile can reorder them
+   without moving anything in the DOM. Desktop keeps the design's two columns:
+   calendar on the left spanning both rows, readout above the controls on the
+   right. */
+.datesGrid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 20px 36px;
+}
+
+.calendarCell {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.readout {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.datesSide {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+
+.dateCard {
+  flex: 1;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+
+.dateCardLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-weak);
+}
+
+.dateCardValue {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.arrow {
+  color: var(--text-pale);
+}
+
+.fullDayRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.fullDayHint {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  color: var(--text-pale);
+}
+
+.times {
+  display: flex;
+  gap: 14px;
+}
+
+/* Full day does not hide the time fields, it visibly disables them — the
+   design keeps them on screen so the choice stays legible. */
+.timesOff {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.timeField {
+  flex: 1;
+}
+
+.timeInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 13px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.timeInput {
   width: 100%;
-  background: #141414;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-input-lg);
+  color: var(--text-primary);
+  background: transparent;
   border: none;
-  color: #fff;
-  padding: 18px 22px;
-  text-align: left;
+  outline: none;
+  color-scheme: dark;
+}
+
+.timeDash {
+  position: absolute;
+  inset: 13px 16px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-input-lg);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+/* ── equipment ──────────────────────────────────────────────────────────── */
+
+.checking {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  color: var(--accent);
+}
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid var(--accent-tint-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-circle);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 15px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.searchIcon {
+  color: var(--text-weak);
+  flex: none;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-input);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.clear {
+  font-size: 16px;
+  color: var(--text-weak);
+  background: transparent;
+  border: none;
   cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s;
 }
 
-.catHead:hover {
-  background: #1b1b1b;
+.selectedToggle {
+  flex: none;
 }
 
-.catChev {
-  color: rgba(255, 255, 255, 0.55);
-  transition: transform 0.15s;
-  flex-shrink: 0;
+.category {
+  margin-bottom: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
 }
 
-.catOpen .catChev {
+.categoryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 18px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-secondary);
+  background: var(--fill-active);
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: var(--fs-tab);
+  color: var(--text-secondary);
+  background: var(--fill-medium);
+  border-radius: var(--radius-circle);
+  transition: transform var(--transition);
+}
+
+.chevronOpen {
   transform: rotate(180deg);
 }
 
-.catName {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  flex: 1;
-}
-
-.catMeta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.catBadge {
-  font-style: normal;
-  background: var(--tertiary, #EECC02);
-  color: #000;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-}
-
-.catCount {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.37);
-  font-weight: 600;
-}
-
-.catBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 2px 0;
-  background: #0c0c0c;
-}
-
-/* equipment row */
-.eq {
-  background: #141414;
-  border-left: 3px solid transparent;
-  transition: background 0.12s;
-  margin-left: 24px;
-}
-
-@media (max-width: 768px) {
-  .eq {
-    margin-left: 12px;
-  }
-}
-
-.eqActive {
-  border-left-color: var(--tertiary, #EECC02);
-  background: #181712;
-}
-
-.eqConflict {
-  border-left-color: #e0533c;
-}
-
-.eqMain {
+.item {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 16px 20px;
+  padding: 14px 18px 14px 15px;
+  background: var(--fill-active);
+  border-top: 1px solid var(--border-track);
+  border-left: 3px solid transparent;
 }
 
-@media (max-width: 768px) {
-  .eqMain {
-    flex-wrap: wrap;
-  }
-}
-
-.eqInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
+.itemMain {
   flex: 1;
+  min-width: 0;
 }
 
-.eqName {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+.itemName {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: 15px;
+  color: var(--text-primary);
 }
 
-.eqRight {
+.itemNameOff {
+  color: var(--text-faint);
+}
+
+.avail {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.availNone {
+  color: var(--danger);
+}
+
+.availChecking {
+  color: var(--text-weak);
+}
+
+.itemActions {
   display: flex;
   align-items: center;
-  gap: 20px;
-  flex-shrink: 0;
+  gap: 10px;
 }
 
-@media (max-width: 768px) {
-  .eqRight {
-    width: 100%;
-    justify-content: space-between;
-  }
+.unitsBtn.unitsBtn {
+  padding: 8px 12px;
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-btn-tight);
+  background: transparent;
 }
 
-/* availability badge */
-.avail {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+.unitsBtn.unitsBtn[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-.avail b {
-  color: #fff;
-  font-weight: 700;
-}
-
-.availDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #4ad07a;
-  flex-shrink: 0;
-}
-
-.availLow .availDot {
-  background: var(--tertiary, #EECC02);
-}
-
-.availLow b {
-  color: var(--tertiary, #EECC02);
-}
-
-.availNone .availDot {
-  background: #e0533c;
-}
-
-.availNone b {
-  color: #e0533c;
-}
-
-.availOf {
-  color: rgba(255, 255, 255, 0.37);
-  font-weight: 600;
-}
-
-/* stepper */
 .stepper {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  border: 1px solid #2b2b2b;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 
 .stepBtn {
-  width: 36px;
-  height: 36px;
-  background: none;
-  border: none;
-  color: #fff;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 18px;
-  font-weight: 700;
-  font-family: inherit;
-  display: grid;
-  place-items: center;
+  color: var(--text-pale);
+  background: transparent;
+  border: none;
   cursor: pointer;
-  transition: background 0.1s;
 }
 
 .stepBtn:hover:not(:disabled) {
-  background: #242424;
+  color: var(--text-primary);
 }
 
 .stepBtn:disabled {
-  color: #3a3a3a;
-  cursor: not-allowed;
-}
-
-.stepVal {
-  min-width: 34px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 700;
-  border-left: 1px solid #2b2b2b;
-  border-right: 1px solid #2b2b2b;
-  height: 36px;
-  display: grid;
-  place-items: center;
-}
-
-/* unit toggle button */
-.unitToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: 1px solid #2b2b2b;
-  color: #fff;
-  padding: 9px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.12s;
-  white-space: nowrap;
-}
-
-.unitToggle:hover {
-  border-color: var(--tertiary, #EECC02);
-}
-
-.unitToggleOn {
-  border-color: var(--tertiary, #EECC02);
-  color: var(--tertiary, #EECC02);
-}
-
-/* unit chips */
-.units {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 20px 18px;
-}
-
-.unitChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background: #1b1b1b;
-  border: 1px solid #2b2b2b;
-  color: #cfcfcf;
-  padding: 9px 13px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-}
-
-.unitChip:hover:not(:disabled) {
-  border-color: #555;
-}
-
-.unitChipOn {
-  background: #181712;
-  border-color: var(--tertiary, #EECC02);
-}
-
-.unitChipBad {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.unitName {
-  font-weight: 700;
-  color: #fff;
+.qty {
+  width: 34px;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-input-lg);
+  color: var(--text-pale);
 }
 
-.unitSn {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.37);
-  letter-spacing: 0.04em;
+.qtyOn {
+  color: var(--accent);
 }
 
-.unitState {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+.units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 18px 12px;
+  background: var(--fill-active);
 }
 
-.unitChipOn .unitState {
-  color: var(--tertiary, #EECC02);
+.unitChip.unitChip {
+  padding: 8px 13px;
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
-.unitChipBad .unitState {
-  color: #e0533c;
+.unitChip.unitChip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--btn-primary-fg);
+  border-color: var(--accent);
 }
 
-/* conflict notice */
-.conflictNotice {
-  padding: 12px;
-  border: 1px solid #cc3333;
-  background: rgba(204, 51, 51, 0.08);
+/* A unit that is already out, or broken, is struck through rather than hidden:
+   the reader needs to see it exists. */
+.unitTaken.unitTaken {
+  text-decoration: line-through;
+  color: var(--text-pale);
+  border-color: var(--hairline);
+  background: transparent;
+}
+
+.noResults {
+  padding: 40px 0;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-body);
+  color: var(--text-pale);
+}
+
+/* ── summary ────────────────────────────────────────────────────────────── */
+
+.summary {
+  position: sticky;
+  top: 20px;
+  align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 26px;
+  padding: var(--section-pad-v) 0 var(--section-pad-v) 40px;
+  border-left: 1px solid var(--border-subtle);
 }
 
-.conflictTitle {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #cc3333;
+.summaryTitle {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  letter-spacing: var(--ls-section);
+  color: var(--text-weak);
 }
 
-.conflictItem {
+.summaryLabel {
+  margin-bottom: 7px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label-sm);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-pale);
+}
+
+.summaryValue {
+  font-family: var(--font-ui);
+  font-size: var(--fs-input-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.summaryPlaceholder {
+  color: var(--text-pale);
+}
+
+.summaryHint {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  color: var(--text-muted);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.actions {
   display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #fff;
-}
-
-.conflictDetail {
-  font-size: 11px;
-  color: #cc3333;
-}
-
-/* ── 04 notes ────────────────────────────────────────────────────────────── */
-
-.notes {
-  width: 100%;
-  background: #141414;
-  border: 1px solid #2b2b2b;
-  color: #fff;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.5;
-  padding: 16px 18px;
-  outline: none;
-  resize: vertical;
-  transition: border-color 0.12s;
-}
-
-.notes::placeholder {
-  color: #454545;
-}
-
-.notes:focus {
-  border-color: var(--tertiary, #EECC02);
-}
-
-/* ── footer spacer + action bar ─────────────────────────────────────────── */
-
-.footSpacer {
-  height: 110px;
-}
-
-@media (max-width: 768px) {
-  .footSpacer {
-    height: 160px;
-  }
-}
-
-.actionbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px 48px;
-  background: rgba(0, 0, 0, 0.88);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-top: 1px solid #2b2b2b;
-}
-
-@media (max-width: 768px) {
-  .actionbar {
-    padding: 14px 16px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-}
-
-.actionSummary {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
-}
-
-.asStrong {
-  color: #fff;
-  font-weight: 700;
-}
-
-.asDim {
-  color: rgba(255, 255, 255, 0.37);
-}
-
-.asDiv {
-  display: block;
-  width: 1px;
-  height: 16px;
-  background: #2b2b2b;
-  flex-shrink: 0;
-}
-
-.actionBtns {
-  display: flex;
+  flex-direction: column;
   gap: 12px;
-  flex-shrink: 0;
+}
+
+.readyHint {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  line-height: var(--lh-tight);
+  text-align: center;
+  color: var(--text-weak);
+}
+
+/* ── mobile ─────────────────────────────────────────────────────────────── */
+
+.pills,
+.mobileBar {
+  display: none;
 }
 
 @media (max-width: 768px) {
-  .actionBtns {
-    gap: 10px;
+  .page {
+    padding: 6px 0 0;
   }
-}
 
-.btnGhost {
-  padding: 15px 28px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  font-family: inherit;
-  background: none;
-  border: 1px solid #2b2b2b;
-  color: #fff;
-  cursor: pointer;
-  transition: border-color 0.12s;
-}
+  .header {
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+  }
 
-.btnGhost:hover {
-  border-color: #fff;
-}
+  .back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    font-size: 18px;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-medium);
+    cursor: pointer;
+  }
 
-.btnPrimary {
-  padding: 15px 28px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  font-family: inherit;
-  background: #fff;
-  color: #000;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.btnPrimary:hover:not(:disabled) {
-  background: var(--tertiary, #EECC02);
-}
-
-.btnDisabled,
-.btnPrimary:disabled {
-  background: #2a2a2a;
-  color: #5e5e5e;
-  cursor: not-allowed;
-}
-
-@media (max-width: 768px) {
-  .btnGhost,
-  .btnPrimary {
+  .title {
     flex: 1;
-    text-align: center;
-    padding: 15px 10px;
+    font-family: var(--font-ui);
+    font-size: 19px;
+    font-weight: var(--fw-bold);
+    line-height: 1.2;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .draft {
+    display: none;
+  }
+
+  .body {
+    grid-template-columns: 1fr;
+    padding-top: 0;
+  }
+
+  .main {
+    padding-right: 0;
+  }
+
+  /* The project field keeps its own block; everything else loses the section
+     rules, which only make sense in the desktop column. */
+  .section {
+    padding: 0 0 16px;
+    border-top: none;
+  }
+
+  .sectionTitle {
+    display: none;
+  }
+
+  .sectionHead {
+    margin-bottom: 12px;
+  }
+
+  .pills {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 12px;
+  }
+
+  /* The pills scroll sideways when the labels grow; the notes button does not
+     travel with them. */
+  .pillTrack {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pillTrack::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .pill,
+  .pillIconOnly {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 14px;
+    font-family: var(--font-ui);
+    font-size: var(--fs-tab);
+    font-weight: var(--fw-bold);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .pillIcon {
+    color: var(--accent);
+  }
+
+  .pillIconOnly {
+    position: relative;
+    flex: none;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .pillHasNotes {
+    color: var(--accent);
+  }
+
+  .pillHasNotes::after {
+    content: '';
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border: 1.5px solid var(--bg-page);
+    border-radius: var(--radius-circle);
+  }
+
+  .searchRow {
+    margin-bottom: 12px;
+  }
+
+  /* Screen 09 (Mobil) orders the drawer readout first, then the calendar,
+     then the full-day toggle and the time fields. */
+  .datesGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .readout {
+    order: 1;
+  }
+
+  .calendarCell {
+    order: 2;
+  }
+
+  .datesSide {
+    order: 3;
+  }
+
+  /* No helper line beside the toggle on mobile — the design has none. */
+  .fullDayHint {
+    display: none;
+  }
+
+  /* Doubled so it outranks ToggleSwitch's own .row regardless of the order the
+     two CSS modules land in. The selection toggle lives in the action bar on
+     mobile, not beside the search field. */
+  .selectedToggle.selectedToggle {
+    display: none;
+  }
+
+  /* SELECT UNITS sits under the availability line here, not in the action
+     cluster, so it needs its own spacing. */
+  .unitsBtn.unitsBtn {
+    display: inline-flex;
+    margin-top: 9px;
+  }
+
+  .summary {
+    display: none;
+  }
+
+  .mobileBar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px var(--page-margin-mobile) 30px;
+    background: rgba(8, 8, 10, 0.94);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--fill-medium);
+  }
+
+  .mobileToggle {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .main {
+    padding-bottom: 130px;
   }
 }

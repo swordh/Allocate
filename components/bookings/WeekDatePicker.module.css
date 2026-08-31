@@ -1,0 +1,125 @@
+/* Week badge + month popover — screen 06, toolbar. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.badge {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-nav);
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent-border-mid);
+  padding: 5px 9px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.badge:hover {
+  background: var(--accent-tint-strong);
+}
+
+.popover {
+  top: 38px;
+  width: 220px;
+  padding: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.navBtn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.navBtn:hover {
+  color: var(--text-primary);
+}
+
+.monthLabel {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-tab);
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+}
+
+.dowRow,
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dowRow {
+  margin-bottom: 4px;
+}
+
+.dow {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.blank {
+  display: block;
+}
+
+.day {
+  padding: 5px 0;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-label);
+  text-align: center;
+  color: var(--text-body);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.day:hover {
+  background: var(--fill);
+}
+
+.selected {
+  background: var(--accent);
+  color: var(--btn-primary-fg);
+}
+
+.selected:hover {
+  background: var(--accent-hover);
+}
+
+.today {
+  color: var(--accent);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

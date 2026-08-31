@@ -5,10 +5,8 @@ import SignupForm from '@/components/auth/SignupForm'
 // Suspense is required because SignupForm reads useSearchParams() at render time.
 export default function SignupPage() {
   return (
-    <main>
-      <Suspense>
-        <SignupForm />
-      </Suspense>
-    </main>
+    <Suspense>
+      <SignupForm />
+    </Suspense>
   )
 }

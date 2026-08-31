@@ -1,0 +1,64 @@
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+
+.track {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  background: var(--border-medium);
+  /* The one shape in the system that stays a pill. */
+  border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.on {
+  background: var(--accent);
+}
+
+.track:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--text-primary);
+  border-radius: var(--radius-circle);
+  transition: left var(--transition);
+}
+
+.on .knob {
+  left: 22px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.hint {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-pale);
+}

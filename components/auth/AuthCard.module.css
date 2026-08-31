@@ -1,0 +1,99 @@
+.card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  position: relative;
+}
+
+.card[data-gap="22"] {
+  gap: 22px;
+}
+
+.card[data-gap="24"] {
+  gap: 24px;
+}
+
+.card[data-width="400"] {
+  max-width: 400px;
+}
+
+.card[data-width="420"] {
+  max-width: 420px;
+}
+
+.card[data-width="440"] {
+  max-width: 440px;
+}
+
+@media (max-width: 480px) {
+  .card {
+    max-width: none;
+  }
+
+  /* Room for the fixed bottom action bar so content scrolls clear of it.
+     Sized for the two-button bars (verify-email, auth-action); single-button
+     screens just get a little extra breathing room. */
+  .card[data-has-sticky="true"] {
+    padding-bottom: 140px;
+  }
+}
+
+.wordmarkRow {
+  display: flex;
+  align-items: center;
+}
+
+.wordmark {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  /* 19px is a one-off design value, not on the type scale. */
+  font-size: 19px;
+  letter-spacing: 0.025em;
+  color: var(--text-primary);
+}
+
+.envBadge {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  padding: 3px 7px;
+  margin-left: 10px;
+  line-height: 1;
+}
+
+.envDev {
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
+}
+
+.envAlpha {
+  background: var(--accent-tint-strong);
+  color: var(--accent);
+}
+
+.envBeta {
+  background: rgba(123, 156, 255, 0.12);
+  color: #7b9cff;
+}
+
+.stickyActions {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .stickyActions {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 14px 22px 30px;
+    background: linear-gradient(to top, #000 58%, transparent);
+    z-index: 5;
+  }
+}

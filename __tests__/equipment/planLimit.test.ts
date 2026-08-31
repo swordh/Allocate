@@ -25,7 +25,6 @@
  *
  * - `actions/equipment.ts`          → createEquipment, createEquipmentWithUnits,
  *                                      deactivateEquipment
- * - `functions/src/equipment/addEquipment.ts`  → addEquipment (Cloud Function)
  *
  * ## Test status
  *
@@ -592,6 +591,36 @@ describe('deactivateEquipment — counter document decrement', () => {
     vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
   })
 
+  // ── Active-booking guard ──────────────────────────────────────────────────
+  //
+  // The guard used to test for a 'ready' status, which has never existed (see
+  // types/booking.ts). Every confirmed booking slipped through it, so equipment
+  // booked for next week deleted silently.
+
+  it('requires force when a confirmed booking still references the equipment', async () => {
+    wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+      hasActiveBookings: true,
+    })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ requiresForce: true, affectedBookingCount: 1 })
+  })
+
+  it('deletes without asking when force is passed', async () => {
+    wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+      hasActiveBookings: true,
+    })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID, true)
+
+    expect(result).toEqual({ success: true })
+  })
+
   // ── Active equipment: decrement counter ───────────────────────────────────
 
   it.todo(
@@ -724,46 +753,6 @@ describe('deactivateEquipment — counter document decrement', () => {
       expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
     )
   })
-})
-
-// ═════════════════════════════════════════════════════════════════════════════
-// addEquipment — Cloud Function
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// addEquipment is an onCall Cloud Function. We test its handler callback
-// directly by extracting it through a mock of firebase-functions/v2/https.
-// The handler is the async function passed to onCall().
-
-describe('addEquipment (Cloud Function) — counter document plan limit', () => {
-  // Cloud Functions use getFirestore() directly, not firebase-admin module.
-  // These tests are marked skip because wiring getFirestore in a Vitest
-  // environment without the full Firebase Admin emulator is impractical and
-  // fragile. The contract is documented here for integration test coverage.
-
-  it.skip(
-    'succeeds and increments counter when count=N-1 inside transaction',
-    () => {
-      // Requires: getFirestore mock returning a db with runTransaction that
-      // calls tx.get() on both company doc and counter doc.
-      // Expected: equipmentId returned, counter incremented to N.
-    },
-  )
-
-  it.skip(
-    'throws resource-exhausted error and leaves counter unchanged when count=N',
-    () => {
-      // Requires: counter shows count=N (at limit).
-      // Expected: HttpsError('resource-exhausted') thrown, tx.update not called.
-    },
-  )
-
-  it.skip(
-    'throws hard error when counter document is missing',
-    () => {
-      // Requires: counter doc does not exist.
-      // Expected: HttpsError thrown (not a silent seed), no equipment written.
-    },
-  )
 })
 
 // ═════════════════════════════════════════════════════════════════════════════

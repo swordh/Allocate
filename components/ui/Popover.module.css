@@ -1,0 +1,17 @@
+.popover {
+  position: absolute;
+  top: 38px;
+  z-index: var(--z-dropdown);
+  padding: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-popover);
+}
+
+.left {
+  left: 0;
+}
+
+.right {
+  right: 0;
+}

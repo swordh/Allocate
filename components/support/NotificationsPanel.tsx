@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useSupportContext } from '@/lib/support-context'
+import Icon from '@/components/ui/Icon'
 import styles from './NotificationsPanel.module.css'
 
 export default function NotificationsPanel() {
@@ -26,17 +27,18 @@ export default function NotificationsPanel() {
       role="dialog"
       aria-label="Notifications"
       aria-hidden={!notificationsOpen}
+      inert={!notificationsOpen}
     >
       <div className={styles.header}>
         <span className={styles.title}>Notifications</span>
         <button className={styles.closeBtn} onClick={closeNotifications} aria-label="Close notifications">
-          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
+          <Icon name="close" size={18} />
         </button>
       </div>
 
       <div className={styles.body}>
         <div className={styles.emptyState}>
-          <span className={`material-symbols-outlined ${styles.emptyIcon}`}>notifications</span>
+          <Icon name="notifications" size={32} className={styles.emptyIcon} />
           <p className={styles.emptyText}>You're all caught up</p>
         </div>
       </div>

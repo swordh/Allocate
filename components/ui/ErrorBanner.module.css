@@ -1,0 +1,76 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 18px;
+  border: 1px solid transparent;
+}
+
+/* Wraps text + the optional action. Row on desktop reproduces the old flat
+   banner exactly (dot-to-body and text-to-action both 14px, same as the
+   previous 3-item flex row); column on mobile stacks the action below the
+   text instead of beside it. */
+.body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 480px) {
+  .banner {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .dot {
+    margin-top: 6px;
+  }
+
+  .body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
+.text {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+/* ── Tones ─────────────────────────────────────────────────────────────── */
+
+.info {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--notice-info-text);
+}
+
+.info .dot {
+  color: var(--accent);
+}
+
+.danger {
+  background: var(--danger-tint);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.danger .dot {
+  color: var(--danger);
+}
+
+.neutral {
+  background: var(--fill-weak);
+  border-color: var(--border-medium);
+  color: var(--text-secondary);
+}
+
+.neutral .dot {
+  color: var(--text-muted);
+}

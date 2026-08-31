@@ -6,13 +6,6 @@ import { getVerifiedSession } from '@/lib/dal'
 import { TIME_SLOT_OPTIONS } from '@/constants/company'
 import type { CompanyPreferences, CategoryFieldTemplate } from '@/types'
 
-export async function updateCompanyName(_name: string): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
-  if (session.role !== 'admin') return { error: 'Unauthorized' }
-  console.log('[actions/company]', { uid: session.uid.slice(0, 8) + '...', action: 'update_company_name_stub' })
-  return { error: 'Not implemented — Phase 6' }
-}
-
 function isValidTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat(undefined, { timeZone: tz })
@@ -22,26 +15,48 @@ function isValidTimezone(tz: string): boolean {
   }
 }
 
-export async function updatePreferences(prefs: CompanyPreferences): Promise<{ error?: string }> {
+export async function updatePreferences(prefs: Partial<CompanyPreferences>): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
 
-  if (!(TIME_SLOT_OPTIONS as readonly number[]).includes(prefs.bookingTimeSlotMinutes)) {
-    return { error: 'Invalid time slot value.' }
+  const updates: Record<string, unknown> = {}
+
+  if (prefs.bookingTimeSlotMinutes !== undefined) {
+    if (!(TIME_SLOT_OPTIONS as readonly number[]).includes(prefs.bookingTimeSlotMinutes)) {
+      return { error: 'Invalid time slot value.' }
+    }
+    updates['preferences.bookingTimeSlotMinutes'] = prefs.bookingTimeSlotMinutes
   }
 
-  if (typeof prefs.timezone !== 'string' || !isValidTimezone(prefs.timezone)) {
-    return { error: 'Invalid timezone.' }
+  if (prefs.timezone !== undefined) {
+    if (typeof prefs.timezone !== 'string' || !isValidTimezone(prefs.timezone)) {
+      return { error: 'Invalid timezone.' }
+    }
+    updates['preferences.timezone'] = prefs.timezone
+  }
+
+  if (prefs.autoCheckout !== undefined) {
+    updates['preferences.autoCheckout'] = prefs.autoCheckout
+  }
+
+  if (prefs.autoCheckin !== undefined) {
+    updates['preferences.autoCheckin'] = prefs.autoCheckin
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return {}
   }
 
   try {
+    // Dot-path merge — only the supplied keys are written, so a partial save
+    // from one settings screen can never clobber fields owned by another.
     await adminDb
       .collection('companies')
       .doc(session.activeCompanyId)
-      .update({ preferences: prefs })
+      .update(updates)
 
     revalidatePath('/settings/preferences')
-    console.log('[actions/company]', { uid: session.uid.slice(0, 8) + '...', action: 'preferences_updated' })
+    console.log('[actions/company]', { uid: session.uid.slice(0, 8) + '...', action: 'preferences_updated', keys: Object.keys(updates) })
     return {}
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -53,9 +68,14 @@ export async function updatePreferences(prefs: CompanyPreferences): Promise<{ er
 export async function updateCompanySettings(data: {
   name: string
   categoryTemplates: { categoryId: string; templates: CategoryFieldTemplate[] }[]
+  timezone?: string
 }): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
+
+  if (data.timezone !== undefined && !isValidTimezone(data.timezone)) {
+    return { error: 'Invalid timezone.' }
+  }
 
   try {
     const batch = adminDb.batch()
@@ -64,9 +84,15 @@ export async function updateCompanySettings(data: {
     // FORBIDDEN from Server Actions: subscription.*, stripeCustomerId, hadTrial
     // Subscription fields are written ONLY by Cloud Functions/webhooks — never from here.
 
-    // Update company name
+    // Update company name (+ timezone via dot-path merge, so this never
+    // touches preferences.bookingTimeSlotMinutes/autoCheckout/autoCheckin —
+    // those are owned by the Preferences screen).
     const companyRef = adminDb.collection('companies').doc(session.activeCompanyId)
-    batch.update(companyRef, { name: data.name.trim() })
+    const companyUpdate: Record<string, unknown> = { name: data.name.trim() }
+    if (data.timezone !== undefined) {
+      companyUpdate['preferences.timezone'] = data.timezone
+    }
+    batch.update(companyRef, companyUpdate)
 
     // Update each category's customFieldTemplates
     for (const { categoryId, templates } of data.categoryTemplates) {

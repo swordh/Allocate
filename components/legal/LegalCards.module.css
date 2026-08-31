@@ -1,0 +1,26 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cardTitle {
+  font-size: 15px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.cardDesc {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  line-height: 1.6;
+  color: var(--text-muted);
+}

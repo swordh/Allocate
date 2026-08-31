@@ -7,12 +7,14 @@ import { MembershipDocument } from '../types';
 /**
  * Callable function for already-authenticated users accepting an invite via link.
  *
- * @param data.token - The 20-char invite token from the invite URL
+ * @param data.token - The 32-char invite token from the invite URL
  * @returns { success: true, companyId }
- * @throws unauthenticated   if caller is not signed in
- * @throws invalid-argument  if token is missing or malformed
- * @throws not-found         if no matching pending invitation exists
- * @throws already-exists    if caller is already a member of the company
+ * @throws unauthenticated     if caller is not signed in
+ * @throws invalid-argument    if token is missing or malformed
+ * @throws not-found           if no matching pending invitation exists
+ * @throws permission-denied   if the caller's email doesn't match the invite
+ * @throws deadline-exceeded   if the invitation's expiresAt has passed
+ * @throws already-exists      if caller is already a member of the company
  */
 export const acceptInvitationByToken = onCall(
   { region: 'europe-west1', cors: true, invoker: 'public' },
@@ -52,6 +54,15 @@ export const acceptInvitationByToken = onCall(
 
     if (mirror['status'] !== 'pending') {
       throw new HttpsError('not-found', 'This invitation link has already been used or revoked.');
+    }
+
+    // Canonical rule lives in lib/invite-token.ts:isInviteExpired — duplicated
+    // here because Cloud Functions is a separate compilation unit and cannot
+    // import from lib/. Missing expiresAt means "never expires" (backward
+    // compat for invitations created before this field existed).
+    const expiresAt = mirror['expiresAt'] as string | undefined;
+    if (expiresAt && Date.parse(expiresAt) < Date.now()) {
+      throw new HttpsError('deadline-exceeded', 'This invitation has expired.');
     }
 
     const companyId: string = mirror['companyId'];

@@ -11,26 +11,26 @@
 
 .item {
   padding: 8px 16px;
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-nav);
+  letter-spacing: var(--ls-nav);
   text-transform: uppercase;
-  font-weight: 600;
-  color: rgba(145, 145, 145, 0.6);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
   text-decoration: none;
-  transition: all 0.1s;
+  transition: color var(--transition), background var(--transition);
 }
 
 .item:hover:not(.itemDisabled) {
-  color: var(--white);
+  color: var(--text-primary);
 }
 
 .itemActive {
-  background: var(--surface-container-highest);
-  color: var(--white);
+  background: var(--fill-active);
+  color: var(--text-primary);
   padding: 8px 16px;
 }
 
 .itemDisabled {
-  color: rgba(145, 145, 145, 0.3);
+  color: var(--text-pale);
   cursor: not-allowed;
 }

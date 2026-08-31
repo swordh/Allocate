@@ -1,20 +1,19 @@
 .nav {
   position: sticky;
   top: 0;
-  z-index: 50;
-  backdrop-filter: blur(20px);
-  background: rgba(8, 8, 8, 0.9);
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
+  z-index: var(--z-sticky);
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .inner {
-  max-width: 1440px;
+  max-width: var(--shell-width);
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 16px 24px;
+  padding: var(--header-pad-v) var(--header-pad-h);
 }
 
 .wordmarkGroup {
@@ -24,26 +23,25 @@
 }
 
 .wordmark {
-  font-size: 1.25rem;
-  font-weight: 900;
-  letter-spacing: -0.04em;
+  font-size: 21px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.025em;
   text-transform: uppercase;
-  color: var(--white);
+  color: var(--text-primary);
 }
 
 .envBadge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-eyebrow-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
   padding: 3px 7px;
-  border-radius: 4px;
   line-height: 1;
 }
 
 .envBadge_dev {
-  background: var(--surface-container-highest);
-  color: var(--outline);
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
 }
 
 .envBadge_alpha {
@@ -57,56 +55,35 @@
 }
 
 .links {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
-  gap: 48px;
+  gap: 40px;
 }
 
 .link {
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-nav);
+  letter-spacing: var(--ls-nav);
   text-transform: uppercase;
-  font-weight: 700;
-  color: rgba(240, 237, 232, 0.6);
-  transition: color 0.1s;
+  font-weight: var(--fw-bold);
+  color: var(--text-muted);
+  transition: color var(--transition);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .link:hover {
-  color: var(--white);
+  color: var(--text-primary);
 }
 
 .linkActive {
-  color: var(--white);
-  border-bottom: 2px solid var(--white);
-  padding-bottom: 4px;
-}
-
-.newBookingBtn {
-  background: var(--white);
-  color: var(--on-primary);
-  padding: 8px 20px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: none;
-  cursor: pointer;
-  transition: background 0.1s;
-  text-decoration: none;
-  display: inline-block;
-}
-
-.newBookingBtn:hover {
-  background: var(--secondary);
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: 6px;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
 }
 
 .iconGroup {
@@ -115,43 +92,25 @@
   gap: 4px;
 }
 
-.iconBtn {
-  position: relative;
+.helpBtn {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-circle);
+  border: 1.6px solid var(--text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-tertiary);
   background: none;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  color: rgba(240, 237, 232, 0.5);
   cursor: pointer;
-  transition: color 0.1s, border-color 0.1s, background 0.1s;
+  transition: color var(--transition), border-color var(--transition);
 }
 
-.iconBtn:hover {
-  color: var(--white);
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.iconBtnActive {
-  color: var(--white);
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.unreadDot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 2px var(--black);
-  pointer-events: none;
+.helpBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
 }
 
 @media (max-width: 768px) {

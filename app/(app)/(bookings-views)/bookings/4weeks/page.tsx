@@ -1,59 +1,43 @@
-import { getVerifiedSession } from '@/lib/dal'
 import { getBookings } from '@/lib/queries/bookings'
-import Booking4WeekView from '@/components/bookings/Booking4WeekView'
+import { getBookingViewContext, getOwnerProfiles } from '@/lib/bookings/view-context'
+import { getMondayString, offsetDate } from '@/lib/dates'
+import BookingMonthView from '@/components/bookings/BookingMonthView'
 
 /**
- * 4-Week view page — Server Component shell.
- * Passes session data and initial bookings to Booking4WeekView Client Component.
- * Period is controlled by URL param (?start=YYYY-MM-DD — must be a Monday).
+ * 4-week view page — Server Component shell.
+ *
+ * 4 WEEKS is the month view with a shifted window: four week rows starting at
+ * the current week's Monday, same bars, same cells, same mobile agenda
+ * (decision 6). There is no separate design for it and none is to be made.
+ * Period comes from ?start=YYYY-MM-DD, snapped to a Monday.
  */
 export default async function Bookings4WeeksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ start?: string }>
+  searchParams: Promise<{ start?: string; cancelled?: string }>
 }) {
-  const session = await getVerifiedSession()
-  const sp      = await searchParams
+  const { companyId, userId, today } = await getBookingViewContext()
+  const sp = await searchParams
 
-  // Default to the Monday of the current week
-  const periodStart = sp.start ?? getMondayString(new Date())
+  const periodStart = getMondayString(sp.start ?? today)
+  const periodEnd = offsetDate(periodStart, 27)
 
-  // Fetch bookings for the 28-day window
-  const endDate = offsetDate(periodStart, 27)
-
-  const initialBookings = await getBookings(session.activeCompanyId, {
+  const initialBookings = await getBookings(companyId, {
     startDate: periodStart,
-    endDate,
+    endDate: periodEnd,
+    includeCancelled: sp.cancelled === '1',
   })
 
   return (
-    <Booking4WeekView
-      companyId={session.activeCompanyId}
+    <BookingMonthView
+      mode="4weeks"
+      companyId={companyId}
+      userId={userId}
+      today={today}
       initialBookings={initialBookings}
+      userProfiles={await getOwnerProfiles(initialBookings)}
       periodStart={periodStart}
+      periodEnd={periodEnd}
     />
   )
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function toDateString(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/** Returns the Monday of the ISO week containing the given date. */
-function getMondayString(date: Date): string {
-  const d   = new Date(date)
-  const day = (d.getDay() + 6) % 7  // Mon=0 … Sun=6
-  d.setDate(d.getDate() - day)
-  return toDateString(d)
-}
-
-/** Returns the date string N days after the given date string. */
-function offsetDate(dateStr: string, days: number): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + days)
-  return toDateString(d)
 }

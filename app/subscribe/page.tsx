@@ -16,5 +16,5 @@ export default async function SubscribeRoute() {
     redirect('/settings/subscription')
   }
 
-  return <SubscribePage />
+  return <SubscribePage companyName={companyData?.name ?? ''} />
 }

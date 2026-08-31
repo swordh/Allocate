@@ -1,0 +1,72 @@
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-display-auth);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  letter-spacing: var(--ls-display);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .title {
+    /* Mobile design's own heading treatment — smaller, heavier, tracked. */
+    font-size: 31px;
+    line-height: 1;
+    font-weight: var(--fw-display);
+  }
+}
+
+.subtitle {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-weak);
+  line-height: var(--lh-body);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.fieldsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.forgotLink {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  color: var(--accent);
+}
+
+.forgotLink:hover {
+  color: var(--accent-hover);
+}
+
+.footerText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-weak);
+}
+
+.link {
+  color: var(--accent);
+}
+
+.link:hover {
+  color: var(--accent-hover);
+}

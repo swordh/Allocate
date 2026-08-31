@@ -14,7 +14,10 @@ export interface Membership {
   joinedAt: string         // ISO string
 }
 
-export interface TeamMember extends UserProfile {
+export interface TeamMember {
+  uid: string
+  name: string
+  email: string
   role: Role
   joinedAt: string         // ISO string
 }

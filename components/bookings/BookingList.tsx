@@ -1,9 +1,24 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { GroupedVirtuoso, type GroupedVirtuosoHandle } from 'react-virtuoso'
+import Icon from '@/components/ui/Icon'
+import Chip from '@/components/ui/Chip'
+import Glyph from '@/components/ui/Glyph'
+import StatusDot from '@/components/ui/StatusDot'
+import EmptyState from '@/components/ui/EmptyState'
 import { useBookings } from '@/hooks/useBookings'
+import { useBookingFilters, applyOwnerFilter } from '@/hooks/useBookingFilters'
+import {
+  formatCompactRange,
+  formatDayLabel,
+  formatMonthLabel,
+  parseDateString,
+} from '@/lib/dates'
+import { itemCount, statusColor, statusLabel } from '@/lib/bookings/status'
+import BookingsToolbar from './BookingsToolbar'
+import { ownerLabel } from './owner'
 import type { Booking, Role, UserProfile } from '@/types'
 import styles from './BookingList.module.css'
 
@@ -11,368 +26,248 @@ interface BookingListProps {
   companyId: string
   userId: string
   role: Role
-  /** Bookings pre-fetched on the server for initial paint. */
+  today: string
+  /** Lower bound of the feed, matching the server's window. */
+  historyStart: string
   initialBookings: Booking[]
-  /** UserProfile data for each userId in bookings */
   userProfiles: Record<string, UserProfile | null>
 }
 
-// ---------------------------------------------------------------------------
-// Date grouping helpers
-// ---------------------------------------------------------------------------
-
-function toLocalDateString(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function groupBookingsByDate(bookings: Booking[]): Map<string, Booking[]> {
-  const map = new Map<string, Booking[]>()
-  for (const b of bookings) {
-    const key = b.startDate
-    if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(b)
-  }
-  return map
-}
-
-function formatDateLabel(dateStr: string, today: string, tomorrow: string): string {
-  if (dateStr === today) return 'Today'
-  if (dateStr === tomorrow) return 'Tomorrow'
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Stats computation
-// ---------------------------------------------------------------------------
-
-function computeStats(bookings: Booking[], today: string) {
-  const todayBookings = bookings.filter(
-    (b) => b.startDate <= today && b.endDate >= today && b.status !== 'cancelled',
-  )
-  const bookingsToday = todayBookings.length
-  const itemsOut = bookings.filter(
-    (b) => b.status === 'checked_out',
-  ).reduce((sum, b) => sum + b.items.reduce((s, i) => s + i.quantity, 0), 0)
-  const pendingApprovals = bookings.filter(
-    (b) => b.status === 'pending' && b.approvalStatus === 'pending',
-  ).length
-  return { bookingsToday, itemsOut, pendingApprovals }
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
+/**
+ * List view — screen 08. Not a table: a stream grouped by day, with a density
+ * toggle that shrinks row height, title size and spacing in one go.
+ */
 export default function BookingList({
   companyId,
   userId,
-  role: _role,
+  today,
+  historyStart,
   initialBookings,
   userProfiles,
 }: BookingListProps) {
-  const [showCancelled, setShowCancelled] = useState(false)
-  const [showOnlyMine, setShowOnlyMine] = useState(false)
+  const { showCancelled, onlyMine } = useBookingFilters()
+  const [compact, setCompact] = useState(false)
+  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
+  const scrollerRef = useRef<HTMLElement | null>(null)
 
-  // Load a large window so past and future bookings up to 5 years in each
-  // direction are available without extra fetches.
-  const fiveYearsAgo = useMemo(() => {
-    const d = new Date()
-    d.setFullYear(d.getFullYear() - 5)
-    return d.toISOString().slice(0, 10)
-  }, [])
-
-  const { bookings: liveBookings, loading, error } = useBookings(companyId, {
+  const { bookings: live, loading, error } = useBookings(companyId, {
     includeCancelled: showCancelled,
-    startDate: fiveYearsAgo,
+    startDate: historyStart,
   })
 
-  // Use live data once the listener has fired; fall back to server-fetched initial data.
-  const bookings = loading ? initialBookings : liveBookings
+  const bookings = applyOwnerFilter(loading ? initialBookings : live, onlyMine, userId)
 
-  const visibleBookings = useMemo(() => {
-    let result = bookings
-    if (showOnlyMine && userId) {
-      result = result.filter((b) => b.userId === userId)
+  // Grouped by start date, oldest first — the feed reads forwards.
+  const { groupDates, groupCounts, flat } = useMemo(() => {
+    const map = new Map<string, Booking[]>()
+    for (const booking of bookings) {
+      const group = map.get(booking.startDate)
+      if (group) group.push(booking)
+      else map.set(booking.startDate, [booking])
     }
-    return result
-  }, [bookings, showOnlyMine, userId])
+    const dates = Array.from(map.keys()).sort()
+    return {
+      groupDates: dates,
+      groupCounts: dates.map((d) => map.get(d)!.length),
+      flat: dates.flatMap((d) => map.get(d)!),
+    }
+  }, [bookings])
 
-  const today    = toLocalDateString(new Date())
-  const tomorrow = toLocalDateString(new Date(Date.now() + 86400000))
-
-  // Stats are computed but stats bar is commented out per spec
-  const stats = useMemo(() => computeStats(visibleBookings, today), [visibleBookings, today])
-  void stats // prevent unused variable warning
-
-  // Group by startDate, filtered, sorted oldest → newest.
-  const grouped = useMemo(() => {
-    const all = showCancelled
-      ? visibleBookings
-      : visibleBookings.filter((b) => b.status !== 'cancelled')
-    return groupBookingsByDate(all)
-  }, [visibleBookings, showCancelled])
-
-  const sortedDates = useMemo(
-    () => Array.from(grouped.keys()).sort((a, b) => (a > b ? 1 : -1)),
-    [grouped],
-  )
-
-  // Flat booking array in date order for O(1) lookup by virtuoso index.
-  const flatBookings = useMemo(
-    () => sortedDates.flatMap((d) => grouped.get(d) ?? []),
-    [sortedDates, grouped],
-  )
-
-  // Number of booking items per date group.
-  const groupCounts = useMemo(
-    () => sortedDates.map((d) => (grouped.get(d) ?? []).length),
-    [sortedDates, grouped],
-  )
-
-  // Flat item index of the first booking on or after today.
-  // Used for initial scroll position and the Today button.
-  const todayItemIndex = useMemo(() => {
+  /** First item on or after today — the initial scroll anchor and TODAY target. */
+  const todayIndex = useMemo(() => {
     let offset = 0
-    for (let i = 0; i < sortedDates.length; i++) {
-      if (sortedDates[i] >= today) return offset
+    for (let i = 0; i < groupDates.length; i++) {
+      if (groupDates[i] >= today) return offset
       offset += groupCounts[i]
     }
-    // All dates are in the past — scroll to the last item.
-    return Math.max(0, flatBookings.length - 1)
-  }, [sortedDates, groupCounts, flatBookings.length, today])
+    return Math.max(0, flat.length - 1)
+  }, [groupDates, groupCounts, flat.length, today])
 
-  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
+  // The design's toolbar reads "JUNE 2026 · 4 BOOKINGS" — the month you are
+  // looking at, not the month it happens to be. The feed has no stepper, so the
+  // day group currently pinned to the top of the scroller names it.
+  //
+  // Measured from the DOM rather than taken from Virtuoso's rangeChanged: that
+  // callback reports the *rendered* range, which includes the overscan above
+  // the viewport, and for a list short enough to render in one go it never
+  // moves off zero at all.
+  const [anchorDate, setAnchorDate] = useState(today)
+
+  const readAnchor = useCallback((scroller: HTMLElement | null) => {
+    if (!scroller) return
+    const top = scroller.getBoundingClientRect().top
+    let pinned: string | null = null
+    for (const header of scroller.querySelectorAll<HTMLElement>('[data-group-date]')) {
+      if (header.getBoundingClientRect().top <= top + 1) pinned = header.dataset.groupDate ?? null
+      else break
+    }
+    setAnchorDate(pinned ?? groupDates[0] ?? today)
+  }, [groupDates, today])
+
+  const { monthLabel, monthCount } = useMemo(() => {
+    const date = parseDateString(anchorDate)
+    const prefix = anchorDate.slice(0, 7)
+    return {
+      monthLabel: formatMonthLabel(date.getUTCFullYear(), date.getUTCMonth()),
+      monthCount: bookings.filter((b) => b.startDate.startsWith(prefix)).length,
+    }
+  }, [anchorDate, bookings])
+
+  useEffect(() => {
+    readAnchor(scrollerRef.current)
+  }, [readAnchor, groupCounts])
 
   if (error) {
-    return (
-      <div className={styles.errorState}>
-        <p>Failed to load bookings. Please refresh.</p>
-      </div>
-    )
+    return <p className={styles.error}>Failed to load bookings. Please refresh.</p>
   }
 
   return (
-    <div className={styles.container}>
-      {/* Stats bar — logic preserved, UI hidden per redesign spec */}
-      {/* <div className={styles.statsBar}>…</div> */}
+    <>
+      <BookingsToolbar
+        view="list"
+        label={monthLabel}
+        count={monthCount}
+        onToday={() =>
+          virtuosoRef.current?.scrollToIndex({ index: todayIndex, align: 'start', behavior: 'smooth' })
+        }
+        extraFilters={
+          <Chip className={styles.compactChip} active={compact} onClick={() => setCompact((c) => !c)}>
+            {compact ? 'COMPACT' : 'COMPACT LIST'}
+          </Chip>
+        }
+      />
 
-      {/* Controls */}
-      <div className={styles.controls}>
-        <button
-          className={`${styles.toggleBtn} ${showCancelled ? styles.toggleActive : ''}`}
-          onClick={() => setShowCancelled((v) => !v)}
-        >
-          {showCancelled ? 'Hide cancelled' : 'Show cancelled'}
-        </button>
-        <button
-          className={`${styles.toggleBtn} ${showOnlyMine ? styles.toggleActive : ''}`}
-          onClick={() => setShowOnlyMine((v) => !v)}
-        >
-          {showOnlyMine ? 'Show all' : 'Only mine'}
-        </button>
-        <button
-          className={styles.todayBtn}
-          onClick={() =>
-            virtuosoRef.current?.scrollToIndex({ index: todayItemIndex, align: 'start', behavior: 'smooth' })
+      {groupDates.length === 0 && !loading && (
+        <EmptyState
+          variant="framed"
+          heading="No bookings yet"
+          body="Create your first booking to get started."
+          action={
+            <Link href="/bookings/new" className={styles.emptyAction}>
+              NEW BOOKING
+            </Link>
           }
-        >
-          Today
-        </button>
-      </div>
-
-      {/* Empty state */}
-      {sortedDates.length === 0 && (
-        <div className={styles.emptyState}>
-          <p className={styles.emptyHeading}>No bookings yet</p>
-          <p className={styles.emptyBody}>
-            Create your first booking to get started.
-          </p>
-          <Link href="/bookings/new" className={styles.emptyAction}>
-            New Booking
-          </Link>
-        </div>
-      )}
-
-      {/* Virtualized date-grouped list. Mounted once Firestore data has loaded so
-          Virtuoso receives a stable dataset and the right initialTopMostItemIndex
-          on first render — prevents the previous data-swap-mid-mount duplicate. */}
-      {sortedDates.length > 0 && loading && (
-        <div style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }} />
-      )}
-      {sortedDates.length > 0 && !loading && (
-        <GroupedVirtuoso
-          ref={virtuosoRef}
-          style={{ height: 'calc(100svh - 300px)', minHeight: '300px' }}
-          groupCounts={groupCounts}
-          initialTopMostItemIndex={todayItemIndex}
-          groupContent={(index) => {
-            const dateStr  = sortedDates[index]
-            const label    = formatDateLabel(dateStr, today, tomorrow)
-            const isToday  = dateStr === today
-            return (
-              <div className={`${styles.groupHeader} ${index === 0 ? styles.groupHeaderFirst : ''}`}>
-                <span className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
-                  {label.toUpperCase()}
-                </span>
-                <div className={styles.groupRule} />
-              </div>
-            )
-          }}
-          itemContent={(index) => {
-            const booking = flatBookings[index]
-            if (!booking) return <div />
-            return (
-              <div className={styles.bookingCardWrapper}>
-                <BookingRow booking={booking} userProfiles={userProfiles} />
-              </div>
-            )
-          }}
         />
       )}
-    </div>
+
+      {/* Mounted only once the listener has fired, so Virtuoso gets a stable
+          dataset and the right initial index on its first render. */}
+      {groupDates.length > 0 && (
+        <div className={`${styles.feed} ${compact ? styles.feedCompact : ''}`}>
+          <GroupedVirtuoso
+            ref={virtuosoRef}
+            style={{ height: 'calc(100svh - 190px)', minHeight: '320px' }}
+            groupCounts={groupCounts}
+            initialTopMostItemIndex={todayIndex}
+            scrollerRef={(el) => {
+              const scroller = el as HTMLElement | null
+              if (!scroller || scroller === scrollerRef.current) return
+              scrollerRef.current = scroller
+              scroller.addEventListener('scroll', () => readAnchor(scroller), { passive: true })
+              readAnchor(scroller)
+            }}
+            groupContent={(index) => (
+              <div className={styles.groupHeader} data-group-date={groupDates[index]}>
+                <span className={`${styles.groupLabel} ${groupDates[index] === today ? styles.groupLabelToday : ''}`}>
+                  {formatDayLabel(groupDates[index])}
+                </span>
+                <span className={styles.groupRule} />
+              </div>
+            )}
+            itemContent={(index) => {
+              const booking = flat[index]
+              if (!booking) return <div />
+              return (
+                <div className={styles.rowWrap}>
+                  <BookingRow
+                    booking={booking}
+                    userId={userId}
+                    userProfiles={userProfiles}
+                  />
+                </div>
+              )
+            }}
+          />
+        </div>
+      )}
+    </>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Booking row
-// ---------------------------------------------------------------------------
-
-const STATUS_LABELS: Record<string, string> = {
-  checked_out: 'CHECKED OUT',
-  confirmed:   'CONFIRMED',
-  pending:     'PENDING',
-  returned:    'RETURNED',
-  cancelled:   'CANCELLED',
-}
-
-function getStatusLabel(booking: Booking): string {
-  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return 'REJECTED'
-  return STATUS_LABELS[booking.status] ?? booking.status.toUpperCase()
-}
-
-function getStatusRowClass(booking: Booking): string {
-  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.rowRejected
-  switch (booking.status) {
-    case 'checked_out': return styles.rowCheckedOut
-    case 'confirmed':   return styles.rowConfirmed
-    case 'pending':     return styles.rowPending
-    case 'returned':    return styles.rowReturned
-    case 'cancelled':   return styles.rowCancelled
-    default:            return styles.rowPending
-  }
-}
-
-function getStatusTextClass(booking: Booking): string {
-  if (booking.status === 'pending' && booking.approvalStatus === 'rejected') return styles.statusRejected
-  switch (booking.status) {
-    case 'checked_out': return styles.statusCheckedOut
-    case 'confirmed':   return styles.statusConfirmed
-    case 'pending':     return styles.statusPending
-    case 'returned':    return styles.statusReturned
-    case 'cancelled':   return styles.statusCancelled
-    default:            return styles.statusPending
-  }
 }
 
 function BookingRow({
   booking,
+  userId,
   userProfiles,
 }: {
   booking: Booking
+  userId: string
   userProfiles: Record<string, UserProfile | null>
 }) {
-  const itemCount   = booking.items.reduce((sum, i) => sum + i.quantity, 0)
-  const statusClass = getStatusRowClass(booking)
-  const displayName = booking.userId
-    ? (userProfiles[booking.userId]?.name ?? booking.userName)
-    : booking.userName
+  const color = statusColor(booking.status)
+  const owner = ownerLabel(booking, userId, userProfiles)
+  const when = formatWhen(booking)
 
-  const timeOrDate = formatBookingDateTime(
-    booking.startDate,
-    booking.endDate,
-    booking.startTime,
-    booking.endTime,
-  )
+  // Returned and cancelled bookings collapse to a single faded line — they are
+  // history, and the design gives them a row of their own.
+  if (booking.status === 'returned' || booking.status === 'cancelled') {
+    return (
+      <Link
+        href={`/bookings/${booking.id}`}
+        className={`${styles.row} ${styles.rowDone}`}
+        style={{ borderLeftColor: color }}
+      >
+        <span className={styles.doneLine}>
+          <span className={styles.doneTitle}>{booking.projectName}</span>
+          <span className={styles.doneStatus}>
+            <StatusDot size={6} />
+            {statusLabel(booking.status)}
+          </span>
+          <span className={styles.doneMeta}>
+            {when} · {owner}
+          </span>
+        </span>
+        <Glyph char="›" className={styles.chevron} />
+      </Link>
+    )
+  }
 
   return (
-    <Link
-      href={`/bookings/${booking.id}`}
-      className={`${styles.row} ${statusClass}`}
-    >
-      <div className={styles.rowLeft}>
-        <span className={styles.rowProject}>{booking.projectName}</span>
-        <div className={styles.rowMeta}>
-          <span className={`${styles.rowMetaItem} ${getStatusTextClass(booking)}`}>
-            {getStatusLabel(booking)}
+    <Link href={`/bookings/${booking.id}`} className={styles.row} style={{ borderLeftColor: color }}>
+      <span className={styles.rowMain}>
+        <span className={styles.title}>{booking.projectName}</span>
+        <span className={styles.meta}>
+          <span className={styles.status} style={{ color }}>
+            <StatusDot size={7} />
+            {statusLabel(booking.status)}
           </span>
-          <div className={styles.rowMetaWithIcon}>
-            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>schedule</span>
-            <span className={styles.rowMetaItem}>{timeOrDate}</span>
-          </div>
-          {displayName && (
-            <div className={styles.rowMetaWithIcon}>
-              <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>person</span>
-              <span className={styles.rowMetaItem}>{displayName}</span>
-            </div>
-          )}
-          <div className={styles.rowMetaWithIcon}>
-            <span className={`material-symbols-outlined ${styles.rowMetaIcon}`}>inventory_2</span>
-            <span className={styles.rowMetaItem}>
-              {itemCount} {itemCount === 1 ? 'item' : 'items'}
-            </span>
-          </div>
-        </div>
-      </div>
-      <span className={styles.rowChevron}>›</span>
+          <span className={styles.metaItem}>
+            <Icon name="schedule" size={13} strokeWidth={2} aria-hidden />
+            {when}
+          </span>
+          <span className={styles.metaItem}>
+            <Icon name="person" size={13} strokeWidth={2} aria-hidden />
+            {owner}
+          </span>
+          <span className={styles.metaItem}>
+            <Icon name="crate" size={13} strokeWidth={2} aria-hidden />
+            {itemCount(booking)} {itemCount(booking) === 1 ? 'item' : 'items'}
+          </span>
+        </span>
+      </span>
+      <Glyph char="›" className={styles.chevron} />
     </Link>
   )
 }
 
-function formatBookingDateTime(
-  startDate: string,
-  endDate: string,
-  startTime: string | null | undefined,
-  endTime: string | null | undefined,
-): string {
-  const months = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
-
-  const parseDate = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-')
-    return { year: parseInt(year), month: parseInt(month) - 1, day: parseInt(day) }
-  }
-
-  const formatMonthDay = (dateStr: string): string => {
-    const d = parseDate(dateStr)
-    return `${d.day} ${months[d.month]}`
-  }
-
-  const sameDay = startDate === endDate
-  const start = parseDate(startDate)
-  const end = parseDate(endDate)
-  const sameMonth = start.month === end.month && start.year === end.year
-  const hasTime = startTime && endTime
-
-  if (hasTime) {
-    if (sameDay) {
-      return `${formatMonthDay(startDate)} ${startTime}-${endTime}`
-    } else {
-      return `${formatMonthDay(startDate)} ${startTime} - ${formatMonthDay(endDate)} ${endTime}`
-    }
-  } else {
-    if (sameDay) {
-      return formatMonthDay(startDate)
-    } else if (sameMonth) {
-      return `${start.day} - ${formatMonthDay(endDate)}`
-    } else {
-      return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`
-    }
-  }
+/**
+ * "12 JUN", "12–14 JUN", or "12 JUN 08:00 → 18:00" when times are set.
+ *
+ * `startTime`/`endTime` are wall-clock strings already expressed in the
+ * company's timezone — whoever made the booking typed them there — so they are
+ * printed verbatim. Converting them again would shift the booking.
+ */
+function formatWhen(booking: Booking): string {
+  const range = formatCompactRange(booking.startDate, booking.endDate)
+  if (!booking.startTime || !booking.endTime) return range
+  return `${range} ${booking.startTime} → ${booking.endTime}`
 }

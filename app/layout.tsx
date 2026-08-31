@@ -7,15 +7,27 @@ const generalSans = localFont({
   src: [
     {
       path: '../public/fonts/GeneralSans-Variable.woff2',
+      weight: '400 700',
       style: 'normal',
     },
     {
       path: '../public/fonts/GeneralSans-VariableItalic.woff2',
+      weight: '400 700',
       style: 'italic',
     },
   ],
   variable: '--font-sans',
   display: 'swap',
+})
+
+// Display face: large page headings, numbers, table values. See public/fonts/README.md.
+const archivo = localFont({
+  src: '../public/fonts/Archivo-Variable.woff2',
+  weight: '400 800',
+  style: 'normal',
+  variable: '--font-display',
+  display: 'swap',
+  fallback: ['system-ui', 'sans-serif'],
 })
 
 const ENV_LABELS: Record<string, string> = { dev: 'Dev', alpha: 'Alpha', beta: 'Beta' }
@@ -32,16 +44,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={generalSans.variable}>
-      <head>
-        <link
-          rel="preload"
-          href="/fonts/material-symbols-outlined.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
-      </head>
+    <html lang="en" className={`${generalSans.variable} ${archivo.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

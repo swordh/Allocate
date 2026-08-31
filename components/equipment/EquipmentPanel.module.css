@@ -1,0 +1,129 @@
+/* Field label needs air above it, otherwise it reads as a caption belonging to
+   the control before it rather than a heading for the one after. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.footerSpacer {
+  flex: 1;
+}
+
+.readOnlyNote {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-pale);
+}
+
+.readOnlyValue {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+/* ── Category / tracking chip rows ───────────────────────────────────────── */
+
+.chipWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── Booking references ──────────────────────────────────────────────────── */
+
+.bookingList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bookingRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--surface-selected);
+  border: 1px solid var(--fill-weak);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--transition);
+}
+
+.bookingRow:hover {
+  background: var(--surface-raised);
+}
+
+.booking_out {
+  border-left: 3px solid var(--accent);
+}
+
+.booking_upcoming {
+  border-left: 3px solid var(--text-body);
+}
+
+.bookingMain {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bookingProject {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookingMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bookingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-body);
+}
+
+.booking_out .bookingStatus {
+  color: var(--accent);
+}
+
+.bookingChevron {
+  color: var(--text-placeholder);
+  font-size: 16px;
+}
+
+.activeToggle {
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .bookingMeta {
+    font-size: var(--fs-label-sm);
+  }
+}

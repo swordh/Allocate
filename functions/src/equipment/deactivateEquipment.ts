@@ -77,7 +77,9 @@ export const deactivateEquipment = onCall({ region: 'europe-west1', cors: true, 
   // Firestore does not support array-contains combined with 'in' in the same query,
   // so we query by equipmentIds array-contains + endDate range, then filter
   // by status in memory.
-  const ACTIVE_STATUSES = new Set(['pending', 'ready', 'checked_out']);
+  // 'ready' has never been a booking status — see types/booking.ts. Guarding on
+  // it meant every confirmed booking slipped through.
+  const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked_out']);
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const bookingsSnap = await db

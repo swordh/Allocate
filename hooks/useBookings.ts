@@ -21,7 +21,12 @@ export interface UseBookingsOptions {
    * Defaults to 90 days ago to prevent a full collection scan.
    */
   startDate?: string
-  /** Upper bound date filter "YYYY-MM-DD" (inclusive). Applied client-side. */
+  /**
+   * Window end "YYYY-MM-DD" (inclusive), applied client-side.
+   *
+   * Together with `startDate` this describes a window the booking must
+   * **overlap**, not one it must fit inside.
+   */
   endDate?: string
 }
 
@@ -32,6 +37,7 @@ function docToBooking(id: string, data: Record<string, unknown>): Booking {
     notes:            (data.notes as string)            ?? '',
     items:            (data.items as BookingItem[])     ?? [],
     equipmentIds:     (data.equipmentIds as string[])   ?? [],
+    unitIds:          (data.unitIds as string[])        ?? [],
     startDate:        (data.startDate as string)        ?? '',
     endDate:          (data.endDate as string)          ?? '',
     startTime:        (data.startTime as string | null) ?? null,
@@ -106,8 +112,13 @@ export function useBookings(
         if (!includeCancelled) {
           docs = docs.filter((b) => b.status !== 'cancelled')
         }
+        // A booking overlaps the window if it has begun by the time the window
+        // closes. Filtering on `endDate <= endDate` instead — as this did until
+        // phase 4 — dropped every booking that ran past the end of the window,
+        // which is exactly the multi-week block the week and month grids have
+        // to draw clipped at their boundary.
         if (endDate) {
-          docs = docs.filter((b) => b.endDate <= endDate)
+          docs = docs.filter((b) => b.startDate <= endDate)
         }
 
         // Sort by startDate descending for the list view.

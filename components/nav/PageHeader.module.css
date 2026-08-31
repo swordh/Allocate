@@ -17,6 +17,29 @@
   line-height: 1;
 }
 
+/* Settings-shell heading size from the design: 34px / 27px mobile. The font
+   asset itself is subset to wght 400-800 specifically to match this design
+   (see public/fonts/README.md) — 800 is the heaviest instance available and
+   the one the design actually uses, so this stays on --fw-display rather
+   than the --fw-bold used by other (non-redesigned) page titles. */
+.titleCompact {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: var(--fw-display);
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: uppercase;
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn-tight);
+  color: var(--text-weak);
+  margin-top: 10px;
+}
+
 .rule {
   height: 1px;
   width: 100%;
@@ -36,5 +59,15 @@
 @media (max-width: 768px) {
   .header {
     margin-bottom: 24px;
+  }
+
+  .titleCompact {
+    font-size: 27px;
+  }
+
+  .meta {
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-btn);
+    margin-top: 9px;
   }
 }
