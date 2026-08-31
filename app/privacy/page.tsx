@@ -35,7 +35,7 @@ export default function PrivacyPage() {
         <p>
           Lorem ipsum dolor sit amet, consectetur adipiscing elit. For any
           placeholder-related questions, contact{' '}
-          <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>.
+          <a href="mailto:support@allocate.at">support@allocate.at</a>.
         </p>
       </LegalSection>
 
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
               value: (
                 <>
                   Ipsum dolor sit amet — contact us at{' '}
-                  <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a> and we will provide a
+                  <a href="mailto:support@allocate.at">support@allocate.at</a> and we will provide a
                   copy.
                 </>
               ),
@@ -186,7 +186,7 @@ export default function PrivacyPage() {
           columns={[
             {
               label: 'EMAIL',
-              value: <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>,
+              value: <a href="mailto:support@allocate.at">support@allocate.at</a>,
             },
             { label: 'ENTITY', value: 'Lorem Ipsum Placeholder Entity, Sweden' },
           ]}
