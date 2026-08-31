@@ -72,18 +72,25 @@ interface StoredBookingForConflict {
 }
 
 /**
- * Returns false only when both bookings are same-day with explicit time windows
- * that do not overlap. In all other cases returns true (conservative).
+ * Bookings are stored as inclusive date ranges with optional HH:MM windows.
+ * A null time means all-day, so it widens to the edge of its own day.
+ * Comparison is exclusive: back-to-back bookings that touch at the same
+ * minute (return 15:00, next pickup 15:00) do not conflict.
  */
+function bookingInstants(b: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null }) {
+  return {
+    start: `${b.startDate}T${b.startTime || '00:00'}`,
+    end: `${b.endDate}T${b.endTime || '23:59'}`,
+  }
+}
+
 function timesOverlap(
   a: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
   b: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
 ): boolean {
-  // Time-based exclusion only applies to same-day bookings with explicit times
-  if (a.startDate !== a.endDate || b.startDate !== b.endDate) return true
-  if (a.startDate !== b.startDate) return true
-  if (!a.startTime || !a.endTime || !b.startTime || !b.endTime) return true
-  return a.startTime < b.endTime && b.startTime < a.endTime
+  const x = bookingInstants(a)
+  const y = bookingInstants(b)
+  return x.start < y.end && y.start < x.end
 }
 
 /**
