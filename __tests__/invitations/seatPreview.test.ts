@@ -53,6 +53,25 @@ describe('seatPreview', () => {
     expect(result.canSubmit).toBe(false)
   })
 
+  /**
+   * The empty field is the state this row spends most of its life in, and it
+   * was the one case no test covered — `newCount === 1` shipped a literal
+   * "SEND 0 INVITES" onto the default team-settings screen.
+   */
+  it('reads SEND INVITE, not "SEND 0 INVITES", when nothing has been entered', () => {
+    const result = seatPreview({
+      emails: [],
+      members: new Set(),
+      invited: new Set(),
+      seatsUsed: 0,
+      seatLimit: null,
+    })
+
+    expect(result.buttonLabel).toBe('SEND INVITE')
+    expect(result.canSubmit).toBe(false)
+    expect(result.infoLine).toBeNull()
+  })
+
   it('produces the exact button label for a single new recipient', () => {
     const result = seatPreview({
       emails: ['a@x.se'],

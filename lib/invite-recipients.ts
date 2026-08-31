@@ -25,6 +25,21 @@ export interface ParsedRecipients {
   invalid: string[]
   overflow: number
   duplicates: string[]
+  /**
+   * Every accepted fragment — valid or invalid — in the order it appeared in
+   * the pasted text. Duplicates and over-the-cap fragments are excluded,
+   * exactly matching `emails`/`invalid` (a duplicate or overflowed valid
+   * address never shows up here either). Purely additive: it doesn't change
+   * what counts as valid, how fragments are split, or the dedup/cap logic
+   * above — it only records scan order so a UI can render invalid and valid
+   * fragments interleaved (e.g. as chips) instead of as two separate lists.
+   */
+  fragments: RecipientFragment[]
+}
+
+export interface RecipientFragment {
+  value: string
+  valid: boolean
 }
 
 const SEPARATORS = new Set([',', ';', '\n', '\r', '\t'])
@@ -136,6 +151,7 @@ export function parseRecipients(raw: string): ParsedRecipients {
   const emails: string[] = []
   const invalid: string[] = []
   const duplicates: string[] = []
+  const fragmentsOrdered: RecipientFragment[] = []
   const seen = new Set<string>()
   let overflow = 0
 
@@ -144,6 +160,7 @@ export function parseRecipients(raw: string): ParsedRecipients {
 
     if (!EMAIL_RE.test(normalized)) {
       invalid.push(fragment)
+      fragmentsOrdered.push({ value: fragment, valid: false })
       continue
     }
 
@@ -159,9 +176,10 @@ export function parseRecipients(raw: string): ParsedRecipients {
 
     seen.add(normalized)
     emails.push(normalized)
+    fragmentsOrdered.push({ value: normalized, valid: true })
   }
 
-  return { emails, invalid, overflow, duplicates }
+  return { emails, invalid, overflow, duplicates, fragments: fragmentsOrdered }
 }
 
 export type RecipientState = 'new' | 'member' | 'invited'
@@ -265,7 +283,11 @@ export function seatPreview(input: SeatPreviewInput): SeatPreview {
   const overLimit = seatsLeft !== null && newCount > seatsLeft
   const canSubmit = newCount > 0 && !overLimit
 
-  const buttonLabel = newCount === 1 ? 'SEND INVITE' : `SEND ${newCount} INVITES`
+  // `newCount <= 1` rather than `=== 1`: with an empty field (the state this
+  // row spends most of its life in) newCount is 0, and "SEND 0 INVITES" is a
+  // nonsense label for a form nobody has typed into yet. The button is
+  // disabled at 0 either way — this is purely what it reads.
+  const buttonLabel = newCount <= 1 ? 'SEND INVITE' : `SEND ${newCount} INVITES`
   const infoLine = buildInfoLine(total, invitedCount, memberCount)
   const warning =
     seatsLeft !== null && newCount > seatsLeft

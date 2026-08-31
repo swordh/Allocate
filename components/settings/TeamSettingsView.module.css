@@ -28,12 +28,22 @@
 
 /* ── Invite row ────────────────────────────────────────────────────────── */
 
+/* Wraps .inviteRow (untouched below, including its fragile mobile order:
+   3/4/5 sequence) plus the chip stack and info line added in the
+   multi-recipient invite UI. Border/padding/mobile background that used to
+   live on .inviteRow move up here so the chips render inside the same card. */
+.inviteForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-soft);
+  padding: 14px 16px;
+}
+
 .inviteRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border-soft);
-  padding: 14px 16px;
 }
 
 .inviteLabel {
@@ -68,9 +78,12 @@
 }
 
 @media (max-width: 768px) {
+  .inviteForm {
+    background: var(--surface);
+  }
+
   .inviteRow {
     flex-wrap: wrap;
-    background: var(--surface);
     gap: 9px;
   }
 
@@ -162,6 +175,57 @@
     letter-spacing: var(--ls-btn);
     padding: 10px 4px;
   }
+}
+
+/* ── Recipient chips (multi-invite paste) ─────────────────────────────── */
+
+.inviteChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* .chip sets text-transform: uppercase (Chip.module.css), which would render
+   pasted addresses as NOZHAN.RADNAHAD@OTW.SE. A bare .recipientChip is
+   (0,1,0) — tied with .chip, so file order would decide. This two-class
+   selector is (0,2,0), so it always wins regardless of import order. */
+.inviteChips .recipientChip {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Invalid fragment's label — a button, not plain text, so clicking it puts
+   the raw text back in the draft for editing. Reset to look like the plain
+   text the valid chips show; the danger tone (inherited) already signals
+   "something's wrong here". */
+.chipEdit {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.inviteInfo {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  color: var(--text-placeholder);
 }
 
 /* ── Members: desktop table ───────────────────────────────────────────── */
