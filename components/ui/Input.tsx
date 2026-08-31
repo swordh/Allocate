@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, Ref } from 'react'
 import styles from './Input.module.css'
 
 export type InputSize = 'lg' | 'md' | 'sm'
@@ -13,6 +13,12 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   locked?: boolean
   /** Monospace, wide-tracking font for tokens/codes. */
   mono?: boolean
+  /**
+   * React 19.2 passes `ref` as an ordinary prop to function components, so no
+   * `forwardRef` wrapper is needed — but `InputHTMLAttributes` doesn't
+   * declare it, hence this explicit addition.
+   */
+  ref?: Ref<HTMLInputElement>
 }
 
 const SIZES: Record<InputSize, string> = {
