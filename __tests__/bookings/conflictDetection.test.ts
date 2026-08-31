@@ -53,6 +53,8 @@ interface BookingInput {
   equipmentIds?: string[]
   unitIds?: string[]
   items?: Array<{ equipmentId: string; quantity: number; unitId?: string }>
+  startTime?: string | null
+  endTime?: string | null
 }
 
 function makeBooking(overrides: Partial<BookingInput> & { id: string }): BookingInput {
@@ -131,6 +133,8 @@ function wire({
           equipmentIds: b.equipmentIds ?? [],
           unitIds: b.unitIds ?? [],
           items: b.items ?? [],
+          startTime: b.startTime ?? null,
+          endTime: b.endTime ?? null,
         },
       }))
   }
@@ -498,6 +502,118 @@ describe('checkConflict / detectConflictsReadOnly', () => {
       expect(result.hasConflict).toBe(false)
       expect(result.conflicts).toHaveLength(0)
       expect(adminDb.doc).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── Time-window overlap on multi-day bookings ──────────────────────────────
+  //
+  // Regression coverage for the bug where a multi-day booking with explicit
+  // start/end times blocked the entirety of its first and last calendar day,
+  // even for requests whose time window didn't actually overlap.
+
+  describe('time-window overlap on multi-day bookings', () => {
+    const EQUIP = { 'equip-1': makeUnitsEquipment({ name: 'Camera A' }) }
+    const UNITS = { 'equip-1/unit-a': makeUnit({ label: 'Unit 01' }) }
+    const ITEM = { equipmentId: 'equip-1', quantity: 1, unitId: 'unit-a' }
+
+    const EXISTING = makeBooking({
+      id: 'booking-existing',
+      unitIds: ['unit-a'],
+      startDate: '2026-09-01',
+      endDate: '2026-09-03',
+      startTime: '15:00',
+      endTime: '10:00',
+    })
+
+    it('does not conflict with a request on the start day before the existing booking begins', async () => {
+      wire({ equipment: EQUIP, units: UNITS, bookings: [EXISTING] })
+
+      const result = await checkConflict(
+        COMPANY_ID,
+        '2026-09-01',
+        '2026-09-01',
+        [ITEM],
+        undefined,
+        '08:00',
+        '15:00',
+      )
+
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('conflicts with a request on the start day that overlaps the existing start time', async () => {
+      wire({ equipment: EQUIP, units: UNITS, bookings: [EXISTING] })
+
+      const result = await checkConflict(
+        COMPANY_ID,
+        '2026-09-01',
+        '2026-09-01',
+        [ITEM],
+        undefined,
+        '08:00',
+        '16:00',
+      )
+
+      expect(result.hasConflict).toBe(true)
+    })
+
+    it('does not conflict with a request on the end day at or after the existing end time', async () => {
+      wire({ equipment: EQUIP, units: UNITS, bookings: [EXISTING] })
+
+      const result = await checkConflict(
+        COMPANY_ID,
+        '2026-09-03',
+        '2026-09-03',
+        [ITEM],
+        undefined,
+        '10:00',
+        '18:00',
+      )
+
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('conflicts with an all-day request on a middle day', async () => {
+      wire({ equipment: EQUIP, units: UNITS, bookings: [EXISTING] })
+
+      const result = await checkConflict(COMPANY_ID, '2026-09-02', '2026-09-02', [ITEM])
+
+      expect(result.hasConflict).toBe(true)
+    })
+
+    it('conflicts with an all-day request on the start day (null widens to 00:00-23:59)', async () => {
+      wire({ equipment: EQUIP, units: UNITS, bookings: [EXISTING] })
+
+      const result = await checkConflict(COMPANY_ID, '2026-09-01', '2026-09-01', [ITEM])
+
+      expect(result.hasConflict).toBe(true)
+    })
+
+    it('conflicts with a timed request when the existing booking is all-day', async () => {
+      wire({
+        equipment: EQUIP,
+        units: UNITS,
+        bookings: [
+          makeBooking({
+            id: 'booking-allday',
+            unitIds: ['unit-a'],
+            startDate: '2026-09-01',
+            endDate: '2026-09-03',
+          }),
+        ],
+      })
+
+      const result = await checkConflict(
+        COMPANY_ID,
+        '2026-09-01',
+        '2026-09-01',
+        [ITEM],
+        undefined,
+        '08:00',
+        '12:00',
+      )
+
+      expect(result.hasConflict).toBe(true)
     })
   })
 
