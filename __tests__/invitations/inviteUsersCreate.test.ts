@@ -1,9 +1,14 @@
 /**
- * inviteUser — create branch (commit 5, redesign phase 2).
+ * inviteUsers — create branch (role allowlist).
  *
  * Covers the role allowlist: the submitted role must be one of
- * 'admin' | 'crew' | 'viewer', with 'crew' as the fallback for a
- * missing/invalid value. Never trust the client value without this check.
+ * 'admin' | 'crew' | 'viewer', with 'crew' as the fallback for an invalid
+ * value. Never trust the client value without this check.
+ *
+ * Asserts on the batch.set PAYLOAD, not the ref path — wireDb's
+ * `chain['doc']` returns `${path}/auto-id` for every generated ref, so with
+ * more than one address in a batch the refs are indistinguishable. Payloads
+ * (email, role, token, ...) are the only thing worth asserting on.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -25,10 +30,11 @@ vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))
 
-import { inviteUser } from '@/actions/team'
+import { inviteUsers } from '@/actions/team'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { wireDb, type DocMap, type QueryResolver } from '../helpers/firestore'
+import type { Role } from '@/types'
 
 const COMPANY_ID = 'company-A'
 const EMAIL = 'newcrew@example.com'
@@ -49,29 +55,12 @@ function wire() {
     [`companies/${COMPANY_ID}`]: { name: 'Nordfilm AB' },
   }
 
-  const query: QueryResolver = () => [] // no existing member, no pending invite
+  const query: QueryResolver = () => [] // no members, no pending invites
 
-  const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
-
-  const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
-  const collectionWithAdd = vi.fn((path: string) => {
-    const chain = innerCollection(path)
-    chain['add'] = vi.fn().mockResolvedValue({ id: 'mail-1' })
-    return chain
-  })
-  ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithAdd
-
-  return wired
+  return wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
 }
 
-function makeFormData(email: string, role?: string): FormData {
-  const fd = new FormData()
-  fd.set('email', email)
-  if (role !== undefined) fd.set('role', role)
-  return fd
-}
-
-describe('inviteUser — create branch (role allowlist)', () => {
+describe('inviteUsers — create branch (role allowlist)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -87,12 +76,13 @@ describe('inviteUser — create branch (role allowlist)', () => {
     stubSession()
     const { batch } = wire()
 
-    const result = await inviteUser(makeFormData(EMAIL, 'admin'))
+    const result = await inviteUsers([EMAIL], 'admin')
 
     expect(result.error).toBeUndefined()
+    expect(result.invitations).toHaveLength(1)
     expect(batch.set).toHaveBeenCalledWith(
-      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/auto-id` }),
-      expect.objectContaining({ role: 'admin' }),
+      expect.anything(),
+      expect.objectContaining({ email: EMAIL, role: 'admin' }),
     )
   })
 
@@ -100,12 +90,12 @@ describe('inviteUser — create branch (role allowlist)', () => {
     stubSession()
     const { batch } = wire()
 
-    const result = await inviteUser(makeFormData(EMAIL, 'viewer'))
+    const result = await inviteUsers([EMAIL], 'viewer')
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalledWith(
-      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/auto-id` }),
-      expect.objectContaining({ role: 'viewer' }),
+      expect.anything(),
+      expect.objectContaining({ email: EMAIL, role: 'viewer' }),
     )
   })
 
@@ -113,25 +103,45 @@ describe('inviteUser — create branch (role allowlist)', () => {
     stubSession()
     const { batch } = wire()
 
-    const result = await inviteUser(makeFormData(EMAIL, 'owner'))
+    const result = await inviteUsers([EMAIL], 'owner' as Role)
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalledWith(
-      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/auto-id` }),
-      expect.objectContaining({ role: 'crew' }),
+      expect.anything(),
+      expect.objectContaining({ email: EMAIL, role: 'crew' }),
     )
   })
 
-  it('falls back to crew when no role is submitted', async () => {
+  it('normalizes email casing and whitespace before storing', async () => {
     stubSession()
     const { batch } = wire()
 
-    const result = await inviteUser(makeFormData(EMAIL))
+    const result = await inviteUsers(['  New.Crew@Example.com  '], 'crew')
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalledWith(
-      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/auto-id` }),
-      expect.objectContaining({ role: 'crew' }),
+      expect.anything(),
+      expect.objectContaining({ email: 'new.crew@example.com' }),
     )
+  })
+
+  it('rejects an empty recipient list', async () => {
+    stubSession()
+    wire()
+
+    const result = await inviteUsers([], 'crew')
+
+    expect(result.error).toMatch(/at least one/i)
+  })
+
+  it('rejects a batch over MAX_RECIPIENTS', async () => {
+    stubSession()
+    const { batch } = wire()
+
+    const emails = Array.from({ length: 26 }, (_, i) => `person${i}@example.com`)
+    const result = await inviteUsers(emails, 'crew')
+
+    expect(result.error).toMatch(/too many recipients/i)
+    expect(batch.set).not.toHaveBeenCalled()
   })
 })
