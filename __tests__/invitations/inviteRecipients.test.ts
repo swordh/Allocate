@@ -93,4 +93,42 @@ describe('parseRecipients', () => {
     expect(result.overflow).toBe(1)
     expect(result.invalid).toEqual(['garbage'])
   })
+
+  /**
+   * `fragments` is what the chip row renders from, so its ORDER is the
+   * contract: an invalid fragment has to sit where the user pasted it, next
+   * to its neighbours, or the danger chip points at the wrong thing and the
+   * click-to-edit affordance is worse than useless.
+   */
+  describe('fragments (chip render order)', () => {
+    it('interleaves invalid and valid fragments in paste order', () => {
+      const result = parseRecipients('Garp, Olle <o@x.se>, junk, b@x.se')
+      expect(result.fragments).toEqual([
+        { value: 'Garp', valid: false },
+        { value: 'o@x.se', valid: true },
+        { value: 'junk', valid: false },
+        { value: 'b@x.se', valid: true },
+      ])
+    })
+
+    it('normalizes valid fragments but keeps invalid ones raw for editing', () => {
+      // The invalid value goes straight back into the input when the chip is
+      // clicked, so lower-casing or trimming it would silently rewrite what
+      // the user typed while they are trying to correct it.
+      const result = parseRecipients('Olle GARP <O@X.SE>; NotAnEmail')
+      expect(result.fragments).toEqual([
+        { value: 'o@x.se', valid: true },
+        { value: 'NotAnEmail', valid: false },
+      ])
+    })
+
+    it('excludes duplicates and over-cap fragments, matching emails/invalid', () => {
+      const dupes = parseRecipients('a@x.se, A@X.SE')
+      expect(dupes.fragments).toEqual([{ value: 'a@x.se', valid: true }])
+
+      const capped = parseRecipients(Array.from({ length: 27 }, (_, i) => `p${i}@example.com`).join(';'))
+      expect(capped.fragments).toHaveLength(MAX_RECIPIENTS)
+      expect(capped.overflow).toBe(2)
+    })
+  })
 })
