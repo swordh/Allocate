@@ -29,111 +29,110 @@ export default function TermsPage() {
       page="terms"
       eyebrow="LAST UPDATED 25 APRIL 2026"
       title="Terms of Service"
-      lede="These terms govern your use of Allocate. By creating an account you agree to them."
+      lede="Lorem ipsum dolor sit amet, consectetur adipiscing elit. This placeholder text stands in for the real terms while the page is being tested."
       sections={SECTIONS}
     >
-      <LegalSection id="service" title="The Service">
+      <LegalSection id="service" title="Lorem Ipsum Dolor">
         <p>
-          Allocate is a cloud-based equipment booking and management service operated by
-          Joakim Svärdh (enskild firma), Sweden. By creating an account you agree to these
-          terms.
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor
+          incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis
+          nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
         </p>
       </LegalSection>
 
-      <LegalSection id="account" title="Account Responsibilities">
+      <LegalSection id="account" title="Consectetur Adipiscing">
         <LegalList
           items={[
-            'You are responsible for keeping your login credentials secure.',
-            'You must be at least 18 years old to use the service.',
-            'Each company account must have at least one administrator responsible for managing team access.',
-            'You are responsible for all activity that occurs under your account.',
+            'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+            'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+            'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
+            'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore.',
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="use" title="Acceptable Use">
-        <p>You agree not to:</p>
+      <LegalSection id="use" title="Sed Do Eiusmod">
+        <p>Lorem ipsum dolor sit amet:</p>
         <LegalList
           items={[
-            'Use the service for any unlawful purpose.',
-            'Attempt to gain unauthorized access to other accounts or company data.',
-            'Interfere with or disrupt the service or its infrastructure.',
-            'Reverse-engineer or attempt to extract the source code of the service.',
+            'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.',
+            'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.',
+            'Curabitur pretium tincidunt lacus, ut interdum tellus elit sed risus.',
+            'Nam eget dui. Etiam rhoncus, maecenas tempus tellus eget condimentum rhoncus.',
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="billing" title="Subscription and Billing">
+      <LegalSection id="billing" title="Ut Labore Et Dolore">
         <DataRows
           variant="boxed"
           rows={[
-            { term: 'BILLING', value: 'Paid plans are billed in advance on a monthly or annual basis via Stripe.' },
+            { term: 'LOREM', value: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do eiusmod.' },
             {
-              term: 'RENEWAL',
-              value: 'Subscriptions renew automatically unless cancelled before the renewal date.',
+              term: 'IPSUM',
+              value: 'Tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam.',
             },
             {
-              term: 'CANCELLATION',
+              term: 'DOLOR',
               value:
-                'You may cancel at any time from Settings → Subscription. Access continues until the end of the paid period.',
+                'Quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure.',
             },
             {
-              term: 'REFUNDS',
-              value: 'We do not offer refunds for partial billing periods, except where required by applicable law.',
+              term: 'AMET',
+              value: 'Dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.',
             },
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="data" title="Data and Privacy">
+      <LegalSection id="data" title="Magna Aliqua Enim">
         <p>
-          Your use of Allocate is also governed by our{' '}
-          <Link href="/privacy">Privacy Policy</Link>, which is incorporated into these
-          terms by reference.
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit, incorporated into our{' '}
+          <Link href="/privacy">Lorem Ipsum Policy</Link>, sed do eiusmod tempor
+          incididunt ut labore.
         </p>
         <p>
-          Booking records created within a company account belong to that company. When
-          you delete your personal account, your data is anonymized but the
-          company&apos;s operational records are preserved.
-        </p>
-      </LegalSection>
-
-      <LegalSection id="availability" title="Service Availability">
-        <p>
-          We aim for high availability but do not guarantee uninterrupted access. We may
-          perform maintenance that temporarily limits access, and will endeavour to give
-          advance notice for planned downtime.
+          Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia
+          deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus, ut
+          interdum tellus elit sed risus.
         </p>
       </LegalSection>
 
-      <LegalSection id="liability" title="Limitation of Liability">
+      <LegalSection id="availability" title="Ad Minim Veniam">
         <p>
-          To the maximum extent permitted by law, Joakim Svärdh is not liable for any
-          indirect, incidental, or consequential damages arising from your use of the
-          service. Our total liability for any claim is limited to the amount you paid in
-          the three months preceding the claim.
+          Nam eget dui. Etiam rhoncus, maecenas tempus tellus eget condimentum rhoncus,
+          sem quam semper libero, sit amet adipiscing sem neque sed ipsum. Nam quam nunc,
+          blandit vel, luctus pulvinar, hendrerit id, lorem.
         </p>
       </LegalSection>
 
-      <LegalSection id="termination" title="Termination">
+      <LegalSection id="liability" title="Quis Nostrud Exercitation">
         <p>
-          You may stop using the service and delete your account at any time from
-          Settings. We reserve the right to suspend or terminate accounts that violate
-          these terms, with or without prior notice.
+          Maecenas nec odio et ante tincidunt tempus. Donec vitae sapien ut libero
+          venenatis faucibus. Nullam quis ante etiam sit amet orci eget eros faucibus
+          tincidunt. Duis leo, sed fringilla mauris sit amet nibh.
         </p>
       </LegalSection>
 
-      <LegalSection id="law" title="Governing Law">
-        <p>These terms are governed by Swedish law. Any disputes shall be resolved in Swedish courts.</p>
+      <LegalSection id="termination" title="Ullamco Laboris Nisi">
+        <p>
+          Donec sodales sagittis magna. Sed consequat, leo eget bibendum sodales, augue
+          velit cursus nunc, quis gravida magna mi a libero. Fusce vulputate eleifend
+          sapien.
+        </p>
+      </LegalSection>
+
+      <LegalSection id="law" title="Aliquip Ex Ea">
+        <p>Vestibulum purus quam, scelerisque ut, mollis sed, nonummy id, metus. Nullam accumsan lorem in dui.</p>
       </LegalSection>
 
       <LegalSection id="contact" title="Contact">
-        <p>Questions about these terms?</p>
+        <p>Lorem ipsum dolor sit amet?</p>
         <LegalContact
           columns={[
             {
               label: 'EMAIL',
-              value: <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>,
+              value: <a href="mailto:support@allocate.at">support@allocate.at</a>,
             },
           ]}
         />

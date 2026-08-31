@@ -6,8 +6,9 @@ import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
+import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
-import type { PublicInvitation } from '@/types/invitation'
+import type { Invitation, PublicInvitation } from '@/types/invitation'
 
 const BATCH_LIMIT = 490
 
@@ -16,7 +17,6 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   return adminDb.batch()
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ALLOWED_ROLES: Role[] = ['admin', 'crew', 'viewer']
 
 function newExpiresAt(): string {
@@ -30,8 +30,11 @@ function newExpiresAt(): string {
  * mirror intentionally does NOT get `lastSentAt` — it's a minimal public
  * lookup doc and nothing reads that field from it.
  *
- * Used by both `inviteUser`'s "already-pending" fallback and the dedicated
- * `resendInvitation` action, so the two paths cannot drift.
+ * Used by `resendInvitation` — the team page's per-row RESEND button. There
+ * used to be a second caller (`inviteUser`'s "already-pending" fallback),
+ * but that branch is gone: `inviteUsers` now skips already-invited
+ * addresses instead of silently resending, so this is the only remaining
+ * caller.
  */
 async function extendPendingInvite(
   cid: string,
@@ -52,22 +55,32 @@ async function extendPendingInvite(
   return { expiresAt, lastSentAt }
 }
 
-/**
- * Result of `inviteUser`. On success, `invitation` is the real Firestore
- * document (minus `token` — never shipped to the client, see the header
- * comment on `PublicInvitation`), so the caller can render/append a real
- * row instead of fabricating one from the submitted form values.
- *
- * `created` distinguishes the two branches `inviteUser` can take:
- * - `true`  — a brand-new invitation was created; it consumes a new seat.
- * - `false` — an existing pending invite for that email was resent;
- *   the seat was already held, so the caller must NOT increment its count.
- */
-type InviteUserResult =
-  | { error: string; invitation?: undefined; created?: undefined }
-  | { error?: undefined; invitation: PublicInvitation; created: boolean }
+/** Why a submitted recipient was NOT sent an invite. */
+export type InviteSkipReason = 'member' | 'invited'
 
-export async function inviteUser(formData: FormData): Promise<InviteUserResult> {
+export interface InviteUsersResult {
+  error?: string
+  /** Newly created invitations — the real Firestore documents (minus `token`), one per address actually sent. */
+  invitations?: PublicInvitation[]
+  /** Addresses that were NOT invited, and why — already a member, or already has a pending invite. */
+  skipped?: { email: string; reason: InviteSkipReason }[]
+}
+
+/**
+ * Invite up to `MAX_RECIPIENTS` addresses at once, all under one role.
+ *
+ * Replaces the old single-address `inviteUser`. There is no resend
+ * fallback here — an address with an existing pending invite (regardless of
+ * expiry — see the pending-query note below) is skipped, never resent.
+ * Resending happens exclusively through the dedicated `resendInvitation`
+ * action (the per-row RESEND button).
+ *
+ * The expensive reads (inviter/company docs, the full members collection,
+ * the full pending-invitations collection) happen exactly once regardless
+ * of how many addresses were submitted; only the seat guard and the writes
+ * scale with N.
+ */
+export async function inviteUsers(emails: string[], role: Role): Promise<InviteUsersResult> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
@@ -75,138 +88,124 @@ export async function inviteUser(formData: FormData): Promise<InviteUserResult> 
   const cid = session.activeCompanyId
   if (!cid) return { error: 'No active company' }
 
-  // ── 2. Validate email ──────────────────────────────────────────────────────────
-  const rawEmail = formData.get('email')
-  const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
-  if (!EMAIL_RE.test(email)) return { error: 'Enter a valid email address.' }
+  // ── 2. Harden input — never trust the client's parser ────────────────────────
+  if (!Array.isArray(emails)) return { error: 'Invalid recipient list.' }
 
-  // ── 3. Guard: already a member ──────────────────────────────────────────────────
-  const memberSnap = await adminDb
-    .collection(`companies/${cid}/members`)
-    .where('email', '==', email)
-    .limit(1)
-    .get()
-  if (!memberSnap.empty) {
-    return { error: 'That person is already a member of this company.' }
+  const submittedRole: Role = ALLOWED_ROLES.includes(role) ? role : 'crew'
+
+  const seen = new Set<string>()
+  const normalizedEmails: string[] = []
+  for (const raw of emails) {
+    if (typeof raw !== 'string') continue
+    const email = normalizeEmail(raw)
+    if (email.length === 0 || email.length > 254) continue
+    if (!EMAIL_RE.test(email)) continue
+    if (seen.has(email)) continue
+    seen.add(email)
+    normalizedEmails.push(email)
+  }
+
+  if (normalizedEmails.length === 0) return { error: 'Enter at least one valid email address.' }
+  if (normalizedEmails.length > MAX_RECIPIENTS) {
+    return { error: `Too many recipients — max ${MAX_RECIPIENTS} per batch.` }
   }
 
   // App URL is required to build the accept link.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   if (!appUrl) {
-    console.error('[actions/team]', { companyId: cid, action: 'invite_user', error: 'NEXT_PUBLIC_APP_URL not set' })
+    console.error('[actions/team]', { companyId: cid, action: 'invite_users', error: 'NEXT_PUBLIC_APP_URL not set' })
     return { error: 'Server is misconfigured — please contact support.' }
   }
 
-  // Resolve inviter name + company name for the email body.
-  const [inviterSnap, companySnap] = await Promise.all([
+  // ── 3. Four reads total, regardless of N ──────────────────────────────────────
+  // Replaces both the old per-address "already a member?" query and the
+  // three count() aggregates the seat guard used to run: the two collection
+  // reads below give exact counts AND the email sets needed for
+  // classification in one pass.
+  const [inviterSnap, companySnap, membersSnap, pendingSnap] = await Promise.all([
     adminDb.doc(`companies/${cid}/members/${session.uid}`).get(),
     adminDb.doc(`companies/${cid}`).get(),
+    adminDb.collection(`companies/${cid}/members`).get(),
+    adminDb.collection(`companies/${cid}/invitations`).where('status', '==', 'pending').get(),
   ])
+
   const inviterName = (inviterSnap.data()?.name as string) || session.email || 'A teammate'
   const companyName = (companySnap.data()?.name as string) || 'your team'
 
-  // Role for a NEW invite — never trust the client value without this
-  // allowlist. Falls back to 'crew' for a missing/invalid value.
-  const rawRole = formData.get('role')
-  const submittedRole: Role = ALLOWED_ROLES.includes(rawRole as Role) ? (rawRole as Role) : 'crew'
+  // `docToMember` (lib/queries/members.ts) doesn't lowercase email — do it here.
+  const memberEmails = new Set(
+    membersSnap.docs
+      .map((doc) => (doc.data().email as string | undefined)?.toLowerCase())
+      .filter((email): email is string => Boolean(email)),
+  )
 
-  // ── 4. Reuse an existing pending invite, else create a new one ──────────────────
-  const pendingSnap = await adminDb
-    .collection(`companies/${cid}/invitations`)
-    .where('email', '==', email)
-    .where('status', '==', 'pending')
-    .limit(1)
-    .get()
+  const pendingDocs = pendingSnap.docs.map((doc) => doc.data() as Invitation)
+  // Skip rule: any address with a `status == 'pending'` invite is skipped,
+  // regardless of expiry. Treating an expired pending invite as "free to
+  // re-invite" would create a second pending doc for the same address,
+  // double-counting it in every future seat calculation and showing two
+  // rows in the pending list — the address is still visible with its own
+  // RESEND button, which is exactly where re-sending an expired link belongs.
+  const invitedEmails = new Set(pendingDocs.map((doc) => doc.email.toLowerCase()))
 
-  let token: string
-  let role: Role
-  let resent = false
-  let invitation: PublicInvitation
+  // ── 4. Classify ────────────────────────────────────────────────────────────
+  const classified = classifyRecipients(normalizedEmails, { members: memberEmails, invited: invitedEmails })
 
-  if (!pendingSnap.empty) {
-    // A pending invite already exists — resend its link rather than duplicate.
-    // Role stays whatever the existing invite already had; resending doesn't
-    // re-submit a role choice. Extending expiresAt matters because without it,
-    // resending an invitation older than INVITE_TTL_DAYS would re-send a link
-    // that is already dead — shares the batch logic with resendInvitation()
-    // below so the two paths cannot drift.
-    const pendingDoc = pendingSnap.docs[0]
-    const pendingData = pendingDoc.data()
-    token = pendingData.token as string
-    role = (pendingData.role as Role) ?? 'crew'
-    resent = true
+  const toCreate: string[] = []
+  const skipped: { email: string; reason: InviteSkipReason }[] = []
+  for (const c of classified) {
+    if (c.state === 'new') toCreate.push(c.email)
+    else skipped.push({ email: c.email, reason: c.state })
+  }
 
-    const { expiresAt, lastSentAt } = await extendPendingInvite(cid, pendingDoc.id, token)
+  if (toCreate.length === 0) {
+    return { invitations: [], skipped }
+  }
 
-    // Round-trip the real doc (minus token) rather than fabricating a row
-    // client-side — id, invitedAt etc. must reflect what's actually stored.
-    invitation = {
-      id: pendingDoc.id,
-      email,
-      role,
-      invitedBy: pendingData.invitedBy as string,
-      invitedByName: pendingData.invitedByName as string,
-      invitedAt: pendingData.invitedAt as string,
-      status: 'pending',
-      expiresAt,
-      lastSentAt,
+  // ── 5. Seat guard — evaluated ONCE, against a snapshot PLUS the batch size,
+  // before any write. Running the old per-address count() guard in a loop
+  // would let N invitations through against a single free seat, since
+  // uncommitted writes are invisible to count(). ─────────────────────────────
+  const seatLimit = (companySnap.data()?.subscription?.limits?.users) as number | undefined
+
+  if (typeof seatLimit === 'number') {
+    const seatsUsed = computeSeatsUsed(membersSnap.size, pendingDocs)
+    if (seatsUsed + toCreate.length > seatLimit) {
+      return {
+        error: `Seat limit reached (${seatLimit}). Upgrade your plan or revoke unused invitations to add more.`,
+      }
     }
   } else {
-    // ── Seat guard — members + active (non-expired) pending invitations
-    // count against subscription.limits.users. An expired-but-still-`pending`
-    // invitation (status not yet flipped by anything, since nothing sweeps
-    // it) must NOT permanently consume a seat, so it's excluded via a count
-    // aggregate rather than fetched and filtered in memory.
-    const seatLimit = (companySnap.data()?.subscription?.limits?.users) as number | undefined
+    console.error('[actions/team]', {
+      companyId: cid,
+      action: 'invite_users_seat_guard',
+      error: 'subscription.limits.users missing or not a number — skipping seat guard',
+    })
+  }
 
-    if (typeof seatLimit === 'number') {
-      const nowIso = new Date().toISOString()
-      const [memberCountSnap, totalPendingSnap, expiredPendingSnap] = await Promise.all([
-        adminDb.collection(`companies/${cid}/members`).count().get(),
-        adminDb
-          .collection(`companies/${cid}/invitations`)
-          .where('status', '==', 'pending')
-          .count()
-          .get(),
-        adminDb
-          .collection(`companies/${cid}/invitations`)
-          .where('status', '==', 'pending')
-          .where('expiresAt', '<', nowIso)
-          .count()
-          .get(),
-      ])
+  // ── 6. Build the batch, commit once — invite doc, mirror doc, AND mail doc
+  // for every address, all in the same WriteBatch. A batch is atomic, so it's
+  // impossible to mail an accept link to an invite document that doesn't
+  // exist (the unrecoverable failure mode: /invite/{token} 404s with no way
+  // forward for the invitee). `onMailQueued` is an onDocumentCreated trigger
+  // and fires the same way on batched creates.
+  // 25 addresses × 3 writes = 75, well under BATCH_LIMIT (490) — no chunking. ─
+  const nowIso = new Date().toISOString()
+  const expiresAt = newExpiresAt()
+  const batch = adminDb.batch()
+  const invitations: PublicInvitation[] = []
 
-      const memberCount = memberCountSnap.data().count
-      const activePendingCount = totalPendingSnap.data().count - expiredPendingSnap.data().count
-      const seatsUsed = memberCount + activePendingCount
-
-      if (seatsUsed >= seatLimit) {
-        return {
-          error: `Seat limit reached (${seatLimit}). Upgrade your plan or revoke unused invitations to add more.`,
-        }
-      }
-    } else {
-      console.error('[actions/team]', {
-        companyId: cid,
-        action: 'invite_user_seat_guard',
-        error: 'subscription.limits.users missing or not a number — skipping seat guard',
-      })
-    }
-
-    role = submittedRole
-    token = randomBytes(16).toString('hex') // 32-char alphanumeric token (matches [a-zA-Z0-9] across the accept flow)
-    const nowIso = new Date().toISOString()
-    const expiresAt = newExpiresAt()
-
+  for (const email of toCreate) {
+    const token = randomBytes(16).toString('hex') // 32-char alphanumeric token (matches [a-zA-Z0-9] across the accept flow)
     const inviteRef = adminDb.collection(`companies/${cid}/invitations`).doc()
     const mirrorRef = adminDb.collection('invitations').doc(token)
+    const mailRef = adminDb.collection('mail').doc()
 
-    const batch = adminDb.batch()
     // Full record — read by acceptInvitationByToken (role) and revocation later.
     batch.set(inviteRef, {
       id: inviteRef.id,
       email,
-      role,
+      role: submittedRole,
       invitedBy: session.uid,
       invitedByName: inviterName,
       invitedAt: nowIso,
@@ -222,44 +221,47 @@ export async function inviteUser(formData: FormData): Promise<InviteUserResult> 
       status: 'pending',
       expiresAt,
     })
-    await batch.commit()
+    // Enqueued mail — sent by the onMailQueued Cloud Function.
+    const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
+    batch.set(mailRef, {
+      to: email,
+      template: 'invitation',
+      data: { companyName, inviterName, acceptUrl, role: submittedRole },
+      status: 'queued',
+      createdAt: nowIso,
+    })
 
-    invitation = {
+    invitations.push({
       id: inviteRef.id,
       email,
-      role,
+      role: submittedRole,
       invitedBy: session.uid,
       invitedByName: inviterName,
       invitedAt: nowIso,
       status: 'pending',
       expiresAt,
-    }
+    })
   }
 
-  // ── 5. Enqueue the email — sent by the onMailQueued Cloud Function ───────────────
-  const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
-  await adminDb.collection('mail').add({
-    to: email,
-    template: 'invitation',
-    data: { companyName, inviterName, acceptUrl, role },
-    status: 'queued',
-    createdAt: new Date().toISOString(),
-  })
+  await batch.commit()
 
   revalidatePath('/settings/team')
   console.log('[actions/team]', {
     uid: session.uid.slice(0, 8) + '...',
     companyId: cid,
-    action: resent ? 'invite_user_resend' : 'invite_user',
+    action: 'invite_users',
+    count: invitations.length,
+    skipped: skipped.length,
   })
-  return { invitation, created: !resent }
+
+  return { invitations, skipped }
 }
 
 /**
  * Dedicated resend for the team page's per-row RESEND button — lets the UI
- * resend without re-posting the whole invite form. Reuses the same
- * `extendPendingInvite` batch as `inviteUser`'s resend fallback above, so the
- * two paths cannot drift.
+ * resend without re-posting the whole invite form. This is now the ONLY
+ * caller of `extendPendingInvite` — `inviteUsers` has no resend branch of
+ * its own, it skips already-invited addresses instead.
  */
 export async function resendInvitation(inviteId: string): Promise<{ error?: string }> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────

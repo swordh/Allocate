@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { inviteUser, removeMember, updateMemberRole, revokeInvitation, resendInvitation } from '@/actions/team'
+import { useMemo, useRef, useState } from 'react'
+import { inviteUsers, removeMember, updateMemberRole, revokeInvitation, resendInvitation } from '@/actions/team'
 import { inviteMeta, daysLeftFrom } from '@/lib/invite-status'
-import Chip from '@/components/ui/Chip'
+import { parseRecipients, seatPreview, type RecipientFragment, type RecipientState } from '@/lib/invite-recipients'
+import Chip, { type ChipTone } from '@/components/ui/Chip'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import ErrorBanner from '@/components/ui/ErrorBanner'
@@ -14,11 +15,69 @@ import type { Role, TeamMember } from '@/types'
 import type { PublicInvitation } from '@/types/invitation'
 import styles from './TeamSettingsView.module.css'
 
+/** One committed chip in the invite field — a thin wrapper around the shared
+ * `Chip`, not a change to `Chip.tsx` itself. `interactive={false}` renders a
+ * `<span>` (see Chip.tsx), which is what makes nested `<button>`s valid HTML
+ * instead of a button-in-a-button.
+ *
+ * A *valid* fragment (a parsed email) is plain text, toned by its
+ * classification, with only a remove button. An *invalid* fragment (whatever
+ * `parseRecipients` couldn't turn into an address, e.g. `Garp` out of an
+ * unquoted `Garp, Olle <o@x.se>`) renders in `danger` tone and its label is
+ * itself a button: clicking it removes the chip and puts its raw text back
+ * into the draft for editing — a chip you could only delete wouldn't tell
+ * the user anything the old "N invalid skipped" notice didn't already say.
+ */
+function RecipientChip({
+  fragment,
+  state,
+  onEdit,
+  onRemove,
+}: {
+  fragment: RecipientFragment
+  /** Classification of a *valid* fragment; unused (and meaningless) for an invalid one. */
+  state: RecipientState | null
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  // 'new' -> neutral (will actually send); 'invited' -> accent (already has a
+  // pending invite, will be skipped); 'member' -> danger (already on the
+  // team, will be skipped) — same precedence classifyRecipients uses.
+  // An invalid fragment is always danger, regardless of state (there is none).
+  const tone: ChipTone = !fragment.valid
+    ? 'danger'
+    : state === 'invited'
+      ? 'accent'
+      : state === 'member'
+        ? 'danger'
+        : 'neutral'
+
+  return (
+    <Chip size="tag" interactive={false} tone={tone} role="listitem" className={styles.recipientChip}>
+      {fragment.valid ? (
+        fragment.value
+      ) : (
+        <button
+          type="button"
+          className={styles.chipEdit}
+          onClick={onEdit}
+          aria-label={`Edit ${fragment.value} — invalid address`}
+        >
+          {fragment.value}
+        </button>
+      )}
+      <button type="button" className={styles.chipRemove} aria-label={`Remove ${fragment.value}`} onClick={onRemove}>
+        <Icon name="close" size={12} />
+      </button>
+    </Chip>
+  )
+}
+
 interface TeamSettingsViewProps {
   currentUserId: string
   pendingInvites: PublicInvitation[]
   members: TeamMember[]
-  /** members + active (non-expired) pending invites — matches inviteUser's seat guard exactly. */
+  /** members + active (non-expired) pending invites — matches inviteUsers' seat guard exactly. */
   seatsUsed: number
   /** subscription.limits.users, or null if the field is missing. */
   seatLimit: number | null
@@ -78,10 +137,22 @@ export default function TeamSettingsView({
   const [invites, setInvites] = useState(pendingInvites)
   const [seatsUsed, setSeatsUsed] = useState(initialSeatsUsed)
 
-  const [inviteEmail, setInviteEmail] = useState('')
+  // Committed recipient chips — valid (parsed email) and invalid (raw
+  // fragment `parseRecipients` couldn't validate) fragments, interleaved in
+  // paste order — and the raw text still being typed. Only valid chips count
+  // toward the preview; an in-progress draft doesn't reserve a seat or count
+  // toward the button label until Enter/Tab/blur/separator commits it.
+  const [chips, setChips] = useState<RecipientFragment[]>([])
+  const [draft, setDraft] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('crew')
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  /** Non-blocking notice: addresses skipped server-side (already invited), or
+   * addresses dropped at paste-time for being over the MAX_RECIPIENTS cap.
+   * Invalid fragments get their own danger chip instead of a notice — see
+   * `RecipientChip`. */
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null)
+  const inviteInputRef = useRef<HTMLInputElement>(null)
 
   const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({})
   const [roleError, setRoleError] = useState<string | null>(null)
@@ -100,41 +171,191 @@ export default function TeamSettingsView({
   const [revokeError, setRevokeError] = useState<string | null>(null)
 
   const seatCopy = seatLimit === null ? `${seatsUsed} seats used` : `${seatsUsed} of ${seatLimit} seats used`
-  const seatLimitReached = seatLimit !== null && seatsUsed >= seatLimit
+
+  // Classification sets for the preview — lowercase, matching how
+  // `normalizeEmail` / `classifyRecipients` compare. `invites` here is the
+  // live pending-invites list (state), so a chip's tone updates immediately
+  // after a successful submit.
+  const memberEmails = useMemo(() => new Set(members.map((m) => m.email.toLowerCase())), [members])
+  const invitedEmails = useMemo(() => new Set(invites.map((inv) => inv.email.toLowerCase())), [invites])
+
+  // Only valid chips feed the preview — an invalid fragment consumes no seat
+  // and sends nothing, so it must never appear in `newCount`/`seatsLeft`.
+  const validChipEmails = useMemo(() => chips.filter((c) => c.valid).map((c) => c.value), [chips])
+
+  const preview = useMemo(
+    () => seatPreview({ emails: validChipEmails, members: memberEmails, invited: invitedEmails, seatsUsed, seatLimit }),
+    [validChipEmails, memberEmails, invitedEmails, seatsUsed, seatLimit],
+  )
+
+  // Zips each chip with its classification (valid ones only — invalid
+  // fragments have no state). `preview.recipients` is built from
+  // `validChipEmails` in the same relative order as the valid subset of
+  // `chips`, so walking both in lockstep pairs them up correctly.
+  const chipRows = useMemo(() => {
+    let vi = 0
+    return chips.map((chip) => {
+      if (!chip.valid) return { chip, state: null as RecipientState | null }
+      const state = preview.recipients[vi]?.state ?? 'new'
+      vi++
+      return { chip, state }
+    })
+  }, [chips, preview.recipients])
+
+  /** Merge already-committed chips (both valid and invalid — rejoining an
+   * invalid fragment's raw text is idempotent, it just comes back invalid
+   * again in the same spot) with newly typed/pasted text through a single
+   * `parseRecipients` pass, so validation, case-insensitive dedup, and the
+   * MAX_RECIPIENTS cap are all enforced against the *combined* set — pasting
+   * 10 more addresses when 20 valid chips already exist must overflow at 25,
+   * not treat the new batch in isolation. The returned `fragments` (valid +
+   * invalid, in scan order) becomes the new chip list wholesale. */
+  function commitText(text: string) {
+    if (!text.trim()) return
+    const parsed = parseRecipients([...chips.map((c) => c.value), text].join(';'))
+    setChips(parsed.fragments)
+
+    // Invalid fragments render as their own danger chips now (see
+    // RecipientChip) — only the MAX_RECIPIENTS cap and server-side skips
+    // still need a notice, since neither of those has a chip to point at.
+    if (parsed.overflow > 0) {
+      setInviteNotice(`${parsed.overflow} over the 25-address limit skipped`)
+    }
+  }
+
+  function handleDraftChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value
+    setInviteError(null)
+    const lastComma = value.lastIndexOf(',')
+    const lastSemicolon = value.lastIndexOf(';')
+    const lastSeparator = Math.max(lastComma, lastSemicolon)
+    if (lastSeparator === -1) {
+      setDraft(value)
+      return
+    }
+    commitText(value.slice(0, lastSeparator))
+    setDraft(value.slice(lastSeparator + 1))
+  }
+
+  function handleDraftPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    // Newlines don't survive a single-line <input>'s onChange (Chrome
+    // collapses them to spaces, Firefox strips them) — reading the clipboard
+    // directly is the only way to see a pasted newline-separated block.
+    e.preventDefault()
+    const text = e.clipboardData.getData('text')
+    commitText(draft + text)
+    setDraft('')
+  }
+
+  function handleDraftKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      // Never submit a half-typed address — commit it to a chip instead.
+      e.preventDefault()
+      commitText(draft)
+      setDraft('')
+      return
+    }
+    if (e.key === 'Tab') {
+      commitText(draft)
+      setDraft('')
+      return
+    }
+    if (e.key === 'Backspace' && draft === '' && chips.length > 0) {
+      setChips((prev) => prev.slice(0, -1))
+    }
+  }
+
+  function handleDraftBlur() {
+    commitText(draft)
+    setDraft('')
+  }
+
+  function handleRemoveChip(index: number) {
+    setChips((prev) => prev.filter((_, i) => i !== index))
+    inviteInputRef.current?.focus()
+  }
+
+  /** Invalid-chip-only: remove the chip and put its raw text back into the
+   * draft so the user can fix it in place instead of retyping from scratch. */
+  function handleEditChip(index: number) {
+    const chip = chips[index]
+    setChips((prev) => prev.filter((_, i) => i !== index))
+    setDraft(chip.value)
+    inviteInputRef.current?.focus()
+  }
 
   async function handleInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setInviting(true)
     setInviteError(null)
+    setInviteNotice(null)
 
-    const formData = new FormData()
-    formData.set('email', inviteEmail)
-    formData.set('role', inviteRole)
+    // Commit any uncommitted draft first — otherwise a typed-but-not-yet-
+    // separated address is silently dropped on submit.
+    let currentChips = chips
+    if (draft.trim()) {
+      const parsed = parseRecipients([...chips.map((c) => c.value), draft].join(';'))
+      currentChips = parsed.fragments
+      setChips(currentChips)
+      setDraft('')
+    }
 
-    const result = await inviteUser(formData)
+    // Invalid chips never enter the preview — they consume no seat and send
+    // nothing, and must not block submit either (only zero-new / over-limit do).
+    const currentPreview = seatPreview({
+      emails: currentChips.filter((c) => c.valid).map((c) => c.value),
+      members: memberEmails,
+      invited: invitedEmails,
+      seatsUsed,
+      seatLimit,
+    })
 
-    setInviting(false)
-
-    if (!result.invitation) {
-      setInviteError(result.error ?? 'Something went wrong. Please try again.')
+    if (!currentPreview.canSubmit) {
+      // Over-limit already renders via the reactive `preview.warning` banner
+      // below; the only case that needs its own message here is zero new
+      // addresses (nothing to warn about — canSubmit is false with `warning`
+      // still null).
+      if (!currentPreview.warning) {
+        setInviteError('Add at least one new address to invite.')
+      }
       return
     }
 
-    // Round-trip the server's actual document — append a new row, or update
-    // the existing one in place when this was a resend (same email already
-    // had a pending invite). Only a genuinely new invite consumes a seat.
-    const { invitation, created } = result
+    setInviting(true)
+    const newEmails = currentPreview.recipients.filter((r) => r.state === 'new').map((r) => r.email)
+    const result = await inviteUsers(newEmails, inviteRole)
+    setInviting(false)
+
+    if (result.error) {
+      setInviteError(result.error)
+      return
+    }
+
+    const invitations = result.invitations ?? []
+
+    // Round-trip the server's actual document(s) — append new rows. Every
+    // returned invitation is genuinely new (there's no resend branch left),
+    // so seatsUsed always grows by exactly the number returned.
     setInvites((prev) => {
-      const idx = prev.findIndex((inv) => inv.id === invitation.id)
-      if (idx === -1) return [...prev, invitation]
       const next = [...prev]
-      next[idx] = invitation
+      for (const invitation of invitations) {
+        const idx = next.findIndex((inv) => inv.id === invitation.id)
+        if (idx === -1) next.push(invitation)
+        else next[idx] = invitation
+      }
       return next
     })
-    if (created) {
-      setSeatsUsed((prev) => prev + 1)
+    setSeatsUsed((prev) => prev + invitations.length)
+    // Clear the valid chips that were just sent (or skipped — surfaced via
+    // the notice below), but leave any invalid ones sitting in the field:
+    // nothing the user pasted should silently vanish just because the rest
+    // of the batch went through.
+    setChips((prev) => prev.filter((c) => !c.valid))
+    setDraft('')
+
+    const skipped = result.skipped ?? []
+    if (skipped.length > 0) {
+      setInviteNotice(`Already invited: ${skipped.map((s) => s.email).join(', ')} — use RESEND on their row.`)
     }
-    setInviteEmail('')
   }
 
   function handleAskRemove(member: TeamMember) {
@@ -212,55 +433,80 @@ export default function TeamSettingsView({
   return (
     <div className={styles.container}>
       {/* ── Invite ────────────────────────────────────────────────────────── */}
-      <form onSubmit={handleInvite} className={styles.inviteRow}>
-        <span className={styles.inviteLabel}>Invite</span>
-        <Input
-          type="email"
-          value={inviteEmail}
-          onChange={(e) => {
-            setInviteEmail(e.target.value)
-            setInviteError(null)
-          }}
-          placeholder="name@company.com"
-          className={styles.inviteInput}
-          required
-        />
-        {/* Desktop: dark-fill active chip. Mobile: white/black solid — matches
-            the design's mobile chip() helper, distinct from the desktop one.
-            Two renders, CSS picks one (same pattern as the member rows below). */}
-        <div className={`${styles.roleChips} ${styles.roleChipsDesk}`}>
-          {ROLES.map((role) => (
-            <Chip
-              key={role}
-              type="button"
-              size="sm"
-              active={inviteRole === role}
-              onClick={() => setInviteRole(role)}
-            >
-              {ROLE_LABELS[role]}
-            </Chip>
-          ))}
+      <form onSubmit={handleInvite} className={styles.inviteForm}>
+        <div className={styles.inviteRow}>
+          <span className={styles.inviteLabel}>Invite</span>
+          <Input
+            ref={inviteInputRef}
+            type="text"
+            inputMode="email"
+            autoComplete="off"
+            spellCheck={false}
+            value={draft}
+            onChange={handleDraftChange}
+            onPaste={handleDraftPaste}
+            onKeyDown={handleDraftKeyDown}
+            onBlur={handleDraftBlur}
+            placeholder="name@company.com"
+            className={styles.inviteInput}
+          />
+          {/* Desktop: dark-fill active chip. Mobile: white/black solid — matches
+              the design's mobile chip() helper, distinct from the desktop one.
+              Two renders, CSS picks one (same pattern as the member rows below). */}
+          <div className={`${styles.roleChips} ${styles.roleChipsDesk}`}>
+            {ROLES.map((role) => (
+              <Chip
+                key={role}
+                type="button"
+                size="sm"
+                active={inviteRole === role}
+                onClick={() => setInviteRole(role)}
+              >
+                {ROLE_LABELS[role]}
+              </Chip>
+            ))}
+          </div>
+          <div className={`${styles.roleChips} ${styles.roleChipsMobile}`}>
+            {ROLES.map((role) => (
+              <Chip
+                key={role}
+                type="button"
+                size="sm"
+                variant="solid"
+                className={styles.roleChip}
+                active={inviteRole === role}
+                onClick={() => setInviteRole(role)}
+              >
+                {ROLE_LABELS[role]}
+              </Chip>
+            ))}
+          </div>
+          <span className={styles.seatCopy}>{seatCopy}</span>
+          <Button type="submit" variant="primary" size="sm" disabled={inviting || !preview.canSubmit}>
+            {inviting ? 'SENDING…' : preview.buttonLabel}
+          </Button>
         </div>
-        <div className={`${styles.roleChips} ${styles.roleChipsMobile}`}>
-          {ROLES.map((role) => (
-            <Chip
-              key={role}
-              type="button"
-              size="sm"
-              variant="solid"
-              className={styles.roleChip}
-              active={inviteRole === role}
-              onClick={() => setInviteRole(role)}
-            >
-              {ROLE_LABELS[role]}
-            </Chip>
-          ))}
+
+        {chips.length > 0 && (
+          <div className={styles.inviteChips} role="list">
+            {chipRows.map(({ chip, state }, i) => (
+              <RecipientChip
+                key={i}
+                fragment={chip}
+                state={state}
+                onEdit={() => handleEditChip(i)}
+                onRemove={() => handleRemoveChip(i)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className={styles.inviteInfo} aria-live="polite">
+          {preview.infoLine ?? ''}
         </div>
-        <span className={styles.seatCopy}>{seatCopy}</span>
-        <Button type="submit" variant="primary" size="sm" disabled={inviting || seatLimitReached}>
-          {inviting ? 'SENDING…' : 'SEND INVITE'}
-        </Button>
       </form>
+      {preview.warning && <ErrorBanner tone="danger">{preview.warning}</ErrorBanner>}
+      {inviteNotice && <ErrorBanner tone="info">{inviteNotice}</ErrorBanner>}
       {inviteError && <ErrorBanner tone="danger">{inviteError}</ErrorBanner>}
 
       {roleError && <ErrorBanner tone="danger">{roleError}</ErrorBanner>}

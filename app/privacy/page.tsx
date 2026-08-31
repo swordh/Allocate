@@ -28,121 +28,121 @@ export default function PrivacyPage() {
       page="privacy"
       eyebrow="LAST UPDATED 27 APRIL 2026"
       title="Privacy Policy"
-      lede="This policy explains what personal data Allocate collects when you use the service, why we collect it, who processes it on our behalf, and the rights you have over it."
+      lede="Lorem ipsum dolor sit amet, consectetur adipiscing elit. This placeholder text stands in for the real policy while the page is being tested."
       sections={SECTIONS}
     >
-      <LegalSection id="controller" title="Data Controller">
+      <LegalSection id="controller" title="Lorem Ipsum Dolor">
         <p>
-          Allocate is operated by Joakim Svärdh (enskild firma), Sweden. For any
-          privacy-related questions, contact{' '}
-          <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>.
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. For any
+          placeholder-related questions, contact{' '}
+          <a href="mailto:support@allocate.at">support@allocate.at</a>.
         </p>
       </LegalSection>
 
-      <LegalSection id="collected" title="What We Collect">
+      <LegalSection id="collected" title="Consectetur Adipiscing">
         <DataRows
           variant="boxed"
           rows={[
-            { term: 'ACCOUNT DATA', value: 'Name and email address, provided at sign-up.' },
-            { term: 'COMPANY DATA', value: 'Company name and team member roles.' },
+            { term: 'LOREM', value: 'Ipsum dolor sit amet, consectetur adipiscing elit.' },
+            { term: 'IPSUM', value: 'Sed do eiusmod tempor incididunt ut labore.' },
             {
-              term: 'BOOKING DATA',
-              value: 'Project names, dates, and equipment selections you create within the service.',
+              term: 'DOLOR',
+              value: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.',
             },
             {
-              term: 'SUBSCRIPTION DATA',
+              term: 'AMET',
               value:
-                'Your current plan and billing period. Payment details are handled exclusively by Stripe — we never see or store card numbers.',
+                'Duis aute irure dolor in reprehenderit — sed do eiusmod tempor incididunt ut labore et dolore magna.',
             },
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="why" title="Why We Process It">
+      <LegalSection id="why" title="Sed Do Eiusmod">
         <DataRows
           variant="boxed"
           rows={[
             {
-              term: 'TO PROVIDE THE SERVICE',
+              term: 'LOREM IPSUM DOLOR SIT',
               value:
-                'Legal basis: contract. Your account, booking, and subscription data are necessary to operate Allocate.',
+                'Consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
             },
             {
-              term: 'TO COMPLY WITH LEGAL OBLIGATIONS',
+              term: 'UT ENIM AD MINIM VENIAM',
               value:
-                'Legal basis: legal obligation. E.g. retaining anonymized booking records for operational purposes.',
+                'Quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
             },
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="processors" title="Third-Party Processors">
+      <LegalSection id="processors" title="Tempor Incididunt">
         <p>
-          We share data only with processors necessary to run the service, all operating
-          under GDPR-compliant Data Processing Agreements:
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor
+          incididunt ut labore et dolore magna aliqua:
         </p>
         <LegalCards
           cards={[
             {
-              title: 'Google Firebase',
-              description: 'Authentication, database, and cloud functions (EU region: europe-west1).',
+              title: 'Lorem Ipsum',
+              description: 'Dolor sit amet, consectetur adipiscing elit sed do eiusmod tempor.',
             },
-            { title: 'Stripe', description: 'Subscription billing and payment processing.' },
-            { title: 'Vercel', description: 'Application hosting.' },
+            { title: 'Dolor Sit', description: 'Incididunt ut labore et dolore magna aliqua.' },
+            { title: 'Amet Consectetur', description: 'Ut enim ad minim veniam quis nostrud.' },
           ]}
         />
-        <p>We do not sell your data or share it with advertisers.</p>
+        <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.</p>
         <p>
-          Some processors operate outside the European Economic Area. All such transfers
-          are governed by Standard Contractual Clauses (SCCs) as approved by the European
-          Commission, ensuring an equivalent level of data protection.
+          Nam eget dui. Etiam rhoncus, maecenas tempus tellus eget condimentum rhoncus,
+          sem quam semper libero, sit amet adipiscing sem neque sed ipsum. Nam quam nunc,
+          blandit vel, luctus pulvinar, hendrerit id, lorem.
         </p>
       </LegalSection>
 
-      <LegalSection id="retention" title="Data Retention">
+      <LegalSection id="retention" title="Labore Et Dolore">
         <DataRows
           variant="boxed"
           rows={[
             {
-              term: 'ACCOUNT DATA',
-              value: 'Name, email — retained until you delete your account.',
+              term: 'LOREM',
+              value: 'Ipsum dolor sit amet — retained until further placeholder notice.',
             },
             {
-              term: 'BOOKING RECORDS',
+              term: 'IPSUM DOLOR',
               value:
-                "Retained in anonymized form for the duration of the company's subscription. Records cannot be traced back to you after account deletion.",
+                "Consectetur adipiscing elit, sed do eiusmod tempor incididunt. Cannot be traced back after deletion.",
             },
             {
-              term: 'INVOICE & PAYMENT RECORDS',
-              value: 'Retained for 7 years in accordance with Swedish accounting law (Bokföringslagen).',
+              term: 'SIT AMET & CONSECTETUR',
+              value: 'Retained for 7 lorem units in accordance with placeholder regulation.',
             },
-            { term: 'SERVER LOGS', value: 'Retained for 30 days, then automatically deleted.' },
+            { term: 'ADIPISCING ELIT', value: 'Retained for 30 days, then automatically deleted.' },
           ]}
         />
       </LegalSection>
 
-      <LegalSection id="rights" title="Your Rights">
-        <p>Under GDPR you have the right to:</p>
+      <LegalSection id="rights" title="Magna Aliqua Enim">
+        <p>Under lorem ipsum you have the right to:</p>
         <DataRows
           variant="boxed"
           rows={[
             {
-              term: 'ACCESS',
+              term: 'LOREM',
               value: (
                 <>
-                  Your personal data — contact us at{' '}
-                  <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a> and we will provide a
+                  Ipsum dolor sit amet — contact us at{' '}
+                  <a href="mailto:support@allocate.at">support@allocate.at</a> and we will provide a
                   copy.
                 </>
               ),
             },
             {
-              term: 'ERASURE',
-              value: 'Delete your account directly from Settings. Deletion is immediate and permanent.',
+              term: 'IPSUM',
+              value: 'Delete your placeholder directly from Settings. Deletion is immediate and permanent.',
             },
-            { term: 'CORRECTION', value: 'Update your name and email from your profile settings.' },
+            { term: 'DOLOR', value: 'Update your name and email from your profile settings.' },
             {
-              term: 'PORTABILITY',
+              term: 'SIT AMET',
               value: (
                 <>
                   Download your data directly from your{' '}
@@ -151,10 +151,10 @@ export default function PrivacyPage() {
               ),
             },
             {
-              term: 'COMPLAINT',
+              term: 'CONSECTETUR',
               value: (
                 <>
-                  You may lodge a complaint with the Swedish supervisory authority,{' '}
+                  You may lodge a complaint with the placeholder supervisory authority,{' '}
                   <a href="https://www.imy.se" target="_blank" rel="noopener noreferrer">
                     IMY (Integritetsskyddsmyndigheten)
                   </a>
@@ -166,18 +166,18 @@ export default function PrivacyPage() {
         />
       </LegalSection>
 
-      <LegalSection id="cookies" title="Cookies">
+      <LegalSection id="cookies" title="Quis Nostrud">
         <p>
-          Allocate uses a single session cookie to keep you signed in. No tracking or
-          advertising cookies are used.
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor
+          incididunt ut labore et dolore magna aliqua.
         </p>
       </LegalSection>
 
-      <LegalSection id="changes" title="Changes to This Policy">
+      <LegalSection id="changes" title="Exercitation Ullamco">
         <p>
-          We may update this policy from time to time. Material changes will be
-          communicated via email or an in-app notice. Continued use of the service after
-          changes constitutes acceptance.
+          Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu
+          fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in
+          culpa qui officia deserunt mollit anim id est laborum.
         </p>
       </LegalSection>
 
@@ -186,9 +186,9 @@ export default function PrivacyPage() {
           columns={[
             {
               label: 'EMAIL',
-              value: <a href="mailto:jocke@joakimsvardh.se">jocke@joakimsvardh.se</a>,
+              value: <a href="mailto:support@allocate.at">support@allocate.at</a>,
             },
-            { label: 'ENTITY', value: 'Joakim Svärdh (enskild firma), Sweden' },
+            { label: 'ENTITY', value: 'Lorem Ipsum Placeholder Entity, Sweden' },
           ]}
         />
       </LegalSection>
