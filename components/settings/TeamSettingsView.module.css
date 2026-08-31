@@ -206,6 +206,22 @@
   cursor: pointer;
 }
 
+/* Invalid fragment's label — a button, not plain text, so clicking it puts
+   the raw text back in the draft for editing. Reset to look like the plain
+   text the valid chips show; the danger tone (inherited) already signals
+   "something's wrong here". */
+.chipEdit {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
 .inviteInfo {
   font-family: var(--font-ui);
   font-size: var(--fs-label);

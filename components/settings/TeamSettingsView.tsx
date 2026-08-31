@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { inviteUsers, removeMember, updateMemberRole, revokeInvitation, resendInvitation } from '@/actions/team'
 import { inviteMeta, daysLeftFrom } from '@/lib/invite-status'
-import { parseRecipients, seatPreview, type RecipientState } from '@/lib/invite-recipients'
+import { parseRecipients, seatPreview, type RecipientFragment, type RecipientState } from '@/lib/invite-recipients'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
@@ -15,28 +15,58 @@ import type { Role, TeamMember } from '@/types'
 import type { PublicInvitation } from '@/types/invitation'
 import styles from './TeamSettingsView.module.css'
 
-/** One removable chip in the invite field — a thin wrapper around the shared
+/** One committed chip in the invite field — a thin wrapper around the shared
  * `Chip`, not a change to `Chip.tsx` itself. `interactive={false}` renders a
- * `<span>` (see Chip.tsx), which is what makes a nested remove `<button>`
- * valid HTML instead of a button-in-a-button. */
+ * `<span>` (see Chip.tsx), which is what makes nested `<button>`s valid HTML
+ * instead of a button-in-a-button.
+ *
+ * A *valid* fragment (a parsed email) is plain text, toned by its
+ * classification, with only a remove button. An *invalid* fragment (whatever
+ * `parseRecipients` couldn't turn into an address, e.g. `Garp` out of an
+ * unquoted `Garp, Olle <o@x.se>`) renders in `danger` tone and its label is
+ * itself a button: clicking it removes the chip and puts its raw text back
+ * into the draft for editing — a chip you could only delete wouldn't tell
+ * the user anything the old "N invalid skipped" notice didn't already say.
+ */
 function RecipientChip({
-  email,
+  fragment,
   state,
+  onEdit,
   onRemove,
 }: {
-  email: string
-  state: RecipientState
+  fragment: RecipientFragment
+  /** Classification of a *valid* fragment; unused (and meaningless) for an invalid one. */
+  state: RecipientState | null
+  onEdit: () => void
   onRemove: () => void
 }) {
   // 'new' -> neutral (will actually send); 'invited' -> accent (already has a
   // pending invite, will be skipped); 'member' -> danger (already on the
   // team, will be skipped) — same precedence classifyRecipients uses.
-  const tone: ChipTone = state === 'invited' ? 'accent' : state === 'member' ? 'danger' : 'neutral'
+  // An invalid fragment is always danger, regardless of state (there is none).
+  const tone: ChipTone = !fragment.valid
+    ? 'danger'
+    : state === 'invited'
+      ? 'accent'
+      : state === 'member'
+        ? 'danger'
+        : 'neutral'
 
   return (
     <Chip size="tag" interactive={false} tone={tone} role="listitem" className={styles.recipientChip}>
-      {email}
-      <button type="button" className={styles.chipRemove} aria-label={`Remove ${email}`} onClick={onRemove}>
+      {fragment.valid ? (
+        fragment.value
+      ) : (
+        <button
+          type="button"
+          className={styles.chipEdit}
+          onClick={onEdit}
+          aria-label={`Edit ${fragment.value} — invalid address`}
+        >
+          {fragment.value}
+        </button>
+      )}
+      <button type="button" className={styles.chipRemove} aria-label={`Remove ${fragment.value}`} onClick={onRemove}>
         <Icon name="close" size={12} />
       </button>
     </Chip>
@@ -107,17 +137,20 @@ export default function TeamSettingsView({
   const [invites, setInvites] = useState(pendingInvites)
   const [seatsUsed, setSeatsUsed] = useState(initialSeatsUsed)
 
-  // Committed recipient chips (validated, normalized emails) and the raw
-  // text still being typed. Only committed chips count toward the preview —
-  // an in-progress draft doesn't reserve a seat or count toward the button
-  // label until Enter/Tab/blur/separator commits it.
-  const [chips, setChips] = useState<string[]>([])
+  // Committed recipient chips — valid (parsed email) and invalid (raw
+  // fragment `parseRecipients` couldn't validate) fragments, interleaved in
+  // paste order — and the raw text still being typed. Only valid chips count
+  // toward the preview; an in-progress draft doesn't reserve a seat or count
+  // toward the button label until Enter/Tab/blur/separator commits it.
+  const [chips, setChips] = useState<RecipientFragment[]>([])
   const [draft, setDraft] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('crew')
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
   /** Non-blocking notice: addresses skipped server-side (already invited), or
-   * fragments dropped at paste-time (invalid / over the MAX_RECIPIENTS cap). */
+   * addresses dropped at paste-time for being over the MAX_RECIPIENTS cap.
+   * Invalid fragments get their own danger chip instead of a notice — see
+   * `RecipientChip`. */
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)
   const inviteInputRef = useRef<HTMLInputElement>(null)
 
@@ -146,29 +179,48 @@ export default function TeamSettingsView({
   const memberEmails = useMemo(() => new Set(members.map((m) => m.email.toLowerCase())), [members])
   const invitedEmails = useMemo(() => new Set(invites.map((inv) => inv.email.toLowerCase())), [invites])
 
+  // Only valid chips feed the preview — an invalid fragment consumes no seat
+  // and sends nothing, so it must never appear in `newCount`/`seatsLeft`.
+  const validChipEmails = useMemo(() => chips.filter((c) => c.valid).map((c) => c.value), [chips])
+
   const preview = useMemo(
-    () => seatPreview({ emails: chips, members: memberEmails, invited: invitedEmails, seatsUsed, seatLimit }),
-    [chips, memberEmails, invitedEmails, seatsUsed, seatLimit],
+    () => seatPreview({ emails: validChipEmails, members: memberEmails, invited: invitedEmails, seatsUsed, seatLimit }),
+    [validChipEmails, memberEmails, invitedEmails, seatsUsed, seatLimit],
   )
 
-  /** Merge already-committed chips with newly typed/pasted text through a
-   * single `parseRecipients` pass, so validation, case-insensitive dedup, and
-   * the MAX_RECIPIENTS cap are all enforced against the *combined* set —
-   * pasting 10 more addresses when 20 chips already exist must overflow at
-   * 25, not treat the new batch in isolation. */
+  // Zips each chip with its classification (valid ones only — invalid
+  // fragments have no state). `preview.recipients` is built from
+  // `validChipEmails` in the same relative order as the valid subset of
+  // `chips`, so walking both in lockstep pairs them up correctly.
+  const chipRows = useMemo(() => {
+    let vi = 0
+    return chips.map((chip) => {
+      if (!chip.valid) return { chip, state: null as RecipientState | null }
+      const state = preview.recipients[vi]?.state ?? 'new'
+      vi++
+      return { chip, state }
+    })
+  }, [chips, preview.recipients])
+
+  /** Merge already-committed chips (both valid and invalid — rejoining an
+   * invalid fragment's raw text is idempotent, it just comes back invalid
+   * again in the same spot) with newly typed/pasted text through a single
+   * `parseRecipients` pass, so validation, case-insensitive dedup, and the
+   * MAX_RECIPIENTS cap are all enforced against the *combined* set — pasting
+   * 10 more addresses when 20 valid chips already exist must overflow at 25,
+   * not treat the new batch in isolation. The returned `fragments` (valid +
+   * invalid, in scan order) becomes the new chip list wholesale. */
   function commitText(text: string) {
     if (!text.trim()) return
-    const parsed = parseRecipients([...chips, text].join(';'))
-    setChips(parsed.emails)
+    const parsed = parseRecipients([...chips.map((c) => c.value), text].join(';'))
+    setChips(parsed.fragments)
 
-    const notices: string[] = []
-    if (parsed.invalid.length > 0) {
-      notices.push(`${parsed.invalid.length} invalid address${parsed.invalid.length === 1 ? '' : 'es'} skipped`)
-    }
+    // Invalid fragments render as their own danger chips now (see
+    // RecipientChip) — only the MAX_RECIPIENTS cap and server-side skips
+    // still need a notice, since neither of those has a chip to point at.
     if (parsed.overflow > 0) {
-      notices.push(`${parsed.overflow} over the 25-address limit skipped`)
+      setInviteNotice(`${parsed.overflow} over the 25-address limit skipped`)
     }
-    if (notices.length > 0) setInviteNotice(notices.join(' · '))
   }
 
   function handleDraftChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -218,8 +270,17 @@ export default function TeamSettingsView({
     setDraft('')
   }
 
-  function handleRemoveChip(email: string) {
-    setChips((prev) => prev.filter((c) => c !== email))
+  function handleRemoveChip(index: number) {
+    setChips((prev) => prev.filter((_, i) => i !== index))
+    inviteInputRef.current?.focus()
+  }
+
+  /** Invalid-chip-only: remove the chip and put its raw text back into the
+   * draft so the user can fix it in place instead of retyping from scratch. */
+  function handleEditChip(index: number) {
+    const chip = chips[index]
+    setChips((prev) => prev.filter((_, i) => i !== index))
+    setDraft(chip.value)
     inviteInputRef.current?.focus()
   }
 
@@ -232,14 +293,16 @@ export default function TeamSettingsView({
     // separated address is silently dropped on submit.
     let currentChips = chips
     if (draft.trim()) {
-      const parsed = parseRecipients([...chips, draft].join(';'))
-      currentChips = parsed.emails
+      const parsed = parseRecipients([...chips.map((c) => c.value), draft].join(';'))
+      currentChips = parsed.fragments
       setChips(currentChips)
       setDraft('')
     }
 
+    // Invalid chips never enter the preview — they consume no seat and send
+    // nothing, and must not block submit either (only zero-new / over-limit do).
     const currentPreview = seatPreview({
-      emails: currentChips,
+      emails: currentChips.filter((c) => c.valid).map((c) => c.value),
       members: memberEmails,
       invited: invitedEmails,
       seatsUsed,
@@ -282,7 +345,11 @@ export default function TeamSettingsView({
       return next
     })
     setSeatsUsed((prev) => prev + invitations.length)
-    setChips([])
+    // Clear the valid chips that were just sent (or skipped — surfaced via
+    // the notice below), but leave any invalid ones sitting in the field:
+    // nothing the user pasted should silently vanish just because the rest
+    // of the batch went through.
+    setChips((prev) => prev.filter((c) => !c.valid))
     setDraft('')
 
     const skipped = result.skipped ?? []
@@ -422,8 +489,14 @@ export default function TeamSettingsView({
 
         {chips.length > 0 && (
           <div className={styles.inviteChips} role="list">
-            {preview.recipients.map((r) => (
-              <RecipientChip key={r.email} email={r.email} state={r.state} onRemove={() => handleRemoveChip(r.email)} />
+            {chipRows.map(({ chip, state }, i) => (
+              <RecipientChip
+                key={i}
+                fragment={chip}
+                state={state}
+                onEdit={() => handleEditChip(i)}
+                onRemove={() => handleRemoveChip(i)}
+              />
             ))}
           </div>
         )}
