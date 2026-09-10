@@ -20,6 +20,20 @@ export interface Subscription {
   interval?: BillingInterval
 }
 
+/**
+ * Derived counters mirrored onto the company document so the operator customer
+ * list can filter and sort without querying each company's subcollections.
+ * Absent on companies created before the mirror existed — read defensively until
+ * tools/backfill_company_stats.js has run everywhere.
+ */
+export interface CompanyStats {
+  equipmentCount: number          // active equipment only
+  bookingsCreated: number         // lifetime, never decremented
+  bookingsCancelled: number       // lifetime, never decremented
+  lastBookingAt: string | null    // ISO string
+  updatedAt: string               // ISO string
+}
+
 export interface Company {
   id: string
   name: string
@@ -28,4 +42,5 @@ export interface Company {
   stripeCustomerId: string
   subscription: Subscription
   preferences?: CompanyPreferences
+  stats?: CompanyStats
 }

@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { equipmentCountDelta } from '@/lib/companyStats'
 import type { Subscription, EquipmentStatus, CustomField, TrackingType } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
@@ -107,10 +108,7 @@ export async function createEquipment(
       newEquipmentId = newRef.id
 
       // Increment counter atomically with the equipment write.
-      tx.update(counterRef, {
-        count: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      })
+      equipmentCountDelta(tx, companyId, 1)
 
       tx.set(newRef, {
         name,
@@ -325,10 +323,7 @@ export async function deactivateEquipment(
       // Decrement the counter only when the equipment was truly active.
       // If it was already inactive this is a no-op (idempotency guard).
       if (wasActive) {
-        tx.update(counterRef, {
-          count: FieldValue.increment(-1),
-          updatedAt: FieldValue.serverTimestamp(),
-        })
+        equipmentCountDelta(tx, companyId, -1)
       }
     })
 
@@ -830,10 +825,7 @@ export async function createEquipmentWithUnits(
       newEquipmentId = newRef.id
 
       // Increment counter atomically with the equipment write.
-      tx.update(counterRef, {
-        count: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      })
+      equipmentCountDelta(tx, companyId, 1)
 
       tx.set(newRef, {
         name,
