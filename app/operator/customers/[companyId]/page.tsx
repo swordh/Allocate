@@ -18,7 +18,9 @@ export default async function CustomerDetailPage({
     adminDb.doc(`companies/${companyId}`).get(),
     adminDb.collection(`companies/${companyId}/members`).get(),
     adminDb.collection(`companies/${companyId}/bookings`).count().get(),
-    adminDb.collection(`companies/${companyId}/equipment`).count().get(),
+    // Active only, matching both the plan limit and the list's mirrored count.
+    // Counting deactivated items here made adjacent screens disagree.
+    adminDb.collection(`companies/${companyId}/equipment`).where('active', '==', true).count().get(),
   ])
 
   if (!companyDoc.exists) notFound()

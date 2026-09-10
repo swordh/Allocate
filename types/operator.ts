@@ -24,6 +24,28 @@ export interface OperatorFeedback {
   priority: FeedbackPriority
 }
 
+export const SEGMENTS = [
+  'all',
+  'active',
+  'trialing',
+  'past_due',
+  'canceled',
+  'trial_ending',
+  'no_bookings_30d',
+] as const
+
+export type Segment = (typeof SEGMENTS)[number]
+
+export const SEGMENT_LABELS: Record<Segment, string> = {
+  all: 'All customers',
+  active: 'Active',
+  trialing: 'Trialing',
+  past_due: 'Past due',
+  canceled: 'Canceled',
+  trial_ending: 'Trial ends in 7 d',
+  no_bookings_30d: 'No bookings 30 d',
+}
+
 export interface CompanyRow {
   id: string
   name: string
@@ -32,7 +54,16 @@ export interface CompanyRow {
   subscriptionStatus: string
   subscriptionPlan: string
   currentPeriodEnd: string   // ISO string
+  trialEnd: string | null    // ISO string
   cancelAtPeriodEnd: boolean
   hadTrial: boolean
-  memberCount: number
+  /**
+   * Denormalized from companies/{id}.stats. Null on companies that predate the
+   * mirror and have not been backfilled — render those as unknown rather than
+   * zero, because zero is a claim and null is an admission.
+   */
+  equipmentCount: number | null
+  bookingsCreated: number | null
+  lastBookingAt: string | null   // ISO string
+  hasStats: boolean
 }
