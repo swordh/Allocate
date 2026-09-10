@@ -31,6 +31,13 @@ interface Props {
   daysLeft: number | null
   revokedAt?: string
   acceptedAt?: string
+  /**
+   * Whether a Firebase Auth account already exists for `invitedEmail`, resolved
+   * server-side in page.tsx. `null` means the lookup was skipped (non-`valid`
+   * states) or failed transiently — in both cases we keep showing both CTAs
+   * rather than risk hiding the one the visitor actually needs.
+   */
+  accountExists: boolean | null
 }
 
 /** "Revoked Jul 26" — the design's format. Falls back to a bare label when the
@@ -76,6 +83,7 @@ export default function InviteAcceptClient({
   inviterName,
   daysLeft,
   revokedAt,
+  accountExists,
 }: Props) {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
@@ -308,19 +316,27 @@ export default function InviteAcceptClient({
           )}
         </div>
 
+        {/* We only know which CTA applies once we know whether an Auth account
+            already exists for the invited address — accountExists === null
+            means that lookup was skipped or failed, so fall back to showing
+            both rather than guessing and hiding the one the visitor needs. */}
         <div className={styles.actions}>
-          <Link
-            className={styles.linkPrimary}
-            href={`/login?redirect=${redirect}&email=${emailParam}`}
-          >
-            Sign in to accept
-          </Link>
-          <Link
-            className={styles.linkSecondary}
-            href={`/signup?redirect=${redirect}&email=${emailParam}`}
-          >
-            Create an account
-          </Link>
+          {accountExists !== false && (
+            <Link
+              className={styles.linkPrimary}
+              href={`/login?redirect=${redirect}&email=${emailParam}`}
+            >
+              Sign in to accept
+            </Link>
+          )}
+          {accountExists !== true && (
+            <Link
+              className={accountExists === false ? styles.linkPrimary : styles.linkSecondary}
+              href={`/signup?redirect=${redirect}&email=${emailParam}`}
+            >
+              Create an account
+            </Link>
+          )}
         </div>
 
         <p className={styles.fineprint}>

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { adminDb } from '@/lib/firebase-admin'
+import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { isInviteExpired } from '@/lib/invite-token'
 import type { Invitation, InvitationMirror, InvitationRole } from '@/types'
 import AuthShell from '@/components/auth/AuthShell'
@@ -59,6 +59,29 @@ export default async function InvitePage({ params }: InvitePageProps) {
       ? Math.max(1, Math.ceil((Date.parse(expiresAt) - Date.now()) / MS_PER_DAY))
       : null
 
+  // Only a valid, still-pending invite can land on the "signed out" screen
+  // where this matters — for the other states the client shows a single
+  // "Go to sign in" link regardless, so there's no reason to spend an Auth
+  // lookup. Keyed off the token (not a public email field), so this doesn't
+  // open a way to probe arbitrary addresses.
+  let accountExists: boolean | null = null
+  if (state === 'valid') {
+    try {
+      await adminAuth.getUserByEmail(mirror.email)
+      accountExists = true
+    } catch (err) {
+      if ((err as { code?: string }).code === 'auth/user-not-found') {
+        accountExists = false
+      } else {
+        // Unknown/transient Auth error — fall back to `null` so the client
+        // renders both CTAs rather than guessing wrong and hiding the one
+        // the visitor actually needs.
+        console.warn('[invite] getUserByEmail lookup failed', err)
+        accountExists = null
+      }
+    }
+  }
+
   return (
     <InviteAcceptClient
       token={token}
@@ -70,6 +93,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
       daysLeft={daysLeft}
       revokedAt={invite.revokedAt}
       acceptedAt={invite.acceptedAt}
+      accountExists={accountExists}
     />
   )
 }
