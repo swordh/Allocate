@@ -5,6 +5,7 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore'
 import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { bookingCreated, bookingCancelled } from '@/lib/companyStats'
 import type { BookingItem, Subscription } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
@@ -568,6 +569,8 @@ export async function createBooking(
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: null,
       })
+
+      bookingCreated(tx, companyId)
     })
 
     revalidatePath('/bookings')
@@ -859,6 +862,8 @@ export async function cancelBooking(bookingId: string): Promise<{ error?: string
         cancelledBy: uid,
         updatedAt: FieldValue.serverTimestamp(),
       })
+
+      bookingCancelled(tx, companyId)
     })
 
     revalidatePath('/bookings')

@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { PLAN_LIMITS } from '@/lib/subscription'
+import { INITIAL_COMPANY_STATS } from '@/lib/companyStats'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
@@ -111,6 +112,7 @@ export async function setupNewCompany(
       trialEnd:          null,
       cancelAtPeriodEnd: false,
     },
+    stats: { ...INITIAL_COMPANY_STATS, updatedAt: FieldValue.serverTimestamp() },
   })
 
   batch.set(userRef, {
