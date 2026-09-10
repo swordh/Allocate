@@ -14,13 +14,18 @@
  * anything that reads these fields.
  *
  * Usage, from the repo root:
- *   node tools/backfill_company_stats.js --sa=/path/to/key.json            # dry run
- *   node tools/backfill_company_stats.js --sa=/path/to/key.json --yes      # apply
- *   node tools/backfill_company_stats.js --sa=/path/to/key.json --verify   # check only
+ *   node tools/backfill_company_stats.js --project=allocate-beta            # dry run
+ *   node tools/backfill_company_stats.js --project=allocate-beta --yes      # apply
+ *   node tools/backfill_company_stats.js --project=allocate-beta --verify   # check only
  *
- * Without --sa it falls back to FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON in
- * .env.local, which only ever points at one project — pass --sa when running
- * against beta or prod.
+ * Credentials, in resolution order:
+ *   --project=<id>  Application Default Credentials. Preferred — no long-lived
+ *                   key file on disk, and it reaches every project your gcloud
+ *                   login can. Requires `gcloud auth application-default login`
+ *                   once.
+ *   --sa=<path>     an explicit service account key file.
+ *   neither         FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON from .env.local, which
+ *                   only ever points at one project.
  *
  * --verify exits non-zero when anything has drifted. Nothing is written unless
  * --yes is passed.
@@ -44,24 +49,25 @@ const APPLY = flag('yes');
 const VERIFY = flag('verify');
 const ONLY_COMPANY = value('company');
 const SA_PATH = value('sa');
+const PROJECT = value('project');
 const CONCURRENCY = 5;
 const PAGE_SIZE = 200;
 
 // ── Credentials ──────────────────────────────────────────────────────────────
 
-function loadServiceAccount() {
-  if (SA_PATH) {
-    const resolved = path.resolve(SA_PATH);
-    if (!fs.existsSync(resolved)) {
-      console.error(`ERROR: service account file not found: ${resolved}`);
-      process.exit(1);
-    }
-    return JSON.parse(fs.readFileSync(resolved, 'utf8'));
+function readServiceAccountFile(p) {
+  const resolved = path.resolve(p);
+  if (!fs.existsSync(resolved)) {
+    console.error(`ERROR: service account file not found: ${resolved}`);
+    process.exit(1);
   }
+  return JSON.parse(fs.readFileSync(resolved, 'utf8'));
+}
 
+function readServiceAccountFromEnv() {
   const envPath = path.resolve(__dirname, '../.env.local');
   if (!fs.existsSync(envPath)) {
-    console.error('ERROR: no --sa given and .env.local not found.');
+    console.error('ERROR: no --project or --sa given, and .env.local not found.');
     process.exit(1);
   }
 
@@ -82,12 +88,30 @@ function loadServiceAccount() {
   return JSON.parse(raw);
 }
 
-const serviceAccount = loadServiceAccount();
-
-const { initializeApp, cert } = require('firebase-admin/app');
+const { initializeApp, cert, applicationDefault } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-initializeApp({ credential: cert(serviceAccount) });
+// One source only. Silently preferring one over the other is how you end up
+// writing to the wrong project.
+if (PROJECT && SA_PATH) {
+  console.error('ERROR: pass either --project or --sa, not both.');
+  process.exit(1);
+}
+
+let projectId;
+let credentialSource;
+
+if (PROJECT) {
+  projectId = PROJECT;
+  credentialSource = 'application default credentials';
+  initializeApp({ credential: applicationDefault(), projectId });
+} else {
+  const serviceAccount = SA_PATH ? readServiceAccountFile(SA_PATH) : readServiceAccountFromEnv();
+  projectId = serviceAccount.project_id;
+  credentialSource = SA_PATH ? `service account file ${SA_PATH}` : 'service account from .env.local';
+  initializeApp({ credential: cert(serviceAccount) });
+}
+
 const db = getFirestore();
 
 // ── Truth queries ────────────────────────────────────────────────────────────
@@ -222,11 +246,11 @@ async function* chunks(iterable, size) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const projectId = serviceAccount.project_id;
   const mode = APPLY ? 'APPLY (writes)' : VERIFY ? 'VERIFY (read-only)' : 'DRY RUN (read-only)';
 
   console.log('');
   console.log(`  Project : ${projectId}`);
+  console.log(`  Auth    : ${credentialSource}`);
   console.log(`  Mode    : ${mode}`);
   if (ONLY_COMPANY) console.log(`  Company : ${ONLY_COMPANY}`);
   console.log('');
@@ -288,5 +312,13 @@ async function main() {
 
 main().catch((err) => {
   console.error('FAILED:', err.message);
+  // ADC failures surface at first use, not at initializeApp, so the message
+  // arrives here rather than up front.
+  if (PROJECT && /credential|authenticat|permission|PERMISSION_DENIED/i.test(err.message)) {
+    console.error('');
+    console.error('  Using application default credentials. If they are missing or lack access:');
+    console.error('    gcloud auth application-default login');
+    console.error(`    gcloud projects get-iam-policy ${projectId}   # check your access`);
+  }
   process.exit(1);
 });
