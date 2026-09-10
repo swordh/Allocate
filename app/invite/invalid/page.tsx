@@ -29,9 +29,6 @@ export default function InvalidInvitePage() {
           <Link className={styles.linkPrimary} href="/login">
             Go to sign in
           </Link>
-          <Link className={styles.linkSecondary} href="/signup">
-            Create a new company
-          </Link>
         </div>
       </AuthCard>
     </AuthShell>
