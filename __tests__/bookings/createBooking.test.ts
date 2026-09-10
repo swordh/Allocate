@@ -304,6 +304,38 @@ describe('createBooking', () => {
       expect(writtenData.approvalStatus).toBe('pending')
       expect(writtenData.approverId).toBe('approver-user-id')
     })
+
+    it('bumps the company booking stats in the same transaction, after every read', async () => {
+      const { tx } = wireTransaction({
+        [`companies/${COMPANY_ID}`]: ACTIVE_COMPANY_DATA,
+        [`companies/${COMPANY_ID}/equipment/equip-1`]: ACTIVE_UNITS_EQUIP,
+        [UNIT_PATH]: ACTIVE_UNIT,
+        [`users/${ADMIN_SESSION.uid}`]: { name: 'Admin User' },
+      })
+
+      await createBooking(makeFormData())
+
+      const companySetIndex = vi
+        .mocked(tx.set)
+        .mock.calls.findIndex(
+          (call) => (call[0] as { path?: string })?.path === `companies/${COMPANY_ID}`,
+        )
+      expect(companySetIndex).toBeGreaterThanOrEqual(0)
+
+      const [, payload, options] = vi.mocked(tx.set).mock.calls[companySetIndex]
+      const stats = (payload as { stats: Record<string, unknown> }).stats
+      expect(stats.bookingsCreated).toBeDefined()   // FieldValue.increment(1)
+      expect(stats.lastBookingAt).toBeDefined()     // FieldValue.serverTimestamp()
+      expect(options).toEqual({ merge: true })
+
+      // Firestore requires all reads before any write. detectConflictsInTransaction
+      // issues tx.get() calls — including queries — so a stats write placed too
+      // early would break booking creation outright. Assert the ordering, not just
+      // the payload: that is the regression this test exists to catch.
+      const statsWriteOrder = vi.mocked(tx.set).mock.invocationCallOrder[companySetIndex]
+      const lastReadOrder = Math.max(...vi.mocked(tx.get).mock.invocationCallOrder)
+      expect(statsWriteOrder).toBeGreaterThan(lastReadOrder)
+    })
   })
 
   // ── Conflict detection ─────────────────────────────────────────────────────

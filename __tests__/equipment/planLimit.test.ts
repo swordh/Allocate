@@ -200,7 +200,11 @@ function wireDeactivateTransaction(opts: {
   counterCount: number
   hasActiveBookings?: boolean
 }): {
-  tx: { get: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> }
+  tx: {
+    get: ReturnType<typeof vi.fn>
+    set: ReturnType<typeof vi.fn>
+    update: ReturnType<typeof vi.fn>
+  }
 } {
   const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
   const equipPath = `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}`
@@ -227,6 +231,7 @@ function wireDeactivateTransaction(opts: {
 
   const tx = {
     get: vi.fn().mockImplementation(txGet),
+    set: vi.fn(),
     update: vi.fn(),
   }
 
@@ -288,51 +293,55 @@ describe('createEquipment — counter document plan limit', () => {
 
   // ── count = N-1 (one slot left) ───────────────────────────────────────────
 
-  it.todo(
-    'succeeds when counter document shows count=N-1 (one slot remaining) and increments counter to N',
-    async () => {
-      // counter=24, limit=25 → should create and increment counter to 25
-      const { tx } = wireTransactionWithCounter({
-        subscriptionStatus: 'active',
-        plan: 'starter',
-        equipmentLimit: 25,
-        counterCount: 24,
-      })
+  it('succeeds when counter document shows count=N-1 (one slot remaining) and increments counter and mirror', async () => {
+    // counter=24, limit=25 → should create and increment counter to 25
+    const { tx } = wireTransactionWithCounter({
+      subscriptionStatus: 'active',
+      plan: 'starter',
+      equipmentLimit: 25,
+      counterCount: 24,
+    })
 
-      const result = await createEquipment(makeFormData())
+    const result = await createEquipment(makeFormData())
 
-      expect(result).toEqual({ id: NEW_EQUIP_ID })
-      // Counter must be incremented inside the transaction
-      expect(tx.update).toHaveBeenCalledWith(
-        expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
-        expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(1)
-      )
-    },
-  )
+    expect(result).toEqual({ id: NEW_EQUIP_ID })
+    // Counter must be incremented inside the transaction
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
+      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(1)
+    )
+    // …and the company mirror in the same transaction
+    expect(tx.set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}` }),
+      expect.objectContaining({
+        stats: expect.objectContaining({ equipmentCount: expect.any(Object) }),
+      }),
+      { merge: true },
+    )
+  })
 
   // ── count = N (at limit) ──────────────────────────────────────────────────
 
-  it.todo(
-    'returns plan limit error when counter document shows count=N and does NOT increment counter',
-    async () => {
-      // counter=25, limit=25 → should block and leave counter unchanged
-      const { tx } = wireTransactionWithCounter({
-        subscriptionStatus: 'active',
-        plan: 'starter',
-        equipmentLimit: 25,
-        counterCount: 25,
-      })
+  it('returns plan limit error when counter document shows count=N and writes neither counter nor mirror', async () => {
+    // counter=25, limit=25 → should block and leave counter unchanged
+    const { tx } = wireTransactionWithCounter({
+      subscriptionStatus: 'active',
+      plan: 'starter',
+      equipmentLimit: 25,
+      counterCount: 25,
+    })
 
-      const result = await createEquipment(makeFormData())
+    const result = await createEquipment(makeFormData())
 
-      expect(result).toHaveProperty('error')
-      expect((result as { error: string }).error).toContain('Equipment limit reached')
-      expect((result as { error: string }).error).toContain('starter')
-      expect((result as { error: string }).error).toContain('25')
-      // Counter must NOT be touched when the limit check fails
-      expect(tx.update).not.toHaveBeenCalled()
-    },
-  )
+    expect(result).toHaveProperty('error')
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
+    expect((result as { error: string }).error).toContain('starter')
+    expect((result as { error: string }).error).toContain('25')
+    // Counter must NOT be touched when the limit check fails
+    expect(tx.update).not.toHaveBeenCalled()
+    // Nor may the failure path leak a mirror write
+    expect(tx.set).not.toHaveBeenCalled()
+  })
 
   // ── Missing counter doc → hard error ─────────────────────────────────────
 
@@ -623,48 +632,57 @@ describe('deactivateEquipment — counter document decrement', () => {
 
   // ── Active equipment: decrement counter ───────────────────────────────────
 
-  it.todo(
-    'atomically decrements counter when deactivating active equipment',
-    async () => {
-      // Equipment is active → counter should decrement from 5 to 4
-      const { tx } = wireDeactivateTransaction({
-        equipmentActive: true,
-        counterCount: 5,
-      })
+  it('atomically decrements both the counter and the company mirror when deactivating active equipment', async () => {
+    // Equipment is active → counter should decrement from 5 to 4
+    const { tx } = wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 5,
+    })
 
-      const result = await deactivateEquipment(EQUIPMENT_ID)
+    const result = await deactivateEquipment(EQUIPMENT_ID)
 
-      expect(result).toEqual({ success: true })
-      // Counter must be decremented inside the transaction
-      expect(tx.update).toHaveBeenCalledWith(
-        expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
-        expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
-      )
-    },
-  )
+    expect(result).toEqual({ success: true })
+    // Counter must be decremented inside the transaction
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
+      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
+    )
+    // The mirror on the company document must move in the same transaction.
+    // The pairing is the assertion — either both move or the two disagree.
+    expect(tx.set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}` }),
+      expect.objectContaining({
+        stats: expect.objectContaining({ equipmentCount: expect.any(Object) }),
+      }),
+      { merge: true },
+    )
+  })
 
   // ── Already-inactive equipment: idempotent, no decrement ──────────────────
 
-  it.todo(
-    'does NOT decrement counter when equipment is already inactive (idempotent)',
-    async () => {
-      // Equipment is already inactive → counter must not change
-      const { tx } = wireDeactivateTransaction({
-        equipmentActive: false,
-        counterCount: 4,
-      })
+  it('does NOT touch counter or mirror when equipment is already inactive (idempotent)', async () => {
+    // Equipment is already inactive → neither value may change
+    const { tx } = wireDeactivateTransaction({
+      equipmentActive: false,
+      counterCount: 4,
+    })
 
-      const result = await deactivateEquipment(EQUIPMENT_ID)
+    const result = await deactivateEquipment(EQUIPMENT_ID)
 
-      // Should succeed (idempotent) but not touch the counter
-      expect(result).toEqual({ success: true })
-      // Counter update call should NOT include the counter path
-      const counterUpdateCalls = tx.update.mock.calls.filter(
-        (args: unknown[]) => (args[0] as { path?: string })?.path?.includes('_meta/equipmentCount'),
-      )
-      expect(counterUpdateCalls).toHaveLength(0)
-    },
-  )
+    // Should succeed (idempotent) but not touch the counter
+    expect(result).toEqual({ success: true })
+    // Counter update call should NOT include the counter path
+    const counterUpdateCalls = tx.update.mock.calls.filter(
+      (args: unknown[]) => (args[0] as { path?: string })?.path?.includes('_meta/equipmentCount'),
+    )
+    expect(counterUpdateCalls).toHaveLength(0)
+    // The mirror must be skipped by the same guard, or it drifts on repeated
+    // deactivation of an item that was already inactive.
+    const mirrorCalls = tx.set.mock.calls.filter(
+      (args: unknown[]) => (args[0] as { path?: string })?.path === `companies/${COMPANY_ID}`,
+    )
+    expect(mirrorCalls).toHaveLength(0)
+  })
 
   // ── Idempotency guard: active===false on re-read inside tx ────────────────
   //
@@ -691,6 +709,7 @@ describe('deactivateEquipment — counter document decrement', () => {
           }
           return { exists: false, data: () => ({}) }
         }),
+        set: vi.fn(),
         update: vi.fn(),
       }
 
