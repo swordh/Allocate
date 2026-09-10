@@ -208,7 +208,11 @@ export default function InviteAcceptClient({
           <h1 className={styles.title}>{companyName}</h1>
           <span className={styles.lede}>
             {inviterName} invited <strong className={styles.strong}>{invitedEmail}</strong> to join
-            as {role} — you&rsquo;ll be able to create and manage bookings.
+            as {role}
+            {/* Explicit string: the compiler drops the leading space of a text
+                chunk that starts right after an expression, rendering "crew—". */}
+            {' — '}
+            you&rsquo;ll be able to create and manage bookings.
           </span>
         </div>
 
