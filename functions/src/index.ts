@@ -10,13 +10,8 @@ setGlobalOptions({ region: 'europe-west1' });
 // they rely on this default app being initialized first.
 initializeApp();
 
-export { setActiveClaim } from './auth/setActiveClaim';
 export { acceptInvitationByToken } from './auth/acceptInvitation';
 export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
-export { updateEquipment } from './equipment/updateEquipment';
-export { deactivateEquipment } from './equipment/deactivateEquipment';
-export { backfillEquipmentCount } from './equipment/backfillEquipmentCount';
-export { addCategory } from './equipment/addCategory';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
 export { onMailQueued } from './email/onMailQueued';

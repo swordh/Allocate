@@ -66,21 +66,3 @@ export interface CompanyDocument {
   hadTrial: boolean;
   subscription: CompanySubscription;
 }
-
-// ─── Equipment documents ───────────────────────────────────────────────────────
-
-export type TrackingType = 'units' | 'quantity';
-
-export interface EquipmentDocument {
-  name: string;
-  category: string;
-  trackingType: TrackingType;
-  totalQuantity: number;
-  serialNumber: string | null;
-  active: boolean;
-  status: string;
-  requiresApproval: boolean;
-  approverId: string | null;
-  createdAt: Timestamp;
-  createdBy: string;
-}
