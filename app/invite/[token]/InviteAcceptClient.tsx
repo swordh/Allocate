@@ -13,41 +13,24 @@ import AuthCard from '@/components/auth/AuthCard'
 import Button from '@/components/ui/Button'
 import Chip from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
-import DataRows from '@/components/ui/DataRows'
 import type { InvitationRole } from '@/types'
 import styles from './InviteAccept.module.css'
 
-/** Resolved server-side in page.tsx from the mirror + private invitation doc. */
-export type InviteServerState = 'valid' | 'accepted' | 'expired' | 'revoked'
-
 interface Props {
   token: string
-  state: InviteServerState
   companyName: string
   invitedEmail: string
   role: InvitationRole
   inviterName: string
   /** Null when the invitation predates the TTL field — such invites never expire. */
   daysLeft: number | null
-  revokedAt?: string
-  acceptedAt?: string
   /**
    * Whether a Firebase Auth account already exists for `invitedEmail`, resolved
-   * server-side in page.tsx. `null` means the lookup was skipped (non-`valid`
-   * states) or failed transiently — in both cases we keep showing both CTAs
-   * rather than risk hiding the one the visitor actually needs.
+   * server-side in page.tsx. `null` means the lookup failed transiently — we
+   * keep showing both CTAs rather than risk hiding the one the visitor
+   * actually needs.
    */
   accountExists: boolean | null
-}
-
-/** "Revoked Jul 26" — the design's format. Falls back to a bare label when the
- *  timestamp is missing (invitations revoked before revokedAt existed). */
-function revokedLabel(revokedAt?: string): string {
-  if (!revokedAt) return 'Revoked'
-  const parsed = Date.parse(revokedAt)
-  if (Number.isNaN(parsed)) return 'Revoked'
-  const when = new Date(parsed).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
-  return `Revoked ${when}`
 }
 
 /**
@@ -76,13 +59,11 @@ function acceptErrorMessage(err: unknown): { message: string; alreadyMember: boo
 
 export default function InviteAcceptClient({
   token,
-  state,
   companyName,
   invitedEmail,
   role,
   inviterName,
   daysLeft,
-  revokedAt,
   accountExists,
 }: Props) {
   const router = useRouter()
@@ -98,7 +79,7 @@ export default function InviteAcceptClient({
   const emailMatches =
     signedInEmail !== null && signedInEmail.toLowerCase() === invitedEmail.toLowerCase()
 
-  const canAutoAccept = state === 'valid' && !authLoading && user !== null && emailMatches
+  const canAutoAccept = !authLoading && user !== null && emailMatches
 
   useEffect(() => {
     if (!canAutoAccept || accepting || acceptError) return
@@ -131,81 +112,9 @@ export default function InviteAcceptClient({
     router.refresh()
   }, [router])
 
-  const revoked = state === 'revoked'
-  const wrongAccount = state === 'valid' && !authLoading && user !== null && !emailMatches
+  const wrongAccount = !authLoading && user !== null && !emailMatches
 
-  const eyebrow = revoked
-    ? 'INVITATION WITHDRAWN'
-    : canAutoAccept
-      ? 'JOINING WORKSPACE'
-      : "YOU'VE BEEN INVITED"
-
-  // ── Revoked ───────────────────────────────────────────────────────────────
-  if (revoked) {
-    return (
-      <AuthShell>
-        <AuthCard width={440} gap={24}>
-          <div className={styles.titleBlock}>
-            <span className={`${styles.eyebrow} ${styles.eyebrowDanger}`}>{eyebrow}</span>
-            <h1 className={styles.title}>{companyName}</h1>
-            <span className={styles.lede}>
-              An admin cancelled this invitation before it was accepted. Ask {inviterName} to send a
-              new one — nothing was created on your side.
-            </span>
-          </div>
-
-          <DataRows
-            variant="inline"
-            termWidth={130}
-            rows={[
-              { term: 'ADDRESS', value: invitedEmail },
-              {
-                term: 'STATUS',
-                value: <span className={styles.statusDanger}>{revokedLabel(revokedAt)}</span>,
-              },
-            ]}
-          />
-
-          <div className={styles.actions}>
-            <Link className={styles.linkPrimary} href="/login">
-              Go to sign in
-            </Link>
-            <Link className={styles.linkSecondary} href="/signup">
-              Create a new company
-            </Link>
-          </div>
-        </AuthCard>
-      </AuthShell>
-    )
-  }
-
-  // ── Expired / already accepted ────────────────────────────────────────────
-  if (state === 'expired' || state === 'accepted') {
-    const expired = state === 'expired'
-    return (
-      <AuthShell>
-        <AuthCard width={440} gap={24}>
-          <div className={styles.titleBlock}>
-            <span className={`${styles.eyebrow} ${styles.eyebrowDanger}`}>
-              {expired ? 'INVITATION EXPIRED' : 'ALREADY ACCEPTED'}
-            </span>
-            <h1 className={styles.title}>{companyName}</h1>
-            <span className={styles.lede}>
-              {expired
-                ? `This invitation is no longer valid. Ask ${inviterName} to send a new one.`
-                : 'This invitation has already been used. Sign in with the account you created.'}
-            </span>
-          </div>
-
-          <div className={styles.actions}>
-            <Link className={styles.linkPrimary} href="/login">
-              Go to sign in
-            </Link>
-          </div>
-        </AuthCard>
-      </AuthShell>
-    )
-  }
+  const eyebrow = canAutoAccept ? 'JOINING WORKSPACE' : "YOU'VE BEEN INVITED"
 
   // ── Wrong account ─────────────────────────────────────────────────────────
   if (wrongAccount) {
