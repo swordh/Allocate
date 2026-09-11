@@ -68,4 +68,31 @@ export interface CompanyRow {
   lastBookingAt: string | null   // ISO string
   memberCount: number | null
   hasStats: boolean
+  /**
+   * From `subscription.limits`. NOT guaranteed present, despite being set at
+   * company creation — actions/team.ts's seat guard and
+   * lib/invite-recipients.ts's `seatLimit` both handle
+   * `subscription.limits.users` being undefined, so this list has to treat
+   * a missing cap the same way it treats a missing `stats` field: render it
+   * as unknown, never as a fabricated 0.
+   */
+  limits: { equipment: number | null; users: number | null }
+}
+
+export const SORTS = ['last_booking', 'name', 'signed_up', 'members'] as const
+export type Sort = (typeof SORTS)[number]
+
+export const SORT_LABELS: Record<Sort, string> = {
+  last_booking: 'Last booking',
+  name: 'Company A–Z',
+  signed_up: 'Signed up',
+  members: 'Members',
+}
+
+export const PLANS = ['starter', 'basic'] as const
+export type PlanFilter = (typeof PLANS)[number]
+
+export const PLAN_FILTER_LABELS: Record<PlanFilter, string> = {
+  starter: 'Starter',
+  basic: 'Basic',
 }
