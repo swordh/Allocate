@@ -1,5 +1,6 @@
 import { getOperatorSession } from '@/lib/operator-dal'
 import { adminDb } from '@/lib/firebase-admin'
+import { iso, isoOrNull } from '@/lib/firestore-timestamps'
 import CustomersListView, { type SelectedDetail, type TeamMember } from './CustomersListView'
 import {
   SEGMENTS,
@@ -12,17 +13,6 @@ import {
 } from '@/types/operator'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-
-function iso(value: unknown): string {
-  const v = value as { toDate?: () => Date } | string | undefined
-  if (!v) return ''
-  if (typeof v === 'string') return v
-  return v.toDate?.().toISOString() ?? ''
-}
-
-function isoOrNull(value: unknown): string | null {
-  return iso(value) || null
-}
 
 function matchesSegment(row: CompanyRow, segment: Segment, now: number): boolean {
   switch (segment) {
@@ -95,15 +85,9 @@ export default async function CustomersPage({
   // document fetched only for the selected row.
   const snapshot = await adminDb.collection('companies').orderBy('createdAt', 'desc').get()
 
-  // opsNotes deliberately isn't on CompanyRow — sending every company's notes
-  // blob to the client for a list that only ever shows one at a time would be
-  // pure waste. Keep it here, keyed by id, to pull for the selected company only.
-  const notesById = new Map<string, string>()
-
   const rows: CompanyRow[] = snapshot.docs.map((doc) => {
     const data = doc.data()
     const stats = data.stats
-    notesById.set(doc.id, data.opsNotes ?? '')
 
     return {
       id: doc.id,
@@ -178,13 +162,26 @@ export default async function CustomersPage({
       console.error('[operator/customers] members_fetch_failed', { companyId: selectedId, err })
       team = null
     }
-    selectedDetail = {
-      // NEXT: opsNotes is a plain string field today. The next PR replaces it
-      // with an `operatorNotes` collection (one doc per note, author + timestamp)
-      // — this read-only render is the last thing that will need to change.
-      notes: notesById.get(selectedId) ?? '',
-      team,
+
+    // Notes moved from a plain `opsNotes` string field (readable by any
+    // member of the company — see firestore.rules history) to a top-level
+    // `operatorNotes` collection with no client-facing rule. This panel is
+    // read-only, so it only needs the newest note; the full thread and the
+    // composer live on screen 22 (CustomerDetailView).
+    let notes = ''
+    try {
+      const notesSnap = await adminDb
+        .collection('operatorNotes')
+        .where('companyId', '==', selectedId)
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get()
+      notes = notesSnap.docs[0]?.data()?.text ?? ''
+    } catch (err) {
+      console.error('[operator/customers] notes_fetch_failed', { companyId: selectedId, err })
     }
+
+    selectedDetail = { notes, team }
   }
 
   // Firestore cannot query for a missing field, so the only way to know how many

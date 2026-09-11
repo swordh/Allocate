@@ -33,6 +33,79 @@ async function getCompanyDocByCustomerId(customerId: string) {
   return snap.docs[0]
 }
 
+// #NEW: companyEvents is a top-level collection (see firestore.rules — same
+// wildcard-avoidance reasoning as operatorNotes) logging plan/status changes
+// going forward. Generic `kind` field so future system events land in one
+// indexed collection instead of one collection per event type.
+async function logSubscriptionEvent(params: {
+  companyId: string
+  fromPlan: string | undefined
+  toPlan: string
+  fromStatus: string | undefined
+  toStatus: string
+  stripeEventId: string
+  stripeSubscriptionId: string
+  /**
+   * True when `toPlan` was resolved from a Stripe price id with no entry in
+   * PRICE_ID_TO_PLAN — the caller already falls back to 'starter' to keep
+   * the company document in a valid shape, but that fallback is a guess,
+   * not a fact. Writing it as a permanent audit row would record a false
+   * claim ("customer downgraded to Starter") that a human will trust and
+   * can never be told apart from a real downgrade. A missing row is
+   * recoverable (the mirror on the company doc still updated); a false row
+   * is not, so the write is suppressed entirely.
+   */
+  planUnresolved: boolean
+}) {
+  const { companyId, fromPlan, toPlan, fromStatus, toStatus, stripeEventId, stripeSubscriptionId, planUnresolved } = params
+
+  // Only log when something actually changed. customer.subscription.updated
+  // fires for many things (payment method, trial countdown ticks, metadata
+  // edits, …) — logging every delivery would turn the feed into noise.
+  if (fromPlan === toPlan && fromStatus === toStatus) return
+
+  if (planUnresolved) {
+    console.log('[webhooks/stripe]', {
+      action: 'subscription_event_suppressed_unresolved_plan',
+      companyId,
+      stripeSubscriptionId,
+    })
+    return
+  }
+
+  // A trial converting (or any status move with the plan unchanged) is a
+  // distinct kind from an actual plan change — "Plan changed basic → basic"
+  // would be nonsense copy for a status-only transition.
+  const kind = fromPlan === toPlan ? 'status_changed' : 'plan_changed'
+
+  // Deterministic id from the Stripe event id, and `.set()` instead of
+  // `.add()`: the `_stripeEvents` dedup ledger below is a read-then-write
+  // with no transaction, so a redelivered event can reach this function
+  // twice. `.add()` would create two identical rows; `.set()` on the same
+  // id collapses a redelivery onto the same document.
+  await adminDb.collection('companyEvents').doc(stripeEventId).set({
+    companyId,
+    kind,
+    at: FieldValue.serverTimestamp(),
+    fromPlan: fromPlan ?? null,
+    toPlan,
+    fromStatus: fromStatus ?? null,
+    toStatus,
+    stripeEventId,
+    stripeSubscriptionId,
+  })
+
+  console.log('[webhooks/stripe]', {
+    action: 'subscription_event_logged',
+    kind,
+    companyId,
+    fromPlan,
+    toPlan,
+    fromStatus,
+    toStatus,
+  })
+}
+
 // #96: Only writes stripeCustomerId — subscription fields are the sole responsibility
 // of handleSubscriptionUpsert (triggered by customer.subscription.created/updated).
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
@@ -72,8 +145,14 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
 }
 
 // #85: Canonical writer for all subscription fields.
-// Returns true if it wrote, false if the event was stale-skipped (#98).
-async function handleSubscriptionUpsert(subscription: Stripe.Subscription, eventCreated: number): Promise<boolean> {
+// Returns the company snapshot it wrote (so callers don't have to re-fetch
+// it — see handleSubscriptionCreated below), or null if the event was
+// stale-skipped (#98) or the company could not be found.
+async function handleSubscriptionUpsert(
+  subscription: Stripe.Subscription,
+  eventCreated: number,
+  eventId: string,
+): Promise<FirebaseFirestore.QueryDocumentSnapshot | null> {
   const customerId = subscription.customer as string
   const companyDoc = await getCompanyDocByCustomerId(customerId)
 
@@ -83,7 +162,7 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
       customerId,
       subscriptionId: subscription.id,
     })
-    return false
+    return null
   }
 
   const companyId = companyDoc.id
@@ -98,16 +177,22 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
       eventCreated,
       storedTs,
     })
-    return false
+    return null
   }
+
+  // Captured before the write — this is the "old" side of the plan-change
+  // log below. Must happen before `update()`, not after.
+  const fromPlan   = companyDoc.data()?.subscription?.plan as string | undefined
+  const fromStatus = companyDoc.data()?.subscription?.status as string | undefined
 
   const mappedStatus = mapStripeStatus(subscription.status)
   const item    = subscription.items.data[0]
   const priceId = item?.price?.id ?? ''
+  const planUnresolved = !PRICE_ID_TO_PLAN[priceId]
   const plan    = PRICE_ID_TO_PLAN[priceId] ?? 'starter'
   const limits  = PLAN_LIMITS[plan]
 
-  if (!PRICE_ID_TO_PLAN[priceId]) {
+  if (planUnresolved) {
     console.warn('[webhooks/stripe]', {
       action: 'subscription_upsert_unknown_price_id',
       priceId,
@@ -138,27 +223,47 @@ async function handleSubscriptionUpsert(subscription: Stripe.Subscription, event
     status: mappedStatus,
   })
 
-  return true
+  // Logged AFTER the stale-event guard above returns (never before it), so
+  // an out-of-order Stripe delivery that gets stale-skipped cannot log a
+  // phantom downgrade — only a delivery that actually wrote reaches here.
+  // stripeEventId is stored regardless: the `_stripeEvents` dedup ledger is
+  // a read-then-write with no transaction, so concurrent redelivery of the
+  // same event can still slip past it and call this function twice.
+  await logSubscriptionEvent({
+    companyId,
+    fromPlan,
+    toPlan: plan,
+    fromStatus,
+    toStatus: mappedStatus,
+    stripeEventId: eventId,
+    stripeSubscriptionId: subscription.id,
+    planUnresolved,
+  })
+
+  return companyDoc
 }
 
 // #118: Wraps upsert for subscription.created events to also set hadTrial.
-async function handleSubscriptionCreated(subscription: Stripe.Subscription, eventCreated: number) {
-  const wrote = await handleSubscriptionUpsert(subscription, eventCreated)
+async function handleSubscriptionCreated(subscription: Stripe.Subscription, eventCreated: number, eventId: string) {
+  const companyDoc = await handleSubscriptionUpsert(subscription, eventCreated, eventId)
 
-  if (wrote && subscription.status === 'trialing') {
-    const companyDoc = await getCompanyDocByCustomerId(subscription.customer as string)
-    if (companyDoc) {
-      await adminDb.doc(`companies/${companyDoc.id}`).update({ hadTrial: true })
-      console.log('[webhooks/stripe]', {
-        action: 'had_trial_set',
-        companyId: companyDoc.id,
-        subscriptionId: subscription.id,
-      })
-    }
+  if (companyDoc && subscription.status === 'trialing') {
+    await adminDb.doc(`companies/${companyDoc.id}`).update({ hadTrial: true })
+    console.log('[webhooks/stripe]', {
+      action: 'had_trial_set',
+      companyId: companyDoc.id,
+      subscriptionId: subscription.id,
+    })
   }
 }
 
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+// The Billing Portal's "cancel at period end" flow — and every other path
+// that actually ends a subscription — arrives here as
+// customer.subscription.deleted, NOT as an `updated` event. This is the
+// single most interesting transition an operator watches a feed for, so it
+// must log through the same helper as handleSubscriptionUpsert, deriving
+// `toStatus` the same way (mapStripeStatus), not a hardcoded string.
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription, eventId: string) {
   const customerId = subscription.customer as string
   const companyDoc = await getCompanyDocByCustomerId(customerId)
 
@@ -172,15 +277,31 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   }
 
   const companyId = companyDoc.id
+  const fromPlan   = companyDoc.data()?.subscription?.plan as string | undefined
+  const fromStatus = companyDoc.data()?.subscription?.status as string | undefined
+  const toStatus   = mapStripeStatus(subscription.status)
 
   await adminDb.doc(`companies/${companyId}`).update({
-    'subscription.status': 'canceled',
+    'subscription.status': toStatus,
   })
 
   console.log('[webhooks/stripe]', {
     action: 'subscription_deleted',
     companyId,
     subscriptionId: subscription.id,
+  })
+
+  // Plan is unchanged by a cancellation — only status moves — and there is
+  // no price id to resolve here, so `planUnresolved` is always false.
+  await logSubscriptionEvent({
+    companyId,
+    fromPlan,
+    toPlan: fromPlan ?? 'starter',
+    fromStatus,
+    toStatus,
+    stripeEventId: eventId,
+    stripeSubscriptionId: subscription.id,
+    planUnresolved: false,
   })
 }
 
@@ -223,15 +344,15 @@ async function processStripeEvent(event: Stripe.Event) {
         break
 
       case 'customer.subscription.created':
-        await handleSubscriptionCreated(event.data.object as Stripe.Subscription, event.created)
+        await handleSubscriptionCreated(event.data.object as Stripe.Subscription, event.created, event.id)
         break
 
       case 'customer.subscription.updated':
-        await handleSubscriptionUpsert(event.data.object as Stripe.Subscription, event.created)
+        await handleSubscriptionUpsert(event.data.object as Stripe.Subscription, event.created, event.id)
         break
 
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription, event.id)
         break
 
       case 'invoice.payment_failed':
