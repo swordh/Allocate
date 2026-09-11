@@ -1,391 +1,341 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import type { KeyboardEvent, FormEvent } from 'react'
 import { useSupportContext } from '@/lib/support-context'
-import { useToast } from '@/lib/toast-context'
 import { submitFeedback } from '@/actions/submitFeedback'
-import { getRecentActions } from '@/lib/action-tracker'
+import type { FeedbackType } from '@/types/operator'
+import Field from '@/components/ui/Field'
+import Input from '@/components/ui/Input'
+import Textarea from '@/components/ui/Textarea'
+import Button from '@/components/ui/Button'
+import ErrorBanner from '@/components/ui/ErrorBanner'
 import Icon from '@/components/ui/Icon'
 import styles from './SupportModal.module.css'
 
-// ── Bug form ────────────────────────────────────────────────────────────────
+const MAX_DETAILS = 2000
 
-const SEVERITIES = [
-  { key: 'low' as const, label: 'Low', desc: 'Cosmetic, easy workaround.' },
-  { key: 'medium' as const, label: 'Medium', desc: 'Annoying, but I can keep working.' },
-  { key: 'high' as const, label: 'High', desc: 'Blocking — cannot complete a task.' },
-]
+// Design's BUG / FEATURE / SUPPORT map straight onto the existing
+// FeedbackType union — no new union, no translation layer. `word` feeds the
+// sent-state sentence ("We logged your {word} as #TICKET."); `dotClass`
+// points at a CSS class, never an inline colour.
+const TYPE_ORDER: FeedbackType[] = ['bug_report', 'feature_request', 'support']
 
-const AREAS = ['Bookings', 'Equipment', 'Settings', 'Calendar', 'Notifications', 'Login / Auth', 'Other']
-
-function BugForm({ onSubmit }: { onSubmit: (title: string, description: string) => void }) {
-  const [title, setTitle] = useState('')
-  const [steps, setSteps] = useState('')
-  const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | null>(null)
-  const [area, setArea] = useState('Bookings')
-  const [includeDiag, setIncludeDiag] = useState(false)
-  const canSend = title.trim().length > 4 && steps.trim().length > 8 && severity !== null
-
-  const handleSubmit = () => {
-    let diagBlock = ''
-    if (includeDiag) {
-      const ua = navigator.userAgent
-      const url = window.location.href
-      const actions = getRecentActions()
-      diagBlock = `\n\n--- Diagnostics ---\nBrowser: ${ua}\nURL: ${url}\n\nLast actions:\n${actions}\n--- End diagnostics ---`
-    }
-    const description = `Severity: ${severity}\nArea: ${area}\n\nSteps to reproduce:\n${steps}${diagBlock}`
-    onSubmit(title.trim(), description)
-  }
-
-  return (
-    <>
-      <p className={styles.lead}>Describe what happened, where in the app it occurred, and how we can reproduce it.</p>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Headline</span>
-        <input
-          className={styles.input}
-          type="text"
-          placeholder="A brief description of what isn't working"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          maxLength={200}
-        />
-      </label>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>What happened?</span>
-        <textarea
-          className={styles.textarea}
-          placeholder={"1. Navigate to...\n2. Click on...\n3. ...\n\nExpected: ...\nActual: ..."}
-          value={steps}
-          onChange={e => setSteps(e.target.value)}
-          maxLength={2000}
-        />
-        <span className={styles.hint}>Include steps to reproduce, what you expected, and what happened instead.</span>
-      </label>
-
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Severity</span>
-        <div className={styles.severity}>
-          {SEVERITIES.map(s => (
-            <button
-              key={s.key}
-              type="button"
-              className={`${styles.sevBtn} ${severity === s.key ? styles.sevBtnActive : ''}`}
-              onClick={() => setSeverity(s.key)}
-            >
-              <span className={styles.sevName}>{s.label}</span>
-              <span className={styles.sevDesc}>{s.desc}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={styles.row2}>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Where in Allocate?</span>
-          <select className={styles.select} value={area} onChange={e => setArea(e.target.value)}>
-            {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <label className={styles.checkboxField}>
-        <input
-          type="checkbox"
-          checked={includeDiag}
-          onChange={e => setIncludeDiag(e.target.checked)}
-          className={styles.checkbox}
-        />
-        <span className={styles.checkboxLabel}>
-          Include diagnostics — browser, version, current URL, and last 50 actions.
-        </span>
-      </label>
-
-      <div className={styles.tabActions}>
-        <button
-          type="button"
-          className={`${styles.submitBtn} ${!canSend ? styles.submitBtnDisabled : ''}`}
-          disabled={!canSend}
-          onClick={handleSubmit}
-        >
-          Send report
-        </button>
-      </div>
-    </>
-  )
+const TYPES: Record<FeedbackType, {
+  label: string
+  desc: string
+  word: string
+  placeholder: string
+  dotClass: string
+}> = {
+  bug_report: {
+    label: 'BUG',
+    desc: 'Something is broken or wrong.',
+    word: 'bug report',
+    placeholder: 'What did you do, what did you expect, what happened instead?',
+    dotClass: styles.dotBug,
+  },
+  feature_request: {
+    label: 'FEATURE',
+    desc: 'An idea that would help you.',
+    word: 'idea',
+    placeholder: 'What are you trying to get done, and where does Allocate get in the way?',
+    dotClass: styles.dotFeature,
+  },
+  support: {
+    label: 'QUESTION',
+    desc: 'You need a hand with something.',
+    word: 'question',
+    placeholder: 'Tell us what you need help with.',
+    dotClass: styles.dotSupport,
+  },
 }
 
-// ── Feature form ────────────────────────────────────────────────────────────
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-const FEATURE_TAGS = ['Calendar', 'Equipment', 'Permissions', 'Mobile', 'Integrations', 'Reporting', 'Notifications']
-
-function FeatureForm({ onSubmit }: { onSubmit: (title: string, description: string) => void }) {
-  const [title, setTitle] = useState('')
-  const [why, setWhy] = useState('')
-  const [tags, setTags] = useState<Set<string>>(new Set())
-  const canSend = title.trim().length > 4 && why.trim().length > 8
-
-  const toggleTag = (tag: string) => {
-    setTags(prev => {
-      const next = new Set(prev)
-      next.has(tag) ? next.delete(tag) : next.add(tag)
-      return next
-    })
-  }
-
-  const handleSubmit = () => {
-    const tagLine = tags.size > 0 ? `\nArea: ${[...tags].join(', ')}\n\n` : '\n\n'
-    const description = `${tagLine}${why.trim()}`
-    onSubmit(title.trim(), description)
-  }
-
-  return (
-    <>
-      <p className={styles.lead}>Describe the change you'd like to see and the problem it would solve.</p>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>In one sentence</span>
-        <input
-          className={styles.input}
-          type="text"
-          placeholder="A brief description of the feature you have in mind"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          maxLength={200}
-        />
-      </label>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>What problem does this solve?</span>
-        <textarea
-          className={styles.textarea}
-          placeholder={"Describe the situation where this would be useful and how it would help your workflow."}
-          value={why}
-          onChange={e => setWhy(e.target.value)}
-          maxLength={2000}
-        />
-      </label>
-
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Area</span>
-        <div className={styles.pills}>
-          {FEATURE_TAGS.map(tag => (
-            <button
-              key={tag}
-              type="button"
-              className={`${styles.pill} ${tags.has(tag) ? styles.pillActive : ''}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={styles.tabActions}>
-        <button
-          type="button"
-          className={`${styles.submitBtn} ${!canSend ? styles.submitBtnDisabled : ''}`}
-          disabled={!canSend}
-          onClick={handleSubmit}
-        >
-          Submit request
-        </button>
-      </div>
-    </>
-  )
+interface SentState {
+  ticketId: string
+  type: FeedbackType
+  subject: string
 }
-
-// ── Help form ────────────────────────────────────────────────────────────────
-
-function HelpForm({ onSubmit }: { onSubmit: (title: string, description: string) => void }) {
-  const [topic, setTopic] = useState('')
-  const [msg, setMsg] = useState('')
-  const canSend = topic.trim().length > 3 && msg.trim().length > 8
-
-  return (
-    <>
-      <p className={styles.lead}>Describe what you're trying to do or what's unclear and we'll get back to you.</p>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Subject</span>
-        <input
-          className={styles.input}
-          type="text"
-          placeholder="A brief description of what you need help with"
-          value={topic}
-          onChange={e => setTopic(e.target.value)}
-          maxLength={200}
-        />
-      </label>
-
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Message</span>
-        <textarea
-          className={styles.textarea}
-          placeholder="Describe your question or the situation in as much detail as you can."
-          value={msg}
-          onChange={e => setMsg(e.target.value)}
-          maxLength={2000}
-        />
-      </label>
-
-      <div className={styles.tabActions}>
-        <button
-          type="button"
-          className={`${styles.submitBtn} ${!canSend ? styles.submitBtnDisabled : ''}`}
-          disabled={!canSend}
-          onClick={() => onSubmit(topic.trim(), msg.trim())}
-        >
-          Send message
-        </button>
-      </div>
-    </>
-  )
-}
-
-// ── Main modal ──────────────────────────────────────────────────────────────
 
 export default function SupportModal() {
-  const { helpOpen, activeTab, closeHelp, openHelp } = useSupportContext()
-  const { showToast } = useToast()
+  const { helpOpen, closeHelp } = useSupportContext()
+
+  const [type, setType] = useState<FeedbackType>('bug_report')
+  const [subject, setSubject] = useState('')
+  const [details, setDetails] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState<{ ticketId: string; kind: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<SentState | null>(null)
 
-  // Reset on tab change
-  const handleTabChange = useCallback((tab: Parameters<typeof openHelp>[0]) => {
-    setSubmitted(null)
-    setError(null)
-    openHelp(tab)
-  }, [openHelp])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const subjectRef = useRef<HTMLInputElement>(null)
+  const sentRef = useRef<HTMLDivElement>(null)
+  const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
 
+  const ready = subject.trim().length > 2 && details.trim().length > 9
+  const remaining = MAX_DETAILS - details.length
+
+  // Note the draft is deliberately NOT cleared here — SupportModal is mounted
+  // globally (lib/providers.tsx) and just returns null while closed, so
+  // "keep the draft for the session" falls out of that for free. Only
+  // closing FROM the sent state resets everything, so the next open starts
+  // from a blank BUG form.
   const handleClose = useCallback(() => {
     closeHelp()
-    setTimeout(() => { setSubmitted(null); setError(null) }, 200)
-  }, [closeHelp])
+    // Unconditional: a failed submit's error must never survive a close —
+    // otherwise, since the draft is kept, the stale banner would reappear
+    // next time the modal opens even though nothing was submitted yet.
+    setError(null)
+    if (sent) {
+      setSent(null)
+      setType('bug_report')
+      setSubject('')
+      setDetails('')
+    }
+  }, [closeHelp, sent])
 
-  const handleSubmit = async (type: 'bug_report' | 'feature_request' | 'support', title: string, description: string) => {
+  const handleSendAnother = () => {
+    setSent(null)
+    setType('bug_report')
+    setSubject('')
+    setDetails('')
+    setError(null)
+    setTimeout(() => subjectRef.current?.focus(), 0)
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!ready || submitting) return
     setSubmitting(true)
     setError(null)
     try {
-      const result = await submitFeedback({ type, title, description })
+      const result = await submitFeedback({ type, title: subject.trim(), description: details.trim() })
       if ('error' in result) {
         setError(result.error)
       } else {
-        const kindLabel = type === 'bug_report' ? 'Bug report' : type === 'feature_request' ? 'Feature request' : 'Message'
-        setSubmitted({ ticketId: result.ticketId, kind: kindLabel })
-        showToast('success', `${kindLabel} sent — ref ${result.ticketId}`, 4000)
-        setTimeout(() => handleClose(), 2200)
+        setSent({ ticketId: result.ticketId, type, subject: subject.trim() })
       }
     } finally {
       setSubmitting(false)
     }
   }
 
+  const handleTypeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const idx = TYPE_ORDER.indexOf(type)
+    let next = idx
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % TYPE_ORDER.length
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (idx - 1 + TYPE_ORDER.length) % TYPE_ORDER.length
+    else return
+    e.preventDefault()
+    setType(TYPE_ORDER[next])
+    cardRefs.current[next]?.focus()
+  }
+
+  // Effect 1/2 — open state: scroll-lock the body, capture whichever trigger
+  // opened us (PrimaryNav's `?`, the MobileMenu row, or Shift+?) as the
+  // opener via document.activeElement rather than a shared ref, focus the
+  // subject field, and hand focus back to the opener on close.
+  useEffect(() => {
+    if (!helpOpen) return
+    const opener = document.activeElement as HTMLElement | null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    subjectRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      opener?.focus()
+    }
+  }, [helpOpen])
+
+  // Effect 2/2 — Escape + Tab trap. Kept separate from the effect above:
+  // handleClose's identity changes when `sent` flips, and if this lived in
+  // the same effect that transition would re-run the open-state effect too,
+  // stealing focus back to the (now unmounted) subject field.
+  useEffect(() => {
+    if (!helpOpen) return
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key === 'Escape') {
+        handleClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (!focusables || focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [helpOpen, handleClose])
+
+  // Move focus onto the confirmation once it appears, for both screen reader
+  // and keyboard users.
+  useEffect(() => {
+    if (sent) sentRef.current?.focus()
+  }, [sent])
+
   if (!helpOpen) return null
 
+  const hint = sent
+    ? 'Keep the reference if you need to follow up.'
+    : !ready
+      ? 'Add a subject and a few lines of detail to send.'
+      : ''
+
   return (
-    <div className={styles.backdrop} onClick={handleClose}>
+    <div className={styles.overlay} onClick={handleClose}>
       <div
-        className={styles.modal}
+        ref={dialogRef}
+        className={styles.dialog}
         role="dialog"
         aria-modal="true"
-        aria-label="Help & feedback"
-        onClick={e => e.stopPropagation()}
+        aria-labelledby="help-feedback-title"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        <div className={styles.grabHandle} aria-hidden="true" />
+
         <div className={styles.header}>
-          <span className={styles.headerTitle}>Help &amp; feedback</span>
-          <button className={styles.closeBtn} onClick={handleClose} aria-label="Close">
+          <div>
+            <p className={styles.eyebrow}>Support</p>
+            <h2 id="help-feedback-title" className={styles.title}>Help &amp; feedback</h2>
+          </div>
+          <button type="button" className={styles.closeBtn} onClick={handleClose} aria-label="Close">
             <Icon name="close" size={18} />
           </button>
         </div>
 
-        {/* Tabs */}
-        {!submitted && (
-          <div className={styles.tabs} role="tablist">
-            <button
-              role="tab"
-              aria-selected={activeTab === 'bug'}
-              className={`${styles.tab} ${activeTab === 'bug' ? styles.tabActive : ''}`}
-              onClick={() => handleTabChange('bug')}
-            >
-              <Icon name="bug" size={15} />
-              Bug report
-              <span className={styles.tabNum}>01</span>
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === 'feature'}
-              className={`${styles.tab} ${activeTab === 'feature' ? styles.tabActive : ''}`}
-              onClick={() => handleTabChange('feature')}
-            >
-              <Icon name="lightbulb" size={15} />
-              Feature request
-              <span className={styles.tabNum}>02</span>
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === 'help'}
-              className={`${styles.tab} ${activeTab === 'help' ? styles.tabActive : ''}`}
-              onClick={() => handleTabChange('help')}
-            >
-              <Icon name="support-agent" size={15} />
-              Get help
-              <span className={styles.tabNum}>03</span>
-            </button>
-          </div>
-        )}
-
-        {/* Body */}
         <div className={styles.body}>
-          {submitted ? (
-            <div className={styles.success}>
-              <Icon name="check-circle" size={48} className={styles.successIcon} />
-              <h3 className={styles.successTitle}>{submitted.kind} sent</h3>
-              <p className={styles.successDesc}>
-                {activeTab === 'bug' && 'Thanks — we triage incoming reports within one business day.'}
-                {activeTab === 'feature' && 'Thanks for the suggestion. We review the request board every Friday.'}
-                {activeTab === 'help' && 'Our support team replies within a few hours during business days.'}
+          {sent ? (
+            <div ref={sentRef} className={styles.sent} role="status" aria-live="polite" tabIndex={-1}>
+              <div className={styles.sentIcon} aria-hidden="true">✓</div>
+              <h3 className={styles.sentTitle}>Thanks — it is with us</h3>
+              <p className={styles.sentBody}>
+                We logged your {TYPES[sent.type].word} as <span className={styles.sentRef}>#{sent.ticketId}</span>.
               </p>
-              <div className={styles.ticketBadge}>
-                <Icon name="ticket" size={14} />
-                {submitted.ticketId}
+              <div className={styles.recap}>
+                <p className={styles.recapType}>{TYPES[sent.type].label}</p>
+                <p className={styles.recapSubject}>{sent.subject}</p>
               </div>
             </div>
-          ) : submitting ? (
-            <div className={styles.loadingState}>
-              <p className={styles.loadingText}>Sending…</p>
-            </div>
           ) : (
-            <>
-              {error && <p className={styles.errorMsg}>{error}</p>}
-              {activeTab === 'bug' && (
-                <BugForm onSubmit={(title, desc) => handleSubmit('bug_report', title, desc)} />
-              )}
-              {activeTab === 'feature' && (
-                <FeatureForm onSubmit={(title, desc) => handleSubmit('feature_request', title, desc)} />
-              )}
-              {activeTab === 'help' && (
-                <HelpForm onSubmit={(title, desc) => handleSubmit('support', title, desc)} />
-              )}
-            </>
+            <form id="help-feedback-form" className={styles.form} onSubmit={handleSubmit}>
+              <div className={styles.typeField}>
+                <span className={styles.selectorLabel}>
+                  What is this about
+                  <span className={styles.required} aria-hidden="true">*</span>
+                </span>
+                <div
+                  className={styles.typeGrid}
+                  role="radiogroup"
+                  aria-label="What is this about"
+                  onKeyDown={handleTypeKeyDown}
+                >
+                  {TYPE_ORDER.map((key, i) => {
+                    const t = TYPES[key]
+                    const selected = type === key
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
+                        disabled={submitting}
+                        ref={(el) => { cardRefs.current[i] = el }}
+                        className={`${styles.typeCard} ${selected ? styles.typeCardSelected : ''}`}
+                        onClick={() => setType(key)}
+                      >
+                        <span className={styles.typeLabelRow}>
+                          <span className={`${styles.typeDot} ${t.dotClass}`} aria-hidden="true" />
+                          <span className={styles.typeLabel}>{t.label}</span>
+                        </span>
+                        <span className={styles.typeDesc}>{t.desc}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <Field label="Subject" htmlFor="feedback-subject" required size="sm">
+                <Input
+                  id="feedback-subject"
+                  ref={subjectRef}
+                  inputSize="lg"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="One line — what happened, or what you need"
+                  maxLength={200}
+                  required
+                  disabled={submitting}
+                />
+              </Field>
+
+              <Field
+                label="Details"
+                htmlFor="feedback-details"
+                required
+                size="sm"
+                labelAction={<span className={styles.counter} aria-hidden="true">{details.length} / {MAX_DETAILS}</span>}
+              >
+                <Textarea
+                  id="feedback-details"
+                  rows={5}
+                  value={details}
+                  onChange={(e) => setDetails(e.target.value.slice(0, MAX_DETAILS))}
+                  placeholder={TYPES[type].placeholder}
+                  aria-describedby="feedback-details-counter"
+                  required
+                  disabled={submitting}
+                />
+              </Field>
+              {/* Visually hidden live region — separate from the visible
+                  counter above, which is never aria-live (it would announce
+                  on every keystroke). Only speaks up in the last 100 chars. */}
+              <span id="feedback-details-counter" className={styles.srOnly} role="status" aria-live="polite">
+                {remaining >= 0 && remaining <= 100 ? `${remaining} characters left` : ''}
+              </span>
+            </form>
           )}
         </div>
 
-        {/* Footer */}
-        {submitted && (
-          <div className={styles.footer}>
-            <div className={styles.footerActions}>
-              <button className={styles.ghostBtn} onClick={() => { setSubmitted(null); setError(null) }}>Send another</button>
-              <button className={styles.primaryBtn} onClick={handleClose}>Done</button>
-            </div>
+        {/* Outside the scroll area on purpose — a submit error must stay
+            visible next to the button the user is about to press again. */}
+        {error && !sent && <ErrorBanner tone="danger" className={styles.banner}>{error}</ErrorBanner>}
+
+        <div className={styles.footer}>
+          <p id="help-feedback-hint" className={styles.footerHint}>{hint}</p>
+          <div className={`${styles.footerActions} ${sent ? styles.footerActionsSent : styles.footerActionsForm}`}>
+            {sent ? (
+              <>
+                <Button variant="secondary" onClick={handleSendAnother}>Send another</Button>
+                <Button variant="primary" onClick={handleClose}>Done</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="secondary" onClick={handleClose}>Cancel</Button>
+                <Button
+                  type="submit"
+                  form="help-feedback-form"
+                  variant="primary"
+                  disabled={!ready || submitting}
+                  aria-describedby={hint ? 'help-feedback-hint' : undefined}
+                >
+                  {submitting ? 'Sending…' : 'Send'}
+                </Button>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

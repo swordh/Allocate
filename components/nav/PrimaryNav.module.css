@@ -113,6 +113,11 @@
   border-color: var(--text-primary);
 }
 
+.helpBtnOpen {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 @media (max-width: 768px) {
   .links {
     display: none;

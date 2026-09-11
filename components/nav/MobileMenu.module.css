@@ -118,6 +118,13 @@
   flex-shrink: 0;
 }
 
+/* .navRow is styled for an <a>; the Help & feedback row is a <button> and
+   needs these two resets to render identically. */
+.navRowBtn {
+  width: 100%;
+  text-align: left;
+}
+
 /* ── Booking filters (screen 08 Mobil, "FILTER") ─────────────────────────── */
 /* The whole row is the switch, as the design draws it — icon and label are
    inside the control, and the pill on the right is presentational. */
