@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { updateOperatorNotes } from './actions'
 import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
+import layoutStyles from '@/app/operator/layout.module.css'
 import styles from './detail.module.css'
 
 interface Subscription {
@@ -97,7 +98,9 @@ export default function CustomerDetailView({
   }
 
   return (
-    <div>
+    // legacyPad: interim, dropped when this screen is rebuilt to the phase 5
+    // design (see app/operator/layout.module.css).
+    <div className={layoutStyles.legacyPad}>
       <Link href="/operator/customers" className={styles.backLink}>
         <Glyph char="‹" />
         Customers
