@@ -20,34 +20,16 @@
   min-height: 0;
   overflow-y: auto;
   /* No vertical padding — matches app/(app)/app-layout.module.css; pages own
-     their own top spacing. See .legacyPad below for the four screens that
-     don't yet. */
+     their own top spacing. All four operator screens (customers list/detail,
+     feedback list/detail) are now rebuilt to the phase 5 design and own
+     their own spacing — the interim .legacyPad class this file used to carry
+     for the screens that didn't yet is gone; grep for `legacyPad` under
+     app/operator to confirm none remain before reintroducing it. */
   padding: 0 var(--page-margin);
 }
 
 @media (max-width: 768px) {
   .main {
     padding: 0 var(--page-margin-mobile);
-  }
-}
-
-/* Interim only. The four operator screens not yet rebuilt to the phase 5
-   design — customers list/detail, feedback list/detail — assumed the
-   vertical padding this file used to bake into `.main` (32px/48px base,
-   48px/64px from 1024px up — exact values from this file's pre-phase-5
-   version, see git history). Redesigned screens own their own top spacing,
-   so that padding isn't coming back to `.main` itself; instead each of the
-   four applies `.legacyPad` to its own root element and drops it the moment
-   that screen is rebuilt. Delete this class once the last of the four drops
-   it — grep for `legacyPad` under app/operator to confirm none remain. */
-.legacyPad {
-  padding-top: 32px;
-  padding-bottom: 48px;
-}
-
-@media (min-width: 1024px) {
-  .legacyPad {
-    padding-top: 48px;
-    padding-bottom: 64px;
   }
 }
