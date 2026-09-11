@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { OperatorFeedback, FeedbackNote, FeedbackStatus, FeedbackPriority, FeedbackType } from '@/types/operator'
 import { updateFeedbackStatus, updateFeedbackPriority, addFeedbackNote } from './actions'
+import layoutStyles from '@/app/operator/layout.module.css'
 import styles from './detail.module.css'
 
 interface Props {
@@ -90,7 +91,9 @@ export default function FeedbackDetailView({ item, notes: initialNotes }: Props)
   }
 
   return (
-    <div className={styles.page}>
+    // legacyPad: interim, dropped when this screen is rebuilt to the phase 5
+    // design (see app/operator/layout.module.css).
+    <div className={`${styles.page} ${layoutStyles.legacyPad}`}>
       <div className={styles.topBar}>
         <Link href="/operator/feedback" className={styles.backLink}>← Feedback</Link>
         <div className={styles.controls}>
