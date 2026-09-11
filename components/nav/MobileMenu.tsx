@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { deleteSession } from '@/actions/auth'
+import { useSupportContext } from '@/lib/support-context'
 import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
 import { useBookingFilters } from '@/hooks/useBookingFilters'
@@ -34,6 +35,7 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const { showCancelled, onlyMine, toggleCancelled, toggleOnlyMine } = useBookingFilters()
+  const { openHelp } = useSupportContext()
 
   // Auto-close when the route changes.
   useEffect(() => { setOpen(false) }, [pathname])
@@ -63,6 +65,16 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
   const isSettings = pathname.startsWith('/settings')
 
   const settingsItems = settingsItemsForRole(role)
+
+  // Closing this sheet re-focuses the hamburger (see the [open] effect above)
+  // before SupportModal mounts and steals focus into its subject field —
+  // SupportModal is mounted later in the tree (lib/providers.tsx), so its
+  // own focus-in effect runs after this cleanup. If that ever races, wrap
+  // this call in a queueMicrotask.
+  function handleOpenHelp() {
+    setOpen(false)
+    openHelp()
+  }
 
   function isTopActive(href: string) {
     return pathname.startsWith(href)
@@ -127,6 +139,22 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
                   </Link>
                 )
               })}
+            </div>
+
+            {/* Its own group, not a fourth row in .primaryNav — it's an
+                action (opens a modal), not a destination, and every other
+                non-navigating cluster in this sheet (Settings, Filter,
+                Signed in as) already gets its own group with a hairline
+                separator above it. */}
+            <div className={styles.group}>
+              <button
+                type="button"
+                className={`${styles.navRow} ${styles.navRowBtn}`}
+                onClick={handleOpenHelp}
+              >
+                <Icon name="help" size={20} strokeWidth={1.9} />
+                HELP &amp; FEEDBACK
+              </button>
             </div>
 
             {/* Contextual group: Settings screen shows the settings cards
