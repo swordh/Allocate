@@ -215,9 +215,9 @@
      with them. Everything still listed below has an owner outside bookings, so
      the block cannot be deleted until phase 5 reskins app/operator/** — and
      components/support/** is deliberately untouched (decision 2), so its
-     references outlive phase 5 too. Two of these live in .tsx inline styles,
-     not CSS modules: app/operator/customers/[companyId]/CustomerDetailView.tsx
-     and app/operator/feedback/FeedbackListView.tsx. A CSS-only grep misses them. */
+     references outlive phase 5 too. One of these lives in a .tsx inline
+     style, not a CSS module: app/operator/customers/[companyId]/CustomerDetailView.tsx.
+     A CSS-only grep misses it. */
   --white:                     var(--text-primary);    /* phase 5 (operator) + bookings/new + components/support */
   --black:                     var(--bg-page);         /* phase 5 (operator) + components/support */
   --on-surface-variant:        var(--text-secondary);  /* phase 5 (operator) */

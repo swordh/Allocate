@@ -3,7 +3,7 @@
 import { getVerifiedSession } from '@/lib/dal'
 import { adminDb } from '@/lib/firebase-admin'
 import { FieldValue } from 'firebase-admin/firestore'
-import type { FeedbackType, FeedbackStatus, FeedbackPriority } from '@/types/operator'
+import { FEEDBACK_TYPES, type FeedbackType, type FeedbackStatus, type FeedbackPriority } from '@/types/operator'
 
 export type SubmitFeedbackResult = { ticketId: string } | { error: string }
 
@@ -19,6 +19,11 @@ export async function submitFeedback(data: {
     // Validate
     if (!data.title.trim() || data.title.trim().length > 200) return { error: 'Invalid title' }
     if (!data.description.trim() || data.description.trim().length > 2000) return { error: 'Invalid description' }
+    // TypeScript's `type: FeedbackType` param isn't a runtime guard — the
+    // client can send any string. Without this check an unexpected value
+    // would fall through the prefix logic below (its ternary's else branch
+    // silently returns 'SUP') and get written straight into operatorFeedback.
+    if (!FEEDBACK_TYPES.includes(data.type)) return { error: 'Invalid type' }
 
     // Fetch user name + company name in parallel
     const [userSnap, companySnap] = await Promise.all([
