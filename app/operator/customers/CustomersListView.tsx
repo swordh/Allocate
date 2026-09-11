@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SEGMENTS, SEGMENT_LABELS, type CompanyRow, type Segment } from '@/types/operator'
+import layoutStyles from '@/app/operator/layout.module.css'
 import styles from './customers.module.css'
 
 interface CustomersListViewProps {
@@ -60,7 +61,9 @@ export default function CustomersListView({
   }
 
   return (
-    <div>
+    // legacyPad: interim, dropped when this screen is rebuilt to the phase 5
+    // design (see app/operator/layout.module.css).
+    <div className={layoutStyles.legacyPad}>
       <div className={styles.segments}>
         {SEGMENTS.map((s) => (
           <Link

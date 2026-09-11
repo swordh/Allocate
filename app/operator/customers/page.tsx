@@ -73,7 +73,13 @@ export default async function CustomersPage({
       hadTrial: data.hadTrial ?? false,
       equipmentCount: stats?.equipmentCount ?? null,
       bookingsCreated: stats?.bookingsCreated ?? null,
+      // bookingsCancelled and memberCount (below) are populated here but
+      // deliberately not rendered by CustomersListView yet — wiring them
+      // into the TEAM column and the table is the next PR; the writers and
+      // backfill (this PR) must ship first.
+      bookingsCancelled: stats?.bookingsCancelled ?? null,
       lastBookingAt: stats ? isoOrNull(stats.lastBookingAt) : null,
+      memberCount: stats?.memberCount ?? null,
       hasStats: stats !== undefined,
     }
   })

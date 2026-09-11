@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { OperatorFeedback, FeedbackType, FeedbackStatus, FeedbackPriority } from '@/types/operator'
 import { updateFeedbackStatus, createFeedback } from './actions'
+import layoutStyles from '@/app/operator/layout.module.css'
 import styles from './feedback.module.css'
 
 interface FeedbackListViewProps {
@@ -113,7 +114,9 @@ export default function FeedbackListView({ items, activeType, activeStatus }: Fe
   }
 
   return (
-    <div>
+    // legacyPad: interim, dropped when this screen is rebuilt to the phase 5
+    // design (see app/operator/layout.module.css).
+    <div className={layoutStyles.legacyPad}>
       <div className={styles.header}>
         <h1 className={styles.pageTitle}>Feedback</h1>
         <button className={styles.logBtn} onClick={() => setShowForm((v) => !v)}>

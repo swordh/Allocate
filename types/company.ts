@@ -31,6 +31,7 @@ export interface CompanyStats {
   bookingsCreated: number         // lifetime, never decremented
   bookingsCancelled: number       // lifetime, never decremented
   lastBookingAt: string | null    // ISO string
+  memberCount: number             // companies/{id}/members subcollection size
   updatedAt: string               // ISO string
 }
 
