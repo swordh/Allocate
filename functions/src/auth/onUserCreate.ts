@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions/v2';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
+import { memberCountDelta } from '../companyStats';
 
 /**
  * Triggered when a new Firebase Auth user is created.
@@ -66,6 +67,12 @@ export const onUserCreate = functions
     try {
       await db.runTransaction(async (tx) => {
         // Guard: don't create duplicate member
+        //
+        // This `return` is INSIDE the transaction callback — it commits an
+        // empty transaction rather than aborting the whole runTransaction
+        // call. That's why the increment below sits after this guard rather
+        // than, say, wrapping the whole callback: placed here, it only ever
+        // runs on the branch that actually creates a new member doc.
         const existingMember = await tx.get(memberRef);
         if (existingMember.exists) {
           logger.warn('onUserCreate: member already exists, skipping', {
@@ -74,6 +81,8 @@ export const onUserCreate = functions
           });
           return;
         }
+
+        memberCountDelta(tx, db, companyId, 1);
 
         // 1. Create member doc under company
         tx.set(memberRef, {

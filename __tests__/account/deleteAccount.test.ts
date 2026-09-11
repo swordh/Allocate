@@ -35,6 +35,7 @@ const {
   mockBatchCommit,
   mockBatchDelete,
   mockBatchUpdate,
+  mockBatchSet,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie:  vi.fn(),
   mockCookieGet:            vi.fn(),
@@ -47,13 +48,30 @@ const {
   mockInvitationsGet:       vi.fn(),
   mockBatchCommit:          vi.fn(),
   mockBatchDelete:          vi.fn(),
-  mockBatchUpdate:          vi.fn(),
+  // Simulates real Firestore .update() semantics for one sentinel path used
+  // by the "stale membership pointer" regression test below: .update()
+  // throws NOT_FOUND against a document that doesn't exist, exactly like the
+  // real SDK does, while .set() (mockBatchSet) never throws regardless of
+  // existence. No other test in this file uses 'companies/company-orphaned',
+  // so this is safe to bake into the shared mock rather than wire per-test.
+  mockBatchUpdate: vi.fn((ref: { path?: string } = {}) => {
+    if (ref.path === 'companies/company-orphaned') {
+      throw new Error('5 NOT_FOUND: No document to update: companies/company-orphaned')
+    }
+  }),
+  mockBatchSet:             vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 vi.mock('firebase-admin/firestore', () => ({
-  FieldValue: { serverTimestamp: () => 'server-timestamp' },
+  FieldValue: {
+    serverTimestamp: () => 'server-timestamp',
+    // memberCountDelta (lib/companyStats.ts, exercised via deleteAccount)
+    // calls FieldValue.increment — real module, not mocked, so this must
+    // exist for that import to resolve.
+    increment: (n: number) => ({ __increment: n }),
+  },
 }))
 
 vi.mock('@/lib/firebase-admin', () => {
@@ -128,7 +146,7 @@ vi.mock('@/lib/firebase-admin', () => {
   const docMock = vi.fn((path: string) => makeRef(path))
 
   const batchMock = vi.fn(() => ({
-    set:    vi.fn(),
+    set:    mockBatchSet,
     update: mockBatchUpdate,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
@@ -574,5 +592,129 @@ describe('deleteAccount — invitation anonymisation', () => {
 
     expect(result.error).toBeUndefined()
     expect(mockBatchDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 'inv-5' }))
+  })
+})
+
+// ── memberCount decrement ──────────────────────────────────────────────────────
+//
+// deleteAccount deletes companies/{companyId}/members/{uid} for every company
+// the deleted user belongs to (GDPR Art. 17), and must decrement
+// companies/{companyId}.stats.memberCount via memberCountDelta (lib/companyStats.ts)
+// immediately after — mirrors removeMember's identical requirement
+// (actions/team.ts, __tests__/team/removeMember.test.ts) for the same reason:
+// a partial batch failure must never leave the member gone but the count stale.
+//
+// memberCountDelta uses `.set(..., { merge: true })`, never `.update()`. This
+// matters specifically here: `companyIds` is derived from the deleted user's
+// own `memberships` documents, which can point at a company doc that no
+// longer exists (a stale pointer — the same class of orphan the equipment-
+// stats PR was cleaning up, just in the other direction). `.update()` throws
+// on a missing document and would fail the entire GDPR-erasure batch over a
+// denormalized counter that has no `_meta` backing and is not authoritative
+// for anything.
+
+describe('deleteAccount — memberCount decrement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCollectionGroupGet.mockReset()
+    mockMembershipsGet.mockReset()
+    mockUnitsGroupGet.mockReset()
+    mockInvitationsGet.mockReset()
+
+    mockDeleteSession.mockResolvedValue(undefined)
+    mockDeleteUser.mockResolvedValue(undefined)
+    mockBatchCommit.mockResolvedValue(undefined)
+    mockUnitsGroupGet.mockResolvedValue({ docs: [] })
+    mockInvitationsGet.mockResolvedValue({ docs: [] })
+    mockCollectionGroupGet.mockResolvedValue(makeCountSnap(2))
+
+    // Single company, user is crew — the sole-admin guard is not what this
+    // test is about.
+    mockMembershipsGet.mockResolvedValue(
+      makeMembershipsSnap([{ companyId: 'company-A', role: 'crew' }]),
+    )
+  })
+
+  it('decrements companies/{companyId}.stats.memberCount via a merge-set, for each company anonymised', async () => {
+    stubSession()
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'companies/company-A' }),
+      expect.objectContaining({
+        stats: expect.objectContaining({
+          memberCount: expect.anything(),
+          updatedAt: expect.anything(),
+        }),
+      }),
+      expect.objectContaining({ merge: true }),
+    )
+
+    // Never via .update() — see the block comment above for why that would
+    // be unsafe here specifically.
+    expect(mockBatchUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'companies/company-A' }),
+      expect.objectContaining({ 'stats.memberCount': expect.anything() }),
+    )
+  })
+
+  it('decrements memberCount once per company for a user in multiple companies', async () => {
+    stubSession()
+
+    mockMembershipsGet.mockResolvedValue(
+      makeMembershipsSnap([
+        { companyId: 'company-A', role: 'crew' },
+        { companyId: 'company-B', role: 'crew' },
+      ]),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    for (const companyId of ['company-A', 'company-B']) {
+      expect(mockBatchSet).toHaveBeenCalledWith(
+        expect.objectContaining({ path: `companies/${companyId}` }),
+        expect.objectContaining({ stats: expect.objectContaining({ memberCount: expect.anything() }) }),
+        expect.objectContaining({ merge: true }),
+      )
+    }
+  })
+
+  it('does not throw when a membership points at a company document that no longer exists', async () => {
+    // The stale-pointer scenario the coordinator flagged: `companyIds` comes
+    // from the user's own `memberships` docs, so a dangling reference to a
+    // deleted company must not turn "delete my account" into a hard failure.
+    //
+    // This is made real, not vacuous: mockBatchUpdate (see the vi.hoisted()
+    // block at the top of this file) throws NOT_FOUND specifically for
+    // 'companies/company-orphaned', the way the real Firestore SDK throws
+    // when .update() targets a document that doesn't exist. mockBatchSet
+    // never throws, regardless of existence — matching real merge-set
+    // semantics. So this test fails if memberCountDelta ever regresses to
+    // .update(), and passes only because it currently calls .set().
+    //
+    // Verified by hand: temporarily reverted memberCountDelta (lib/companyStats.ts)
+    // to tx.update(...) with the old dot-path payload, re-ran this test file —
+    // this test went red with the NOT_FOUND error surfacing as deleteAccount's
+    // caught 'Failed to delete account', while every other test in the file
+    // stayed green. Reverted back to the merge-set implementation afterward.
+    stubSession()
+
+    mockMembershipsGet.mockResolvedValue(
+      makeMembershipsSnap([{ companyId: 'company-orphaned', role: 'crew' }]),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'companies/company-orphaned' }),
+      expect.objectContaining({ stats: expect.objectContaining({ memberCount: expect.anything() }) }),
+      expect.objectContaining({ merge: true }),
+    )
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
   })
 })

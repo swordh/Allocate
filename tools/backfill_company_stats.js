@@ -1,9 +1,12 @@
 /**
  * Backfill: recompute the derived stats map on every company document.
  *
- * Writes companies/{id}.stats and companies/{id}/_meta/equipmentCount from the
- * actual subcollection contents, as absolute values. Both land in one batch per
- * company, so a run can never leave the counter and the mirror disagreeing.
+ * Writes companies/{id}.stats (equipmentCount, bookingsCreated,
+ * bookingsCancelled, lastBookingAt, memberCount) and
+ * companies/{id}/_meta/equipmentCount from the actual subcollection contents,
+ * as absolute values. Both land in one batch per company, so a run can never
+ * leave the counter and the mirror disagreeing. memberCount has no _meta
+ * counterpart — it has exactly one home, unlike equipmentCount.
  *
  * RUN ORDER MATTERS. The stats writers must already be deployed to the target
  * environment. FieldValue.increment treats a missing field as 0, so deploying
@@ -119,11 +122,12 @@ const db = getFirestore();
 async function computeStats(companyId) {
   const company = db.collection('companies').doc(companyId);
 
-  const [equipment, bookings, cancelled, lastBooking] = await Promise.all([
+  const [equipment, bookings, cancelled, lastBooking, members] = await Promise.all([
     company.collection('equipment').where('active', '==', true).count().get(),
     company.collection('bookings').count().get(),
     company.collection('bookings').where('status', '==', 'cancelled').count().get(),
     company.collection('bookings').orderBy('createdAt', 'desc').limit(1).get(),
+    company.collection('members').count().get(),
   ]);
 
   return {
@@ -131,6 +135,7 @@ async function computeStats(companyId) {
     bookingsCreated: bookings.data().count,
     bookingsCancelled: cancelled.data().count,
     lastBookingAt: lastBooking.empty ? null : lastBooking.docs[0].get('createdAt'),
+    memberCount: members.data().count,
   };
 }
 
@@ -149,6 +154,7 @@ async function readStored(companyId) {
       bookingsCreated: stats.bookingsCreated ?? null,
       bookingsCancelled: stats.bookingsCancelled ?? null,
       lastBookingAt: stats.lastBookingAt ?? null,
+      memberCount: stats.memberCount ?? null,
     },
     counter: counterSnap.exists ? counterSnap.get('count') : null,
     name: companySnap.get('name') || '(unnamed)',
@@ -161,7 +167,7 @@ const ts = (v) => (v && typeof v.toDate === 'function' ? v.toDate().toISOString(
 
 function diff(stored, truth) {
   const out = [];
-  for (const key of ['equipmentCount', 'bookingsCreated', 'bookingsCancelled']) {
+  for (const key of ['equipmentCount', 'bookingsCreated', 'bookingsCancelled', 'memberCount']) {
     if (stored.stats[key] !== truth[key]) {
       out.push(`${key}: ${stored.stats[key] ?? '—'} → ${truth[key]}`);
     }
@@ -196,6 +202,7 @@ async function write(companyId, truth) {
         // field from inequality queries, so an omitted value would make the
         // company invisible to the "No bookings 30 d" segment.
         lastBookingAt: truth.lastBookingAt ?? null,
+        memberCount: truth.memberCount,
         updatedAt: FieldValue.serverTimestamp(),
       },
     },
