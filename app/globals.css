@@ -206,32 +206,32 @@
      DO NOT add new usages of anything below this line.
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* Removed when their last screen is reskinned — phase noted per token.
-     Phase 3 shipped 2026-08-11: --on-surface, --outline-variant, --font-subnav,
-     --font-body and --booking-pad-v had no users left once the equipment screen
-     was rebuilt and are gone.
-     Phase 4 shipped the bookings screens and took --rule, --tertiary, --repair,
-     --surface-container-high, --font-booking-title, --dim and --booking-pad-h
-     with them. Everything still listed below has an owner outside bookings, so
-     the block cannot be deleted until phase 5 reskins app/operator/** — and
-     components/support/** is deliberately untouched (decision 2), so its
-     references outlive phase 5 too. One of these lives in a .tsx inline
-     style, not a CSS module: app/operator/customers/[companyId]/CustomerDetailView.tsx.
-     A CSS-only grep misses it. */
-  --white:                     var(--text-primary);    /* phase 5 (operator) + bookings/new + components/support */
-  --black:                     var(--bg-page);         /* phase 5 (operator) + components/support */
-  --on-surface-variant:        var(--text-secondary);  /* phase 5 (operator) */
-  --outline:                   var(--text-tertiary);   /* phase 5 (operator) + components/support */
-  --mid:                       var(--text-placeholder);/* components/support */
-  --secondary:                 var(--text-bright);     /* phase 5 (operator) + bookings-layout */
-  --error:                     var(--danger);          /* phase 5 (operator) + components/support */
-  --on-primary:                var(--btn-primary-fg);  /* phase 5 (operator) + components/support */
-  --surface-container-lowest:  var(--surface);         /* phase 5 (operator) + components/support */
-  --surface-container-low:     var(--surface-raised);  /* phase 5 (operator) + components/support */
-  --surface-container:         var(--surface-raised);  /* components/support */
+  /* Removed when their last screen is reskinned.
+     Phase 3 (2026-08-11) took --on-surface, --outline-variant, --font-subnav,
+     --font-body and --booking-pad-v. Phase 4 took --rule, --tertiary,
+     --repair, --surface-container-high, --font-booking-title, --dim and
+     --booking-pad-h.
+     Phase 5 (2026-09-11) reskinned app/operator/** and took the three it
+     solely owned: --on-surface-variant, --secondary and --font-stat.
 
-  /* Old type scale — kept as a literal, owner noted. */
-  --font-stat:          42px;   /* phase 5 (operator) */
+     Everything left below is owned ONLY by components/support/**, which
+     decision 2 deliberately leaves untouched — so this block cannot shrink
+     further until the support surface is redesigned, and at that point it
+     goes away entirely.
+
+     No usage remains in a .tsx inline style. Earlier revisions of this
+     comment warned about that trap because operator carried two; both are
+     gone. Grep *.css, *.tsx AND *.ts before trusting a count either way —
+     that is how the trap worked the first time. */
+  --white:                     var(--text-primary);
+  --black:                     var(--bg-page);
+  --outline:                   var(--text-tertiary);
+  --mid:                       var(--text-placeholder);
+  --error:                     var(--danger);
+  --on-primary:                var(--btn-primary-fg);
+  --surface-container-lowest:  var(--surface);
+  --surface-container-low:     var(--surface-raised);
+  --surface-container:         var(--surface-raised);
 }
 
 *, *::before, *::after {
