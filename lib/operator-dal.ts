@@ -20,6 +20,23 @@ export interface OperatorSession {
  * Wrapped in React.cache — multiple Server Components calling this in the
  * same render pass incur only one Admin SDK verification call.
  */
+/**
+ * Re-throws Next.js's internal redirect signal so it can propagate to the
+ * framework instead of being swallowed by a server action's try/catch.
+ * `redirect()` throws an error carrying a `NEXT_REDIRECT` digest in
+ * production; the test mock throws `Error('REDIRECT:…')` instead — both
+ * forms have to pass through untouched.
+ *
+ * Previously duplicated verbatim in app/operator/feedback/actions.ts,
+ * app/operator/feedback/[id]/actions.ts, and
+ * app/operator/customers/[companyId]/actions.ts — hoisted here as the one copy.
+ */
+export function rethrowRedirect(err: unknown): void {
+  const digest = (err as { digest?: string }).digest ?? ''
+  const msg = err instanceof Error ? err.message : ''
+  if (digest.startsWith('NEXT_REDIRECT') || msg.startsWith('REDIRECT:')) throw err
+}
+
 export const getOperatorSession = cache(async (): Promise<OperatorSession> => {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get('__session')?.value
