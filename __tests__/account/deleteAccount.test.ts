@@ -31,8 +31,10 @@ const {
   mockMembershipsGet,       // adminDb.collection('users/{uid}/memberships').get()
   mockCollectionGroupGet,   // collectionGroup('memberships') admin count
   mockUnitsGroupGet,        // collectionGroup('units') during anonymisation
+  mockInvitationsGet,       // adminDb.collection('companies/{id}/invitations').where(...).get()
   mockBatchCommit,
   mockBatchDelete,
+  mockBatchUpdate,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie:  vi.fn(),
   mockCookieGet:            vi.fn(),
@@ -42,8 +44,10 @@ const {
   mockMembershipsGet:       vi.fn(),
   mockCollectionGroupGet:   vi.fn(),
   mockUnitsGroupGet:        vi.fn(),
+  mockInvitationsGet:       vi.fn(),
   mockBatchCommit:          vi.fn(),
   mockBatchDelete:          vi.fn(),
+  mockBatchUpdate:          vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -78,14 +82,37 @@ vi.mock('@/lib/firebase-admin', () => {
   emptyChain['where'] = () => emptyChain
   emptyChain['get'] = async () => ({ docs: [] })
 
-  const collectionMock = vi.fn((path: string) => ({
-    path,
-    doc: (id?: string) => makeRef(id ? `${path}/${id}` : `${path}/auto-id`),
-    where: emptyChain['where'],
-    get: path.endsWith('/memberships')
-      ? mockMembershipsGet
-      : (emptyChain['get'] as () => Promise<{ docs: [] }>),
-  }))
+  // companies/{id}/invitations is queried four separate times per company
+  // (acceptedBy, invitedBy, revokedBy, then email+status) — each .where()
+  // call narrows a fresh filter object, and .get() hands the accumulated
+  // filters to mockInvitationsGet so a test can route by which query ran,
+  // the same way collectionGroupMock routes 'units' vs 'memberships' by
+  // companyId above.
+  function makeInvitationsChain(companyId: string) {
+    const filters: Record<string, unknown> = {}
+    const chain: Record<string, unknown> = {}
+    chain['where'] = (field: string, _op: string, val: unknown) => {
+      filters[field] = val
+      return chain
+    }
+    chain['get'] = () => mockInvitationsGet({ companyId, ...filters })
+    return chain
+  }
+
+  const collectionMock = vi.fn((path: string) => {
+    if (path.endsWith('/invitations')) {
+      const companyId = path.split('/')[1]
+      return makeInvitationsChain(companyId)
+    }
+    return {
+      path,
+      doc: (id?: string) => makeRef(id ? `${path}/${id}` : `${path}/auto-id`),
+      where: emptyChain['where'],
+      get: path.endsWith('/memberships')
+        ? mockMembershipsGet
+        : (emptyChain['get'] as () => Promise<{ docs: [] }>),
+    }
+  })
 
   function makeRef(path: string) {
     return {
@@ -102,7 +129,7 @@ vi.mock('@/lib/firebase-admin', () => {
 
   const batchMock = vi.fn(() => ({
     set:    vi.fn(),
-    update: vi.fn(),
+    update: mockBatchUpdate,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
   }))
@@ -206,6 +233,7 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     mockCollectionGroupGet.mockReset()
     mockMembershipsGet.mockReset()
     mockUnitsGroupGet.mockReset()
+    mockInvitationsGet.mockReset()
 
     // Re-establish defaults after the targeted resets above.
     mockDeleteSession.mockResolvedValue(undefined)
@@ -213,6 +241,8 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     mockBatchCommit.mockResolvedValue(undefined)
     // No units in any company by default — anonymisation has nothing to rewrite.
     mockUnitsGroupGet.mockResolvedValue({ docs: [] })
+    // No invitations to anonymise/delete by default.
+    mockInvitationsGet.mockResolvedValue({ docs: [] })
     // Default collectionGroup count: 2 admins (safe, does not block).
     // mockCollectionGroupGet receives { _companyId } — default ignores it and
     // always returns 2 so single-company tests stay simple.
@@ -366,5 +396,183 @@ describe('deleteAccount — multi-company sole-admin guard (#90)', () => {
     // Session must not be deleted when the guard itself failed.
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+})
+
+// ── Invitation anonymisation ───────────────────────────────────────────────────
+//
+// companies/{cid}/invitations carries this user's PII in three roles
+// (acceptedBy, invitedBy/invitedByName, revokedBy) that must be nulled, plus
+// pending invitations still addressed TO the deleted user, which are deleted
+// outright (subcollection doc + top-level invitations/{token} mirror) rather
+// than anonymised, since the invite can never be accepted after the account
+// is gone.
+
+/** Build a minimal invitation doc as returned by an invitations query. */
+function makeInvitationDoc(id: string, data: Record<string, unknown>) {
+  return {
+    id,
+    data: () => data,
+    ref: { path: `companies/company-A/invitations/${id}`, id },
+  }
+}
+
+describe('deleteAccount — invitation anonymisation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCollectionGroupGet.mockReset()
+    mockMembershipsGet.mockReset()
+    mockUnitsGroupGet.mockReset()
+    mockInvitationsGet.mockReset()
+
+    mockDeleteSession.mockResolvedValue(undefined)
+    mockDeleteUser.mockResolvedValue(undefined)
+    mockBatchCommit.mockResolvedValue(undefined)
+    mockUnitsGroupGet.mockResolvedValue({ docs: [] })
+    mockCollectionGroupGet.mockResolvedValue(makeCountSnap(2))
+
+    // Single company, user is crew — the sole-admin guard is not what these
+    // tests are about, so keep it out of the way.
+    mockMembershipsGet.mockResolvedValue(
+      makeMembershipsSnap([{ companyId: 'company-A', role: 'crew' }]),
+    )
+  })
+
+  it('nulls email and acceptedBy on the invitation that brought this user in', async () => {
+    stubSession()
+
+    mockInvitationsGet.mockImplementation(({ acceptedBy }: { acceptedBy?: string }) => {
+      if (acceptedBy === 'user-1') {
+        return Promise.resolve({
+          docs: [makeInvitationDoc('inv-1', { email: 'user@example.com', acceptedBy: 'user-1', status: 'accepted' })],
+        })
+      }
+      return Promise.resolve({ docs: [] })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-1' }),
+      { email: null, acceptedBy: null },
+    )
+  })
+
+  it('nulls invitedBy and invitedByName but leaves the recipient email untouched', async () => {
+    stubSession()
+
+    mockInvitationsGet.mockImplementation(({ invitedBy }: { invitedBy?: string }) => {
+      if (invitedBy === 'user-1') {
+        return Promise.resolve({
+          docs: [
+            makeInvitationDoc('inv-2', {
+              email: 'someone-else@example.com',
+              invitedBy: 'user-1',
+              invitedByName: 'Deleted User',
+              status: 'pending',
+            }),
+          ],
+        })
+      }
+      return Promise.resolve({ docs: [] })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      { invitedBy: null, invitedByName: null },
+    )
+    // The recipient's own email must never be touched by this query.
+    expect(mockBatchUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      expect.objectContaining({ email: expect.anything() }),
+    )
+  })
+
+  it('nulls revokedBy', async () => {
+    stubSession()
+
+    mockInvitationsGet.mockImplementation(({ revokedBy }: { revokedBy?: string }) => {
+      if (revokedBy === 'user-1') {
+        return Promise.resolve({
+          docs: [makeInvitationDoc('inv-3', { revokedBy: 'user-1', status: 'revoked' })],
+        })
+      }
+      return Promise.resolve({ docs: [] })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-3' }),
+      { revokedBy: null },
+    )
+  })
+
+  it('deletes a still-pending invitation addressed to the deleted user, plus its top-level mirror', async () => {
+    stubSession() // session.email = 'user@example.com'
+
+    mockInvitationsGet.mockImplementation(
+      ({ email, status }: { email?: string; status?: string }) => {
+        if (email === 'user@example.com' && status === 'pending') {
+          return Promise.resolve({
+            docs: [
+              makeInvitationDoc('inv-4', {
+                email: 'user@example.com',
+                status: 'pending',
+                token: 'the-token-123',
+              }),
+            ],
+          })
+        }
+        return Promise.resolve({ docs: [] })
+      },
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // Subcollection doc deleted outright (not anonymised).
+    expect(mockBatchDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 'inv-4' }))
+    // Top-level mirror, addressed by token, deleted too.
+    expect(mockBatchDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'invitations/the-token-123' }),
+    )
+  })
+
+  it('matches the pending invitation regardless of the session email casing', async () => {
+    // Firebase Auth's email claim casing is not guaranteed to match the
+    // lowercased Invitation.email written by normalizeEmail() — this is
+    // exactly the ambiguity flagged during review. Asserting the match still
+    // succeeds with a mixed-case session email is the regression test for
+    // that normalisation.
+    mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-1',
+      email:           'User@Example.com',
+      activeCompanyId: 'company-A',
+      role:            'crew',
+      email_verified:  true,
+    })
+
+    mockInvitationsGet.mockImplementation(
+      ({ email, status }: { email?: string; status?: string }) => {
+        if (email === 'user@example.com' && status === 'pending') {
+          return Promise.resolve({
+            docs: [makeInvitationDoc('inv-5', { email: 'user@example.com', status: 'pending', token: 'tok-5' })],
+          })
+        }
+        return Promise.resolve({ docs: [] })
+      },
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockBatchDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 'inv-5' }))
   })
 })

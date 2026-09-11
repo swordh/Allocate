@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { normalizeEmail } from '@/lib/invite-recipients'
 import { stripe } from '@/lib/stripe'
 import { deleteSession } from './auth'
 
@@ -84,6 +85,15 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       }
     }
 
+    async function addDelete(ref: FirebaseFirestore.DocumentReference) {
+      batch.delete(ref)
+      opCount++
+      if (opCount >= BATCH_LIMIT) {
+        batch = await commitAndReset(batch)
+        opCount = 0
+      }
+    }
+
     for (const companyId of companyIds) {
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const equipmentRef = adminDb.collection(`companies/${companyId}/equipment`)
@@ -122,6 +132,61 @@ export async function deleteAccount(): Promise<{ error?: string }> {
         if (data.deactivatedBy === uid) updates.deactivatedBy = null
         if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
       }
+
+      // Invitations: this user's PII shows up on invitation docs in three
+      // distinct roles, each requiring a different field to be cleared.
+      // Anonymise (like bookings/equipment above), never delete — the record
+      // that an invitation happened is company history worth keeping.
+      const invitationsRef = adminDb.collection(`companies/${companyId}/invitations`)
+
+      // Invitations: acceptedBy — the invitation that brought this user IN.
+      // The fact that someone accepted survives; the accepted address does not.
+      const byAcceptedBy = await invitationsRef.where('acceptedBy', '==', uid).get()
+      for (const doc of byAcceptedBy.docs) await addOp(doc.ref, { email: null, acceptedBy: null })
+
+      // Invitations: invitedBy — invitations this user SENT to someone else.
+      // invitedByName is this user's own display name, so it's their PII even
+      // though the document is about a different recipient. Their `email`
+      // field belongs to that other person, not the deleted user — leave it.
+      const byInvitedBy = await invitationsRef.where('invitedBy', '==', uid).get()
+      for (const doc of byInvitedBy.docs) await addOp(doc.ref, { invitedBy: null, invitedByName: null })
+
+      // Invitations: revokedBy
+      const byRevokedBy = await invitationsRef.where('revokedBy', '==', uid).get()
+      for (const doc of byRevokedBy.docs) await addOp(doc.ref, { revokedBy: null })
+
+      // Pending invitations still addressed TO the deleted user: the invite
+      // can never be accepted now, so both the subcollection doc and its
+      // top-level invitations/{token} mirror (actions/team.ts ~line 199-217 —
+      // the mirror doc id IS the token, read back here from the invite doc's
+      // `token` field) are deleted outright rather than anonymised. The
+      // mirror is resolvable by anyone holding the invite link, so leaving it
+      // behind would keep the email readable outside the company entirely.
+      // Matching relies on Invitation.email being written lowercased via
+      // normalizeEmail() (actions/team.ts) — session.email is normalized the
+      // same way here so the comparison doesn't depend on how Firebase Auth
+      // happens to case the token's email claim.
+      if (session.email) {
+        const normalizedEmail = normalizeEmail(session.email)
+        const pendingToUser = await invitationsRef
+          .where('email', '==', normalizedEmail)
+          .where('status', '==', 'pending')
+          .get()
+        for (const doc of pendingToUser.docs) {
+          await addDelete(doc.ref)
+          const token = doc.data().token as string | undefined
+          if (token) await addDelete(adminDb.doc(`invitations/${token}`))
+        }
+      }
+
+      // Company member doc: carries this user's name/email (written by
+      // acceptInvitation, onUserCreate and actions/auth.ts) and is readable by
+      // every remaining company member via the firestore.rules wildcard
+      // `companies/{companyId}/{document=**}`. Leaving it behind after account
+      // deletion keeps that PII exposed — GDPR Art. 17. Deleting a doc that
+      // doesn't exist is a no-op in Firestore, so no existence check is needed
+      // here; don't add one.
+      await addDelete(adminDb.doc(`companies/${companyId}/members/${uid}`))
 
       // Company doc: createdBy
       const companySnap = await companyRef.get()

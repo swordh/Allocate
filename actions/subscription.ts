@@ -174,6 +174,9 @@ export async function createPlanChangeSession(
     // server-side before the portal ever opens — the portal itself has no
     // idea about equipment/member counts.
     const targetLimits = PLAN_LIMITS[plan]
+    // Note: this count relies on deleteAccount removing companies/{cid}/members/{uid}
+    // when a user leaves. Before that fix shipped, orphaned member docs could
+    // inflate this count and block a legitimate downgrade.
     const [equipmentCounterSnap, membersCountSnap] = await Promise.all([
       adminDb.doc(`companies/${companyId}/_meta/equipmentCount`).get(),
       adminDb.collection(`companies/${companyId}/members`).count().get(),
