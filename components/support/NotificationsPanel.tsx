@@ -20,6 +20,15 @@ export default function NotificationsPanel() {
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [notificationsOpen, closeNotifications])
 
+  // Own Escape handler — support-context's global one was removed so that
+  // closing SupportModal can no longer also close this panel (or vice versa).
+  useEffect(() => {
+    if (!notificationsOpen) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeNotifications() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [notificationsOpen, closeNotifications])
+
   return (
     <div
       ref={panelRef}

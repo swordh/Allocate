@@ -1,28 +1,44 @@
-/* Backdrop */
-.backdrop {
+/* Help & feedback modal — design_handoff_help_feedback, screen 29.
+   TRAP: --surface-modal (#111113) is NOT this design's modal surface — that
+   hex belongs to a different screen. This modal's card is #161618, which is
+   --surface-raised. Do not "fix" the surface below to --surface-modal. */
+
+.overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  z-index: var(--z-overlay);
+  background: var(--overlay-scrim); /* 0.65 — design specifies 0.72, but every other overlay in the app uses 0.65 */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 40px;
+  animation: fadeIn 0.15s ease;
 }
 
-/* Modal container */
-.modal {
-  position: relative;
-  width: min(540px, 100%);
-  max-height: calc(100vh - 80px);
-  background: var(--surface-container-lowest);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.7);
+.dialog {
+  /* 620px has no token and only this one screen wants it — do not promote
+     it to a --modal-width-* variable in globals.css. */
+  width: 620px;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  /* No shadow token at this size/spread — one-off literal, allowed by design. */
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-height: 0;
   animation: popIn 0.15s ease;
+}
+
+.grabHandle {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes popIn {
@@ -30,453 +46,429 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Header */
+/* ── Header ────────────────────────────────────────────────────────────── */
+
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 22px;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
   flex-shrink: 0;
+  padding: 26px 28px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
-.headerTitle {
-  font-size: 0.875rem;
-  font-weight: 900;
-  letter-spacing: -0.01em;
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
-  color: var(--white);
+  color: var(--accent);
+}
+
+.title {
+  margin-top: 10px;
+  font-family: var(--font-heading);
+  /* No token at this size — a single screen doesn't earn a new scale step. */
+  font-size: 28px;
+  font-weight: var(--fw-display);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-display);
+  line-height: 1;
+  color: var(--text-primary);
 }
 
 .closeBtn {
-  background: none;
-  border: none;
-  color: rgba(240, 237, 232, 0.4);
-  cursor: pointer;
-  padding: 2px;
-  line-height: 1;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
-  transition: color 0.1s;
+  justify-content: center;
+  border: 1px solid var(--border-medium);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
 }
 
 .closeBtn:hover {
-  color: var(--white);
+  /* Design: rgba(255,255,255,0.06) — --hairline is the only token at that
+     exact value (it's normally a border colour, reused here for its alpha). */
+  background: var(--hairline);
+  color: var(--text-primary);
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  border-bottom: 1px solid rgba(71, 71, 71, 0.2);
-  background: rgba(0, 0, 0, 0.3);
-  flex-shrink: 0;
-}
+/* ── Body ──────────────────────────────────────────────────────────────── */
 
-.tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 14px 10px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(240, 237, 232, 0.4);
-  background: none;
-  border: none;
-  border-right: 1px solid rgba(71, 71, 71, 0.2);
-  cursor: pointer;
-  position: relative;
-  transition: color 0.1s, background 0.1s;
-}
-
-.tab:last-child {
-  border-right: none;
-}
-
-.tab:hover {
-  color: var(--white);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.tabActive {
-  color: var(--white);
-  background: var(--surface-container-lowest);
-}
-
-.tabActive::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: var(--accent);
-}
-
-.tabNum {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.5625rem;
-  color: rgba(255, 255, 255, 0.2);
-  margin-left: 2px;
-}
-
-/* Body (scrollable) */
 .body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 22px 22px 8px;
+  margin-top: 22px;
+  border-top: 1px solid var(--hairline);
+  padding: 24px 28px 28px;
 }
 
-/* Lead text */
-.lead {
-  font-size: 0.8125rem;
-  color: var(--mid);
-  line-height: 1.6;
-  margin: 0 0 4px;
-}
-
-/* Form fields */
-.field {
-  display: block;
-  margin-top: 18px;
-}
-
-.fieldLabel {
-  display: block;
-  font-size: 0.5625rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--mid);
-  margin-bottom: 6px;
-}
-
-.input,
-.select {
-  width: 100%;
-  background: var(--surface-container);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--white);
-  padding: 10px 12px;
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-size: 0.875rem;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.input:focus,
-.select:focus {
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.textarea {
-  width: 100%;
-  background: var(--surface-container);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--white);
-  padding: 10px 12px;
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-size: 0.875rem;
-  outline: none;
-  transition: border-color 0.15s;
-  min-height: 120px;
-  resize: vertical;
-  line-height: 1.5;
-}
-
-.textarea:focus {
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.6875rem;
-  color: var(--mid);
-}
-
-/* Severity */
-.severity {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.sevBtn {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: none;
-  padding: 10px 10px;
-  cursor: pointer;
+.form {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  transition: border-color 0.1s, background 0.1s;
+  gap: 24px;
 }
 
-.sevBtn:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.03);
+/* ── Type selector ─────────────────────────────────────────────────────── */
+
+.typeField {
+  display: flex;
+  flex-direction: column;
 }
 
-.sevBtnActive {
-  border-color: rgba(255, 255, 255, 0.5);
-  background: var(--surface-container);
-}
-
-.sevName {
-  font-size: 0.625rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+.selectorLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
-  color: var(--white);
+  color: var(--text-weak);
+  margin-bottom: 8px;
 }
 
-.sevDesc {
-  font-size: 0.6875rem;
-  color: var(--mid);
-  line-height: 1.4;
+.required {
+  margin-left: 3px;
+  color: var(--accent);
 }
 
-/* Row for 2-column layout */
-.row2 {
+.typeGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-/* Checkbox */
-.checkboxField {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 16px;
-  cursor: pointer;
-}
-
-.checkbox {
-  margin-top: 2px;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-}
-
-.checkboxLabel {
-  font-size: 0.75rem;
-  color: rgba(240, 237, 232, 0.6);
-  line-height: 1.5;
-}
-
-/* Feature pills */
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.pill {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: none;
-  padding: 6px 10px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(240, 237, 232, 0.5);
-  cursor: pointer;
-  transition: border-color 0.1s, color 0.1s, background 0.1s;
-}
-
-.pill:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: var(--white);
-}
-
-.pillActive {
-  border-color: var(--white);
-  color: var(--black);
-  background: var(--white);
-}
-
-/* In-tab submit area */
-.tabActions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 18px;
-  margin-bottom: 10px;
-}
-
-/* Footer */
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 14px 22px;
-  border-top: 1px solid rgba(71, 71, 71, 0.2);
-  background: rgba(0, 0, 0, 0.3);
-  flex-shrink: 0;
-}
-
-.footerActions {
-  display: flex;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
-/* Buttons */
-.submitBtn {
-  background: var(--white);
-  color: var(--on-primary);
-  padding: 10px 20px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: none;
+.typeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: border-color var(--transition), background var(--transition);
 }
 
-.submitBtnDisabled {
-  background: var(--surface-container);
-  color: rgba(255, 255, 255, 0.2);
-  cursor: not-allowed;
+.typeCard:hover {
+  border-color: var(--border-strong);
 }
 
-.ghostBtn {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(240, 237, 232, 0.6);
-  padding: 10px 16px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color 0.1s, color 0.1s;
+.typeCardSelected,
+.typeCardSelected:hover {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-tint); /* 0.06 — design specifies 0.07, negligible and this is the app's standard tint step */
 }
 
-.ghostBtn:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: var(--white);
-}
-
-.primaryBtn {
-  background: var(--white);
-  color: var(--on-primary);
-  padding: 10px 20px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: none;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-/* Error message */
-.errorMsg {
-  font-size: 0.75rem;
-  color: var(--error);
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: rgba(204, 51, 51, 0.1);
-  border: 1px solid rgba(204, 51, 51, 0.2);
-}
-
-/* Loading state */
-.loadingState {
+.typeLabelRow {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
+  gap: 7px;
 }
 
-.loadingText {
-  font-size: 0.75rem;
-  color: var(--mid);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-weight: 700;
+.typeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-circle);
+  flex-shrink: 0;
 }
 
-/* Success state */
-.success {
+.dotBug {
+  background: var(--danger);
+}
+
+.dotFeature {
+  background: var(--feedback-feature);
+}
+
+.dotSupport {
+  background: var(--accent);
+}
+
+.typeLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-btn-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-nav); /* design: .1em */
+  color: var(--text-muted);
+}
+
+.typeCardSelected .typeLabel {
+  color: var(--text-primary);
+}
+
+.typeDesc {
+  font-family: var(--font-ui);
+  font-size: var(--fs-btn-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+/* ── Details counter ───────────────────────────────────────────────────── */
+
+.counter {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-btn); /* design: .08em */
+  color: var(--text-pale);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Sent state ────────────────────────────────────────────────────────── */
+
+.sent {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 32px 24px;
+  gap: 18px;
+  padding: 20px 0;
+  outline: none;
 }
 
-.successIcon {
-  color: var(--accent);
-  margin-bottom: 16px;
-}
-
-.successTitle {
-  font-size: 1.25rem;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
-  margin: 0 0 8px;
-  color: var(--white);
-}
-
-.successDesc {
-  font-size: 0.8125rem;
-  color: var(--mid);
-  line-height: 1.6;
-  max-width: 40ch;
-  margin: 0 0 16px;
-}
-
-.ticketBadge {
-  display: inline-flex;
+.sentIcon {
+  width: 46px;
+  height: 46px;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.75rem;
-  color: var(--mid);
+  justify-content: center;
+  border: 1px solid var(--accent-border-strong);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: var(--fw-bold);
 }
 
-/* Mobile: full-screen modal */
+.sentTitle {
+  font-family: var(--font-heading);
+  /* No token at this size — same one-off as .title above. */
+  font-size: 24px;
+  font-weight: var(--fw-display);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.sentBody {
+  max-width: 400px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body-loose);
+  color: var(--text-muted);
+}
+
+.sentRef {
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+
+.recap {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  padding: 16px 18px;
+  text-align: left;
+}
+
+.recapType {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-weak);
+  margin-bottom: 6px;
+}
+
+.recapSubject {
+  font-family: var(--font-ui);
+  font-size: var(--fs-input);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+.footer {
+  flex-shrink: 0;
+  padding: 18px 28px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface-raised);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.footerHint {
+  font-family: var(--font-ui);
+  font-size: var(--fs-btn-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-pale);
+  /* Keeps the footer from jumping when SEND enables and the hint empties. */
+  min-height: 1.4em;
+}
+
+.footerActions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+}
+
+/* .footerActionsForm and .footerActionsSent are marker classes only (no
+   rules here) — they exist so the mobile 110px-first-button override below
+   can target the form state alone. .footerActionsSent's first child is SEND
+   ANOTHER, which the handoff always gives flex:1; a positional :first-child
+   selector shared between both states would wrongly squeeze it to 110px. */
+
+/* Sits between .body and .footer, outside the scroll area — a submit error
+   must stay visible next to the button the user is about to press again. */
+.banner {
+  flex-shrink: 0;
+  margin: 0 28px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .dialog {
+    animation: none;
+  }
+}
+
+/* ── Mobile: bottom sheet ──────────────────────────────────────────────── */
+
 @media (max-width: 768px) {
-  .backdrop {
+  .overlay {
+    align-items: stretch;
     padding: 0;
-    align-items: flex-start;
   }
 
-  .modal {
+  .dialog {
     width: 100%;
-    max-height: 100svh;
-    border-radius: 0;
-    border: none;
-    height: 100svh;
+    max-width: none;
+    margin-top: 64px;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    border-top: 1px solid var(--border-medium);
+    /* One-off, matches .dialog's desktop shadow treatment above. */
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.6);
+    /* .overlay keeps align-items: stretch on mobile — with margin-top:64px
+       that yields exactly "100vh minus the 64px of dimmed app above",
+       which is what makes the body's flex:1 scroll region cap correctly. */
+    /* Follow the app, not the handoff: the design's sheet is #161618 (same
+       as desktop), but every other mobile sheet (MobileMenu's nav) uses
+       --surface-sheet — decision made with the user to match that, not the
+       handoff's literal hex. Desktop keeps --surface-raised above. */
+    background: var(--surface-sheet);
   }
 
-  .tabs {
-    overflow-x: auto;
+  .grabHandle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    background: var(--fill-emphasis);
+    align-self: center;
+    margin-top: 10px;
+    flex-shrink: 0;
   }
 
-  .tab {
-    flex: 0 0 auto;
-    padding: 14px 14px;
+  .header {
+    padding: 14px var(--page-margin-mobile) 0;
   }
 
-  .severity {
+  .title {
+    font-size: 24px;
+  }
+
+  .closeBtn {
+    /* Handoff: "38×38 (44px min tap target in production)" — sized to the
+       tap target, with a negative margin to keep the glyph's optical
+       position in the corner unchanged from the 38×38 the design draws. */
+    width: 44px;
+    height: 44px;
+    margin: -3px -3px 0 0;
+  }
+
+  .body {
+    /* No safe-area padding here — .body scrolls behind the fixed .footer,
+       which owns the safe-area inset as the bottommost element. */
+    padding: 22px var(--page-margin-mobile) 22px;
+  }
+
+  .banner {
+    margin: 0 var(--page-margin-mobile) 0;
+  }
+
+  .typeGrid {
     grid-template-columns: 1fr;
   }
 
-  .row2 {
-    grid-template-columns: 1fr;
+  .typeCard {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px; /* handoff's row layout — desktop's 6px (for the stacked card) is too tight here */
+  }
+
+  .typeLabelRow {
+    /* Handoff says 74px, sized for a slightly narrower label than ours —
+       .typeLabel uses --ls-nav (.1em) since the fidelity pass, which widens
+       QUESTION past 74px and runs it into the helper text. Do not "fix"
+       this back to 74. */
+    width: 86px;
+    flex-shrink: 0;
+  }
+
+  .typeDesc {
+    flex: 1;
+  }
+
+  .form :global(textarea) {
+    resize: none;
+  }
+
+  .footer {
+    /* Follows the app, not the handoff — see .dialog's comment above. */
+    background: var(--surface-sheet);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 15px 16px calc(30px + env(safe-area-inset-bottom));
+  }
+
+  .footerActions {
+    gap: 10px;
+  }
+
+  .footerActions > :global(a),
+  .footerActions > :global(button) {
+    flex: 1;
+    /* Handoff: padding 15px 16px for a ~44px bottom-sheet tap target — the
+       Button component's own "md" size (12px 20px) is sized for the desktop
+       header instead and only reaches ~38–40px here. */
+    padding: 15px 16px;
+  }
+
+  .footerActionsForm > :global(a:first-child),
+  .footerActionsForm > :global(button:first-child) {
+    flex: 0 0 110px;
   }
 }

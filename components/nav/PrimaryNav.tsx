@@ -25,7 +25,7 @@ interface PrimaryNavProps {
 export default function PrimaryNav({ role }: PrimaryNavProps) {
   const pathname = usePathname()
   const isActive = (path: string) => pathname.startsWith(path)
-  const { openHelp } = useSupportContext()
+  const { helpOpen, openHelp } = useSupportContext()
 
   return (
     <nav className={styles.nav}>
@@ -54,9 +54,11 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
         <div className={styles.actions}>
           <div className={styles.iconGroup}>
             <button
-              className={styles.helpBtn}
+              className={`${styles.helpBtn} ${helpOpen ? styles.helpBtnOpen : ''}`}
               onClick={() => openHelp()}
               aria-label="Help & feedback"
+              aria-haspopup="dialog"
+              aria-expanded={helpOpen}
               title="Help & feedback  (Shift+?)"
             >
               ?
