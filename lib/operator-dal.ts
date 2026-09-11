@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { adminAuth } from '@/lib/firebase-admin'
 
-const OPERATOR_ALLOWLIST = ['swordh@gmail.com']
+const OPERATOR_ALLOWLIST = ['jocke@allocate.at']
 
 export interface OperatorSession {
   uid: string
