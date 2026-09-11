@@ -115,5 +115,20 @@ service cloud.firestore {
     match /mail/{mailId} {
       allow read, write: if false;
     }
+
+    // ── operatorNotes / companyEvents (no rule — intentional) ─────────────────
+    // Both are top-level collections written only via the Admin SDK from
+    // app/operator/customers/[companyId]/actions.ts and the Stripe webhook.
+    // Neither gets an explicit rule here, same as `operatorFeedback` above it:
+    // a top-level collection with no matching rule is default-deny under
+    // Firestore Security Rules — there is no wildcard in this file that could
+    // accidentally cover it (the only broad wildcards are scoped under
+    // `companies/{companyId}/{document=**}` and `{path=**}/units/{unitId}`,
+    // neither of which matches a top-level path segment named `operatorNotes`
+    // or `companyEvents`). This is the fix for the hole `opsNotes` had as a
+    // field on `companies/{id}`: that document IS readable by any member with
+    // a matching `activeCompanyId`, so the operator's private notes about a
+    // customer were readable by that customer. A top-level collection has no
+    // such membership rule to inherit.
   }
 }

@@ -112,7 +112,16 @@ export async function setupNewCompany(
       trialEnd:          null,
       cancelAtPeriodEnd: false,
     },
-    stats: { ...INITIAL_COMPANY_STATS, updatedAt: FieldValue.serverTimestamp() },
+    stats: {
+      ...INITIAL_COMPANY_STATS,
+      // The founder's own companies/{companyId}/members/{uid} doc
+      // (companyMemberRef, below) is written in this same batch, so the
+      // company is never observed with zero members. Set explicitly here
+      // rather than folded into INITIAL_COMPANY_STATS — that constant must
+      // stay an honest zero state; it's also used nowhere else.
+      memberCount: 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
   })
 
   batch.set(userRef, {

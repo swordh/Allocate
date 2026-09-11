@@ -26,6 +26,14 @@ export interface NavItem {
   href: string
 }
 
+// The operator desktop nav (design_handoff_allocate/screens/operator/*.dc.html,
+// header <nav>) carries no icons, and neither does the drawer's nav list —
+// so this reuses the plain NavItem shape rather than TopNavItem.
+export const OPERATOR_NAV: NavItem[] = [
+  { label: 'CUSTOMERS', href: '/operator/customers' },
+  { label: 'FEEDBACK',  href: '/operator/feedback'  },
+]
+
 export const BOOKINGS_ITEMS: NavItem[] = [
   { label: 'List',    href: '/bookings/list' },
   { label: 'Week',    href: '/bookings/week' },
