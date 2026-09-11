@@ -39,6 +39,16 @@
  * --dry-run is the DEFAULT. Nothing is written unless --yes is passed.
  * The script is idempotent: a member doc already removed just won't show up
  * as an orphan on the next run.
+ *
+ * Every orphan deleted is a `companies/{cid}/members/{uid}` doc disappearing
+ * out from under `companies/{cid}.stats.memberCount` (redesign/fas-5-member-count).
+ * After deleting a company's orphans, this script recomputes that company's
+ * `stats.memberCount` from `members.count()` and writes it as an absolute
+ * value — the same philosophy as tools/backfill_company_stats.js, and
+ * deliberately not a `FieldValue.increment()` delta (see the comment on
+ * deleteOrphansAndRecomputeMemberCount for why: a delta against a field that
+ * may not exist yet in this environment can go negative). Only companies
+ * that actually had orphans deleted get recomputed.
  */
 
 'use strict';
@@ -110,7 +120,7 @@ function readServiceAccountFromEnv() {
 }
 
 const { initializeApp, cert, applicationDefault } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 // One source only. Silently preferring one over the other is how you end up
 // writing to the wrong project.
@@ -241,34 +251,82 @@ async function classifyMembers(companyId) {
 // ── Delete ───────────────────────────────────────────────────────────────────
 
 /**
- * Deletes orphans in chunks of DELETE_BATCH_LIMIT. If a commit throws partway
- * through (e.g. the 2nd of 3 chunks), the chunks committed so far already
- * happened — the caller needs to know that before the error propagates, or
- * a report saying "0 deleted" would be a lie. So progress is printed here,
- * per chunk, rather than left to the top-level summary that never runs on
- * a thrown error.
+ * Deletes orphans company-by-company (chunked within a company at
+ * DELETE_BATCH_LIMIT, though in practice a single company's orphan count
+ * never approaches that), and after each company's deletes commit,
+ * recomputes that company's `stats.memberCount` from `members.count()` and
+ * writes it as an ABSOLUTE value via a merge-set.
+ *
+ * Deliberately NOT `FieldValue.increment(-orphans.length)`: this script runs
+ * across alpha/beta/prod, and in whichever of those the memberCount writers
+ * (lib/companyStats.ts, functions/src/companyStats.ts) haven't deployed yet,
+ * `stats.memberCount` may not exist at all. `increment()` treats a missing
+ * field as 0, so decrementing it here would leave the mirror negative — and
+ * once the writers do deploy, every future delta would compound that error
+ * forever. Recomputing from `members.count()` is self-healing regardless of
+ * what was there before, and matches tools/backfill_company_stats.js's own
+ * philosophy of writing absolute truth rather than deltas.
+ *
+ * Only companies that actually had at least one orphan deleted get a
+ * recompute — every other company's `stats.memberCount` is left untouched,
+ * since this script has no way to know whether it's already correct there
+ * and shouldn't touch what it didn't just change.
+ *
+ * If a commit throws partway through, the chunks/companies processed so far
+ * already happened — the caller needs to know that before the error
+ * propagates, or a report saying "0 deleted" would be a lie. So progress is
+ * printed here, per company, rather than left to the top-level summary that
+ * never runs on a thrown error.
  */
-async function deleteOrphans(orphans) {
-  const chunkCount = Math.ceil(orphans.length / DELETE_BATCH_LIMIT);
+async function deleteOrphansAndRecomputeMemberCount(orphansByCompany) {
+  const companyCount = orphansByCompany.size;
+  let companyIndex = 0;
   let deleted = 0;
+  let recomputed = 0;
 
-  for (let i = 0; i < orphans.length; i += DELETE_BATCH_LIMIT) {
-    const chunk = orphans.slice(i, i + DELETE_BATCH_LIMIT);
-    const chunkIndex = i / DELETE_BATCH_LIMIT + 1;
-    const batch = db.batch();
-    for (const orphan of chunk) batch.delete(orphan.ref);
+  for (const [companyId, orphans] of orphansByCompany) {
+    companyIndex += 1;
 
-    try {
-      await batch.commit();
-      deleted += chunk.length;
-      console.log(`  deleted chunk ${chunkIndex}/${chunkCount} (${chunk.length} docs, ${deleted}/${orphans.length} total)`);
-    } catch (err) {
-      console.error(`  FAILED on chunk ${chunkIndex}/${chunkCount} — ${deleted}/${orphans.length} deleted before the failure`);
-      throw err;
+    for (let i = 0; i < orphans.length; i += DELETE_BATCH_LIMIT) {
+      const chunk = orphans.slice(i, i + DELETE_BATCH_LIMIT);
+      const batch = db.batch();
+      for (const orphan of chunk) batch.delete(orphan.ref);
+
+      try {
+        await batch.commit();
+        deleted += chunk.length;
+      } catch (err) {
+        console.error(
+          `  FAILED deleting orphans for company ${companyId} (${companyIndex}/${companyCount}) — ` +
+            `${deleted}/${[...orphansByCompany.values()].flat().length} deleted before the failure`,
+        );
+        throw err;
+      }
     }
+
+    // Recompute now that this company's orphans are gone — the members
+    // subcollection is the source of truth, same as the backfill tool reads.
+    const countSnap = await db.collection(`companies/${companyId}/members`).count().get();
+    const memberCount = countSnap.data().count;
+
+    await db.doc(`companies/${companyId}`).set(
+      {
+        stats: {
+          memberCount,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      },
+      { merge: true },
+    );
+    recomputed += 1;
+
+    console.log(
+      `  company ${companyId} (${companyIndex}/${companyCount}): deleted ${orphans.length}, ` +
+        `stats.memberCount recomputed to ${memberCount}`,
+    );
   }
 
-  return deleted;
+  return { deleted, recomputed };
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -301,6 +359,7 @@ async function main() {
 
   let scanned = 0;
   let totalDeleted = 0;
+  let companiesRecomputed = 0;
   const allOrphans = [];
   const allHeldBack = [];
   const allNoJoinedAt = [];
@@ -348,7 +407,17 @@ async function main() {
     printTable(allOrphans);
 
     if (APPLY) {
-      totalDeleted = await deleteOrphans(allOrphans);
+      // Grouped by company — recompute must run once per company that had
+      // orphans deleted, never for the full flat list at once.
+      const orphansByCompany = new Map();
+      for (const orphan of allOrphans) {
+        if (!orphansByCompany.has(orphan.companyId)) orphansByCompany.set(orphan.companyId, []);
+        orphansByCompany.get(orphan.companyId).push(orphan);
+      }
+
+      const result = await deleteOrphansAndRecomputeMemberCount(orphansByCompany);
+      totalDeleted = result.deleted;
+      companiesRecomputed = result.recomputed;
     }
   }
 
@@ -371,7 +440,8 @@ async function main() {
   console.log('');
   console.log(
     `  ${scanned} ${scanned === 1 ? 'company' : 'companies'} scanned, ${totalOrphans} orphan${totalOrphans === 1 ? '' : 's'}` +
-      `${APPLY ? `, ${totalDeleted} deleted` : ''}, ${allHeldBack.length} held back, ${allNoJoinedAt.length} skipped (no joinedAt)`,
+      `${APPLY ? `, ${totalDeleted} deleted, stats.memberCount recomputed for ${companiesRecomputed} ${companiesRecomputed === 1 ? 'company' : 'companies'}` : ''}, ` +
+      `${allHeldBack.length} held back, ${allNoJoinedAt.length} skipped (no joinedAt)`,
   );
 
   if (!APPLY && totalOrphans > 0) {

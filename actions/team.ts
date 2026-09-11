@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { memberCountDelta } from '@/lib/companyStats'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
@@ -401,6 +402,22 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
 
   batch.delete(adminDb.doc(`companies/${cid}/members/${memberId}`))
   opCount++
+
+  // Must land in the SAME batch chunk as the member delete directly above —
+  // emitted immediately after it, before any of the (potentially large)
+  // anonymization loop below that can push opCount past BATCH_LIMIT and
+  // rotate into a new chunk. If the delete committed in one chunk and this
+  // decrement failed or landed in a later one, the member would be gone but
+  // the count stale with no way to tell from either write alone.
+  //
+  // Confirmed empirically (throwaway script against allocate-alpha, deleted
+  // after use) that a single WriteBatch permits more than one write to the
+  // same document — companies/{cid} also receives a `createdBy: null` write
+  // further down in this function (via addOp), and that is safe as a
+  // separate write rather than something this needs to be merged with.
+  memberCountDelta(batch, cid, -1)
+  opCount++
+
   batch.delete(adminDb.doc(`users/${memberId}/memberships/${cid}`))
   opCount++
 

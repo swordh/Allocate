@@ -88,4 +88,17 @@ describe('setupNewCompany — initial stats map', () => {
     expect('lastBookingAt' in stats).toBe(true)
     expect(stats.lastBookingAt).toBeNull()
   })
+
+  it('writes memberCount: 1 for the founder — not folded into INITIAL_COMPANY_STATS', async () => {
+    const { batch } = wire()
+
+    await setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm')
+
+    const [, companyDoc] = batch.set.mock.calls[0]
+    const stats = (companyDoc as Record<string, unknown>).stats as Record<string, unknown>
+
+    // The company is never observed with zero members: the founder's own
+    // companies/{id}/members/{uid} doc is written in the same batch.
+    expect(stats.memberCount).toBe(1)
+  })
 })

@@ -64,6 +64,8 @@ export interface CompanyRow {
    */
   equipmentCount: number | null
   bookingsCreated: number | null
+  bookingsCancelled: number | null
   lastBookingAt: string | null   // ISO string
+  memberCount: number | null
   hasStats: boolean
 }

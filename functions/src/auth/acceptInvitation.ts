@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions/v2';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
+import { memberCountDelta } from '../companyStats';
 
 /**
  * Callable function for already-authenticated users accepting an invite via link.
@@ -113,6 +114,17 @@ export const acceptInvitationByToken = onCall(
           joinedAt: now,
           companyId,
         });
+
+        // 1b. Mirror the new member onto companies/{companyId}.stats.memberCount.
+        // Deliberately inside this transaction, not after it: the outer catch
+        // below swallows HttpsError('already-exists') when onUserCreate wins
+        // the race, and because the increment lives in the same transaction as
+        // the tx.set above, that whole transaction (including this increment)
+        // is discarded on that path rather than committed — so the race can
+        // never double-count. Fragile: if this increment is ever moved outside
+        // the transaction (e.g. to a best-effort write after commit), that
+        // guarantee breaks and the race becomes double-countable.
+        memberCountDelta(tx, db, companyId, 1);
 
         // 2. Create membership under user
         const membership: MembershipDocument = {

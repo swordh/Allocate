@@ -6,6 +6,7 @@ import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
+import { memberCountDelta } from '@/lib/companyStats'
 import { stripe } from '@/lib/stripe'
 import { deleteSession } from './auth'
 
@@ -186,7 +187,29 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       // deletion keeps that PII exposed — GDPR Art. 17. Deleting a doc that
       // doesn't exist is a no-op in Firestore, so no existence check is needed
       // here; don't add one.
-      await addDelete(adminDb.doc(`companies/${companyId}/members/${uid}`))
+      //
+      // Deliberately NOT routed through addDelete(): addDelete carries its own
+      // rotation check and would commit the batch containing this delete —
+      // alone — the instant its own opCount++ crosses BATCH_LIMIT, before
+      // memberCountDelta below ever runs. This loop runs once per company and
+      // accumulates writes from bookings/equipment/units/invitations before
+      // reaching here, so opCount can realistically be near the limit at this
+      // point — unlike removeMember, where the equivalent pair is only the
+      // 2nd/3rd op in a fresh batch and can never cross BATCH_LIMIT by itself.
+      // Both ops below are therefore bare `batch.x()` + manual `opCount++`,
+      // with the single rotation check deferred until after the pair — the
+      // same shape removeMember uses, and the only shape that actually
+      // guarantees the delete and the decrement land in the same commit.
+      batch.delete(adminDb.doc(`companies/${companyId}/members/${uid}`))
+      opCount++
+
+      memberCountDelta(batch, companyId, -1)
+      opCount++
+
+      if (opCount >= BATCH_LIMIT) {
+        batch = await commitAndReset(batch)
+        opCount = 0
+      }
 
       // Company doc: createdBy
       const companySnap = await companyRef.get()
