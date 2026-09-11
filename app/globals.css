@@ -103,6 +103,10 @@
   /* The in-between days of a selected range in the booking form's calendar. */
   --booking-range-fill:      rgba(244, 178, 74, 0.16);
 
+  /* FEATURE type dot in the Help & feedback type selector (design_handoff_
+     help_feedback, screen 29) — no equivalent elsewhere in the palette. */
+  --feedback-feature: #9fb3c8;
+
   /* ────────────────────────────── BUTTON ────────────────────────────────── */
   --btn-primary-bg:   #fff;
   --btn-primary-fg:   #000;
@@ -214,24 +218,22 @@
      Phase 5 (2026-09-11) reskinned app/operator/** and took the three it
      solely owned: --on-surface-variant, --secondary and --font-stat.
 
-     Everything left below is owned ONLY by components/support/**, which
-     decision 2 deliberately leaves untouched — so this block cannot shrink
-     further until the support surface is redesigned, and at that point it
-     goes away entirely.
+     The Help & feedback redesign (2026-09-11) rewrote SupportModal.module.css
+     onto real tokens and took the five it solely owned: --black, --error,
+     --on-primary, --surface-container-lowest and --surface-container.
+     --white, --outline, --mid and --surface-container-low remain — they are
+     still owned by components/support/NotificationsPanel.module.css, which
+     this redesign deliberately left untouched. This block goes away entirely
+     once that panel is redesigned too.
 
      No usage remains in a .tsx inline style. Earlier revisions of this
      comment warned about that trap because operator carried two; both are
      gone. Grep *.css, *.tsx AND *.ts before trusting a count either way —
      that is how the trap worked the first time. */
   --white:                     var(--text-primary);
-  --black:                     var(--bg-page);
   --outline:                   var(--text-tertiary);
   --mid:                       var(--text-placeholder);
-  --error:                     var(--danger);
-  --on-primary:                var(--btn-primary-fg);
-  --surface-container-lowest:  var(--surface);
   --surface-container-low:     var(--surface-raised);
-  --surface-container:         var(--surface-raised);
 }
 
 *, *::before, *::after {

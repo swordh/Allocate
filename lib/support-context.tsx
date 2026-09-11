@@ -2,14 +2,10 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { initActionTracker } from '@/lib/action-tracker'
-
-export type SupportTab = 'bug' | 'feature' | 'help'
 
 interface SupportContextValue {
   helpOpen: boolean
-  activeTab: SupportTab
-  openHelp: (tab?: SupportTab) => void
+  openHelp: () => void
   closeHelp: () => void
   notificationsOpen: boolean
   openNotifications: () => void
@@ -22,14 +18,10 @@ const SupportContext = createContext<SupportContextValue | null>(null)
 export function SupportProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const [helpOpen, setHelpOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<SupportTab>('bug')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const unreadCount = 0 // placeholder for future notification system
 
-  useEffect(() => { initActionTracker() }, [])
-
-  const openHelp = useCallback((tab: SupportTab = 'bug') => {
-    setActiveTab(tab)
+  const openHelp = useCallback(() => {
     setHelpOpen(true)
     setNotificationsOpen(false)
   }, [])
@@ -43,17 +35,24 @@ export function SupportProvider({ children }: { children: React.ReactNode }) {
 
   const closeNotifications = useCallback(() => setNotificationsOpen(false), [])
 
-  // Global keyboard shortcut: Shift+? opens help modal
+  // Global keyboard shortcut: Shift+? opens the help modal. Guarded against
+  // typing in any editable field — otherwise a bug report whose text happens
+  // to end in "?" would reopen the modal on itself. Escape is NOT handled
+  // here: SupportModal and NotificationsPanel each own their own Escape now,
+  // so closing one never blows away the other mid-transition.
   useEffect(() => {
     if (!user) return
     const handler = (e: KeyboardEvent) => {
       if (e.shiftKey && (e.key === '?' || e.key === '/') && !helpOpen) {
+        const target = e.target as HTMLElement | null
+        const editable =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          target?.isContentEditable
+        if (editable) return
         e.preventDefault()
         openHelp()
-      }
-      if (e.key === 'Escape') {
-        setHelpOpen(false)
-        setNotificationsOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
@@ -62,7 +61,7 @@ export function SupportProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SupportContext.Provider value={{
-      helpOpen, activeTab, openHelp, closeHelp,
+      helpOpen, openHelp, closeHelp,
       notificationsOpen, openNotifications, closeNotifications,
       unreadCount,
     }}>
