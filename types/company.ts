@@ -1,3 +1,5 @@
+import type Stripe from 'stripe'
+
 export interface CompanyPreferences {
   bookingTimeSlotMinutes: number
   autoCheckout: boolean
@@ -18,6 +20,17 @@ export interface Subscription {
   trialEnd?: string               // ISO string
   cancelAtPeriodEnd?: boolean
   interval?: BillingInterval
+  /**
+   * Mirrors Stripe's `subscription.pause_collection`. Named after Stripe's own
+   * field on purpose — NOT `paused`, which is already spoken for twice in this
+   * codebase for unrelated things: the webhook maps Stripe's `paused` status to
+   * `past_due` (see mapStripeStatus in app/api/webhooks/stripe/route.ts), and
+   * __tests__/subscription-state.test.ts locks `'paused'` to `'NONE'`. A future
+   * "pending deletion" state derives from this field, never from Stripe's status
+   * string — see the #252 step 5 plan.
+   */
+  pauseCollection?: Stripe.Subscription.PauseCollection['behavior'] | null
+  pauseResumesAt?: string | null  // ISO string
 }
 
 /**

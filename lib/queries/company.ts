@@ -2,7 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 import { adminDb } from '@/lib/firebase-admin'
-import type { Company } from '@/types'
+import type { Company, CompanyStats } from '@/types'
 
 function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
   const data = doc.data() ?? {}
@@ -20,7 +20,32 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
                           ?? undefined,
     cancelAtPeriodEnd:  subscription.cancelAtPeriodEnd  ?? undefined,
     interval:           subscription.interval           ?? undefined,
+    pauseCollection:    subscription.pauseCollection    ?? null,
+    pauseResumesAt:     subscription.pauseResumesAt?.toDate?.()?.toISOString()
+                          ?? subscription.pauseResumesAt
+                          ?? null,
   }
+
+  // #252 step 5 prep: `stats` is written by lib/companyStats.ts but was never
+  // read back here — a company's stats mirror reached every writer and no
+  // reader via getCompany(). Same silent-drop shape as `deletion` will be:
+  // a field that exists only in the type is not the same as a field that
+  // exists in the returned object.
+  const stats = data.stats
+  const mappedStats: CompanyStats | undefined = stats
+    ? {
+        equipmentCount:     stats.equipmentCount     ?? 0,
+        bookingsCreated:    stats.bookingsCreated    ?? 0,
+        bookingsCancelled:  stats.bookingsCancelled  ?? 0,
+        lastBookingAt:      stats.lastBookingAt?.toDate?.()?.toISOString()
+                              ?? stats.lastBookingAt
+                              ?? null,
+        memberCount:        stats.memberCount        ?? 0,
+        updatedAt:          stats.updatedAt?.toDate?.()?.toISOString()
+                              ?? stats.updatedAt
+                              ?? '',
+      }
+    : undefined
 
   const prefs = data.preferences
   const preferences = prefs
@@ -41,6 +66,7 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
     stripeCustomerId: data.stripeCustomerId ?? '',
     subscription:     mappedSubscription,
     preferences,
+    stats:            mappedStats,
   }
 }
 
