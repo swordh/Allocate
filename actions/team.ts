@@ -343,6 +343,10 @@ const CANNOT_DEMOTE_SOLE_ADMIN = 'Cannot demote the only admin. Promote another 
  * no-op — zero writes, no claims sync, not even the self-heal write.
  * Custom-claims sync (for the target's OWN active session) happens after
  * commit and is non-fatal on failure, matching `removeMember` below.
+ * `revokeRefreshTokens` runs unconditionally after that — see its own
+ * comment below for why a no-op role change skips it while every real role
+ * change gets it regardless of the target's currently-active company, and
+ * for how this differs from `switchCompany`'s use of the same call.
  */
 export async function updateMemberRole(
   memberId: string,
@@ -448,6 +452,57 @@ export async function updateMemberRole(
       companyId,
       error: message,
       action: 'update_member_role_claims_update_failed',
+    })
+  }
+
+  // `revokeRefreshTokens` closes the gap the guard above leaves open:
+  // `getVerifiedSession` (lib/dal.ts) reads `role` only from the session
+  // cookie, never from Firestore, so without revocation a just-demoted admin
+  // keeps passing every `session.role !== 'admin'` guard in the app for as
+  // long as their existing cookie/refresh token lives — up to 14 days. The
+  // PR-2 counter guard stops a demotion from taking a company to zero admins,
+  // but does nothing to stop the demoted user from continuing to act as one
+  // in the meantime.
+  //
+  // `switchCompany` (actions/auth.ts) already revokes, for the same reason,
+  // but the difference here is who it happens to and what they experience:
+  // `switchCompany` revokes the CALLER's own tokens, and the same request
+  // that triggered it re-issues a fresh session immediately after (see that
+  // function's docblock — the caller is TOLD to call getIdToken(true) then
+  // createSession()). Here the target is a DIFFERENT, possibly
+  // currently-active user with no way to be handed a fresh token: their
+  // existing session cookie simply stops verifying, and they are bounced to
+  // /login on their very next server request, mid-session, with no warning.
+  // That is a real, user-visible behaviour change, not merely a hardening
+  // detail, and is worth stating explicitly so the next reader doesn't
+  // mistake it for an accident.
+  //
+  // Deliberately its own try/catch, run UNCONDITIONALLY — not nested inside
+  // the `if (claims['activeCompanyId'] === companyId)` branch above, and not
+  // skipped when that branch's own `setCustomUserClaims` call fails. The role
+  // that changed lives on `companies/{companyId}/members/{memberId}`
+  // (already committed by the transaction above) regardless of which company
+  // the target currently has active or whether their Auth claims could be
+  // refreshed just now; a future `switchCompany` back into this company must
+  // not be able to succeed on a refresh token minted before this
+  // demotion/promotion. Kept in a separate try/catch (rather than one block
+  // wrapping both calls) specifically so a revoke failure logs under its own
+  // `action` string below, distinguishable in Cloud Logging from a claims
+  // failure above — the state after "claims updated, then revoke threw" is
+  // materially different (the new role IS on the Auth record for the next
+  // fresh sign-in, but the CURRENT session cookie remains valid until its own
+  // expiry — exactly the window this call exists to close) from "claims
+  // never updated at all", and an operator investigating needs to be able to
+  // tell those apart without reading stack traces.
+  try {
+    await adminAuth.revokeRefreshTokens(memberId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      target: memberId.slice(0, 8) + '...',
+      companyId,
+      error: message,
+      action: 'update_member_role_revoke_tokens_failed',
     })
   }
 

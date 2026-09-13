@@ -24,6 +24,7 @@ vi.mock('@/lib/firebase-admin', () => ({
   adminAuth: {
     getUser: vi.fn(),
     setCustomUserClaims: vi.fn(),
+    revokeRefreshTokens: vi.fn(),
   },
 }))
 
@@ -73,6 +74,7 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
       customClaims: {},
     } as never)
     vi.mocked(adminAuth.setCustomUserClaims).mockResolvedValue(undefined as never)
+    vi.mocked(adminAuth.revokeRefreshTokens).mockResolvedValue(undefined as never)
   })
 
   it('promotes crew to admin: writes both role docs and increments admins', async () => {
@@ -159,6 +161,9 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
     expect(tx.set).not.toHaveBeenCalled()
     expect(adminAuth.getUser).not.toHaveBeenCalled()
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
+    // No role actually changed, so there is nothing for a stale session to
+    // keep acting on — revocation would be pure noise here.
+    expect(adminAuth.revokeRefreshTokens).not.toHaveBeenCalled()
   })
 
   it('returns "Member not found" when the target member doc does not exist', async () => {
@@ -217,9 +222,14 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
       activeCompanyId: COMPANY_ID,
       role: 'admin',
     })
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(TARGET_UID)
+    // Ordering matches switchCompany's own claims-then-revoke shape.
+    expect(vi.mocked(adminAuth.setCustomUserClaims).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(adminAuth.revokeRefreshTokens).mock.invocationCallOrder[0]!,
+    )
   })
 
-  it('does not sync claims when the target is active in a DIFFERENT company', async () => {
+  it('does not sync claims when the target is active in a DIFFERENT company, but still revokes their tokens', async () => {
     const docs: DocMap = {
       [TARGET_MEMBER_PATH]: { role: 'crew' },
       [META_PATH]: { members: 3, admins: 1 },
@@ -234,6 +244,11 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
 
     expect(result.error).toBeUndefined()
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
+    // Unconditional: the role on companies/{cid}/members/{uid} changed
+    // regardless of which company the target currently has active, and a
+    // future switchCompany back into this company must not succeed on a
+    // token minted before this change.
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(TARGET_UID)
   })
 
   it('returns {} even when the claims sync fails after a successful commit', async () => {
@@ -249,6 +264,40 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
 
     // Non-fatal: the role change already committed, so this must not
     // surface as an error to the caller.
+    expect(result.error).toBeUndefined()
+    // The claims block's own try/catch swallowed its failure — that must not
+    // skip the separate, unconditional revoke call that follows it.
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(TARGET_UID)
+  })
+
+  it('revokes refresh tokens on a real role change', async () => {
+    const docs: DocMap = {
+      [TARGET_MEMBER_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 3, admins: 1 },
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs })
+    wireTransaction(docs)
+
+    const result = await updateMemberRole(TARGET_UID, 'admin')
+
+    expect(result.error).toBeUndefined()
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(TARGET_UID)
+  })
+
+  it('returns {} even when revokeRefreshTokens itself fails after a successful commit', async () => {
+    const docs: DocMap = {
+      [TARGET_MEMBER_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 3, admins: 1 },
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs })
+    wireTransaction(docs)
+    vi.mocked(adminAuth.revokeRefreshTokens).mockRejectedValue(new Error('Auth service unavailable'))
+
+    const result = await updateMemberRole(TARGET_UID, 'admin')
+
+    // Non-fatal: the role change already committed and is the source of
+    // truth going forward — a stale session surviving a little longer than
+    // intended is not a reason to report this operation as failed.
     expect(result.error).toBeUndefined()
   })
 
