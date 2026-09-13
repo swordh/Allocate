@@ -105,6 +105,59 @@ export function makeBatch() {
   }
 }
 
+// ── Transaction ───────────────────────────────────────────────────────────────
+
+export interface TransactionStub {
+  get: ReturnType<typeof vi.fn>
+  set: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+}
+
+/**
+ * A `Transaction` stub for code under `adminDb.runTransaction(async (tx) => ...)`.
+ *
+ * `tx.get(ref)` handles two distinct kinds of `ref`, both of which
+ * `lib/companyStats.ts`'s `readMemberCounts` passes it in the same call:
+ *
+ *   - A plain doc ref (has a `.path`) — resolved against the SAME `docs` map
+ *     `wireDb` uses, so a test can wire one `DocMap` and have it answer both
+ *     transactional and non-transactional reads.
+ *   - An `AggregateQuery`-shaped stub (no `.path`, but has its own `.get()`) —
+ *     exactly what `makeQueryChain`'s `.count()` already returns for
+ *     `adminDb.collection(path).count()` / `.where(...).count()`. Real
+ *     `Transaction.get(AggregateQuery)` takes the query and resolves it
+ *     itself; here that resolution already lives on the stub object (bound to
+ *     whatever `query` resolver `wireDb` was given), so `tx.get` just awaits
+ *     it — no separate aggregate-routing logic needs to be duplicated here.
+ *
+ * Pair with `wireDb`'s `docs` map (pass the same object to both) and wire
+ * `adminDb.runTransaction` in the test:
+ *
+ *   const docs: DocMap = { ... }
+ *   const wired = wireDb(adminDb, { docs, query })
+ *   const tx = makeTransaction(docs)
+ *   vi.mocked(adminDb.runTransaction).mockImplementation(
+ *     (cb) => cb(tx) as never,
+ *   )
+ */
+export function makeTransaction(docs: DocMap = {}): TransactionStub {
+  return {
+    get: vi.fn(async (ref: { path?: string; get?: () => unknown }) => {
+      if (ref && typeof ref.path === 'string') {
+        return makeDocSnap(ref.path, docs)
+      }
+      if (ref && typeof ref.get === 'function') {
+        return ref.get()
+      }
+      throw new Error('makeTransaction: tx.get() called with an unrecognized ref shape')
+    }),
+    set: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  }
+}
+
 // ── Query chain ───────────────────────────────────────────────────────────────
 
 /**
