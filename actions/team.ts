@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import { memberCountsDelta } from '@/lib/companyStats'
+import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
@@ -322,6 +322,28 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
   return {}
 }
 
+/** Typed sentinel thrown inside `updateMemberRole`'s and `removeMember`'s
+ * transactions, mapped to a user-facing string in each catch block — same
+ * pattern as `actions/equipment.ts`'s `createEquipment`. */
+type MemberGuardError = Error & { code: 'not-found' | 'sole-admin' }
+
+function guardError(code: MemberGuardError['code'], message: string): MemberGuardError {
+  return Object.assign(new Error(message), { code })
+}
+
+const CANNOT_DEMOTE_SOLE_ADMIN = 'Cannot demote the only admin. Promote another member first.'
+
+/**
+ * Changes `memberId`'s role within the caller's active company.
+ *
+ * Runs inside a `runTransaction`: reads `_meta/memberCounts`
+ * (`readMemberCounts`, lib/companyStats.ts) and the target's own member doc,
+ * refuses to demote the company's only admin, and otherwise writes both role
+ * docs plus the memberCounts delta atomically. A same-role call is a true
+ * no-op — zero writes, no claims sync, not even the self-heal write.
+ * Custom-claims sync (for the target's OWN active session) happens after
+ * commit and is non-fatal on failure, matching `removeMember` below.
+ */
 export async function updateMemberRole(
   memberId: string,
   newRole: Role,
@@ -335,21 +357,97 @@ export async function updateMemberRole(
   if (memberId === session.uid) return { error: "You can't change your own role" }
 
   const companyId = session.activeCompanyId
+  if (!companyId) return { error: 'No active company' }
 
   const memberRef         = adminDb.doc(`companies/${companyId}/members/${memberId}`)
   const userMembershipRef = adminDb.doc(`users/${memberId}/memberships/${companyId}`)
 
-  const batch = adminDb.batch()
-  batch.update(memberRef, { role: newRole })
-  batch.update(userMembershipRef, { role: newRole })
-  await batch.commit()
+  let isNoOp = false
 
-  const authUser = await adminAuth.getUser(memberId)
-  const claims = (authUser.customClaims ?? {}) as Record<string, unknown>
-  if (claims['activeCompanyId'] === companyId) {
-    await adminAuth.setCustomUserClaims(memberId, {
-      activeCompanyId: companyId,
-      role: newRole,
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      // Reads first, in either order — readMemberCounts no longer writes
+      // during its read phase (see lib/companyStats.ts), so unlike the
+      // pre-hardening plan there is no ordering requirement between this and
+      // the member-doc read below. `applyHeal()` (called further down) is the
+      // one operation that MUST come after every read and before every write.
+      const [counts, memberSnap] = await Promise.all([
+        readMemberCounts(tx, companyId),
+        tx.get(memberRef),
+      ])
+
+      if (!memberSnap.exists) {
+        throw guardError('not-found', 'Member not found')
+      }
+
+      const oldRole = memberSnap.data()!.role as string
+
+      // No-op: same role in, same role out. Deliberately zero writes and no
+      // claims sync — not even the self-heal write, so a role-check that
+      // changes nothing never has a side effect. (The counter still heals
+      // itself on the next call that actually needs to write.) Returning here
+      // commits an empty transaction, same idiom onUserCreate.ts uses for its
+      // "member already exists" guard.
+      if (oldRole === newRole) {
+        isNoOp = true
+        return
+      }
+
+      const adminsDelta: -1 | 0 | 1 =
+        (newRole === 'admin' ? 1 : 0) - (oldRole === 'admin' ? 1 : 0) as -1 | 0 | 1
+
+      if (adminsDelta === -1 && counts.admins <= 1) {
+        throw guardError('sole-admin', CANNOT_DEMOTE_SOLE_ADMIN)
+      }
+
+      // Only now, once neither guard has thrown, persist the heal — a throw
+      // above discards the whole transaction (including an unpersisted heal),
+      // which is fine: the next caller heals it again from the same live
+      // aggregate.
+      counts.applyHeal()
+
+      tx.update(memberRef, { role: newRole })
+      tx.update(userMembershipRef, { role: newRole })
+      memberCountsDelta(tx, companyId, { members: 0, admins: adminsDelta })
+    })
+  } catch (err) {
+    const code = (err as { code?: string }).code
+    if (code === 'not-found') return { error: 'Member not found' }
+    if (code === 'sole-admin') return { error: CANNOT_DEMOTE_SOLE_ADMIN }
+
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      companyId,
+      target: memberId.slice(0, 8) + '...',
+      error: message,
+      action: 'update_member_role_guard_failed',
+    })
+    return { error: "Could not verify this company's administrators right now. No changes were made." }
+  }
+
+  if (isNoOp) return {}
+
+  // Claims sync stays outside the transaction and after commit, unchanged in
+  // form from before this guard existed: `setCustomUserClaims` cannot itself
+  // be transactional, and putting it inside the callback would re-run it on
+  // every Firestore-level retry. Non-fatal on failure — the membership change
+  // has already committed — same pattern as removeMember's claims section.
+  try {
+    const authUser = await adminAuth.getUser(memberId)
+    const claims = (authUser.customClaims ?? {}) as Record<string, unknown>
+    if (claims['activeCompanyId'] === companyId) {
+      await adminAuth.setCustomUserClaims(memberId, {
+        activeCompanyId: companyId,
+        role: newRole,
+      })
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      target: memberId.slice(0, 8) + '...',
+      companyId,
+      error: message,
+      action: 'update_member_role_claims_update_failed',
     })
   }
 
@@ -357,6 +455,17 @@ export async function updateMemberRole(
   return {}
 }
 
+/**
+ * Removes `memberId` from the caller's active company (companies/{cid} and
+ * users/{memberId} sides) and anonymises their uid references throughout the
+ * company's bookings/equipment/units/invitations.
+ *
+ * The sole-admin guard, the two membership deletes, and the memberCounts
+ * delta all run inside one `runTransaction` — see the comment at that guard
+ * for why this closes a TOCTOU race the old count()-then-WriteBatch shape
+ * had. The anonymisation pass, and the target's activeCompanyId/claims sync,
+ * happen afterward in a separate WriteBatch and are unrelated to the guard.
+ */
 export async function removeMember(memberId: string): Promise<{ error?: string }> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────
   const session = await getVerifiedSession()
@@ -368,23 +477,66 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   // Self-removal is not allowed — admin must use "leave company" or delete account
   if (memberId === session.uid) return { error: 'You cannot remove yourself. Use "Leave company" instead.' }
 
-  // ── 2. Sole-admin guard ──────────────────────────────────────────────────────
-  const targetMemberSnap = await adminDb.doc(`companies/${cid}/members/${memberId}`).get()
-  if (!targetMemberSnap.exists) return { error: 'Member not found' }
+  // ── 2. Sole-admin guard + membership deletes (transaction) ───────────────────
+  //
+  // The read-check-write used to be a plain `count()` query (TOCTOU: two
+  // concurrent removals of two different admins could each read count=2 and
+  // both pass) followed by a separate WriteBatch. Both the guard and the two
+  // membership deletes now live inside one transaction, so Firestore's own
+  // serialization is what makes the check-then-act atomic — the second of two
+  // concurrent removeMember calls on the last two admins now sees the first
+  // one's decrement and is rejected, instead of both racing through.
+  //
+  // What used to be a hand-maintained "same batch chunk" invariant (see the
+  // git history of this function for the old comment) — the member delete and
+  // the count decrement must never be split across two separate commits, or a
+  // partial failure leaves the member gone but the count stale — is now a
+  // transaction guarantee instead of a chunk-counting one: either both writes
+  // below commit together, or neither does.
+  const targetMemberRef   = adminDb.doc(`companies/${cid}/members/${memberId}`)
+  const userMembershipRef = adminDb.doc(`users/${memberId}/memberships/${cid}`)
 
-  const targetData = targetMemberSnap.data()!
-  if (targetData.role === 'admin') {
-    const adminCountSnap = await adminDb
-      .collection(`companies/${cid}/members`)
-      .where('role', '==', 'admin')
-      .count()
-      .get()
-    if (adminCountSnap.data().count <= 1) {
-      return { error: 'Cannot remove the only admin. Promote another member first.' }
-    }
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const [counts, targetSnap] = await Promise.all([
+        readMemberCounts(tx, cid),
+        tx.get(targetMemberRef),
+      ])
+
+      if (!targetSnap.exists) {
+        throw guardError('not-found', 'Member not found')
+      }
+
+      const targetRole = targetSnap.data()!.role as string | undefined
+
+      if (targetRole === 'admin' && counts.admins <= 1) {
+        throw guardError('sole-admin', 'Cannot remove the only admin. Promote another member first.')
+      }
+
+      // Only now, once the guard hasn't thrown, persist the heal — see
+      // updateMemberRole above for why a throw must discard it instead.
+      counts.applyHeal()
+
+      tx.delete(targetMemberRef)
+      tx.delete(userMembershipRef)
+      memberCountsDelta(tx, cid, { members: -1, admins: targetRole === 'admin' ? -1 : 0 })
+    })
+  } catch (err) {
+    const code = (err as { code?: string }).code
+    if (code === 'not-found') return { error: 'Member not found' }
+    if (code === 'sole-admin') return { error: 'Cannot remove the only admin. Promote another member first.' }
+
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      companyId: cid,
+      target: memberId.slice(0, 8) + '...',
+      error: message,
+      action: 'remove_member_guard_failed',
+    })
+    return { error: "Could not verify this company's administrators right now. No changes were made." }
   }
 
-  // ── 3. Delete membership documents (atomic WriteBatch) ───────────────────────
+  // ── 3. Anonymize uid-references scoped to this company (WriteBatch) ──────────
   let batch = adminDb.batch()
   let opCount = 0
 
@@ -400,28 +552,6 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
     }
   }
 
-  batch.delete(adminDb.doc(`companies/${cid}/members/${memberId}`))
-  opCount++
-
-  // Must land in the SAME batch chunk as the member delete directly above —
-  // emitted immediately after it, before any of the (potentially large)
-  // anonymization loop below that can push opCount past BATCH_LIMIT and
-  // rotate into a new chunk. If the delete committed in one chunk and this
-  // decrement failed or landed in a later one, the member would be gone but
-  // the count stale with no way to tell from either write alone.
-  //
-  // Confirmed empirically (throwaway script against allocate-alpha, deleted
-  // after use) that a single WriteBatch permits more than one write to the
-  // same document — companies/{cid} also receives a `createdBy: null` write
-  // further down in this function (via addOp), and that is safe as a
-  // separate write rather than something this needs to be merged with.
-  memberCountsDelta(batch, cid, { members: -1, admins: targetData.role === 'admin' ? -1 : 0 })
-  opCount++
-
-  batch.delete(adminDb.doc(`users/${memberId}/memberships/${cid}`))
-  opCount++
-
-  // ── 4. Anonymize uid-references scoped to this company ───────────────────────
   const bookingsRef  = adminDb.collection(`companies/${cid}/bookings`)
   const equipmentRef = adminDb.collection(`companies/${cid}/equipment`)
   const companyRef   = adminDb.doc(`companies/${cid}`)
@@ -460,7 +590,13 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
     }
   }
 
-  // Company doc: createdBy
+  // Company doc: createdBy. Confirmed empirically (throwaway script against
+  // allocate-alpha, deleted after use) that a single WriteBatch permits more
+  // than one write to the same document — companies/{cid} already received
+  // its `_meta/memberCounts` + `stats.memberCount` writes in the transaction
+  // above, and this createdBy write here, in a separate WriteBatch entirely,
+  // is safe as an independent write rather than something that needs to be
+  // merged with those.
   const companySnap = await companyRef.get()
   if (companySnap.exists && companySnap.data()?.createdBy === memberId) {
     await addOp(companyRef, { createdBy: null })

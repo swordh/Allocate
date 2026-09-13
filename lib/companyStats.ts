@@ -205,6 +205,22 @@ export async function readMemberCounts(
   const admins = adminsCountSnap.data().count
 
   const applyHeal = () => {
+    // This absolute merge-set and the FieldValue.increment merge-set
+    // `memberCountsDelta` issues right after it (same `ref`, same
+    // transaction, on a company's very first write after a heal) are not two
+    // independent writes racing on last-write-wins — they COMPOSE. Confirmed
+    // empirically (throwaway script against allocate-alpha, deleted after
+    // use, same practice as the empirical note in actions/team.ts): inside
+    // ONE `Transaction` against the SAME document, an absolute
+    // `tx.set(ref, {members:5, admins:3}, {merge:true})` followed by
+    // `tx.set(ref, {members: increment(-1), admins: increment(-1)}, {merge:true})`
+    // resolves to `{members:4, admins:2}` — the increment lands ON TOP OF the
+    // healed value, not instead of it. (The existing note in actions/team.ts
+    // only established this for `WriteBatch`; this is the same guarantee for
+    // `Transaction`.) This is the assumption the whole applyHeal() +
+    // memberCountsDelta() pairing rests on: without it, a company's first
+    // counter write after a heal could silently discard either the heal or
+    // the delta instead of applying both.
     tx.set(ref, { members, admins, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
 
     console.warn('[lib/companyStats]', {
