@@ -161,21 +161,34 @@ export function makeTransaction(docs: DocMap = {}): TransactionStub {
 // ── Query chain ───────────────────────────────────────────────────────────────
 
 /**
- * A chainable query stub. Every `.where()` returns the same chain with the
- * clause recorded, so the resolver sees all filters regardless of chain depth —
- * unlike a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }`, which
- * silently throws the moment production code adds a third filter.
+ * A chainable query stub. `.where()` returns a NEW chain carrying the parent's
+ * filters plus the new clause — never mutates the parent's own filter list —
+ * so the resolver sees the right filters regardless of chain depth, the same
+ * way a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }` would, but
+ * without throwing the moment production code adds a third filter.
+ *
+ * This immutability is load-bearing, not cosmetic: real Firestore
+ * `Query`/`CollectionReference` objects are immutable — `.where()` returns a
+ * new query rather than mutating the one it was called on — and more than
+ * one production code path relies on exactly that (lib/companyStats.ts's
+ * `readMemberCounts`, and `lib/queries/deletionOutcomes.ts`'s
+ * `readCompanyCounts`): both take ONE collection reference and derive TWO
+ * independent queries from it — an unfiltered `.count()` and a
+ * `.where('role','==','admin').count()` — run concurrently via `Promise.all`.
+ * A mock that pushed into one shared array would make the "unfiltered" count
+ * retroactively pick up the admin filter too (both `count().get()` calls read
+ * the array lazily, after both synchronous `.where()`/`.count()` calls have
+ * already run), silently halving the reported member count in exactly that
+ * scenario. Branching instead of mutating is what makes those two counts
+ * independent here the same way they are against real Firestore.
  */
-function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap) {
-  const filters: Filter[] = []
-
+function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap, filters: Filter[] = []) {
   const run = () => makeQuerySnap(resolver({ path, filters }), docs)
 
   const chain: Record<string, unknown> = {
     path,
     where(field: string, op: string, value: unknown) {
-      filters.push({ field, op, value })
-      return chain
+      return makeQueryChain(path, resolver, docs, [...filters, { field, op, value }])
     },
     orderBy: () => chain,
     limit: () => chain,

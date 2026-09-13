@@ -30,6 +30,7 @@ import {
   type DocMap,
   type QueryResolver,
   type QueryDocInput,
+  type DocRefStub,
 } from '../helpers/firestore'
 
 // ── Hoisted spies ─────────────────────────────────────────────────────────────
@@ -102,13 +103,80 @@ import { adminDb } from '@/lib/firebase-admin'
 
 const UID = 'user-1'
 
-/** Byte-identical to what this guard has always returned. */
-const SOLE_ADMIN_ERROR =
-  'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.'
-
-/** New in this PR: what the user sees when the guard itself couldn't be evaluated. */
+/** What the user sees when the guard itself couldn't be evaluated (a read
+ * failed) — distinct from the sole-admin message below, and from the
+ * `unknown`-outcome case exercised further down: this is the SAME string for
+ * both, since from the user's point of view "a read failed" and "a
+ * per-company outcome couldn't be determined" are the same situation. */
 const COULD_NOT_VERIFY_ERROR =
   'Could not verify your company administrators right now. Nothing was deleted — please try again in a moment.'
+
+/**
+ * Mirrors `actions/account.ts`'s `otherPeoplePhrase` / `buildBlockedClause` /
+ * `buildCloseClause` / `buildSoleAdminMessage` — kept in sync deliberately,
+ * same convention as the constant above: these tests assert the guard's
+ * actual user-facing string, not just "some error came back," so a
+ * regression in the wording (or in which company/count it names, or in
+ * which of the two — `blocked` vs `close` — a company gets) is caught here,
+ * not just a change in *whether* it blocks.
+ *
+ * `blocked` and `close` are asserted as genuinely different sentences on
+ * purpose (`soleAdminBlocked` vs `soleAdminClose`) — this is the regression
+ * the coordinator caught: an earlier version of this file folded `close`
+ * into the `blocked` wording ("make someone else an administrator"), which
+ * is unactionable advice for someone who has no one else to promote.
+ */
+function otherPeoplePhrase(otherCount: number): string {
+  if (otherCount <= 0) return 'no one else works'
+  if (otherCount === 1) return '1 other person works'
+  return `${otherCount} other people work`
+}
+
+function blockedClause(companies: Array<{ name: string; memberCount: number }>): string {
+  if (companies.length === 1) {
+    const c = companies[0]!
+    return `you are the only administrator of ${c.name}, where ${otherPeoplePhrase(Math.max(c.memberCount - 1, 0))}. Make someone else an administrator under Settings → Team, then try again.`
+  }
+  const perCompany = companies
+    .map((c) => `${c.name} (${otherPeoplePhrase(Math.max(c.memberCount - 1, 0))})`)
+    .join('; ')
+  return `you are the only administrator of ${companies.length} companies — ${perCompany}. Make someone else an administrator in each one under Settings → Team, then try again.`
+}
+
+function closeClause(companies: Array<{ name: string }>): string {
+  if (companies.length === 1) {
+    return `you are the only member of ${companies[0]!.name}, so deleting your account would also remove the company. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
+  }
+  const names = companies.map((c) => c.name).join(', ')
+  return `you are the only member of ${companies.length} companies — ${names} — so deleting your account would also remove them. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
+}
+
+/** One `blocked` company — the common case: a colleague exists to promote. */
+function soleAdminBlocked(companyName: string, memberCount: number): string {
+  return `Cannot delete account: ${blockedClause([{ name: companyName, memberCount }])}`
+}
+
+/** One `close` company — the sole-member case: no colleague exists, so the
+ * message must not suggest promoting one. This is the exact scenario issue
+ * #252 was reopened over — asserted as a full string, not just "some error
+ * came back," specifically so a message that asks for an impossible action
+ * fails a test again if it ever regresses. */
+function soleAdminClose(companyName: string): string {
+  return `Cannot delete account: ${closeClause([{ name: companyName }])}`
+}
+
+function soleAdminBlockedMulti(companies: Array<{ name: string; memberCount: number }>): string {
+  return `Cannot delete account: ${blockedClause(companies)}`
+}
+
+/** Mixed case: at least one `blocked` company and at least one `close`
+ * company at once — both parts must appear, each with its own fix. */
+function soleAdminMixed(
+  blocked: Array<{ name: string; memberCount: number }>,
+  close: Array<{ name: string }>,
+): string {
+  return `Cannot delete account: ${blockedClause(blocked)} Also, ${closeClause(close)}`
+}
 
 // ── Scenario wiring ───────────────────────────────────────────────────────────
 
@@ -234,7 +302,15 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     expect(mockDeleteUser).toHaveBeenCalledOnce()
   })
 
-  it('blocks deletion at the pre-flight stage when the user is the sole admin of their active company', async () => {
+  it('blocks deletion with the CLOSE message when the user is the sole member of their active company — not the blocked/"promote someone" message', async () => {
+    // members: 1, admins: 1 — the user is the company's only person, which
+    // getDeletionOutcomes classifies as 'close', not 'blocked'. This is the
+    // scenario the coordinator caught: 'close' must get its own honest
+    // message pointing at a concrete, already-open surface ("open Help &
+    // feedback"), never the 'blocked' one ("make someone else an
+    // administrator") — there is no one else to make an admin, and no
+    // vague "contact support" either, since the user shouldn't have to go
+    // find an address when the in-app support surface is one click away.
     stubSession({ activeCompanyId: 'company-A' })
     wireScenario({
       memberships: [{ companyId: 'company-A', role: 'admin' }],
@@ -244,16 +320,21 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     const result = await deleteAccount()
 
     // Assert the guard's own message, not merely that *some* error came back.
-    expect(result.error).toBe(SOLE_ADMIN_ERROR)
+    expect(result.error).toBe(soleAdminClose('company-A'))
+    // Never the blocked wording — this is the exact regression this test
+    // exists to catch.
+    expect(result.error).not.toContain('Make someone else an administrator')
     // Blocked before the commit loop ever starts a transaction.
     expect(adminDb.runTransaction).not.toHaveBeenCalled()
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 
-  it('blocks deletion when the user is the sole admin of a NON-active company', async () => {
+  it('blocks deletion with the BLOCKED message when the user is the sole admin of a NON-active company, with other members present', async () => {
     // Active company is company-A (2 admins — safe).
-    // Non-active company is company-B (1 admin — this user — must block).
+    // Non-active company is company-B (1 admin, 3 members total — this user
+    // plus two colleagues) — a genuine 'blocked' outcome: promoting one of
+    // those colleagues is a real way out.
     stubSession({ activeCompanyId: 'company-A' })
     wireScenario({
       memberships: [
@@ -262,16 +343,47 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
       ],
       companies: {
         'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } },
+        'company-B': { memberRole: 'admin', metaCounts: { members: 3, admins: 1 } },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('company-B', 3))
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
+  it('mixed case: names both the BLOCKED company and the CLOSE company, each with its own fix', async () => {
+    // company-A: blocked (sole admin, 2 other members — promote one).
+    // company-B: close (sole member — no one to promote, open Help & feedback).
+    // The designbrief requires consequences reported per company, never
+    // collapsed into one verdict — this is that requirement's sharpest edge
+    // case: two DIFFERENT fixes must both be visible in one message.
+    stubSession()
+    wireScenario({
+      memberships: [
+        { companyId: 'company-A', role: 'admin' },
+        { companyId: 'company-B', role: 'admin' },
+      ],
+      companies: {
+        'company-A': { memberRole: 'admin', metaCounts: { members: 3, admins: 1 } },
         'company-B': { memberRole: 'admin', metaCounts: { members: 1, admins: 1 } },
       },
     })
 
     const result = await deleteAccount()
 
-    expect(result.error).toBe(SOLE_ADMIN_ERROR)
+    expect(result.error).toBe(
+      soleAdminMixed([{ name: 'company-A', memberCount: 3 }], [{ name: 'company-B' }]),
+    )
+    // Both parts must be readable in the one string — not just matching the
+    // combined builder above (which could hide a merge bug the same shape as
+    // the one it replicates), but each half checked independently too.
+    expect(result.error).toContain('Make someone else an administrator')
+    expect(result.error).toContain('open Help & feedback')
     expect(adminDb.runTransaction).not.toHaveBeenCalled()
-    expect(mockDeleteSession).not.toHaveBeenCalled()
-    expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 
   it('allows deletion when the user transferred ownership in all companies they admin', async () => {
@@ -408,8 +520,120 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
 
     const result = await deleteAccount()
 
-    expect(result.error).toBe(SOLE_ADMIN_ERROR)
+    // The commit loop's own guard builds this from what the transaction
+    // itself read (txDocs: members 3), not from the pre-flight's stale
+    // snapshot (preflightDocs: members 3, admins 2 — safe) — this is exactly
+    // the point of the test, so the expected string uses txDocs's numbers.
+    expect(result.error).toBe(soleAdminBlocked('Acme', 3))
     expect(tx.delete).not.toHaveBeenCalled()
+  })
+
+  it('commit loop blocks with CLOSE even for a non-admin sole member — the close check does not depend on role', async () => {
+    // Contrived on purpose: a company whose only member doc has role
+    // 'crew', not 'admin'. This should be unreachable in practice —
+    // updateMemberRole (actions/team.ts) refuses to demote a company's last
+    // admin — but the commit loop is the AUTHORITATIVE, last-word guard and
+    // must not rely on that invariant holding. Before this fix, the guard
+    // only ever reached `close`/`blocked` via `role === 'admin' &&
+    // counts.admins <= 1`, so a sole member recorded as 'crew' would fall
+    // through that branch entirely and the deletion would proceed, silently
+    // orphaning the company.
+    //
+    // Same technique as the "stale pre-flight" race test above: pre-flight
+    // and the commit loop are wired against DIFFERENT `_meta/memberCounts`
+    // snapshots, so pre-flight sees a SAFE company (2 members, this user
+    // 'crew') and lets the request through — the commit loop alone must
+    // catch the sole-member state, proving this is its own independent
+    // check and not pre-flight's role-independent one (already covered by
+    // __tests__/queries/deletionOutcomes.test.ts) doing the work again.
+    stubSession()
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      'companies/company-A/_meta/memberCounts': { members: 2, admins: 1 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query })
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminClose('Acme'))
+    expect(tx.delete).not.toHaveBeenCalled()
+  })
+
+  it('blocks with a distinct message when a company\'s outcome could not be determined ("unknown", not "blocked")', async () => {
+    // company-A's own document reads fine, but its memberCounts read fails —
+    // getDeletionOutcomes (lib/queries/deletionOutcomes.ts) reports that as
+    // outcome 'unknown', and deleteAccount must show COULD_NOT_VERIFY_ERROR,
+    // never the sole-admin message: the user has nothing to promote their
+    // way out of here, the system just couldn't tell.
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+
+    // Every OTHER doc path still resolves through wireScenario's normal
+    // wiring; only the memberCounts read for this one company is made to
+    // fail, so this test isolates that single read's failure mode.
+    const resolveDocNormally = wired.doc.getMockImplementation() as unknown as (path: string) => DocRefStub
+    vi.mocked(adminDb.doc).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/_meta/memberCounts') {
+        return {
+          path,
+          id: 'memberCounts',
+          get: async () => { throw new Error('Firestore unavailable') },
+        }
+      }
+      return resolveDocNormally(path)
+    }) as unknown as typeof adminDb.doc)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
+  it('names every blocking company when more than one blocks at once', async () => {
+    // issue #252 point 1: "a user in several companies at once" must get a
+    // comprehensible per-company account, not just the worst single outcome.
+    stubSession()
+    wireScenario({
+      memberships: [
+        { companyId: 'company-A', role: 'admin' },
+        { companyId: 'company-B', role: 'admin' },
+      ],
+      companies: {
+        'company-A': { memberRole: 'admin', metaCounts: { members: 4, admins: 1 } },
+        'company-B': { memberRole: 'admin', metaCounts: { members: 2, admins: 1 } },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(
+      soleAdminBlockedMulti([
+        { name: 'company-A', memberCount: 4 },
+        { name: 'company-B', memberCount: 2 },
+      ]),
+    )
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
   })
 })
 

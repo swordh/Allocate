@@ -7,7 +7,9 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
+import { getDeletionOutcomes, type CompanyDeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import { stripe } from '@/lib/stripe'
+import type { Role } from '@/types'
 import { deleteSession } from './auth'
 
 const BATCH_LIMIT = 490
@@ -27,18 +29,147 @@ function guardError(code: DeleteAccountGuardError['code'], message: string): Del
   return Object.assign(new Error(message), { code })
 }
 
-// Byte-identical to the string this guard has always returned —
-// __tests__/account/deleteAccount.test.ts asserts it verbatim, and
-// rewording it is issue #252 point 1's job, not this one's.
-const SOLE_ADMIN_ERROR =
-  'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.'
-
-// Distinct from SOLE_ADMIN_ERROR: this is what the user sees when the guard
-// itself couldn't be evaluated (a read failed, a transaction couldn't be
-// completed) — "nothing was deleted" is the fact this message needs to
-// convey, as opposed to "you were blocked on purpose."
+// Distinct from the sole-admin message below: this is what the user sees
+// when the guard itself couldn't be evaluated (a read failed, a transaction
+// couldn't be completed) — "nothing was deleted" is the fact this message
+// needs to convey, as opposed to "you were blocked on purpose." It is also
+// what `deleteAccount` shows for a `getDeletionOutcomes` result of
+// `'unknown'` — see that type's docblock for why `unknown` must never be
+// confused with `blocked`: one hands the user something to do, the other
+// means the system couldn't tell.
 const COULD_NOT_VERIFY_ERROR =
   'Could not verify your company administrators right now. Nothing was deleted — please try again in a moment.'
+
+/**
+ * How many people, besides the caller, work at a `blocked` company — phrased
+ * for `buildBlockedClause` below. A `blocked` outcome always has at least one
+ * other member (that's what distinguishes it from `close`), so `otherCount`
+ * is never expected to be 0 here; the 0 branch exists only as a defensive
+ * fallback, not a case this function's callers should ever hit in practice.
+ *
+ * No "there" in any branch — the caller embeds this after "where ...", and
+ * "where" already establishes the location. An earlier version returned
+ * "no one else works"/"N other people work" and the caller ALSO appended
+ * " there" after it, producing "where 3 other people work there" — two
+ * location words doing the job of one. Read every branch below out loud
+ * before touching it again.
+ */
+function otherPeoplePhrase(otherCount: number): string {
+  if (otherCount <= 0) return 'no one else works'
+  if (otherCount === 1) return '1 other person works'
+  return `${otherCount} other people work`
+}
+
+/**
+ * Sentence for the `blocked` companies in a `deleteAccount` rejection: the
+ * caller is the sole admin, but other members exist, so promoting one of
+ * them (Settings → Team) is a real, actionable way out. Returns a single
+ * sentence group covering however many `blocked` companies were passed —
+ * never just the first — so a user blocked in two companies at once isn't
+ * sent to fix one, retry, and get blocked again by a company they were never
+ * told about (issue #252 point 1: "a user in several companies at once"
+ * needs a per-company account, not the worst single outcome).
+ */
+function buildBlockedClause(companies: CompanyDeletionOutcome[]): string {
+  if (companies.length === 1) {
+    const company = companies[0]!
+    const otherCount = Math.max(company.memberCount - 1, 0)
+    return `you are the only administrator of ${company.companyName}, where ${otherPeoplePhrase(otherCount)}. Make someone else an administrator under Settings → Team, then try again.`
+  }
+
+  const perCompany = companies
+    .map((company) => `${company.companyName} (${otherPeoplePhrase(Math.max(company.memberCount - 1, 0))})`)
+    .join('; ')
+  return `you are the only administrator of ${companies.length} companies — ${perCompany}. Make someone else an administrator in each one under Settings → Team, then try again.`
+}
+
+/**
+ * Sentence for the `close` companies in a `deleteAccount` rejection: the
+ * caller is the company's ONLY member, so there is no colleague to promote —
+ * `buildBlockedClause`'s advice would be a dead end here. This codebase
+ * doesn't yet implement removing a company together with its sole member's
+ * account (issue #252 Part 2 / step 5 — the designbrief's "ensam medlem"
+ * exception), so today this is a genuine, self-service-free block, and the
+ * only honest instruction is to ask a human. An earlier version of this
+ * message folded `close` into `buildBlockedClause`'s "make someone else an
+ * administrator" advice — which is exactly the bug issue #252 exists to
+ * fix, just relocated: a message that tells someone with nobody left to
+ * promote to go promote somebody.
+ *
+ * Names "Help & feedback" (`components/support/SupportModal.tsx`'s modal
+ * title, opened via `openHelp()` from `lib/support-context.tsx`), not
+ * support@allocate.at: `PrimaryNav` (`components/nav/PrimaryNav.tsx`) renders
+ * on every route under `app/(app)/layout.tsx` — including
+ * `/settings/account`, where this message is shown — so the user can open it
+ * without leaving the page they're already on and without switching to an
+ * email client. Pointing at a concrete, already-open surface rather than an
+ * address is the same fix `buildBlockedClause` makes by naming
+ * "Settings → Team" instead of just saying "ask an admin" — vague-but-true
+ * is the failure mode this whole change exists to remove, and a mailto
+ * address the user has to go find is still vague in that sense.
+ */
+function buildCloseClause(companies: CompanyDeletionOutcome[]): string {
+  if (companies.length === 1) {
+    const company = companies[0]!
+    return `you are the only member of ${company.companyName}, so deleting your account would also remove the company. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
+  }
+
+  const names = companies.map((company) => company.companyName).join(', ')
+  return `you are the only member of ${companies.length} companies — ${names} — so deleting your account would also remove them. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
+}
+
+/**
+ * Builds the message for `deleteAccount`'s sole-admin block from one or more
+ * `getDeletionOutcomes` results (lib/queries/deletionOutcomes.ts) whose
+ * outcome is `blocked` or `close`.
+ *
+ * These two outcomes get genuinely different sentences, not a shared
+ * "make someone else an administrator" line: `blocked` companies have a
+ * colleague to promote, `close` companies don't. A user who is `blocked` in
+ * one company and `close` in another sees BOTH sentences — the designbrief
+ * is explicit that consequences must be reported per company, never
+ * collapsed into one verdict, and a merged message here would hide the
+ * `close` company's completely different fix behind the `blocked` company's
+ * advice.
+ */
+function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
+  // `otherAdminCount` (lib/queries/deletionOutcomes.ts) is 0 for every
+  // company reaching this function BY DEFINITION: `blocked` means the caller
+  // is the sole admin (so `admins <= 1` — no OTHER admin exists), and
+  // `close` means the caller is the sole member (so `admins <= 1` too, since
+  // a company can't have more admins than members). Neither clause builder
+  // below needs the value for its wording (the sentences describe total
+  // headcount, not admin headcount), but the field is still part of what
+  // `getDeletionOutcomes` returns, and a company that reaches here with a
+  // NON-zero `otherAdminCount` would mean that definition broke somewhere
+  // upstream — worth knowing about even though nothing here would act on it
+  // differently. Logged, not thrown: this function only builds a string, and
+  // a data anomaly here is not a reason to fail the whole rejection message.
+  for (const company of blocking) {
+    if (company.otherAdminCount !== 0) {
+      console.error('[actions/account]', {
+        companyId: company.companyId,
+        outcome: company.outcome,
+        otherAdminCount: company.otherAdminCount,
+        action: 'sole_admin_message_unexpected_other_admin_count',
+      })
+    }
+  }
+
+  const blockedCompanies = blocking.filter((company) => company.outcome === 'blocked')
+  const closeCompanies = blocking.filter((company) => company.outcome === 'close')
+
+  const clauses: string[] = []
+  if (blockedCompanies.length > 0) clauses.push(buildBlockedClause(blockedCompanies))
+  if (closeCompanies.length > 0) clauses.push(buildCloseClause(closeCompanies))
+
+  // ' Also, ' joins at most two clauses today (one `blocked`, one `close`) —
+  // if a future outcome type needs a third clause here, this join still
+  // works (`Array.join` handles any length), but the "Also," wording was
+  // only proven to read naturally for exactly two; re-check it out loud
+  // before adding a third clause kind.
+  return `Cannot delete account: ${clauses.join(' Also, ')}`
+}
 
 export async function updateUserProfile(data: {
   name?: string
@@ -90,65 +221,50 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   // "blocked" here just means a legitimate deletion returns this error and
   // the user retries, which is safe because retrying is idempotent (see the
   // `!memberSnap.exists` branch in step 2).
-  let membershipsSnap: FirebaseFirestore.QuerySnapshot
+  //
+  // issue #252 point 1: this used to compute its own admin counts inline and
+  // return one generic, un-named message. `getDeletionOutcomes`
+  // (lib/queries/deletionOutcomes.ts) is that same computation — per-company
+  // membership pointer skipping, `_meta/memberCounts` read, aggregate
+  // fallback — pulled out so `deleteAccount` isn't the only caller who can
+  // ever know it, and so the message below can name the blocking compan(y/ies)
+  // instead of saying "one of your companies."
+  let outcomes: CompanyDeletionOutcome[]
   try {
-    membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
-    const adminMemberships = membershipsSnap.docs.filter(m => m.data().role === 'admin')
-
-    if (adminMemberships.length > 0) {
-      const adminCounts = await Promise.all(
-        adminMemberships.map(async (m) => {
-          const companyId = m.data().companyId as string
-
-          // Stale membership pointer: this company no longer exists. Must be
-          // checked FIRST and short-circuit to a count that can never block —
-          // step 2's `!companySnap.exists` branch is precisely the fix for
-          // this case (issue #252 point 2), and if this preflight didn't also
-          // know about it, it would independently reintroduce the exact same
-          // permanent-block bug one layer up: a company with no members
-          // collection at all would read back an admin count of 0 from the
-          // aggregate fallback below, which is `<= 1` and would block forever
-          // — precisely what step 2 exists to stop doing.
-          const companySnap = await adminDb.doc(`companies/${companyId}`).get()
-          if (!companySnap.exists) {
-            // Infinity, not 0 or 1: this is a sentinel for "never blocks"
-            // (`count <= 1` below must be false for it), not a real count —
-            // there is no company left to count admins of.
-            return { companyId, count: Infinity }
-          }
-
-          // Company-side `_meta/memberCounts` (lib/companyStats.ts), not the
-          // old collectionGroup('memberships') query: that query filtered on
-          // the SAME denormalized user-side `role` this function already
-          // filtered on above (`adminMemberships`), so it could only ever
-          // agree with it — while requiring a collection-group index whose
-          // absence was itself issue #252 point 3. When the counter hasn't
-          // been seeded for this company yet, fall back to a live
-          // company-side aggregate — the same source `readMemberCounts`
-          // self-heals from, just not persisted here, since this read isn't
-          // inside a transaction. Step 2's transaction heals it for real.
-          const metaSnap = await adminDb.doc(`companies/${companyId}/_meta/memberCounts`).get()
-          if (metaSnap.exists) {
-            return { companyId, count: (metaSnap.data()!.admins as number | undefined) ?? 0 }
-          }
-          const countSnap = await adminDb
-            .collection(`companies/${companyId}/members`)
-            .where('role', '==', 'admin')
-            .count()
-            .get()
-          return { companyId, count: countSnap.data().count }
-        })
-      )
-      const blocking = adminCounts.find(c => c.count <= 1)
-      if (blocking) {
-        console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_blocked_sole_admin' })
-        return { error: SOLE_ADMIN_ERROR }
-      }
-    }
+    outcomes = await getDeletionOutcomes(uid)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { error: message, action: 'delete_account_preflight_failed' })
     return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
+  // 'unknown' means a per-company read failed inside getDeletionOutcomes —
+  // kept out of the blocking set below on purpose (see that type's
+  // docblock): a company we couldn't evaluate is not evidence the user is
+  // blocked, but it's also not evidence they're safe, so this fails closed
+  // with the same "try again" message the top-level catch above uses, rather
+  // than silently treating an unreadable company as safe to leave.
+  if (outcomes.some((o) => o.outcome === 'unknown')) {
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_preflight_unknown_outcome' })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
+  // `close` still counts as "blocking" here — this codebase doesn't yet
+  // implement removing a company together with its sole member's account
+  // (issue #252 Part 2 / step 5), so a `close` company genuinely can't be
+  // deleted through today. It is NOT folded into the same message as
+  // `blocked`, though — see `buildSoleAdminMessage`'s docblock: a sole
+  // member has no colleague to promote, so "make someone else an
+  // administrator" would be advice they cannot act on, which is the exact
+  // failure mode issue #252 point 1 exists to fix.
+  const blocking = outcomes.filter((o) => o.outcome === 'blocked' || o.outcome === 'close')
+  if (blocking.length > 0) {
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      companyIds: blocking.map((b) => b.companyId),
+      action: 'delete_account_blocked_sole_admin',
+    })
+    return { error: buildSoleAdminMessage(blocking) }
   }
 
   // ── 2. Commit loop: one transaction per company ────────────────────────────
@@ -163,6 +279,15 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   // never exist again — permanently blocking account deletion. The
   // `!companySnap.exists` branch below fixes that by skipping such a company
   // outright.
+  //
+  // Re-read here rather than reach into `getDeletionOutcomes`'s internal
+  // read above: that function is a read-only display computation for step 1
+  // and intentionally doesn't hand back its raw membership snapshot — this
+  // loop needs the authoritative, current list of companies to iterate and
+  // delete from, not a helper built for showing the user a message. A second
+  // read of a small per-user collection (bounded by how many companies one
+  // person can join) is cheap next to the rest of this function's work.
+  const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
   const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
   let completedCompanies = 0
 
@@ -199,8 +324,51 @@ export async function deleteAccount(): Promise<{ error?: string }> {
 
         const role = memberSnap.data()!.role as string | undefined
 
+        // `close` is checked FIRST, independent of role — mirroring
+        // lib/queries/deletionOutcomes.ts's getDeletionOutcomes, which
+        // classifies `close` purely from `counts.members <= 1`. An earlier
+        // version of this guard only ever reached `close` through the
+        // `role === 'admin' && counts.admins <= 1` branch below, which
+        // silently relied on an INVARIANT it doesn't itself enforce: that a
+        // company's sole member is always its admin. That invariant holds
+        // today only because `updateMemberRole` (actions/team.ts) refuses to
+        // demote a company's last admin — enforced in a completely different
+        // file. This transaction is the AUTHORITATIVE, last-word guard
+        // (step 1's own pre-flight comment); it must reach the right answer
+        // on its own reads, not by trusting discipline upheld elsewhere. If
+        // that invariant is ever weakened, a non-admin sole member must
+        // still block here exactly like an admin one does, and checking
+        // `members <= 1` first, unconditionally, is what guarantees that.
+        if (counts.members <= 1) {
+          const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+          const blockingOutcome: CompanyDeletionOutcome = {
+            companyId,
+            companyName,
+            role: (role as Role | undefined) ?? 'crew',
+            memberCount: counts.members,
+            otherAdminCount: Math.max(counts.admins - (role === 'admin' ? 1 : 0), 0),
+            outcome: 'close',
+          }
+          throw guardError('sole-admin', buildSoleAdminMessage([blockingOutcome]))
+        }
+
         if (role === 'admin' && counts.admins <= 1) {
-          throw guardError('sole-admin', SOLE_ADMIN_ERROR)
+          // Same message shape as the pre-flight (buildSoleAdminMessage),
+          // built from what this transaction already read rather than a
+          // fixed string — this is the authoritative guard (step 1's own
+          // comment), so if it ever disagrees with a stale pre-flight
+          // answer, the user should still see a message naming the right
+          // company and count, not a generic fallback.
+          const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+          const blockingOutcome: CompanyDeletionOutcome = {
+            companyId,
+            companyName,
+            role: 'admin',
+            memberCount: counts.members,
+            otherAdminCount: Math.max(counts.admins - 1, 0),
+            outcome: 'blocked',
+          }
+          throw guardError('sole-admin', buildSoleAdminMessage([blockingOutcome]))
         }
 
         // Only now that neither early return nor the guard above has fired —
@@ -233,7 +401,11 @@ export async function deleteAccount(): Promise<{ error?: string }> {
         total: companyIds.length,
       })
 
-      return { error: code === 'sole-admin' ? SOLE_ADMIN_ERROR : COULD_NOT_VERIFY_ERROR }
+      // `message` here is `guardError`'s own message for 'sole-admin' —
+      // already the fully-built, company-named string, not a fixed constant
+      // (see the throw site above) — so it's used directly rather than
+      // mapped to one.
+      return { error: code === 'sole-admin' ? message : COULD_NOT_VERIFY_ERROR }
     }
   }
 
