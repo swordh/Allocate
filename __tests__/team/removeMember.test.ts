@@ -8,11 +8,11 @@
  * through addOp) specifically so nothing can land between them and push the
  * delete into one chunk and the decrement into another.
  *
- * memberCountDelta uses `.set(..., { merge: true })`, not `.update()` —
+ * memberCountsDelta uses `.set(..., { merge: true })`, not `.update()` —
  * `.update()` throws when the target document is missing, which would turn a
  * stats mirror write into a reason the whole member-removal batch fails.
  *
- * `lib/companyStats.ts` is NOT mocked here — memberCountDelta's own
+ * `lib/companyStats.ts` is NOT mocked here — memberCountsDelta's own
  * FieldValue.increment/serverTimestamp calls run for real, the same way
  * `__tests__/auth/setupNewCompany.test.ts` already exercises FieldValue calls
  * without mocking `firebase-admin/firestore`.

@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import { memberCountDelta } from '@/lib/companyStats'
+import { memberCountsDelta } from '@/lib/companyStats'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
@@ -415,7 +415,7 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   // same document — companies/{cid} also receives a `createdBy: null` write
   // further down in this function (via addOp), and that is safe as a
   // separate write rather than something this needs to be merged with.
-  memberCountDelta(batch, cid, -1)
+  memberCountsDelta(batch, cid, { members: -1, admins: targetData.role === 'admin' ? -1 : 0 })
   opCount++
 
   batch.delete(adminDb.doc(`users/${memberId}/memberships/${cid}`))

@@ -3,7 +3,7 @@ import { logger } from 'firebase-functions/v2';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
-import { memberCountDelta } from '../companyStats';
+import { memberCountsDelta } from '../companyStats';
 
 /**
  * Triggered when a new Firebase Auth user is created.
@@ -82,7 +82,7 @@ export const onUserCreate = functions
           return;
         }
 
-        memberCountDelta(tx, db, companyId, 1);
+        memberCountsDelta(tx, db, companyId, { members: 1, admins: role === 'admin' ? 1 : 0 });
 
         // 1. Create member doc under company
         tx.set(memberRef, {
