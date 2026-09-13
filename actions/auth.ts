@@ -157,6 +157,14 @@ export async function setupNewCompany(
   const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
   batch.set(counterRef, { count: 0, updatedAt: FieldValue.serverTimestamp() })
 
+  // Initialize the member-counts counter (lib/companyStats.ts) so the
+  // sole-admin guards in removeMember/updateMemberRole/deleteAccount never
+  // have to fall back to readMemberCounts's self-healing aggregate read for a
+  // brand-new company — the founder is member 1 and admin 1 from the first
+  // instant the company exists, in the same batch as companyMemberRef below.
+  const memberCountsRef = adminDb.doc(`companies/${companyId}/_meta/memberCounts`)
+  batch.set(memberCountsRef, { members: 1, admins: 1, updatedAt: FieldValue.serverTimestamp() })
+
   try {
     await batch.commit()
   } catch {

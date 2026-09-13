@@ -6,7 +6,7 @@ import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
-import { memberCountDelta } from '@/lib/companyStats'
+import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import { stripe } from '@/lib/stripe'
 import { deleteSession } from './auth'
 
@@ -16,6 +16,29 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   await batch.commit()
   return adminDb.batch()
 }
+
+/** Typed sentinel thrown inside `deleteAccount`'s per-company transaction,
+ * mapped to a user-facing string in the catch block — same pattern as
+ * `actions/equipment.ts`'s `createEquipment` and `actions/team.ts`'s
+ * `updateMemberRole`/`removeMember`. */
+type DeleteAccountGuardError = Error & { code: 'sole-admin' }
+
+function guardError(code: DeleteAccountGuardError['code'], message: string): DeleteAccountGuardError {
+  return Object.assign(new Error(message), { code })
+}
+
+// Byte-identical to the string this guard has always returned —
+// __tests__/account/deleteAccount.test.ts asserts it verbatim, and
+// rewording it is issue #252 point 1's job, not this one's.
+const SOLE_ADMIN_ERROR =
+  'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.'
+
+// Distinct from SOLE_ADMIN_ERROR: this is what the user sees when the guard
+// itself couldn't be evaluated (a read failed, a transaction couldn't be
+// completed) — "nothing was deleted" is the fact this message needs to
+// convey, as opposed to "you were blocked on purpose."
+const COULD_NOT_VERIFY_ERROR =
+  'Could not verify your company administrators right now. Nothing was deleted — please try again in a moment.'
 
 export async function updateUserProfile(data: {
   name?: string
@@ -35,12 +58,38 @@ export async function updateUserProfile(data: {
   }
 }
 
+/**
+ * Deletes the caller's own account (GDPR Art. 17): erases/anonymises their
+ * PII across every company they belong to, then deletes their Firebase Auth
+ * record.
+ *
+ * Three phases:
+ *   1. Pre-flight sole-admin guard — read-only, best-effort, exists only to
+ *      fail fast with a clear message; never authoritative on its own.
+ *   2. Commit loop — one `runTransaction` per company, sequential: the
+ *      authoritative guard, the company-side member doc delete, and the
+ *      memberCounts delta (lib/companyStats.ts) all happen together. Skips a
+ *      company outright if it no longer exists (a stale membership pointer),
+ *      and is idempotent against a retry whose member doc is already gone.
+ *   3. Anonymisation — a chunked WriteBatch over bookings/equipment/units/
+ *      invitations/Stripe, followed by session + Auth-record deletion. Only
+ *      reached if every company in phase 2 succeeded or was safely skipped.
+ */
 export async function deleteAccount(): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
   const uid = session.uid
 
-  // ── 1. Sole-admin guard ────────────────────────────────────────────────────
-  // Block if this user is the only admin of ANY company they belong to.
+  // ── 1. Pre-flight sole-admin guard (read-only, best-effort) ────────────────
+  // Exists purely to return a clear rejection before doing ANY work, for the
+  // common case. It is deliberately not authoritative — the commit loop in
+  // step 2 below re-checks per company, live, inside the transaction that
+  // also deletes that company's membership, which is the only place this
+  // guard can be both correct and race-free. A wrong answer here (stale in
+  // either direction) is always caught by step 2: a false "safe" here gets
+  // rejected for real by step 2 on the actual blocking company; a false
+  // "blocked" here just means a legitimate deletion returns this error and
+  // the user retries, which is safe because retrying is idempotent (see the
+  // `!memberSnap.exists` branch in step 2).
   let membershipsSnap: FirebaseFirestore.QuerySnapshot
   try {
     membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
@@ -50,9 +99,40 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       const adminCounts = await Promise.all(
         adminMemberships.map(async (m) => {
           const companyId = m.data().companyId as string
+
+          // Stale membership pointer: this company no longer exists. Must be
+          // checked FIRST and short-circuit to a count that can never block —
+          // step 2's `!companySnap.exists` branch is precisely the fix for
+          // this case (issue #252 point 2), and if this preflight didn't also
+          // know about it, it would independently reintroduce the exact same
+          // permanent-block bug one layer up: a company with no members
+          // collection at all would read back an admin count of 0 from the
+          // aggregate fallback below, which is `<= 1` and would block forever
+          // — precisely what step 2 exists to stop doing.
+          const companySnap = await adminDb.doc(`companies/${companyId}`).get()
+          if (!companySnap.exists) {
+            // Infinity, not 0 or 1: this is a sentinel for "never blocks"
+            // (`count <= 1` below must be false for it), not a real count —
+            // there is no company left to count admins of.
+            return { companyId, count: Infinity }
+          }
+
+          // Company-side `_meta/memberCounts` (lib/companyStats.ts), not the
+          // old collectionGroup('memberships') query: that query filtered on
+          // the SAME denormalized user-side `role` this function already
+          // filtered on above (`adminMemberships`), so it could only ever
+          // agree with it — while requiring a collection-group index whose
+          // absence was itself issue #252 point 3. When the counter hasn't
+          // been seeded for this company yet, fall back to a live
+          // company-side aggregate — the same source `readMemberCounts`
+          // self-heals from, just not persisted here, since this read isn't
+          // inside a transaction. Step 2's transaction heals it for real.
+          const metaSnap = await adminDb.doc(`companies/${companyId}/_meta/memberCounts`).get()
+          if (metaSnap.exists) {
+            return { companyId, count: (metaSnap.data()!.admins as number | undefined) ?? 0 }
+          }
           const countSnap = await adminDb
-            .collectionGroup('memberships')
-            .where('companyId', '==', companyId)
+            .collection(`companies/${companyId}/members`)
             .where('role', '==', 'admin')
             .count()
             .get()
@@ -61,19 +141,104 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       )
       const blocking = adminCounts.find(c => c.count <= 1)
       if (blocking) {
-        console.error('[actions/account] deleteAccount blocked: sole admin', { uid: uid.slice(0, 8) + '...' })
-        return { error: 'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.' }
+        console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_blocked_sole_admin' })
+        return { error: SOLE_ADMIN_ERROR }
       }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/account]', { error: message, action: 'delete_account_guard_failed' })
-    return { error: 'Failed to delete account' }
+    console.error('[actions/account]', { error: message, action: 'delete_account_preflight_failed' })
+    return { error: COULD_NOT_VERIFY_ERROR }
   }
 
-  // ── 2. Anonymize all user data ─────────────────────────────────────────────
+  // ── 2. Commit loop: one transaction per company ────────────────────────────
+  // Deletes companies/{cid}/members/{uid} and applies the memberCounts delta
+  // for each company the user belongs to, one transaction per company,
+  // sequentially, and entirely BEFORE the big anonymisation batch in step 3.
+  // This is the authoritative guard — see step 1's comment — and it is also
+  // what fixes a pre-existing bug (issue #252 point 2): a leftover
+  // users/{uid}/memberships/{cid} doc pointing at a company that no longer
+  // exists used to be counted as a live admin membership by the old guard,
+  // which could never see a second admin appear for a company that will
+  // never exist again — permanently blocking account deletion. The
+  // `!companySnap.exists` branch below fixes that by skipping such a company
+  // outright.
+  const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
+  let completedCompanies = 0
+
+  for (const companyId of companyIds) {
+    try {
+      await adminDb.runTransaction(async (tx) => {
+        const companyRef = adminDb.doc(`companies/${companyId}`)
+        const memberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
+
+        // Reads first, in any order — readMemberCounts no longer writes
+        // during its read phase (see lib/companyStats.ts's `applyHeal`
+        // docblock). `applyHeal()` below is the one thing that must come
+        // after every read here and before every write.
+        const [companySnap, counts, memberSnap] = await Promise.all([
+          tx.get(companyRef),
+          readMemberCounts(tx, companyId),
+          tx.get(memberRef),
+        ])
+
+        // Stale membership pointer: see this function's own comment above —
+        // there is no company left to guard or delete a membership from.
+        if (!companySnap.exists) return
+
+        // Idempotence / partial-failure recovery: if an earlier, failed
+        // attempt at this loop already deleted this company's member doc and
+        // committed its delta, a retry lands here with the member doc
+        // already gone. Returning early — WITHOUT reapplying
+        // memberCountsDelta — is what stops the retry from decrementing
+        // `admins`/`members` a second time. Skipping this check would drive
+        // `_meta/memberCounts` stale-LOW for this company on every retry,
+        // which fails closed (blocks a future removal/deletion here) rather
+        // than stale-HIGH, but it's still wrong and entirely avoidable.
+        if (!memberSnap.exists) return
+
+        const role = memberSnap.data()!.role as string | undefined
+
+        if (role === 'admin' && counts.admins <= 1) {
+          throw guardError('sole-admin', SOLE_ADMIN_ERROR)
+        }
+
+        // Only now that neither early return nor the guard above has fired —
+        // a throw discards this whole transaction, including an unpersisted
+        // heal, which is fine: the next reader heals it again from the same
+        // live aggregate.
+        counts.applyHeal()
+
+        tx.delete(memberRef)
+        memberCountsDelta(tx, companyId, { members: -1, admins: role === 'admin' ? -1 : 0 })
+      })
+
+      completedCompanies += 1
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      const message = err instanceof Error ? err.message : String(err)
+
+      // Compensation is deliberately not attempted here: the member doc's
+      // content IS the PII this function exists to erase, so re-creating it
+      // to "undo" a partial run would be self-defeating. Whichever companies
+      // already had their membership removed stay that way; the caller sees
+      // one clear error and can retry, which is safe because of the two
+      // early returns above.
+      console.error('[actions/account]', {
+        uid: uid.slice(0, 8) + '...',
+        companyId,
+        error: message,
+        action: 'delete_account_partial_membership_removal',
+        completed: completedCompanies,
+        total: companyIds.length,
+      })
+
+      return { error: code === 'sole-admin' ? SOLE_ADMIN_ERROR : COULD_NOT_VERIFY_ERROR }
+    }
+  }
+
+  // ── 3. Anonymize all user data ──────────────────────────────────────────────
   try {
-    const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
     let batch = adminDb.batch()
     let opCount = 0
 
@@ -180,36 +345,18 @@ export async function deleteAccount(): Promise<{ error?: string }> {
         }
       }
 
-      // Company member doc: carries this user's name/email (written by
-      // acceptInvitation, onUserCreate and actions/auth.ts) and is readable by
-      // every remaining company member via the firestore.rules wildcard
-      // `companies/{companyId}/{document=**}`. Leaving it behind after account
-      // deletion keeps that PII exposed — GDPR Art. 17. Deleting a doc that
-      // doesn't exist is a no-op in Firestore, so no existence check is needed
-      // here; don't add one.
-      //
-      // Deliberately NOT routed through addDelete(): addDelete carries its own
-      // rotation check and would commit the batch containing this delete —
-      // alone — the instant its own opCount++ crosses BATCH_LIMIT, before
-      // memberCountDelta below ever runs. This loop runs once per company and
-      // accumulates writes from bookings/equipment/units/invitations before
-      // reaching here, so opCount can realistically be near the limit at this
-      // point — unlike removeMember, where the equivalent pair is only the
-      // 2nd/3rd op in a fresh batch and can never cross BATCH_LIMIT by itself.
-      // Both ops below are therefore bare `batch.x()` + manual `opCount++`,
-      // with the single rotation check deferred until after the pair — the
-      // same shape removeMember uses, and the only shape that actually
-      // guarantees the delete and the decrement land in the same commit.
-      batch.delete(adminDb.doc(`companies/${companyId}/members/${uid}`))
-      opCount++
-
-      memberCountDelta(batch, companyId, -1)
-      opCount++
-
-      if (opCount >= BATCH_LIMIT) {
-        batch = await commitAndReset(batch)
-        opCount = 0
-      }
+      // Company member doc (carries this user's name/email — GDPR Art. 17)
+      // and its memberCounts delta are no longer handled here: step 2's
+      // per-company transaction, above, already deleted
+      // companies/{companyId}/members/{uid} and applied the delta before
+      // this anonymisation loop ever started. Doing it there instead of here
+      // is what closes a sync risk this loop used to have: the company-side
+      // member doc used to be deleted here while the user-side membership
+      // doc was deleted later (see the "Delete membership docs" loop below,
+      // after this `for` loop) — potentially in a different WriteBatch chunk
+      // if a large anonymisation run rotated batches in between. Now the
+      // company-side delete is already committed, in its own transaction,
+      // before any of that can happen.
 
       // Company doc: createdBy
       const companySnap = await companyRef.get()
@@ -243,7 +390,18 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       }
     }
 
-    // Delete membership docs
+    // Delete membership docs (users/{uid}/memberships/*). Deliberately left
+    // in this WriteBatch rather than folded into step 2's per-company
+    // transaction: this loop iterates ALL of the user's membership docs
+    // regardless of company, including any stale pointer whose company no
+    // longer exists (step 2 skips those via `!companySnap.exists` — the
+    // pointer itself still needs deleting, it's still this user's data). It
+    // also naturally belongs with the rest of this function's user-side
+    // cleanup (the user doc delete and the audit log write immediately
+    // below), which have no equivalent per-company transaction to join. By
+    // the time this runs, step 2 has already either deleted every company's
+    // member doc or returned an error — so every doc this loop deletes here
+    // is safe to remove.
     for (const membershipDoc of membershipsSnap.docs) {
       batch.delete(membershipDoc.ref)
       opCount++

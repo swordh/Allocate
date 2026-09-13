@@ -41,14 +41,27 @@
  * as an orphan on the next run.
  *
  * Every orphan deleted is a `companies/{cid}/members/{uid}` doc disappearing
- * out from under `companies/{cid}.stats.memberCount` (redesign/fas-5-member-count).
- * After deleting a company's orphans, this script recomputes that company's
- * `stats.memberCount` from `members.count()` and writes it as an absolute
- * value — the same philosophy as tools/backfill_company_stats.js, and
- * deliberately not a `FieldValue.increment()` delta (see the comment on
+ * out from under both `companies/{cid}.stats.memberCount` AND
+ * `companies/{cid}/_meta/memberCounts` (redesign/fas-5-member-count,
+ * issue #252). After deleting a company's orphans, this script recomputes
+ * BOTH `members` and `admins` from the members subcollection and writes them
+ * as absolute values — the same philosophy as tools/backfill_company_stats.js,
+ * and deliberately not a `FieldValue.increment()` delta (see the comment on
  * deleteOrphansAndRecomputeMemberCount for why: a delta against a field that
  * may not exist yet in this environment can go negative). Only companies
  * that actually had orphans deleted get recomputed.
+ *
+ * Recomputing `admins` is not optional here the way it might look at a
+ * glance: an orphan whose deleted user record was an admin (role === 'admin'
+ * on the leftover member doc) is exactly the case where skipping the admin
+ * recount leaves `_meta/memberCounts.admins` stale-HIGH — counting an admin
+ * who no longer has a working session. That is the one dangerous direction
+ * for this counter (see lib/companyStats.ts's module docblock and the
+ * planning notes for issue #252): a stale-low count merely fails closed and
+ * blocks a legitimate removal/deletion, but a stale-high count silently lets
+ * the LAST real admin remove themselves or delete their account, leaving the
+ * company with zero admins. Recomputing both fields absolutely, in the same
+ * batch as the deletes that caused the drift, is what closes that gap.
  */
 
 'use strict';
@@ -254,23 +267,25 @@ async function classifyMembers(companyId) {
  * Deletes orphans company-by-company (chunked within a company at
  * DELETE_BATCH_LIMIT, though in practice a single company's orphan count
  * never approaches that), and after each company's deletes commit,
- * recomputes that company's `stats.memberCount` from `members.count()` and
- * writes it as an ABSOLUTE value via a merge-set.
+ * recomputes that company's `members` AND `admins` counts from the members
+ * subcollection and writes both as ABSOLUTE values — to `_meta/memberCounts`
+ * and, for `members`, to the `stats.memberCount` mirror — via merge-sets.
  *
- * Deliberately NOT `FieldValue.increment(-orphans.length)`: this script runs
- * across alpha/beta/prod, and in whichever of those the memberCount writers
+ * Deliberately NOT `FieldValue.increment()`: this script runs across
+ * alpha/beta/prod, and in whichever of those the member-count writers
  * (lib/companyStats.ts, functions/src/companyStats.ts) haven't deployed yet,
- * `stats.memberCount` may not exist at all. `increment()` treats a missing
- * field as 0, so decrementing it here would leave the mirror negative — and
- * once the writers do deploy, every future delta would compound that error
- * forever. Recomputing from `members.count()` is self-healing regardless of
- * what was there before, and matches tools/backfill_company_stats.js's own
- * philosophy of writing absolute truth rather than deltas.
+ * neither `_meta/memberCounts` nor `stats.memberCount` may exist at all.
+ * `increment()` treats a missing field as 0, so decrementing it here would
+ * leave a counter negative — and once the writers do deploy, every future
+ * delta would compound that error forever. Recomputing from the members
+ * subcollection is self-healing regardless of what was there before, and
+ * matches tools/backfill_company_stats.js's own philosophy of writing
+ * absolute truth rather than deltas.
  *
  * Only companies that actually had at least one orphan deleted get a
- * recompute — every other company's `stats.memberCount` is left untouched,
- * since this script has no way to know whether it's already correct there
- * and shouldn't touch what it didn't just change.
+ * recompute — every other company's counters are left untouched, since this
+ * script has no way to know whether they're already correct and shouldn't
+ * touch what it didn't just change.
  *
  * If a commit throws partway through, the chunks/companies processed so far
  * already happened — the caller needs to know that before the error
@@ -306,10 +321,20 @@ async function deleteOrphansAndRecomputeMemberCount(orphansByCompany) {
 
     // Recompute now that this company's orphans are gone — the members
     // subcollection is the source of truth, same as the backfill tool reads.
-    const countSnap = await db.collection(`companies/${companyId}/members`).count().get();
-    const memberCount = countSnap.data().count;
+    // Both counts are needed: `admins` is the field that goes dangerously
+    // stale-HIGH if an orphaned admin's member doc isn't accounted for (see
+    // the module docblock above).
+    const membersCollection = db.collection(`companies/${companyId}/members`);
+    const [memberCountSnap, adminCountSnap] = await Promise.all([
+      membersCollection.count().get(),
+      membersCollection.where('role', '==', 'admin').count().get(),
+    ]);
+    const memberCount = memberCountSnap.data().count;
+    const adminCount = adminCountSnap.data().count;
 
-    await db.doc(`companies/${companyId}`).set(
+    const recomputeBatch = db.batch();
+    recomputeBatch.set(
+      db.doc(`companies/${companyId}`),
       {
         stats: {
           memberCount,
@@ -318,11 +343,18 @@ async function deleteOrphansAndRecomputeMemberCount(orphansByCompany) {
       },
       { merge: true },
     );
+    recomputeBatch.set(
+      db.doc(`companies/${companyId}/_meta/memberCounts`),
+      { members: memberCount, admins: adminCount, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    await recomputeBatch.commit();
     recomputed += 1;
 
     console.log(
       `  company ${companyId} (${companyIndex}/${companyCount}): deleted ${orphans.length}, ` +
-        `stats.memberCount recomputed to ${memberCount}`,
+        `stats.memberCount recomputed to ${memberCount}, _meta/memberCounts recomputed to ` +
+        `{ members: ${memberCount}, admins: ${adminCount} }`,
     );
   }
 

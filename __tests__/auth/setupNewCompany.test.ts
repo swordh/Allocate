@@ -101,4 +101,22 @@ describe('setupNewCompany — initial stats map', () => {
     // companies/{id}/members/{uid} doc is written in the same batch.
     expect(stats.memberCount).toBe(1)
   })
+
+  it('seeds _meta/memberCounts with { members: 1, admins: 1 } for the founder', async () => {
+    const { batch } = wire()
+
+    await setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm')
+
+    // The founder's company must never be observed without its
+    // member-counts counter (lib/companyStats.ts readMemberCounts) — same
+    // reasoning as seeding _meta/equipmentCount above it in actions/auth.ts,
+    // so readMemberCounts's self-heal fallback never has to run for a
+    // company created through this path.
+    const memberCountsCall = batch.set.mock.calls.find(
+      (call) => (call[0] as { path?: string }).path === `companies/${NEW_COMPANY_ID}/_meta/memberCounts`,
+    )
+    expect(memberCountsCall).toBeDefined()
+    const [, memberCountsDoc] = memberCountsCall!
+    expect(memberCountsDoc).toMatchObject({ members: 1, admins: 1 })
+  })
 })
