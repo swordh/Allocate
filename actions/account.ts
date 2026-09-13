@@ -6,7 +6,7 @@ import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
-import { memberCountDelta } from '@/lib/companyStats'
+import { memberCountsDelta } from '@/lib/companyStats'
 import { stripe } from '@/lib/stripe'
 import { deleteSession } from './auth'
 
@@ -74,6 +74,7 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   // ── 2. Anonymize all user data ─────────────────────────────────────────────
   try {
     const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
+
     let batch = adminDb.batch()
     let opCount = 0
 
@@ -186,12 +187,28 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       // `companies/{companyId}/{document=**}`. Leaving it behind after account
       // deletion keeps that PII exposed — GDPR Art. 17. Deleting a doc that
       // doesn't exist is a no-op in Firestore, so no existence check is needed
-      // here; don't add one.
+      // for the delete itself.
       //
+      // The role used for the admin decrement below MUST come from this
+      // company-side doc, not from the user-side `memberships` doc companyIds
+      // was derived from. The two copies can drift, and the dangerous
+      // direction is exactly a stale user-side 'crew' next to a real
+      // company-side 'admin': that would skip the admin decrement and leave
+      // `_meta/memberCounts.admins` stale-HIGH — the one direction that isn't
+      // fail-closed (see lib/companyStats.ts's module docblock). A missing
+      // company-side doc (the stale-pointer case this function already
+      // anticipates) means there is no admin membership left to decrement, so
+      // it's treated the same as 'crew': no admin delta.
+      const companyMemberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
+      const companyMemberSnap = await companyMemberRef.get()
+      const companyMemberRole = companyMemberSnap.exists
+        ? (companyMemberSnap.data()?.role as string | undefined)
+        : undefined
+
       // Deliberately NOT routed through addDelete(): addDelete carries its own
       // rotation check and would commit the batch containing this delete —
       // alone — the instant its own opCount++ crosses BATCH_LIMIT, before
-      // memberCountDelta below ever runs. This loop runs once per company and
+      // memberCountsDelta below ever runs. This loop runs once per company and
       // accumulates writes from bookings/equipment/units/invitations before
       // reaching here, so opCount can realistically be near the limit at this
       // point — unlike removeMember, where the equivalent pair is only the
@@ -200,10 +217,13 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       // with the single rotation check deferred until after the pair — the
       // same shape removeMember uses, and the only shape that actually
       // guarantees the delete and the decrement land in the same commit.
-      batch.delete(adminDb.doc(`companies/${companyId}/members/${uid}`))
+      batch.delete(companyMemberRef)
       opCount++
 
-      memberCountDelta(batch, companyId, -1)
+      memberCountsDelta(batch, companyId, {
+        members: -1,
+        admins: companyMemberRole === 'admin' ? -1 : 0,
+      })
       opCount++
 
       if (opCount >= BATCH_LIMIT) {

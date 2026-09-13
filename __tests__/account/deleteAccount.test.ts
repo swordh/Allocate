@@ -67,7 +67,7 @@ const {
 vi.mock('firebase-admin/firestore', () => ({
   FieldValue: {
     serverTimestamp: () => 'server-timestamp',
-    // memberCountDelta (lib/companyStats.ts, exercised via deleteAccount)
+    // memberCountsDelta (lib/companyStats.ts, exercised via deleteAccount)
     // calls FieldValue.increment — real module, not mocked, so this must
     // exist for that import to resolve.
     increment: (n: number) => ({ __increment: n }),
@@ -599,19 +599,25 @@ describe('deleteAccount — invitation anonymisation', () => {
 //
 // deleteAccount deletes companies/{companyId}/members/{uid} for every company
 // the deleted user belongs to (GDPR Art. 17), and must decrement
-// companies/{companyId}.stats.memberCount via memberCountDelta (lib/companyStats.ts)
+// companies/{companyId}.stats.memberCount via memberCountsDelta (lib/companyStats.ts)
 // immediately after — mirrors removeMember's identical requirement
 // (actions/team.ts, __tests__/team/removeMember.test.ts) for the same reason:
 // a partial batch failure must never leave the member gone but the count stale.
 //
-// memberCountDelta uses `.set(..., { merge: true })`, never `.update()`. This
+// memberCountsDelta uses `.set(..., { merge: true })`, never `.update()`, on
+// BOTH companies/{id}.stats.memberCount and companies/{id}/_meta/memberCounts
+// (which now backs the sole-admin guards — see lib/companyStats.ts). This
 // matters specifically here: `companyIds` is derived from the deleted user's
 // own `memberships` documents, which can point at a company doc that no
 // longer exists (a stale pointer — the same class of orphan the equipment-
 // stats PR was cleaning up, just in the other direction). `.update()` throws
 // on a missing document and would fail the entire GDPR-erasure batch over a
-// denormalized counter that has no `_meta` backing and is not authoritative
-// for anything.
+// denormalized counter.
+//
+// This suite only exercises the `stats.memberCount` mirror, since that's what
+// the batch mocks below assert on; the parallel `_meta/memberCounts` write
+// goes through the exact same mockBatchSet/merge-true path and isn't
+// re-asserted here to avoid duplicating removeMember.test.ts's coverage.
 
 describe('deleteAccount — memberCount decrement', () => {
   beforeEach(() => {
@@ -692,10 +698,10 @@ describe('deleteAccount — memberCount decrement', () => {
     // 'companies/company-orphaned', the way the real Firestore SDK throws
     // when .update() targets a document that doesn't exist. mockBatchSet
     // never throws, regardless of existence — matching real merge-set
-    // semantics. So this test fails if memberCountDelta ever regresses to
+    // semantics. So this test fails if memberCountsDelta ever regresses to
     // .update(), and passes only because it currently calls .set().
     //
-    // Verified by hand: temporarily reverted memberCountDelta (lib/companyStats.ts)
+    // Verified by hand: temporarily reverted memberCountsDelta (lib/companyStats.ts)
     // to tx.update(...) with the old dot-path payload, re-ran this test file —
     // this test went red with the NOT_FOUND error surfacing as deleteAccount's
     // caught 'Failed to delete account', while every other test in the file
