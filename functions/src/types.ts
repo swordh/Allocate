@@ -66,3 +66,101 @@ export interface CompanyDocument {
   hadTrial: boolean;
   subscription: CompanySubscription;
 }
+
+// ─── Company deletion (issue #252, step 5) ────────────────────────────────────
+//
+// Mirrored from types/company.ts for the same reason `MemberCountsDelta` is
+// duplicated in companyStats.ts above: functions/ compiles as its own
+// project with no path alias back to the repo root, so these can't be
+// imported, only kept in lockstep by hand. The canonical definitions,
+// including the docblocks explaining *why* this data model looks the way it
+// does (rules wildcards, GDPR basis, why the ledger is top-level), live in
+// types/company.ts — read those before changing either copy.
+//
+// This mirror is deliberately a SUBSET of the root types. Only fields the
+// Cloud Functions in PR E actually read or write are duplicated here:
+//
+// - `CompanyDeletionState` / `CompanyDeletionMode` / `CompanyDeletionPhase`:
+//   the sweep and purge functions transition through these directly.
+// - `CompanyDeletionDocument`: the ledger fields the purge/sweep/mail
+//   functions touch (state, phase progress, lease/retry bookkeeping, the
+//   mail template inputs, and the cancel token bookkeeping the deletion-
+//   requested mail trigger writes when it mints a cancel link).
+// - `CompanyDeletionCancelTokenDocument`: minted by the same mail trigger.
+//
+// NOT mirrored, on purpose:
+// - `CompanyDeletionOperatorAction` and the ledger's cancel fields
+//   (`canceledAt`, `canceledByUid/Name/Email`, `cancelSource`) — those are
+//   only ever written by root-side code (`app/operator/...` and
+//   `actions/companyDeletion.ts`'s `cancelCompanyDeletion*`, both PR F/step 6),
+//   never by a Cloud Function. Giving them a home here would invite a
+//   function to start writing them "for convenience" and drift from the
+//   root type instead of importing this discipline the other way.
+// - `identityRedactedAt`'s producer (the 24-month retention job, PR G) is not
+//   built yet; the field is included here only because `runCompanyPurge`
+//   must never construct a ledger update that clobbers it.
+
+export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
+export type CompanyDeletionMode = 'immediate' | 'window';
+export type CompanyDeletionPhase =
+  | 'stripe'
+  | 'invitations'
+  | 'members'
+  | 'subtree'
+  | 'orphans'
+  | 'finalize';
+
+/** Mirror of `companies/{cid}.deletion` — see `CompanyDeletion` in types/company.ts. */
+export interface CompanyDeletionMirror {
+  state: CompanyDeletionState;
+  requestId: string;
+  requestedAt: Timestamp;
+  requestedByName: string;
+  scheduledFor: Timestamp;
+  mode: CompanyDeletionMode;
+  remindedAt?: Timestamp;
+  claimedAt?: Timestamp;
+}
+
+/**
+ * Subset mirror of `CompanyDeletionRecord` in types/company.ts — see that
+ * file for the full shape (including operator/cancel fields functions never
+ * touch) and for the GDPR/Art. 17(3)(e) rationale.
+ */
+export interface CompanyDeletionDocument {
+  requestId: string;
+  companyId: string;
+  companyName: string;
+  mode: CompanyDeletionMode;
+  state: CompanyDeletionState | 'completed' | 'canceled';
+
+  requestedAt: Timestamp;
+  requestedByUid: string;
+  requestedByName: string;
+  requestedByEmail: string;
+  scheduledFor: Timestamp;
+
+  completedAt?: Timestamp;
+
+  phase?: CompanyDeletionPhase;
+  completedPhases?: CompanyDeletionPhase[];
+  phaseCounts?: Record<string, number>;
+
+  attempts: number;
+  lastHeartbeatAt?: Timestamp;
+  lastError?: string;
+
+  cancelTokenIds?: string[];
+
+  purgeAfter: Timestamp;
+  identityRedactedAt?: Timestamp;
+}
+
+/** Mirror of `CompanyDeletionCancelToken` in types/company.ts. */
+export interface CompanyDeletionCancelTokenDocument {
+  requestId: string;
+  companyId: string;
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+  usedAt?: Timestamp;
+}
