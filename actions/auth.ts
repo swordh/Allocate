@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
-import { getVerifiedSession } from '@/lib/dal'
+import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { PLAN_LIMITS } from '@/lib/subscription'
 import { INITIAL_COMPANY_STATS } from '@/lib/companyStats'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
@@ -83,10 +83,31 @@ export async function setupNewCompany(
 
   const safeTimezone = isValidTimezone(timezone) ? timezone : 'UTC'
 
-  // Idempotency: if the user already has a membership, the account exists.
-  const membershipCol = adminDb.collection(`users/${uid}/memberships`)
-  const existing = await membershipCol.limit(1).get()
-  if (!existing.empty) {
+  // Idempotency: if the user already has a membership pointing at a company
+  // that still exists, the account is already fully set up — refuse to
+  // create a second one. A membership doc whose company has since been
+  // deleted does NOT count: it's an orphaned pointer, not a real account, and
+  // treating it as one used to lock the user out permanently (issue #252
+  // step 5, PR F). `limit(1).get()` found ANY membership doc and threw
+  // `already-exists` regardless of whether the company behind it still
+  // existed — exactly the return path the #252 step 5 purge (PR E) can now
+  // create for a stranded former member trying to start over. Same
+  // `!companySnap.exists` skip `actions/account.ts`'s `deleteAccount` and
+  // `getVerifiedSession` (lib/dal.ts) already use, via the same
+  // request-deduped `getCompanyDoc`.
+  const [userSnap, membershipsSnap] = await Promise.all([
+    adminDb.doc(`users/${uid}`).get(),
+    adminDb.collection(`users/${uid}/memberships`).get(),
+  ])
+  const membershipCompanies = await Promise.all(
+    membershipsSnap.docs.map(async (doc) => {
+      const membershipCompanyId = doc.data().companyId as string | undefined
+      if (!membershipCompanyId) return false
+      const companySnap = await getCompanyDoc(membershipCompanyId)
+      return companySnap.exists
+    }),
+  )
+  if (membershipCompanies.some(Boolean)) {
     throw new Error('already-exists')
   }
 
@@ -124,12 +145,30 @@ export async function setupNewCompany(
     },
   })
 
-  batch.set(userRef, {
-    name:            userName,
-    email,
-    activeCompanyId: companyId,
-    createdAt:       FieldValue.serverTimestamp(),
-  })
+  if (userSnap.exists) {
+    // A returning user (e.g. a stranded former member — see
+    // MemberAccountStatus in functions/src/company/memberCleanup.ts —
+    // creating a replacement company from /no-company). `merge: true`
+    // preserves everything not listed here (in particular `createdAt`,
+    // which must not be reset), and clears `pendingDeletion`
+    // (types/user.ts) in this SAME batch as the new membership write below
+    // — not as a follow-up that could be skipped. See "Avbrottsvillkoret"
+    // in plan/det-k-nns-som-att-stateless-conway.md: creating a company is
+    // itself the cancellation, no separate action required.
+    batch.set(userRef, {
+      name:            userName,
+      email,
+      activeCompanyId: companyId,
+      pendingDeletion: FieldValue.delete(),
+    }, { merge: true })
+  } else {
+    batch.set(userRef, {
+      name:            userName,
+      email,
+      activeCompanyId: companyId,
+      createdAt:       FieldValue.serverTimestamp(),
+    })
+  }
 
   batch.set(memberRef, {
     companyId,
