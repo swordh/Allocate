@@ -192,6 +192,14 @@ async function handleSubscriptionUpsert(
   const plan    = PRICE_ID_TO_PLAN[priceId] ?? 'starter'
   const limits  = PLAN_LIMITS[plan]
 
+  // #252 step 5 prep: `pause_collection` does not move `subscription.status` —
+  // Stripe leaves it untouched while collection is paused, by design (see the
+  // step 5 plan). Mirroring it explicitly is what lets a future feature derive
+  // a "pending deletion" state from OUR field instead of overloading Stripe's
+  // status string, which is already stretched thin (mapStripeStatus folds
+  // Stripe's own `paused` into `past_due`).
+  const pauseCollection = subscription.pause_collection
+
   if (planUnresolved) {
     console.warn('[webhooks/stripe]', {
       action: 'subscription_upsert_unknown_price_id',
@@ -214,6 +222,10 @@ async function handleSubscriptionUpsert(
       ? new Date(subscription.trial_end * 1000).toISOString()
       : null,
     'subscription.interval':             item?.plan.interval ?? null,
+    'subscription.pauseCollection':      pauseCollection?.behavior ?? null,
+    'subscription.pauseResumesAt':       pauseCollection?.resumes_at
+      ? new Date(pauseCollection.resumes_at * 1000).toISOString()
+      : null,
   })
 
   console.log('[webhooks/stripe]', {
@@ -263,7 +275,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription, even
 // single most interesting transition an operator watches a feed for, so it
 // must log through the same helper as handleSubscriptionUpsert, deriving
 // `toStatus` the same way (mapStripeStatus), not a hardcoded string.
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription, eventId: string) {
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription, eventCreated: number, eventId: string) {
   const customerId = subscription.customer as string
   const companyDoc = await getCompanyDocByCustomerId(customerId)
 
@@ -277,12 +289,35 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription, even
   }
 
   const companyId = companyDoc.id
+
+  // #98/#252: same stale-event guard as handleSubscriptionUpsert. Without it,
+  // pause-then-cancel in quick succession — the exact pattern step 5
+  // introduces — can let a delayed `customer.subscription.updated` (still
+  // reporting `active`) land AFTER this `deleted` event and write `active`
+  // back over `canceled`. Stripe does not guarantee delivery order.
+  const storedTs = companyDoc.data()?.subscription?.stripeUpdatedAt ?? 0
+  if (eventCreated <= storedTs) {
+    console.log('[webhooks/stripe]', {
+      action: 'subscription_deleted_stale_skipped',
+      companyId,
+      subscriptionId: subscription.id,
+      eventCreated,
+      storedTs,
+    })
+    return
+  }
+
   const fromPlan   = companyDoc.data()?.subscription?.plan as string | undefined
   const fromStatus = companyDoc.data()?.subscription?.status as string | undefined
   const toStatus   = mapStripeStatus(subscription.status)
 
   await adminDb.doc(`companies/${companyId}`).update({
-    'subscription.status': toStatus,
+    'subscription.status':          toStatus,
+    'subscription.stripeUpdatedAt': eventCreated,
+    // A canceled subscription cannot be paused — clear both fields rather
+    // than leaving a stale pause behind for a future reader to trust.
+    'subscription.pauseCollection':  null,
+    'subscription.pauseResumesAt':   null,
   })
 
   console.log('[webhooks/stripe]', {
@@ -352,7 +387,7 @@ async function processStripeEvent(event: Stripe.Event) {
         break
 
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription, event.id)
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription, event.created, event.id)
         break
 
       case 'invoice.payment_failed':
