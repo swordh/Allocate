@@ -167,6 +167,45 @@ describe('purgeCompanyDeletionLogsSweep — failure handling', () => {
     expect(row.requestedByUid).toBeNull()
   })
 
+  it('survives a malformed operatorActions entry instead of failing the whole chunk', async () => {
+    // `operatorActions` is written by step 6 code that does not exist yet. An
+    // entry missing a field, or not an object at all, would make a
+    // pass-through redaction emit `undefined` — which the Admin SDK rejects
+    // outright, failing the shared WriteBatch and taking up to 489 innocent
+    // rows with it, every Monday, forever. Blanked rather than skipped: the
+    // safe direction for something that might be carrying a note.
+    await adminDb.doc('companyDeletions/malformed').set({
+      ...dueRow('malformed'),
+      operatorActions: [
+        { action: 'note_added', byUid: 'op-1', byName: 'Olga', at: new Date().toISOString(), note: 'secret' },
+        { byUid: 'op-2', byName: 'Bo', note: 'no action, no at' },
+        'not an object at all',
+      ],
+    })
+    await seedDueRows(['bystander'])
+
+    const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
+    expect(result.failedRows).toBe(0)
+    expect(result.failedBatches).toBe(0)
+    expect(result.redacted).toBe(2)
+
+    const row = (await adminDb.doc('companyDeletions/malformed').get()).data()!
+    expect(row.operatorActions).toHaveLength(3)
+    for (const entry of row.operatorActions as Record<string, unknown>[]) {
+      expect(entry.byUid).toBeNull()
+      expect(entry.byName).toBeNull()
+      expect('note' in entry).toBe(false)
+      expect(typeof entry.action).toBe('string')
+      expect(typeof entry.at).toBe('string')
+    }
+    expect(JSON.stringify(row)).not.toContain('secret')
+    expect(JSON.stringify(row)).not.toContain('Olga')
+
+    // And the row that merely shared the batch is untouched by any of it.
+    const bystander = (await adminDb.doc('companyDeletions/bystander').get()).data()!
+    expect(bystander.identityRedactedAt).toBeInstanceOf(Timestamp)
+  })
+
   it('THE SCHEDULED FUNCTION THROWS when rows were left un-redacted', async () => {
     // The only mechanism that makes a systematic failure visible as anything
     // other than a log line. Nothing else in this suite calls the wrapper at

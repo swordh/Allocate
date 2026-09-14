@@ -309,10 +309,16 @@ describe('purgeCompanyDeletionLogsSweep — 24-month identity redaction', () => 
     expect(result.failedBatches).toBe(0)
     expect(result.failedRows).toBe(0)
 
-    // Pins the constant, not just "somewhere under 500". `BATCH_LIMIT` raised
-    // to 600 or lowered to 1 both keep every other assertion here green — one
-    // is an unchunked batch, the other is 600 separate commits in production.
-    expect(writesPerBatch).toEqual([BATCH_LIMIT, COUNT - BATCH_LIMIT])
+    // Pins the constant, with LITERALS on purpose.
+    //
+    // Writing this as `[BATCH_LIMIT, COUNT - BATCH_LIMIT]` reads better and is
+    // worthless: the expectation then moves with the constant, so raising
+    // BATCH_LIMIT from 490 to 500 — production behaviour changed, headroom
+    // under Firestore's cap gone — keeps the test green. Measured, not
+    // assumed: that mutation survived the constant-relative form and is felled
+    // by this one. 600 rows at 490 per chunk is 490 + 110, and nothing else.
+    expect(BATCH_LIMIT).toBe(490)
+    expect(writesPerBatch).toEqual([490, 110])
 
     // And the data itself: zero rows left unredacted.
     const all = await adminDb.collection('companyDeletions').get()
