@@ -4,6 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
+import { blockMemberWrite } from '../company/acceptsMembers';
 
 /**
  * Callable function for already-authenticated users accepting an invite via link.
@@ -100,9 +101,23 @@ export const acceptInvitationByToken = onCall(
     let txSucceeded = false;
     try {
       await db.runTransaction(async (tx) => {
-        const existingMember = await tx.get(memberRef);
+        const companyRef = db.doc(`companies/${companyId}`);
+        const [existingMember, companySnap] = await Promise.all([tx.get(memberRef), tx.get(companyRef)]);
         if (existingMember.exists) {
           throw new HttpsError('already-exists', 'You are already a member of this company.');
+        }
+
+        // Refuse to join a company that is gone or on its way out (issue #252
+        // step 5) — see `blockMemberWrite`'s docblock for why this is a
+        // mechanical guard and not a product restriction. Read inside the
+        // transaction, before any write, so a deletion requested between the
+        // page load and this call cannot slip past.
+        const block = blockMemberWrite(companySnap);
+        if (block) {
+          throw new HttpsError(
+            block.code === 'not-found' ? 'not-found' : 'failed-precondition',
+            block.message,
+          );
         }
 
         // 1. Create member under company
