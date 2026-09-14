@@ -53,6 +53,75 @@ function isValidTimezone(tz: string): boolean {
 }
 
 /**
+ * Repairs the split `setupNewCompany` can leave behind when `batch.commit()`
+ * succeeds but `setCustomUserClaims` then throws: company and memberships on
+ * disk, no claims on the Auth user, no way back in.
+ *
+ * WHAT COUNTS AS "HERS" — this is the whole security question, because the
+ * function writes custom claims, and claims are what every Firestore rule and
+ * every server action ultimately trusts. The criterion is deliberately
+ * narrower than "she has a membership doc":
+ *
+ *   1. `companies/{cid}.createdBy === uid` — she FOUNDED this company. This
+ *      field is written exactly once, by the batch a few lines below, and
+ *      never again by anything. Restricting the repair to it keeps this
+ *      branch a fix for the specific split THIS function creates, rather
+ *      than a general "hand me claims for any company I can name".
+ *   2. `companies/{cid}/members/{uid}` still exists — she is a member RIGHT
+ *      NOW, not merely historically. A founder who was later removed from
+ *      her own company must not be let back in by this path.
+ *   3. The role written into the claims is read live from that member
+ *      document — never assumed to be 'admin' just because she founded it.
+ *
+ * All three come from documents only the server can have written:
+ * firestore.rules has `allow write: if false` on `companies/{companyId}`, on
+ * the `companies/{companyId}/{document=**}` wildcard, and on
+ * `users/{userId}/memberships/{companyId}`. There is no client-supplied
+ * input anywhere in the decision — not the id token's claims, not a
+ * parameter, not the membership doc's own contents beyond a company id that
+ * is then verified against the company document itself. A caller who forges
+ * or replays anything reachable to her cannot move this branch.
+ *
+ * Claims that already point at one of her live companies are left alone: in
+ * that case nothing is broken, she is simply calling this twice, and the
+ * `already-exists` refusal is the correct answer.
+ *
+ * @returns true when claims were repaired (the caller must then return
+ *   without creating anything); false when there is nothing to repair, which
+ *   means the ordinary `already-exists` refusal applies.
+ */
+async function repairMissingClaims(
+  uid: string,
+  liveMemberships: Array<{ companyId: string; createdBy: string | undefined }>,
+): Promise<boolean> {
+  let currentActiveCompanyId: unknown
+  try {
+    const authUser = await adminAuth.getUser(uid)
+    currentActiveCompanyId = authUser.customClaims?.activeCompanyId
+  } catch {
+    // Can't establish that the claims are broken — don't write any.
+    return false
+  }
+
+  // Claims already resolve to a company she is a live member of: nothing is
+  // wrong, this is an ordinary duplicate call.
+  if (liveMemberships.some((m) => m.companyId === currentActiveCompanyId)) return false
+
+  const founded = liveMemberships.find((m) => m.createdBy === uid)
+  if (!founded) return false
+
+  const memberSnap = await adminDb.doc(`companies/${founded.companyId}/members/${uid}`).get()
+  if (!memberSnap.exists) return false
+
+  const role = memberSnap.data()?.role
+  if (role !== 'admin' && role !== 'crew' && role !== 'viewer') return false
+
+  await adminAuth.setCustomUserClaims(uid, { activeCompanyId: founded.companyId, role })
+  console.log('[actions/auth]', { action: 'claims_repaired' })
+  return true
+}
+
+/**
  * Creates a company for a newly registered user — server-side, no CORS issues.
  * Sets custom claims (activeCompanyId, role) on the Auth user.
  *
@@ -95,19 +164,50 @@ export async function setupNewCompany(
   // `!companySnap.exists` skip `actions/account.ts`'s `deleteAccount` and
   // `getVerifiedSession` (lib/dal.ts) already use, via the same
   // request-deduped `getCompanyDoc`.
+  //
+  // Two known pre-existing problems are deliberately NOT solved here, each
+  // needing a decision of its own (issue #252 follow-ups):
+  //   1. TOCTOU — this probe is not transactional, so two concurrent calls
+  //      can both pass it and create two companies for the same user.
+  //   2. Orphaned `users/{uid}/memberships/{cid}` docs pointing at deleted
+  //      companies are skipped here but never cleaned up, so they accumulate
+  //      and every future call re-reads them.
   const [userSnap, membershipsSnap] = await Promise.all([
     adminDb.doc(`users/${uid}`).get(),
     adminDb.collection(`users/${uid}/memberships`).get(),
   ])
-  const membershipCompanies = await Promise.all(
-    membershipsSnap.docs.map(async (doc) => {
-      const membershipCompanyId = doc.data().companyId as string | undefined
-      if (!membershipCompanyId) return false
-      const companySnap = await getCompanyDoc(membershipCompanyId)
-      return companySnap.exists
-    }),
-  )
-  if (membershipCompanies.some(Boolean)) {
+  const liveMemberships = (
+    await Promise.all(
+      membershipsSnap.docs.map(async (doc) => {
+        const membershipCompanyId = doc.data().companyId as string | undefined
+        if (!membershipCompanyId) return null
+        const companySnap = await getCompanyDoc(membershipCompanyId)
+        if (!companySnap.exists) return null
+        return {
+          companyId: membershipCompanyId,
+          createdBy: companySnap.data()?.createdBy as string | undefined,
+        }
+      }),
+    )
+  ).filter((m): m is { companyId: string; createdBy: string | undefined } => m !== null)
+
+  if (liveMemberships.length > 0) {
+    // She has a live company, so she must not get a second one. But the
+    // company existing is not the same as her being able to REACH it: this
+    // function commits its batch and only then calls `setCustomUserClaims`,
+    // and those two steps are not atomic. If the claims write fails, the
+    // company and both membership docs exist while her token carries no
+    // `activeCompanyId` — `getVerifiedSession` (lib/dal.ts) bounces her to
+    // /no-company, and every retry from there used to land on the branch
+    // above and throw `already-exists` forever.
+    //
+    // That shape is pre-existing, but its meaning is not: after PR E this
+    // code path sits in the middle of the only way out a stranded user has,
+    // and she has a clock running (types/user.ts `PendingAccountDeletion`).
+    // A dead end with a deadline is worse than the one #252 exists to close,
+    // so repair the claims instead of throwing.
+    const repaired = await repairMissingClaims(uid, liveMemberships)
+    if (repaired) return
     throw new Error('already-exists')
   }
 
