@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { toSubState, getSubStateDisplay, getPlanCardCta } from '@/lib/subscription-state'
-import type { Subscription } from '@/types'
+import type { CompanyDeletion, Subscription } from '@/types'
 
 function sub(overrides: Partial<Subscription>): Subscription {
   return {
@@ -117,5 +117,77 @@ describe('getPlanCardCta', () => {
     // Regression: on Basic, the Starter card must never read UPGRADE —
     // Starter is cheaper and has lower caps, so choosing it is a downgrade.
     expect(getPlanCardCta('starter', sub({ plan: 'basic' }))).toBe('DOWNGRADE')
+  })
+})
+
+// ── DELETION_PENDING (issue #252 step 5) ──────────────────────────────────────
+
+function deletion(overrides: Partial<CompanyDeletion> = {}): CompanyDeletion {
+  return {
+    state: 'requested',
+    requestId: 'req-1',
+    requestedAt: '2026-09-13T10:00:00.000Z',
+    requestedByName: 'Anna Admin',
+    scheduledFor: '2026-09-20T10:00:00.000Z',
+    mode: 'window',
+    ...overrides,
+  }
+}
+
+describe('getSubStateDisplay — DELETION_PENDING', () => {
+  it('derives the state from company.deletion, overriding an otherwise ACTIVE subscription', () => {
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', deletion())
+    expect(d.key).toBe('DELETION_PENDING')
+    expect(d.label).toBe('DELETION REQUESTED')
+    expect(d.cta).toBe('STOP DELETION')
+  })
+
+  it('says "deletion requested", never "canceled" or "paused"', () => {
+    // The design brief is explicit that these are different messages to an
+    // admin deciding whether to stop it, and that the product shows only the
+    // latter today. `paused` is separately spoken for twice in this codebase.
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', deletion())
+    expect(d.label).not.toContain('CANCEL')
+    expect(d.label).not.toContain('PAUSE')
+    expect(d.notice).toContain('Anna Admin')
+    expect(d.notice).toContain('Nordfilm AB')
+  })
+
+  it('names the no-refund rule, which is the thing users discover too late', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion())
+    expect(d.notice).toContain('not refunded')
+  })
+
+  it('applies to an executing deletion too — presence of the field is the check', () => {
+    // There is no "cancelled" value in this data model; a cancelled deletion
+    // removes the field. So no state comparison belongs here, and a future
+    // `state === 'requested'` check would silently drop the banner exactly
+    // when a company is being torn down.
+    expect(getSubStateDisplay(sub({}), 'X', deletion({ state: 'executing' })).key).toBe('DELETION_PENDING')
+    expect(getSubStateDisplay(sub({}), 'X', deletion({ state: 'failed' })).key).toBe('DELETION_PENDING')
+  })
+
+  it('applies even with no subscription at all', () => {
+    const d = getSubStateDisplay(null, 'Nordfilm AB', deletion())
+    expect(d.key).toBe('DELETION_PENDING')
+    expect(d.hasSub).toBe(false)
+  })
+
+  it('MUTATION GUARD: toSubState is not the source — it must never return DELETION_PENDING', () => {
+    // If someone routes the new state through toSubState, its locked tests
+    // (in particular Stripe's `paused` → NONE, above) start fighting this
+    // one. The state comes from company.deletion, not the subscription:
+    // pause_collection leaves subscription.status untouched.
+    for (const status of ['active', 'trialing', 'past_due', 'incomplete', 'canceled'] as const) {
+      expect(toSubState(sub({ status }))).not.toBe('DELETION_PENDING')
+    }
+    expect(toSubState(null)).not.toBe('DELETION_PENDING')
+  })
+
+  it('without a deletion, every existing state is completely unchanged', () => {
+    expect(getSubStateDisplay(sub({ status: 'active' }), 'X').key).toBe('ACTIVE')
+    expect(getSubStateDisplay(sub({ status: 'past_due' }), 'X').key).toBe('PAST_DUE')
+    expect(getSubStateDisplay(null, 'X').key).toBe('NONE')
+    expect(getSubStateDisplay(sub({ status: 'active' }), 'X', null).key).toBe('ACTIVE')
   })
 })

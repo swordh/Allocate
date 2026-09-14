@@ -11,10 +11,16 @@
 // `accent` drives the status pill / left-border color (amber / red / grey).
 // `tone` maps 1:1 onto ErrorBanner's NoticeTone ('info' | 'danger' | 'neutral').
 
-import type { Subscription } from '@/types'
+import type { CompanyDeletion, Subscription } from '@/types'
 import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 
-export type SubStateKey = 'NONE' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED'
+/**
+ * `DELETION_PENDING` (issue #252 step 5) is the one state in this union that
+ * is NOT derived from the subscription. It comes from `company.deletion`, and
+ * `toSubState` never returns it — see that function's own note and
+ * `getSubStateDisplay` at the bottom of this file.
+ */
+export type SubStateKey = 'NONE' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'DELETION_PENDING'
 
 export type StateAccent = 'accent' | 'danger' | 'neutral'
 export type NoticeTone = 'info' | 'danger' | 'neutral'
@@ -22,9 +28,11 @@ export type NoticeTone = 'info' | 'danger' | 'neutral'
 interface SubStateDef {
   label: string
   accent: StateAccent
-  cycle: (sub: Subscription | null) => string
+  cycle: (sub: Subscription | null, deletion?: CompanyDeletion | null) => string
   /** null on ACTIVE — the only state that renders no notice banner. */
-  notice: ((sub: Subscription | null, companyName: string) => string) | null
+  notice:
+    | ((sub: Subscription | null, companyName: string, deletion?: CompanyDeletion | null) => string)
+    | null
   cta: string
   tone: NoticeTone
 }
@@ -69,6 +77,19 @@ function daysLeft(iso: string | null | undefined): number {
  *   user's point of view — incomplete is the initial-payment-failed case,
  *   past_due is the recurring-payment-failed case)
  * - `canceled`                                     → CANCELED
+ *
+ * Deliberately UNCHANGED by issue #252 step 5. `DELETION_PENDING` is never
+ * returned from here, because it is not a property of the subscription:
+ * `pause_collection` leaves `subscription.status` exactly as it was (see the
+ * comment on `Subscription.pauseCollection` in types/company.ts), so a paused
+ * subscription is indistinguishable from an unpaused one at this level — and
+ * a pause is ambiguous anyway, since we may one day pause for other reasons.
+ * The deletion state is read from `company.deletion` in `getSubStateDisplay`.
+ *
+ * This function is also locked by `__tests__/subscription-state.test.ts` in
+ * ways that are load-bearing, in particular that an unrecognised status
+ * (including Stripe's own `paused`) maps to `NONE`. Do not route the new
+ * state through here.
  */
 export function toSubState(sub: Subscription | null): SubStateKey {
   if (!sub) return 'NONE'
@@ -126,6 +147,34 @@ const SUB_STATES: Record<SubStateKey, SubStateDef> = {
     cta: 'RESUME PLAN',
     tone: 'neutral',
   },
+  /**
+   * A company with a deletion scheduled. Overrides every subscription state
+   * when `company.deletion` is present, because it is the only thing an admin
+   * looking at this screen needs to act on.
+   *
+   * Why this is not "PAUSED": the design brief requires that "Radering
+   * begärd" and "uppsagt" be different messages to an admin deciding whether
+   * to stop it, and the word `paused` is already spoken for twice in this
+   * codebase with two different meanings (the webhook maps Stripe's `paused`
+   * status to `past_due`; the locked test maps `'paused'` to `NONE`). This
+   * state describes what is happening to the COMPANY; the billing pause is a
+   * consequence of it, mentioned in the notice rather than made the headline.
+   *
+   * The notice names the no-refund rule on purpose. The brief is explicit
+   * that it "ska framgå innan raderingen bekräftas, inte upptäckas efteråt",
+   * and this is the surface that stays visible for the whole seven days.
+   */
+  DELETION_PENDING: {
+    label: 'DELETION REQUESTED',
+    accent: 'danger',
+    cycle: (_sub, deletion) => `Company deleted ${formatDate(deletion?.scheduledFor)} · billing paused`,
+    notice: (_sub, companyName, deletion) =>
+      `${deletion?.requestedByName || 'An administrator'} asked for ${companyName} to be deleted on ${formatDate(
+        deletion?.scheduledFor,
+      )}. Everything keeps working until then, and any administrator can stop it. No charges are made while a deletion is scheduled, and time already paid for is not refunded.`,
+    cta: 'STOP DELETION',
+    tone: 'danger',
+  },
   NONE: {
     // Desktop design has label: '' / cta: '' here, which would render an
     // empty pill and an empty button. The mobile file uses 'NO PLAN' /
@@ -157,17 +206,42 @@ export function getPlanCardCta(plan: PlanId, sub: Subscription | null): string {
   return PLAN_ORDER.indexOf(plan) < PLAN_ORDER.indexOf(sub.plan) ? 'DOWNGRADE' : 'UPGRADE'
 }
 
-/** Resolves the full display payload for a subscription — the single entry point components should use. */
-export function getSubStateDisplay(sub: Subscription | null, companyName: string): SubStateDisplay {
-  const key = toSubState(sub)
+/**
+ * Resolves the full display payload — the single entry point components
+ * should use.
+ *
+ * `deletion` is `company.deletion` (lib/queries/company.ts maps it; see the
+ * warning there about fields that exist only in the type). Its mere PRESENCE
+ * means a deletion is scheduled or running: the data model has no "cancelled"
+ * value, a cancelled deletion removes the field entirely, so absence is the
+ * only "nothing is going on" signal and no state comparison is needed or
+ * wanted here. See `CompanyDeletionState` in types/company.ts.
+ *
+ * It overrides every subscription-derived state. An admin whose company is
+ * counting down to deletion does not need to be told her card renews first.
+ *
+ * `hasSub` stays false for `DELETION_PENDING` only when there is genuinely no
+ * subscription — it is a question about the subscription, and a deletion does
+ * not remove one. The company keeps working for the whole window; nothing
+ * about this state is a gate. The four subscription gates in this codebase
+ * are deliberately untouched by #252 step 5: `pause_collection` leaves
+ * `subscription.status` alone precisely so the product keeps functioning, per
+ * the brief's "Företaget fungerar som vanligt — utan undantag".
+ */
+export function getSubStateDisplay(
+  sub: Subscription | null,
+  companyName: string,
+  deletion?: CompanyDeletion | null,
+): SubStateDisplay {
+  const key: SubStateKey = deletion ? 'DELETION_PENDING' : toSubState(sub)
   const def = SUB_STATES[key]
   return {
     key,
-    hasSub: key !== 'NONE',
+    hasSub: key === 'DELETION_PENDING' ? sub !== null : key !== 'NONE',
     label: def.label,
     accent: def.accent,
-    cycle: def.cycle(sub),
-    notice: def.notice ? def.notice(sub, companyName) : null,
+    cycle: def.cycle(sub, deletion),
+    notice: def.notice ? def.notice(sub, companyName, deletion) : null,
     cta: def.cta,
     tone: def.tone,
   }
