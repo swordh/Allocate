@@ -44,6 +44,29 @@ const PRICE_ENV_BY_PLAN: Record<Plan, { month?: string; year?: string }> = {
  * Reads the company document that every caller here has already fetched
  * rather than taking a `companyId` and re-reading it — the guard is not worth
  * an extra Firestore read per portal click.
+ *
+ * ── WHAT THIS GUARD DOES NOT COVER ────────────────────────────────────────
+ *
+ * 1. **An already-open portal tab.** This stops new Billing Portal sessions
+ *    from being created. It cannot touch a session that was issued a minute
+ *    before the deletion was requested — Stripe offers no way to revoke an
+ *    outstanding portal session, and polling for one would be wildly
+ *    disproportionate to the risk. A customer sitting in that tab can still
+ *    cancel the subscription. The consequence is handled rather than
+ *    prevented: `resumeSubscriptionAfterCancel`
+ *    (lib/companyDeletionStripe.ts) returns `already_canceled` and that lands
+ *    on the ledger for a step 6 operator to see and act on. Known and
+ *    accepted; do not read this guard as airtight.
+ *
+ * 2. **Stripe's own `trial_will_end` email.** A trial that lapses during the
+ *    seven-day window still triggers Stripe's "your trial ends in three days,
+ *    add a card" reminder, which is irrelevant — and mildly alarming — to an
+ *    admin whose company is scheduled for deletion. Suppressing it is
+ *    deliberately not built here: it would mean either disabling the
+ *    Dashboard-level reminder for everyone or reaching into `trial_settings`
+ *    per subscription, both of which affect companies that are not being
+ *    deleted. Noted so whoever builds step 6's operator/customer surfaces has
+ *    it on the table rather than rediscovering it from a support ticket.
  */
 function billingPortalDeletionGuard(companyData: FirebaseFirestore.DocumentData | undefined): string | null {
   if (!companyData?.deletion) return null
