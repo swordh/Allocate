@@ -15,3 +15,4 @@ export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
 export { onMailQueued } from './email/onMailQueued';
+export { retryFailedMail } from './email/retryFailedMail';

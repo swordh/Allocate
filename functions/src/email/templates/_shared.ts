@@ -33,19 +33,66 @@ export function splitHero(name: string): string | [string, string] {
   return [first, second];
 }
 
+/** Named accent colors used for the eyebrow dot and, per-row, a data-table label. */
+export type LayoutAccent = 'amber' | 'gray' | 'red';
+
+const ACCENT_HEX: Record<LayoutAccent, string> = {
+  amber: '#f4b24a',
+  gray: '#8a8b93',
+  red: '#e5484d',
+};
+
+/** Default (unaccented) label color for a `dataRows` row — a dimmer neutral
+ * than the `gray` eyebrow accent, matching the design handoff exactly. */
+const ROW_LABEL_NEUTRAL_HEX = '#6a6b72';
+
+/** One row of the wide, multi-row data table (see `dataRows`). Plain text. */
+export interface DataTableRow {
+  label: string;
+  value: string;
+  /** Accent color for just this row's label. Defaults to neutral grey (#6a6b72). */
+  labelAccent?: LayoutAccent;
+}
+
 export interface LayoutOptions {
   /** Hidden preheader line shown in the inbox list. Plain text. */
   preheader: string;
   /** Accent eyebrow beside the 5px dot, e.g. 'ACCOUNT SETUP'. Plain text. */
   eyebrow: string;
+  /** Color of the eyebrow dot + text. Defaults to amber (the original design). */
+  eyebrowAccent?: LayoutAccent;
   /** Hero. One or two lines; two lines render with a hard <br>. Plain text. */
   hero: string | [string, string];
   /** Body paragraph HTML. Caller escapes dynamic values. */
   bodyHtml: string;
-  /** Optional bordered label/value row between body and CTA. Plain text. */
+  /**
+   * Optional bordered label/value row between body and CTA. Plain text.
+   * This is the original compact single-row table (invitation/auth mails).
+   */
   dataRow?: { label: string; value: string };
+  /**
+   * Optional wide, multi-row data table between body and CTA (company
+   * deletion mails). Distinct markup from `dataRow` by design, not
+   * accident — the deletion mails' table is taller, top-aligned and carries
+   * per-row label accent colors; forcing the compact single-row markup to
+   * also do that would fight its own layout. Mutually exclusive with
+   * `dataRow` in practice, but nothing stops a caller from using neither.
+   */
+  dataRows?: DataTableRow[];
   buttonLabel: string;
   buttonUrl: string;
+  /**
+   * Optional paragraph rendered after the CTA button, before the
+   * copy-paste fallback link. Caller escapes dynamic values.
+   */
+  noteHtml?: string;
+  /**
+   * Whether to render the "Button not working? Copy this link" fallback
+   * block. Defaults to true. Mails whose CTA is a plain, non-token URL (open
+   * the app, start a new company) have nothing worth pasting and the design
+   * handoff omits the block entirely for those.
+   */
+  showFallbackLink?: boolean;
   /** Grey sentence under the fallback link. Plain text. */
   footerSentence: string;
 }
@@ -56,12 +103,27 @@ export interface LayoutOptions {
  * copy-paste fallback link with a footer sentence.
  */
 export function renderLayout(opts: LayoutOptions): string {
-  const { preheader, eyebrow, hero, bodyHtml, dataRow, buttonLabel, buttonUrl, footerSentence } = opts;
+  const {
+    preheader,
+    eyebrow,
+    eyebrowAccent,
+    hero,
+    bodyHtml,
+    dataRow,
+    dataRows,
+    buttonLabel,
+    buttonUrl,
+    noteHtml,
+    showFallbackLink = true,
+    footerSentence,
+  } = opts;
   const safeUrl = escapeHtml(buttonUrl);
   const heroHtml = Array.isArray(hero)
     ? `${escapeHtml(hero[0])}<br>${escapeHtml(hero[1])}`
     : escapeHtml(hero);
-  const bodyPaddingBottom = dataRow ? 24 : 34;
+  const eyebrowHex = ACCENT_HEX[eyebrowAccent ?? 'amber'];
+  const hasDataBlock = !!dataRow || (!!dataRows && dataRows.length > 0);
+  const bodyPaddingBottom = hasDataBlock ? 24 : 34;
 
   const dataRowHtml = dataRow
     ? `<tr><td class="pad" align="left" style="padding:0 40px 34px 40px;">
@@ -69,6 +131,28 @@ export function renderLayout(opts: LayoutOptions): string {
 <td style="padding:14px 18px;font-family:Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.4px;color:#7f8088;">${escapeHtml(dataRow.label)}</td>
 <td style="padding:14px 18px 14px 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ECECEE;">${escapeHtml(dataRow.value)}</td>
 </tr></table>
+</td></tr>`
+    : '';
+
+  const dataRowsHtml = dataRows && dataRows.length > 0
+    ? `<tr><td class="pad" align="left" style="padding:0 40px 34px 40px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid rgba(255,255,255,0.1);">
+${dataRows
+  .map((row) => {
+    const labelHex = row.labelAccent ? ACCENT_HEX[row.labelAccent] : ROW_LABEL_NEUTRAL_HEX;
+    return `<tr>
+<td width="150" valign="top" style="width:150px;padding:14px 0 14px 18px;font-family:Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.7px;color:${labelHex};">${escapeHtml(row.label)}</td>
+<td valign="top" style="padding:14px 18px 14px 12px;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#a8a9b0;">${escapeHtml(row.value)}</td>
+</tr>`;
+  })
+  .join('')}
+</table>
+</td></tr>`
+    : '';
+
+  const noteHtmlRow = noteHtml
+    ? `<tr><td class="pad" align="left" style="padding:0 40px 34px 40px;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.65;color:#8a8b93;">
+${noteHtml}
 </td></tr>`
     : '';
 
@@ -101,8 +185,8 @@ export function renderLayout(opts: LayoutOptions): string {
 </td></tr>
 <tr><td class="pad" align="left" style="padding:0 40px 20px 40px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td width="6" style="width:6px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="5" height="5" bgcolor="#f4b24a" style="width:5px;height:5px;border-radius:50%;font-size:1px;line-height:5px;">&nbsp;</td></tr></table></td>
-<td style="padding-left:9px;font-family:Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.7px;color:#f4b24a;">${escapeHtml(eyebrow)}</td>
+<td width="6" style="width:6px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="5" height="5" bgcolor="${eyebrowHex}" style="width:5px;height:5px;border-radius:50%;font-size:1px;line-height:5px;">&nbsp;</td></tr></table></td>
+<td style="padding-left:9px;font-family:Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.7px;color:${eyebrowHex};">${escapeHtml(eyebrow)}</td>
 </tr></table>
 </td></tr>
 <tr><td class="pad" align="left" style="padding:0 40px 22px 40px;">
@@ -112,18 +196,24 @@ export function renderLayout(opts: LayoutOptions): string {
 ${bodyHtml}
 </td></tr>
 ${dataRowHtml}
+${dataRowsHtml}
 <tr><td class="pad" align="left" style="padding:0 40px 34px 40px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
 <td bgcolor="#ffffff" style="border-radius:0;">
 <a href="${safeUrl}" target="_blank" style="display:block;padding:16px 30px;font-family:Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;color:#000000;text-decoration:none;border-radius:0;">${escapeHtml(buttonLabel)}</a>
 </td></tr></table>
 </td></tr>
+${noteHtmlRow}
 <tr><td class="pad" align="left" style="padding:0 40px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid rgba(255,255,255,0.1);">
-<tr><td style="padding-top:22px;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#6a6b72;">
+${
+  showFallbackLink
+    ? `<tr><td style="padding-top:22px;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#6a6b72;">
 Button not working? Copy this link:<br>
-<a href="${safeUrl}" style="color:#f4b24a;word-break:break-all;text-decoration:none;">${safeUrl}</a>
-</td></tr>
+<a href="${safeUrl}" style="color:${eyebrowHex};word-break:break-all;text-decoration:none;">${safeUrl}</a>
+</td></tr>`
+    : ''
+}
 <tr><td style="padding-top:18px;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#55565d;">
 ${escapeHtml(footerSentence)}
 </td></tr>
