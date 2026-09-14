@@ -10,19 +10,30 @@ export const getUserProfile = cache(async (uid: string): Promise<UserProfile | n
 
   const data = doc.data() ?? {}
 
-  // TODO(#252 step 5, PR F): `pendingDeletion` (types/user.ts) is not mapped
-  // here yet — same silent-drop trap `docToCompany` had for `stats` before
-  // it was fixed (see lib/queries/company.ts's docblock on that function).
-  // A field existing on the `UserProfile` type does not make it reach any
-  // caller of `getUserProfile` until it's mapped here too. PR F needs this
-  // mapped before it can build the "logged in with no company" screen for a
-  // stranded member — she can't be shown her countdown from a field this
-  // function silently strips.
+  // `pendingDeletion` is written by the company purge's members phase
+  // (functions/src/company/memberCleanup.ts) as a Firestore Timestamp, but
+  // `PendingAccountDeletion.scheduledFor` (types/user.ts) is documented as
+  // an ISO string — same `.toDate?.()?.toISOString()` pattern
+  // lib/queries/company.ts's `docToCompany` already uses for `deletion`/
+  // `stats`, for the same reason: this function maps the raw document field
+  // by field, and a field only declared on the `UserProfile` type reaches
+  // no caller of `getUserProfile` until it's mapped here too.
+  const pendingDeletionData = data.pendingDeletion
+  const pendingDeletion = pendingDeletionData
+    ? {
+        scheduledFor: pendingDeletionData.scheduledFor?.toDate?.()?.toISOString()
+                        ?? pendingDeletionData.scheduledFor
+                        ?? '',
+        requestId:    pendingDeletionData.requestId ?? '',
+      }
+    : undefined
+
   return {
     id:                 doc.id,
     name:               data.name               ?? '',
     email:              data.email              ?? '',
     activeCompanyId:    data.activeCompanyId    ?? '',
     defaultBookingView: data.defaultBookingView ?? undefined,
+    pendingDeletion,
   }
 })
