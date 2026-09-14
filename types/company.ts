@@ -266,12 +266,46 @@ export interface CompanyDeletionRecord {
     email: string
     /** 'kept' | 'scheduled' | 'already_gone' — see MemberAccountStatus in functions/src/company/memberCleanup.ts. */
     accountStatus: 'kept' | 'scheduled' | 'already_gone'
+    /** Only set when accountStatus === 'scheduled' — the exact date `companyDeleted`'s scheduled-branch copy must quote. Never invent this in the mail template; it always comes from here. */
+    pendingDeletionScheduledFor?: string // ISO string
   }[]
   // Note: this array doubles as the "members" phase's own resume marker — a
   // uid appended here (written right after `cleanupOneMember` returns, before
   // the next uid starts) is a uid that will NOT be re-processed if the purge
   // crashes and resumes. No separate "completed member uids" field exists;
   // don't add one — it would just be this list's uids again.
+  //
+  // A uid is added here ONLY once `cleanupOneMember` reports
+  // `claimsUpdated: true` — see that function's return type in
+  // functions/src/company/memberCleanup.ts. A uid whose Auth claims update
+  // failed is deliberately left OUT, so a resumed purge retries her Auth
+  // claims specifically rather than silently leaving them pointed at a
+  // company that no longer exists. `runMembersPhase` throws (rather than
+  // marking the 'members' phase complete) when this happens, so the
+  // failure surfaces through the normal `attempts`/`lastError` machinery.
+
+  /**
+   * The "finalize" phase's own per-uid resume marker — separate from
+   * `formerMemberContacts` above because finalize runs after members and
+   * needs its own crash-safety: a uid's `mail/{id}` doc for
+   * `companyDeleted` and her uid landing in this array happen in the SAME
+   * `WriteBatch.commit()`, so a crash between "mail queued" and "company
+   * document deleted" resumes into a no-op re-run of the mail step instead
+   * of a second "your account is gone" email to everyone. See
+   * `runFinalizePhase` in functions/src/company/purge.ts.
+   */
+  finalizeMailQueuedUids?: string[]
+
+  /**
+   * Diagnostic only — the `completedPhases.length` this ledger had at the
+   * START of the most recent `runCompanyPurge` invocation. NOT part of the
+   * attempts/failed budget: a 540s function timeout kills the process
+   * before the attempts-incrementing catch block ever runs, so this is the
+   * only signal that a resumed purge is repeatedly timing out on the same
+   * phase without ever burning an attempt. See purge.ts for where it's
+   * read and written.
+   */
+  lastResumePhaseCount?: number
 
   /** Purge attempts so far; `failed` is set once this hits five (see the plan). */
   attempts: number
