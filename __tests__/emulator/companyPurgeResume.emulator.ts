@@ -206,4 +206,68 @@ describe('runCompanyPurge — resume', () => {
 
     spy.mockRestore()
   })
+
+  it('finalize is idempotent across a crash: no duplicate companyDeleted mail on resume', async () => {
+    // PR E review blocker 1: "queue mail" -> "delete company doc" ->
+    // "state: completed" spans three separate writes inside the ONE
+    // 'finalize' phase-level check, so a crash between the first and the
+    // last used to resume by re-running the whole phase — including
+    // re-queuing 'companyDeleted' to every former member a second time.
+    const companyId = 'resume-finalize-co'
+    const requestId = 'resume-finalize-req'
+
+    await seedRequestedDeletion(adminDb, {
+      companyId,
+      requestId,
+      completedPhases: ['stripe', 'invitations', 'members', 'subtree', 'orphans'],
+    })
+    await adminDb.doc(`companyDeletions/${requestId}`).update({
+      formerMemberContacts: [
+        { uid: 'finalize-member-1', name: 'Finalize Member', email: 'finalizemember@example.com', accountStatus: 'kept' },
+      ],
+    })
+
+    const db = getTestFunctionsDb()
+
+    // Simulate a crash right where finalize deletes the company document —
+    // AFTER the mail batch (with its finalizeMailQueuedUids marker) has
+    // already committed. The only direct `db.doc(...)` call on this path,
+    // with completedPhases pre-seeded through 'orphans', is exactly that
+    // company-delete line — see runFinalizePhase.
+    const docSpy = vi.spyOn(db, 'doc').mockImplementationOnce(() => {
+      throw new Error('simulated crash right before the company doc delete')
+    })
+
+    await runCompanyPurge(db, requestId)
+
+    docSpy.mockRestore()
+
+    // Mail WAS queued (that write committed before the simulated crash),
+    // ledger recorded the failed attempt, company doc still exists.
+    const afterCrash = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expect(afterCrash.attempts).toBe(1)
+    expect(afterCrash.state).not.toBe('completed')
+    expect(afterCrash.finalizeMailQueuedUids).toEqual(['finalize-member-1'])
+    const mailAfterCrash = await adminDb
+      .collection('mail')
+      .where('template', '==', 'companyDeleted')
+      .where('to', '==', 'finalizemember@example.com')
+      .get()
+    expect(mailAfterCrash.size).toBe(1)
+    expect((await adminDb.doc(`companies/${companyId}`).get()).exists).toBe(true)
+
+    // Resume — completes for real, WITHOUT queuing a second mail.
+    await runCompanyPurge(db, requestId)
+
+    const afterResume = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expect(afterResume.state).toBe('completed')
+    expect((await adminDb.doc(`companies/${companyId}`).get()).exists).toBe(false)
+
+    const mailAfterResume = await adminDb
+      .collection('mail')
+      .where('template', '==', 'companyDeleted')
+      .where('to', '==', 'finalizemember@example.com')
+      .get()
+    expect(mailAfterResume.size).toBe(1) // still exactly one — not two
+  })
 })
