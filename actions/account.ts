@@ -4,7 +4,7 @@ import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
-import { getVerifiedSession } from '@/lib/dal'
+import { getVerifiedSession, verifyAuthenticatedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import { stripe } from '@/lib/stripe'
@@ -450,8 +450,15 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   return {}
 }
 
+// Uses `verifyAuthenticatedSession` (auth-only), not `getVerifiedSession`:
+// this must keep working for a signed-in user with NO active company —
+// the "export my data" path /no-company offers a stranded member (issue
+// #252 step 5, PR F, design brief "Del 3"). `getVerifiedSession` would
+// redirect her away before this function ever ran. Nothing below reads
+// `session.activeCompanyId` — the company list already comes from her
+// `users/{uid}/memberships` collection, not the session claim.
 export async function exportUserData(): Promise<{ json?: string; error?: string }> {
-  const session = await getVerifiedSession()
+  const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
   try {
