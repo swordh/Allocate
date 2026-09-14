@@ -171,6 +171,20 @@ export type CompanyDeletionPhase =
 
 export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link'
 
+/** One Stripe side effect of the reversible half of a deletion — see `stripePause`/`stripeResume` below. */
+export interface CompanyDeletionStripeOutcome {
+  at: string                       // ISO string
+  /**
+   * Mirrors `StripeDeletionEffect` in lib/companyDeletionStripe.ts — read the
+   * per-value docs there. Note that `resumed_unpaid` is NOT a success:
+   * the pause was lifted, but onto a subscription Stripe had already given up
+   * collecting on. It is a separate value precisely so the operator view does
+   * not render it as `applied`.
+   */
+  effect: 'applied' | 'no_subscription' | 'already_canceled' | 'resumed_unpaid' | 'failed'
+  error?: string
+}
+
 /**
  * One entry per operator intervention on this deletion (steg 6, not built
  * yet). Written only from `app/operator/...` server actions — the purge
@@ -241,6 +255,18 @@ export interface CompanyDeletionRecord {
   cancelSource?: CompanyDeletionCancelSource
 
   completedAt?: string             // ISO string
+
+  /**
+   * What happened to the money, recorded by `lib/companyDeletionStripe.ts`'s
+   * `recordStripeOutcome` — `stripePause` when the request was made,
+   * `stripeResume` if it was cancelled. Neither call is allowed to fail the
+   * user's request (see that module's docblock), so these fields are the only
+   * durable trace that a pause silently didn't take, or that a resume found a
+   * subscription already cancelled and beyond reviving. Step 6's operator view
+   * reads them; nothing branches on them.
+   */
+  stripePause?: CompanyDeletionStripeOutcome
+  stripeResume?: CompanyDeletionStripeOutcome
 
   operatorActions?: CompanyDeletionOperatorAction[]
 

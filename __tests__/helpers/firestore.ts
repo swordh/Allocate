@@ -25,6 +25,26 @@ export interface DocRefStub {
   path: string
   id: string
   get: () => Promise<DocSnapStub>
+  /**
+   * Direct (non-batched, non-transactional) writes on a document reference.
+   *
+   * Spies rather than no-ops so a test can assert what production code wrote
+   * outside a batch or transaction — `recordStripeOutcome`
+   * (lib/companyDeletionStripe.ts) is the case that forced these to exist: it
+   * annotates the ledger with `adminDb.doc(...).update(...)` and swallows its
+   * own errors, so before these spies were here the call threw
+   * "update is not a function", was caught, and the test saw nothing at all
+   * rather than a failure. A missing method on a stub that production code
+   * deliberately try/catches is invisible; that is worth knowing about
+   * generally, not just here.
+   *
+   * They resolve rather than mutate `docs` — nothing in this suite reads its
+   * own writes back through the same map, and making them write-through would
+   * quietly change what every existing test's later reads return.
+   */
+  update: ReturnType<typeof vi.fn>
+  set: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
 }
 
 export interface DocSnapStub {
@@ -65,6 +85,9 @@ function makeDocRef(path: string, docs: DocMap): DocRefStub {
     path,
     id,
     get: async () => makeDocSnap(path, docs),
+    update: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
   }
   return ref
 }

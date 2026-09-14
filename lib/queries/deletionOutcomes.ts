@@ -104,6 +104,32 @@ async function readCompanyCounts(
  * so nobody has to remember to add it in step 5, on the day it stops being
  * optional.
  *
+ * THAT DAY HAS ARRIVED (issue #252 step 5, PR F2). `close` no longer just
+ * builds a rejection message: `deleteAccount`'s commit loop (actions/
+ * account.ts) now creates a `mode: 'immediate'` deletion request for a
+ * `close` company, which the purge executes with no window and no undo. That
+ * is why this function is now EXPORTED and takes an optional `tx`:
+ *
+ *   - Exported, because `deleteAccount`'s authoritative per-company
+ *     transaction has to run the same confirmation the read-only pre-flight
+ *     does. A second, hand-inlined copy of "read the live aggregate, prefer
+ *     it, log the mismatch" in actions/account.ts is exactly how the two
+ *     would drift, and the plan is explicit that this live read IS the whole
+ *     protection ("tas det bort i en framtida 'förenkling' är felet tyst
+ *     tills dagen det inte är det").
+ *   - `tx`, because in that caller the confirmation must compose atomically
+ *     with the writes it authorises. A plain `.count().get()` inside a
+ *     transaction callback is a non-transactional read: it would not be part
+ *     of the transaction's read set, so a member joining between this read
+ *     and the commit would not cause a retry, and the company would be torn
+ *     down anyway. Passing the aggregate query through `tx.get` puts it in
+ *     the read set, which is the difference between "we looked" and "we
+ *     looked and nothing changed under us."
+ *
+ * Callers MUST prefer the returned value over the counter's — returning the
+ * live number rather than a boolean is deliberate, so a caller can't keep
+ * using its own stale reading after asking.
+ *
  * Every disagreement is logged with its own `action` string
  * (`close_outcome_counter_mismatch`) precisely so a live-vs-counter drift
  * shows up in Cloud Logging on its own, distinguishable from every other
@@ -112,8 +138,13 @@ async function readCompanyCounts(
  * the outcome (e.g. counter says 1, live says 1 too — still checked, still
  * would have logged had they differed).
  */
-async function confirmSoleMember(companyId: string, counterMembers: number): Promise<number> {
-  const liveSnap = await adminDb.collection(`companies/${companyId}/members`).count().get()
+export async function confirmSoleMember(
+  companyId: string,
+  counterMembers: number,
+  tx?: FirebaseFirestore.Transaction,
+): Promise<number> {
+  const countQuery = adminDb.collection(`companies/${companyId}/members`).count()
+  const liveSnap = tx ? await tx.get(countQuery) : await countQuery.get()
   const liveMembers = liveSnap.data().count
 
   if (liveMembers !== counterMembers) {

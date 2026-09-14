@@ -58,6 +58,23 @@ vi.mock('firebase-admin/firestore', () => ({
     // calls FieldValue.increment — real module, not mocked, so this must
     // exist for that import to resolve.
     increment: (n: number) => ({ __increment: n }),
+    // The company-deletion cancel path clears `companies/{cid}.deletion` with
+    // FieldValue.delete(); deleteAccount itself never calls it, but the
+    // module graph is shared, so it must resolve.
+    delete: () => '__delete',
+  },
+  // issue #252 step 5: deleteAccount now stamps `requestedAt`/`scheduledFor`/
+  // `purgeAfter` on the `mode: 'immediate'` ledger row it writes for a
+  // sole-member company. Fixed instant so assertions can compare exactly.
+  Timestamp: {
+    now: () => ({
+      toMillis: () => 1_760_000_000_000,
+      toDate: () => new Date(1_760_000_000_000),
+    }),
+    fromMillis: (ms: number) => ({
+      toMillis: () => ms,
+      toDate: () => new Date(ms),
+    }),
   },
 }))
 
@@ -113,18 +130,17 @@ const COULD_NOT_VERIFY_ERROR =
 
 /**
  * Mirrors `actions/account.ts`'s `otherPeoplePhrase` / `buildBlockedClause` /
- * `buildCloseClause` / `buildSoleAdminMessage` — kept in sync deliberately,
- * same convention as the constant above: these tests assert the guard's
- * actual user-facing string, not just "some error came back," so a
- * regression in the wording (or in which company/count it names, or in
- * which of the two — `blocked` vs `close` — a company gets) is caught here,
- * not just a change in *whether* it blocks.
+ * `buildSoleAdminMessage` — kept in sync deliberately, same convention as the
+ * constant above: these tests assert the guard's actual user-facing string,
+ * not just "some error came back," so a regression in the wording (or in
+ * which company and count it names) is caught here, not just a change in
+ * *whether* it blocks.
  *
- * `blocked` and `close` are asserted as genuinely different sentences on
- * purpose (`soleAdminBlocked` vs `soleAdminClose`) — this is the regression
- * the coordinator caught: an earlier version of this file folded `close`
- * into the `blocked` wording ("make someone else an administrator"), which
- * is unactionable advice for someone who has no one else to promote.
+ * `close` no longer has a message at all (issue #252 step 5, PR F2): a
+ * company whose sole member deletes her account is now deleted along with it
+ * rather than blocking her, so `buildCloseClause` and its mirror here are
+ * both gone. `blocked` — sole admin with colleagues — is the only message
+ * this guard still builds.
  */
 function otherPeoplePhrase(otherCount: number): string {
   if (otherCount <= 0) return 'no one else works'
@@ -143,39 +159,13 @@ function blockedClause(companies: Array<{ name: string; memberCount: number }>):
   return `you are the only administrator of ${companies.length} companies — ${perCompany}. Make someone else an administrator in each one under Settings → Team, then try again.`
 }
 
-function closeClause(companies: Array<{ name: string }>): string {
-  if (companies.length === 1) {
-    return `you are the only member of ${companies[0]!.name}, so deleting your account would also remove the company. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
-  }
-  const names = companies.map((c) => c.name).join(', ')
-  return `you are the only member of ${companies.length} companies — ${names} — so deleting your account would also remove them. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
-}
-
 /** One `blocked` company — the common case: a colleague exists to promote. */
 function soleAdminBlocked(companyName: string, memberCount: number): string {
   return `Cannot delete account: ${blockedClause([{ name: companyName, memberCount }])}`
 }
 
-/** One `close` company — the sole-member case: no colleague exists, so the
- * message must not suggest promoting one. This is the exact scenario issue
- * #252 was reopened over — asserted as a full string, not just "some error
- * came back," specifically so a message that asks for an impossible action
- * fails a test again if it ever regresses. */
-function soleAdminClose(companyName: string): string {
-  return `Cannot delete account: ${closeClause([{ name: companyName }])}`
-}
-
 function soleAdminBlockedMulti(companies: Array<{ name: string; memberCount: number }>): string {
   return `Cannot delete account: ${blockedClause(companies)}`
-}
-
-/** Mixed case: at least one `blocked` company and at least one `close`
- * company at once — both parts must appear, each with its own fix. */
-function soleAdminMixed(
-  blocked: Array<{ name: string; memberCount: number }>,
-  close: Array<{ name: string }>,
-): string {
-  return `Cannot delete account: ${blockedClause(blocked)} Also, ${closeClause(close)}`
 }
 
 // ── Scenario wiring ───────────────────────────────────────────────────────────
@@ -312,31 +302,178 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     expect(mockDeleteUser).toHaveBeenCalledOnce()
   })
 
-  it('blocks deletion with the CLOSE message when the user is the sole member of their active company — not the blocked/"promote someone" message', async () => {
-    // members: 1, admins: 1 — the user is the company's only person, which
-    // getDeletionOutcomes classifies as 'close', not 'blocked'. This is the
-    // scenario the coordinator caught: 'close' must get its own honest
-    // message pointing at a concrete, already-open surface ("open Help &
-    // feedback"), never the 'blocked' one ("make someone else an
-    // administrator") — there is no one else to make an admin, and no
-    // vague "contact support" either, since the user shouldn't have to go
-    // find an address when the in-app support surface is one click away.
+  it("deletes the account AND schedules the company for immediate deletion when the user is its sole member", async () => {
+    // members: 1, admins: 1 — the user is the company's only person.
+    //
+    // This USED to be a block, with a message telling her to open Help &
+    // feedback because we couldn't do it automatically. Issue #252 step 5,
+    // PR F2 is the "automatically" arriving: the commit loop writes a
+    // `companyDeletions/{id}` ledger row with `mode: 'immediate'`, and the
+    // `onCompanyDeletionCreated` trigger purges the company from there.
+    // The account deletion itself proceeds — it is not blocked by anything.
     stubSession({ activeCompanyId: 'company-A' })
-    wireScenario({
+    const { tx } = wireScenario({
       memberships: [{ companyId: 'company-A', role: 'admin' }],
       companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 1, admins: 1 } } },
     })
 
     const result = await deleteAccount()
 
-    // Assert the guard's own message, not merely that *some* error came back.
-    expect(result.error).toBe(soleAdminClose('company-A'))
-    // Never the blocked wording — this is the exact regression this test
-    // exists to catch.
-    expect(result.error).not.toContain('Make someone else an administrator')
-    // Blocked before the commit loop ever starts a transaction.
-    expect(adminDb.runTransaction).not.toHaveBeenCalled()
-    expect(mockDeleteSession).not.toHaveBeenCalled()
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+
+    const ledgerWrite = tx.set.mock.calls.find(
+      ([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'),
+    )
+    expect(ledgerWrite, 'a companyDeletions ledger row must be written').toBeDefined()
+    expect(ledgerWrite![1]).toMatchObject({
+      companyId: 'company-A',
+      mode: 'immediate',
+      state: 'requested',
+      requestedByUid: UID,
+      attempts: 0,
+    })
+
+    // …and the member-visible mirror on the company document, which is what
+    // the sweep queries and what `claimRequestedLease` reads.
+    const mirrorWrite = tx.update.mock.calls.find(
+      ([ref, data]) =>
+        (ref as DocRefStub).path === 'companies/company-A' &&
+        (data as { deletion?: unknown }).deletion !== undefined,
+    )
+    expect(mirrorWrite, 'the company document must mirror the deletion').toBeDefined()
+    expect((mirrorWrite![1] as { deletion: { mode: string } }).deletion.mode).toBe('immediate')
+  })
+
+  it('MUTATION GUARD: a counter that says 0 but a live count that says 3 must NOT delete the company', async () => {
+    // The guard fires on `members <= 1`, so ZERO is inside it too — and a
+    // counter stuck at 0 is the more alarming drift of the two, since it
+    // claims the company has nobody in it at all. The plan's verification
+    // list only names "counter says 1, live says 5", and the tests followed
+    // the plan; this is the case that was missing.
+    //
+    // Same pre-flight/transaction split as the test below, and for the same
+    // reason: `getDeletionOutcomes` runs its own `confirmSoleMember`, so a
+    // shared counter would be caught there and prove nothing about the
+    // commit loop's copy.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const liveMembers: QueryDocInput[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `member-${i}`,
+      path: `companies/company-A/members/member-${i}`,
+      data: { role: i === 0 ? 'admin' : 'crew' },
+    }))
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 0, admins: 0 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/members') {
+        const roleFilter = filterValue(ctx, 'role')
+        return roleFilter
+          ? liveMembers.filter((d) => (d.data as { role?: string }).role === roleFilter)
+          : liveMembers
+      }
+      return []
+    }
+
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('company-A', 3))
+    expect(
+      tx.set.mock.calls.filter(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/')),
+    ).toHaveLength(0)
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
+  it('MUTATION GUARD: a counter that says 1 but a live count that says 5 must NOT delete the company', async () => {
+    // The single most dangerous calculation in step 5. `_meta/memberCounts`
+    // is denormalised and can drift; here it says the user is alone, while
+    // the members subcollection actually holds five people. If the commit
+    // loop trusted the counter, five people's company would be purged with
+    // no window and no undo because one of them deleted her account.
+    //
+    // `confirmSoleMember(companyId, counterMembers, tx)` — the live aggregate
+    // read inside the transaction — is what must win. With live = 5 the
+    // company is not `close` at all, and since this user is its only admin it
+    // falls through to the ordinary BLOCKED branch instead.
+    //
+    // Delete the `confirmSoleMember` call in actions/account.ts and this test
+    // fails; that is its whole job.
+    //
+    // Pre-flight and the commit loop are wired against DIFFERENT
+    // `_meta/memberCounts` snapshots — the same technique the stale-preflight
+    // tests above use — and that separation is load-bearing HERE in
+    // particular. `getDeletionOutcomes` runs its own `confirmSoleMember` in
+    // the pre-flight, so a single shared stale counter would be caught there
+    // and this test would pass without the commit loop's copy existing at
+    // all: a guard covered by a different guard is not a tested guard. So
+    // pre-flight is given a SAFE snapshot (5 members, 2 admins → 'leave',
+    // straight through), and only the transaction sees the stale-LOW counter.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const liveMembers: QueryDocInput[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `member-${i}`,
+      path: `companies/company-A/members/member-${i}`,
+      data: { role: i === 0 ? 'admin' : 'crew' },
+    }))
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      'companies/company-A/_meta/memberCounts': { members: 5, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      // The live aggregate both `confirmSoleMember` calls resolve against.
+      if (ctx.path === 'companies/company-A/members') {
+        const roleFilter = filterValue(ctx, 'role')
+        return roleFilter
+          ? liveMembers.filter((d) => (d.data as { role?: string }).role === roleFilter)
+          : liveMembers
+      }
+      return []
+    }
+
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    // Blocked, from the LIVE headcount (5) — not 'close', and not the
+    // counter's 1.
+    expect(result.error).toBe(soleAdminBlocked('company-A', 5))
+    // The decisive assertion: nothing was scheduled for deletion.
+    expect(
+      tx.set.mock.calls.filter(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/')),
+    ).toHaveLength(0)
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 
@@ -365,12 +502,16 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 
-  it('mixed case: names both the BLOCKED company and the CLOSE company, each with its own fix', async () => {
+  it('mixed case: a BLOCKED company still blocks, and the CLOSE company alongside it is not mentioned as a problem', async () => {
     // company-A: blocked (sole admin, 2 other members — promote one).
-    // company-B: close (sole member — no one to promote, open Help & feedback).
-    // The designbrief requires consequences reported per company, never
-    // collapsed into one verdict — this is that requirement's sharpest edge
-    // case: two DIFFERENT fixes must both be visible in one message.
+    // company-B: close (sole member) — no longer a problem at all as of
+    // issue #252 step 5: it would simply be deleted along with the account.
+    //
+    // So the message names ONLY company-A, and must not carry any trace of
+    // the old "we can't do that automatically yet" advice for company-B.
+    // Nothing is deleted or scheduled either, because company-A blocks the
+    // whole request before the commit loop starts — an all-or-nothing that
+    // matters much more now that part of the loop is irreversible.
     stubSession()
     wireScenario({
       memberships: [
@@ -385,14 +526,12 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
 
     const result = await deleteAccount()
 
-    expect(result.error).toBe(
-      soleAdminMixed([{ name: 'company-A', memberCount: 3 }], [{ name: 'company-B' }]),
-    )
-    // Both parts must be readable in the one string — not just matching the
-    // combined builder above (which could hide a merge bug the same shape as
-    // the one it replicates), but each half checked independently too.
+    expect(result.error).toBe(soleAdminBlocked('company-A', 3))
     expect(result.error).toContain('Make someone else an administrator')
-    expect(result.error).toContain('open Help & feedback')
+    // The retired clause. Its absence is the point of this assertion: a
+    // sole-member company is handled now, not apologised for.
+    expect(result.error).not.toContain('Help & feedback')
+    expect(result.error).not.toContain('company-B')
     expect(adminDb.runTransaction).not.toHaveBeenCalled()
   })
 
@@ -538,7 +677,7 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     expect(tx.delete).not.toHaveBeenCalled()
   })
 
-  it('commit loop blocks with CLOSE even for a non-admin sole member — the close check does not depend on role', async () => {
+  it('commit loop takes the immediate-deletion branch even for a non-admin sole member — the close check does not depend on role', async () => {
     // Contrived on purpose: a company whose only member doc has role
     // 'crew', not 'admin'. This should be unreachable in practice —
     // updateMemberRole (actions/team.ts) refuses to demote a company's last
@@ -581,8 +720,18 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
 
     const result = await deleteAccount()
 
-    expect(result.error).toBe(soleAdminClose('Acme'))
-    expect(tx.delete).not.toHaveBeenCalled()
+    // No error: the company is scheduled for immediate deletion and the
+    // account deletion proceeds. What this test still pins is that reaching
+    // that branch does NOT depend on `role === 'admin'` — a sole member
+    // recorded as 'crew' must be handled identically, because the commit loop
+    // is the authoritative guard and must not lean on an invariant enforced
+    // in actions/team.ts.
+    expect(result.error).toBeUndefined()
+    const ledgerWrite = tx.set.mock.calls.find(
+      ([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'),
+    )
+    expect(ledgerWrite, 'a crew-role sole member must still schedule the company for deletion').toBeDefined()
+    expect(ledgerWrite![1]).toMatchObject({ companyId: 'company-A', mode: 'immediate' })
   })
 
   it('blocks with a distinct message when a company\'s outcome could not be determined ("unknown", not "blocked")', async () => {
@@ -969,5 +1118,94 @@ describe('deleteAccount — memberCounts delta', () => {
     expect(call).toBe(2)
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+})
+
+// ── Interaction with the immediate company purge (issue #252 step 5) ──────────
+
+describe('deleteAccount — companies scheduled for immediate deletion', () => {
+  it('MUTATION GUARD: does not anonymise documents the purge is concurrently deleting', async () => {
+    // Writing the ledger row starts `runCompanyPurge` through
+    // `onCompanyDeletionCreated`, typically within a second — while this
+    // function is still running. Every anonymisation write targets a document
+    // the purge is deleting, and a WriteBatch update against a document that
+    // no longer exists fails the WHOLE batch with NOT_FOUND. That would abort
+    // the account deletion halfway: memberships gone, company being purged,
+    // Auth record still there, and an error telling her nothing worked.
+    //
+    // Delete the `immediatelyDeletedCompanyIds.has(companyId)` skip in
+    // actions/account.ts and this test fails.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const docs: DocMap = {
+      'companies/company-A': { name: 'Solo AB', createdBy: UID },
+      [`companies/company-A/members/${UID}`]: { role: 'admin', name: 'Solo', email: 'solo@example.com' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      // A booking this user authored. If the skip is removed, the
+      // anonymisation loop finds it and batches an update against a document
+      // the purge is deleting.
+      if (ctx.path === 'companies/company-A/bookings') {
+        return [{ id: 'b1', path: 'companies/company-A/bookings/b1', data: { userId: UID } }]
+      }
+      return []
+    }
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
+      docs,
+      query,
+      collectionGroup: () => [],
+    })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // The company IS scheduled for deletion…
+    expect(tx.set.mock.calls.some(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'))).toBe(true)
+    // …and nothing under it was queued for anonymisation.
+    const touchedPaths = wired.batch.update.mock.calls.map(([ref]) => (ref as DocRefStub).path)
+    expect(touchedPaths).not.toContain('companies/company-A/bookings/b1')
+    expect(touchedPaths).not.toContain('companies/company-A')
+  })
+
+  it('MUTATION GUARD: processes reversible companies BEFORE any irreversible one', async () => {
+    // Ordering only — the authoritative decision is still per company, live,
+    // inside each transaction. What it buys: if a reversible company's
+    // transaction fails transiently, the loop bails out with an error before
+    // any company has been torn down. With the memberships listed
+    // close-company-first, an unordered loop would schedule the destruction
+    // first and only then find out whether the rest of the run works.
+    stubSession({ activeCompanyId: 'company-A' })
+    const { tx } = wireScenario({
+      memberships: [
+        { companyId: 'company-close', role: 'admin' },
+        { companyId: 'company-A', role: 'admin' },
+      ],
+      companies: {
+        'company-close': { memberRole: 'admin', metaCounts: { members: 1, admins: 1 } },
+        'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } },
+      },
+    })
+
+    await deleteAccount()
+
+    const ledgerSet = tx.set.mock.calls.findIndex(([ref]) =>
+      (ref as DocRefStub).path.startsWith('companyDeletions/'),
+    )
+    const ledgerOrder = tx.set.mock.invocationCallOrder[ledgerSet]!
+    const safeDeleteOrder = tx.delete.mock.calls
+      .map((call, i) => ({ path: (call[0] as DocRefStub).path, order: tx.delete.mock.invocationCallOrder[i]! }))
+      .find((c) => c.path === `companies/company-A/members/${UID}`)!.order
+
+    expect(safeDeleteOrder).toBeLessThan(ledgerOrder)
   })
 })
