@@ -1,117 +1,141 @@
 /**
- * Tests for `docToCompany` (via `getCompany`) — specifically that the
- * `deletion` field (issue #252, step 5) is mapped through.
+ * Tests for docToCompany / getCompany — lib/queries/company.ts.
  *
- * `docToCompany` maps the raw Firestore document field by field, so adding
- * something to the `Company` type alone does not make it reach a caller —
- * see the comment above the `deletion` mapping in lib/queries/company.ts.
- * `stats` already went missing this way; this test exists so `deletion`
- * doesn't join it, and so a future refactor of `docToCompany` gets a signal
- * if it silently drops the field again.
- *
- * Firebase Admin is mocked; no network calls are made.
+ * `docToCompany` maps the Firestore document field by field, so a field that
+ * exists only on the Firestore document and in the `Company` type — but not
+ * in this mapping function — reaches every writer and no reader. That is a
+ * proven bug shape here: `stats` was written by lib/companyStats.ts on every
+ * booking/equipment mutation and was silently dropped by this function until
+ * now. This file locks down that `stats` and the Stripe pause-collection
+ * mirror (`pauseCollection` / `pauseResumesAt`, added to the webhook in the
+ * same change) both survive the trip through `getCompany`.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
 vi.mock('@/lib/firebase-admin', () => ({
-  adminDb: {},
+  adminDb: {
+    collection: vi.fn(),
+  },
   adminAuth: {},
 }))
 
-import { getCompany } from '@/lib/queries/company'
 import { adminDb } from '@/lib/firebase-admin'
+import { getCompany } from '@/lib/queries/company'
 
-type MockAdminDb = { collection: ReturnType<typeof vi.fn> }
+type Data = Record<string, unknown>
 
-function mockCompanyDoc(companyId: string, data: FirebaseFirestore.DocumentData) {
-  const docSnap = {
-    exists: true,
-    id: companyId,
-    data: () => data,
-  }
-  const docRef = { get: vi.fn().mockResolvedValue(docSnap) }
-  const collectionRef = { doc: vi.fn().mockReturnValue(docRef) }
-  ;(adminDb as unknown as MockAdminDb).collection = vi.fn().mockReturnValue(collectionRef)
+function wireCompanyDoc(companyId: string, data: Data | null) {
+  vi.mocked(adminDb.collection).mockReturnValue({
+    doc: () => ({
+      get: async () => ({
+        exists: data !== null,
+        id: companyId,
+        data: () => data ?? undefined,
+      }),
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double, not the real Firestore type
+  } as any)
 }
 
-const BASE_FIELDS = {
-  name: 'Rigg & Rep AB',
-  createdAt: '2024-01-01T00:00:00.000Z',
-  createdBy: 'uid-owner',
-  stripeCustomerId: 'cus_123',
-  subscription: {
-    status: 'active',
-    plan: 'starter',
-    currentPeriodEnd: '2026-02-01T00:00:00.000Z',
-    limits: { equipment: 25, users: 10 },
-  },
-}
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
-describe('docToCompany — deletion field mapping', () => {
-  it('maps `deletion` when the field is present on the document', async () => {
-    mockCompanyDoc('company-with-deletion', {
-      ...BASE_FIELDS,
-      deletion: {
-        state: 'requested',
-        requestId: 'req-1',
-        requestedAt: '2026-09-13T10:00:00.000Z',
-        requestedByName: 'Anna Admin',
-        scheduledFor: '2026-09-20T10:00:00.000Z',
-        mode: 'window',
+// ── stats mapping ─────────────────────────────────────────────────────────────
+
+describe('getCompany — stats mapping', () => {
+  it('returns stats when the document carries a stats mirror', async () => {
+    const updatedAt = { toDate: () => new Date('2026-08-01T00:00:00.000Z') }
+    const lastBookingAt = { toDate: () => new Date('2026-07-15T00:00:00.000Z') }
+
+    wireCompanyDoc('co-stats-1', {
+      name: 'Nordfilm AB',
+      stripeCustomerId: 'cus_1',
+      subscription: { status: 'active', plan: 'basic' },
+      stats: {
+        equipmentCount: 12,
+        bookingsCreated: 40,
+        bookingsCancelled: 3,
+        lastBookingAt,
+        memberCount: 5,
+        updatedAt,
       },
     })
 
-    const company = await getCompany('company-with-deletion')
+    const company = await getCompany('co-stats-1')
 
-    expect(company?.deletion).toEqual({
-      state: 'requested',
-      requestId: 'req-1',
-      requestedAt: '2026-09-13T10:00:00.000Z',
-      requestedByName: 'Anna Admin',
-      scheduledFor: '2026-09-20T10:00:00.000Z',
-      mode: 'window',
-      remindedAt: undefined,
-      claimedAt: undefined,
+    expect(company?.stats).toEqual({
+      equipmentCount: 12,
+      bookingsCreated: 40,
+      bookingsCancelled: 3,
+      lastBookingAt: '2026-07-15T00:00:00.000Z',
+      memberCount: 5,
+      updatedAt: '2026-08-01T00:00:00.000Z',
     })
   })
 
-  it('converts Firestore Timestamp-like fields on `deletion` to ISO strings', async () => {
-    const asTimestamp = (iso: string) => ({ toDate: () => new Date(iso), toISOString: undefined })
+  it('omits stats entirely on a pre-migration company document that never had the mirror', async () => {
+    wireCompanyDoc('co-stats-2', {
+      name: 'Legacy AB',
+      stripeCustomerId: 'cus_2',
+      subscription: { status: 'active', plan: 'basic' },
+      // no `stats` field at all
+    })
 
-    mockCompanyDoc('company-with-timestamp-deletion', {
-      ...BASE_FIELDS,
-      deletion: {
-        state: 'executing',
-        requestId: 'req-2',
-        requestedAt: asTimestamp('2026-09-01T00:00:00.000Z'),
-        requestedByName: 'Björn Boss',
-        scheduledFor: asTimestamp('2026-09-08T00:00:00.000Z'),
-        mode: 'window',
-        remindedAt: asTimestamp('2026-09-06T00:00:00.000Z'),
-        claimedAt: asTimestamp('2026-09-08T00:05:00.000Z'),
+    const company = await getCompany('co-stats-2')
+
+    expect(company?.stats).toBeUndefined()
+  })
+
+  it('defaults lastBookingAt to null and updatedAt to empty string when the stats object is missing those subfields', async () => {
+    wireCompanyDoc('co-stats-3', {
+      name: 'Partial AB',
+      stripeCustomerId: 'cus_3',
+      subscription: { status: 'active', plan: 'basic' },
+      stats: { equipmentCount: 0, bookingsCreated: 0, bookingsCancelled: 0, memberCount: 1 },
+    })
+
+    const company = await getCompany('co-stats-3')
+
+    expect(company?.stats?.lastBookingAt).toBeNull()
+    expect(company?.stats?.updatedAt).toBe('')
+  })
+})
+
+// ── pause_collection mirror mapping ──────────────────────────────────────────
+
+describe('getCompany — pauseCollection / pauseResumesAt mapping', () => {
+  it('maps both fields through from the Firestore mirror', async () => {
+    wireCompanyDoc('co-pause-1', {
+      name: 'Paused AB',
+      stripeCustomerId: 'cus_4',
+      subscription: {
+        status: 'active',
+        plan: 'basic',
+        pauseCollection: 'void',
+        pauseResumesAt: '2026-09-20T00:00:00.000Z',
       },
     })
 
-    const company = await getCompany('company-with-timestamp-deletion')
+    const company = await getCompany('co-pause-1')
 
-    expect(company?.deletion).toEqual({
-      state: 'executing',
-      requestId: 'req-2',
-      requestedAt: '2026-09-01T00:00:00.000Z',
-      requestedByName: 'Björn Boss',
-      scheduledFor: '2026-09-08T00:00:00.000Z',
-      mode: 'window',
-      remindedAt: '2026-09-06T00:00:00.000Z',
-      claimedAt: '2026-09-08T00:05:00.000Z',
-    })
+    expect(company?.subscription.pauseCollection).toBe('void')
+    expect(company?.subscription.pauseResumesAt).toBe('2026-09-20T00:00:00.000Z')
   })
 
-  it('leaves `deletion` as undefined when the field is absent', async () => {
-    mockCompanyDoc('company-without-deletion', { ...BASE_FIELDS })
+  it('defaults both fields to null when the subscription has never been paused', async () => {
+    wireCompanyDoc('co-pause-2', {
+      name: 'Never Paused AB',
+      stripeCustomerId: 'cus_5',
+      subscription: { status: 'active', plan: 'basic' },
+    })
 
-    const company = await getCompany('company-without-deletion')
+    const company = await getCompany('co-pause-2')
 
-    expect(company?.deletion).toBeUndefined()
+    expect(company?.subscription.pauseCollection).toBeNull()
+    expect(company?.subscription.pauseResumesAt).toBeNull()
   })
 })
