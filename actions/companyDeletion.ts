@@ -146,6 +146,17 @@ export async function requestCompanyDeletion(
 
   try {
     await adminDb.runTransaction(async (tx) => {
+      // Reset on EVERY attempt. Firestore retries a transaction callback when
+      // it loses a write conflict, and anything the aborted attempt assigned
+      // to a variable out here survives that abort even though its writes do
+      // not. See the long note on the same reset in
+      // `cancelCompanyDeletionByToken` below — an emulator test caught this
+      // for real there, and leaving it out here would let a retry that
+      // short-circuits on an already-existing request still pause Stripe as
+      // if it had just created one.
+      created = false
+      resultScheduledFor = ''
+
       const companyRef = adminDb.doc(`companies/${companyId}`)
       const memberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
 
@@ -390,6 +401,9 @@ export async function cancelCompanyDeletion(): Promise<CancelCompanyDeletionResu
 
   try {
     await adminDb.runTransaction(async (tx) => {
+      // Reset on every attempt — see `cancelCompanyDeletionByToken` below.
+      cancelled = null
+
       const companyRef = adminDb.doc(`companies/${companyId}`)
       const memberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
       const [companySnap, memberSnap] = await Promise.all([tx.get(companyRef), tx.get(memberRef)])
@@ -513,6 +527,26 @@ export async function cancelCompanyDeletionByToken(token: string): Promise<Cance
 
   try {
     await adminDb.runTransaction(async (tx) => {
+      // ── Reset on EVERY attempt, not just the first ──────────────────────
+      //
+      // Firestore retries this callback when it loses a write conflict. The
+      // aborted attempt's WRITES are discarded; its assignments to these two
+      // variables are not, because they live outside the callback.
+      //
+      // This is not hypothetical. Two simultaneous clicks on the same link
+      // used to produce exactly one cancellation (correct) and TWO
+      // "deletion stopped" emails (wrong): the loser's first attempt set
+      // `cancelled`, lost the commit, retried, correctly reported `used`
+      // from the re-read — and then `finishCancellation` ran anyway, off the
+      // stale value from the attempt that never happened. Caught by the
+      // concurrent-click test in
+      // __tests__/emulator/companyDeletionCancel.emulator.ts, which is the
+      // only place a real transaction retry actually occurs; a stubbed
+      // `runTransaction` that just invokes its callback once can never
+      // reproduce it.
+      outcome = { state: 'unknown' }
+      cancelled = null
+
       const tokenRef = adminDb.doc(`companyDeletionCancelTokens/${token}`)
       const tokenSnap = await tx.get(tokenRef)
       if (!tokenSnap.exists) {
