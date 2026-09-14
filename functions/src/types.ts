@@ -101,6 +101,12 @@ export interface CompanyDocument {
 //   must never construct a ledger update that clobbers it.
 
 export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
+/**
+ * `mode` is chosen by which action triggered the deletion, never by member
+ * count — see the doc comment on `CompanyDeletionMode` in types/company.ts
+ * (that comment used to say "single member" and was wrong; it's the
+ * canonical explanation, read it there, not here).
+ */
 export type CompanyDeletionMode = 'immediate' | 'window';
 export type CompanyDeletionPhase =
   | 'stripe'
@@ -146,6 +152,28 @@ export interface CompanyDeletionDocument {
   completedPhases?: CompanyDeletionPhase[];
   phaseCounts?: Record<string, number>;
 
+  /** See the doc comment on this field in types/company.ts. */
+  formerMemberContacts?: {
+    uid: string;
+    name: string;
+    email: string;
+    accountStatus: 'kept' | 'scheduled' | 'already_gone';
+    /** Only set when accountStatus === 'scheduled' — see types/company.ts. */
+    pendingDeletionScheduledFor?: Timestamp;
+  }[];
+  // Doubles as the "members" phase's resume marker — see types/company.ts.
+  // A uid is only ever added here once cleanupOneMember reports
+  // claimsUpdated: true (functions/src/company/memberCleanup.ts) — a uid
+  // whose Auth claims update failed is deliberately left OUT so a later
+  // resume retries her specifically, instead of leaving her claims pointed
+  // at a company that no longer exists.
+
+  /** See the doc comment on this field in types/company.ts — finalize's own per-uid resume marker. */
+  finalizeMailQueuedUids?: string[];
+
+  /** Diagnostic only — see the comment where runCompanyPurge writes and reads this in purge.ts. Not part of the attempts/failed budget. */
+  lastResumePhaseCount?: number;
+
   attempts: number;
   lastHeartbeatAt?: Timestamp;
   lastError?: string;
@@ -164,3 +192,12 @@ export interface CompanyDeletionCancelTokenDocument {
   expiresAt: Timestamp;
   usedAt?: Timestamp;
 }
+
+// No `PendingAccountDeletionMirror` type here — `cleanupOneMember`
+// (functions/src/company/memberCleanup.ts) writes `users/{uid}.pendingDeletion`
+// as an inline object literal (`{ scheduledFor, requestId }`), matching
+// `PendingAccountDeletion` in types/user.ts by hand rather than through a
+// named mirror type. A named-but-unused mirror was flagged as dead code in
+// review — add one back here only if/when something under functions/src
+// actually needs to READ this shape back (same "mirror what's called, not
+// what might be" rule companyStats.ts documents for `readMemberCounts`).

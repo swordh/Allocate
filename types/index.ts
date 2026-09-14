@@ -2,6 +2,6 @@ export type { Booking, BookingStatus, ApprovalStatus, BookingItem } from './book
 export type { Equipment, EquipmentUnit, EquipmentStatus, TrackingType, CustomField, CustomFieldText, CustomFieldValue, CustomFieldBoolean, CustomFieldList, CustomFieldType, Category, CategoryFieldTemplate } from './equipment'
 export { DEFAULT_EQUIPMENT_CATEGORIES } from './equipment'
 export type { Company, Subscription, SubscriptionStatus, Plan, BillingInterval, CompanyPreferences, CompanyStats, CompanyDeletion, CompanyDeletionState, CompanyDeletionMode, CompanyDeletionRecord, CompanyDeletionLedgerState, CompanyDeletionPhase, CompanyDeletionCancelSource, CompanyDeletionOperatorAction, CompanyDeletionCancelToken } from './company'
-export type { UserProfile, Membership, TeamMember, SessionClaims, Role } from './user'
+export type { UserProfile, Membership, TeamMember, SessionClaims, Role, PendingAccountDeletion } from './user'
 export type { LogoContext } from './nav'
 export type { Invitation, InvitationMirror, InvitationRole, InvitationStatus } from './invitation'

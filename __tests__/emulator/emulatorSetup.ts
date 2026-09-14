@@ -17,25 +17,35 @@ import {
   FIRESTORE_EMULATOR_HOST,
   FIREBASE_AUTH_EMULATOR_HOST,
 } from './constants'
+import { ensureFunctionsAdminAppInitialized } from '../../functions/src/testSupport/emulatorInit'
 
 process.env.FIRESTORE_EMULATOR_HOST = FIRESTORE_EMULATOR_HOST
 process.env.FIREBASE_AUTH_EMULATOR_HOST = FIREBASE_AUTH_EMULATOR_HOST
 process.env.GCLOUD_PROJECT = EMULATOR_PROJECT_ID
 
 /**
- * One shared default Admin app for the whole process, pointed at the
- * emulator. Both '@/lib/firebase-admin' (adminDb/adminAuth — see its
- * getAdminApp(), which reuses getApps()[0] when one already exists instead
- * of reading FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON) and functions/src modules
- * (which call getFirestore()/getAuth() with no app argument, relying on
- * functions/src/index.ts's initializeApp() having run first in production)
- * resolve against this same app here. No credential is passed — the
- * emulator doesn't check one, and never falling back to a real service
- * account is the whole point of this file existing.
+ * The default Admin app for '@/lib/firebase-admin' (adminDb/adminAuth — see
+ * its getAdminApp(), which reuses getApps()[0] when one already exists
+ * instead of reading FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON). No credential is
+ * passed — the emulator doesn't check one, and never falling back to a real
+ * service account is the whole point of this file existing.
+ *
+ * CORRECTION to what this comment used to say: this does NOT also cover
+ * functions/src modules. functions/ has its own `npm install`
+ * (functions/node_modules) with its own separate firebase-admin copy, and
+ * Node resolves a bare 'firebase-admin/app' specifier against the
+ * node_modules closest to the IMPORTING file — so functions/src always
+ * loads ITS OWN firebase-admin, a different module instance with a
+ * different `getApps()` registry than the one initialized right here. See
+ * functions/src/testSupport/emulatorInit.ts for the second initializeApp()
+ * call that PR E (issue #252 step 5) added once a test first needed to
+ * import functions/src/company/* directly — this comment was wrong until
+ * then because nothing had exercised that path yet.
  */
 if (getApps().length === 0) {
   initializeApp({ projectId: EMULATOR_PROJECT_ID })
 }
+ensureFunctionsAdminAppInitialized(EMULATOR_PROJECT_ID)
 
 /**
  * Wipes every document in the emulator's Firestore before each test. Cheap
