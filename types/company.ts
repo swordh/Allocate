@@ -357,7 +357,31 @@ export interface CompanyDeletionRecord {
    */
   lastError?: string | null
 
-  /** Cancel tokens issued for this request, so they can be invalidated together on cancel/completion. */
+  /**
+   * Cancel tokens minted for this request (by `onCompanyDeletionCreated`).
+   *
+   * CORRECTION to what this comment used to claim: nothing deletes these
+   * documents, on cancel or on completion or ever, and they are NOT
+   * "invalidated together". What actually neutralises a token is the pair of
+   * checks in `cancelCompanyDeletionByToken` and `lookupCancelToken`: the
+   * token's own one-time `usedAt`, and the ledger state it points at. A
+   * spent, expired or completed token is refused by those, not by being
+   * absent.
+   *
+   * That the document OUTLIVES the deletion is deliberate, and the reason
+   * deleting it would be a regression rather than a cleanup: the existence
+   * check runs before the ledger-state check, so a token doc that is gone
+   * turns a second click — two admins clicking the same mailed link, the
+   * ordinary case — from "this deletion was already stopped, the company is
+   * safe" into "unknown link". `usedAt` exists precisely to tell those
+   * apart. See the state ordering in lib/queries/companyDeletionCancel.ts.
+   *
+   * What the token doc carries is a requestId, a companyId and two
+   * timestamps — no name, no address, no uid. It is a bearer secret that
+   * never leaves Firestore (top-level, default-deny), it expires with the
+   * window, and it is single-use. A retention rule for it belongs with the
+   * `mail` retention track (issue #325), not bolted onto a live cancel path.
+   */
   cancelTokenIds?: string[]
 
   /** When this ledger row itself becomes eligible for deletion (PR G retention job). */
