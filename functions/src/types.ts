@@ -141,9 +141,15 @@ export interface CompanyDeletionDocument {
   state: CompanyDeletionState | 'completed' | 'canceled';
 
   requestedAt: Timestamp;
-  requestedByUid: string;
-  requestedByName: string;
-  requestedByEmail: string;
+  /**
+   * `null` = REDACTED by the 24-month retention job (purgeLogs.ts), and
+   * deliberately distinguishable from an absent field. Mirrors
+   * `CompanyDeletionRecord` in types/company.ts — read the doc comment
+   * there, it is the canonical one.
+   */
+  requestedByUid: string | null;
+  requestedByName: string | null;
+  requestedByEmail: string | null;
   scheduledFor: Timestamp;
 
   completedAt?: Timestamp;
@@ -176,7 +182,8 @@ export interface CompanyDeletionDocument {
 
   attempts: number;
   lastHeartbeatAt?: Timestamp;
-  lastError?: string;
+  /** `null` = redacted (or cleared on success). See types/company.ts. */
+  lastError?: string | null;
 
   cancelTokenIds?: string[];
 

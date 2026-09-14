@@ -243,15 +243,27 @@ export interface CompanyDeletionRecord {
   state: CompanyDeletionLedgerState
 
   requestedAt: string              // ISO string
-  requestedByUid: string
-  requestedByName: string
-  requestedByEmail: string
+  /**
+   * `null` means REDACTED, and it is deliberately observable as its own
+   * state — see the `null`-vs-`FieldValue.delete()` rationale in
+   * functions/src/company/purgeLogs.ts. The 24-month retention job writes
+   * null here; a field that is absent instead never carried an identity at
+   * all (`canceledBy*` on a deletion nobody ever cancelled). Step 6's
+   * operator view is supposed to be able to render "redacted" as distinct
+   * from "never happened", which it can only do if the type admits null.
+   * Do NOT narrow these back to `string` because "every writer writes a
+   * string" — the retention job is also a writer.
+   */
+  requestedByUid: string | null
+  requestedByName: string | null
+  requestedByEmail: string | null
   scheduledFor: string             // ISO string ("deleteAt")
 
   canceledAt?: string              // ISO string
-  canceledByUid?: string
-  canceledByName?: string
-  canceledByEmail?: string
+  /** `null` = redacted, absent = never cancelled. See `requestedByUid` above. */
+  canceledByUid?: string | null
+  canceledByName?: string | null
+  canceledByEmail?: string | null
   cancelSource?: CompanyDeletionCancelSource
 
   completedAt?: string             // ISO string
@@ -337,7 +349,13 @@ export interface CompanyDeletionRecord {
   attempts: number
   /** Written roughly every 15s while a purge is running; the sweep's stuck-lease signal. */
   lastHeartbeatAt?: string         // ISO string
-  lastError?: string
+  /**
+   * Raw exception text from a failed phase — uncapped free text that
+   * routinely quotes uids, email addresses and Stripe customer ids straight
+   * out of Auth/Stripe/Firestore errors. Cleared on success (purge.ts) and
+   * nulled by the 24-month retention job; `null` = redacted, as above.
+   */
+  lastError?: string | null
 
   /** Cancel tokens issued for this request, so they can be invalidated together on cancel/completion. */
   cancelTokenIds?: string[]
