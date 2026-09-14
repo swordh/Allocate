@@ -73,10 +73,24 @@ export interface CompanyStats {
 export type CompanyDeletionState = 'requested' | 'executing' | 'failed'
 
 /**
- * `immediate` — the company has a single member; there is no one else for a
- * window to protect, so the purge starts right away.
- * `window` — every other company; a seven-day window during which any admin
- * can cancel.
+ * `immediate` — this company was deleted as a *consequence* of its one
+ * member deleting their own account (`deleteAccount`'s sole-member-in-own-
+ * company case). There is no one else left for a window to protect, and the
+ * account deletion that caused this is itself immediate and irreversible,
+ * so there is nothing a window could still be waiting on.
+ * `window` — every other company, including a single-member company whose
+ * admin explicitly asked for the *company* (not her account) to be deleted.
+ * A seven-day window during which any admin can cancel.
+ *
+ * IMPORTANT: `mode` is chosen by *which action* triggered the deletion, not
+ * by counting members. `requestCompanyDeletion` (PR F) always sets `window`,
+ * unconditionally — an admin who asks to delete her one-member company gets
+ * the same seven days as everyone else, because she herself is still around
+ * to change her mind. Only `deleteAccount`'s sole-member branch sets
+ * `immediate`. Do not "simplify" this by deriving `mode` from a member
+ * count anywhere in this codebase — see "Fattade beslut" in
+ * plan/det-k-nns-som-att-stateless-conway.md, this doc comment used to say
+ * the opposite and was wrong.
  */
 export type CompanyDeletionMode = 'immediate' | 'window'
 
@@ -235,6 +249,29 @@ export interface CompanyDeletionRecord {
   completedPhases?: CompanyDeletionPhase[]
   /** Free-form per-phase counters (e.g. subtree collections purged so far). Shape owned by PR E. */
   phaseCounts?: Record<string, number>
+
+  /**
+   * Snapshot of every member's name/email, copied here by the purge's
+   * "members" phase (PR E) before the "subtree" phase deletes the
+   * `companies/{cid}/members/{uid}` documents that carry them. The purge's
+   * final "finalize" phase reads this list to send `companyDeleted` to every
+   * FORMER member, including crew who are never otherwise mailed about the
+   * deletion lifecycle — by the time finalize runs, the members subcollection
+   * (and the company document itself) no longer exist, so this is the only
+   * place those addresses still live.
+   */
+  formerMemberContacts?: {
+    uid: string
+    name: string
+    email: string
+    /** 'kept' | 'scheduled' | 'already_gone' — see MemberAccountStatus in functions/src/company/memberCleanup.ts. */
+    accountStatus: 'kept' | 'scheduled' | 'already_gone'
+  }[]
+  // Note: this array doubles as the "members" phase's own resume marker — a
+  // uid appended here (written right after `cleanupOneMember` returns, before
+  // the next uid starts) is a uid that will NOT be re-processed if the purge
+  // crashes and resumes. No separate "completed member uids" field exists;
+  // don't add one — it would just be this list's uids again.
 
   /** Purge attempts so far; `failed` is set once this hits five (see the plan). */
   attempts: number

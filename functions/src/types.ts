@@ -101,6 +101,12 @@ export interface CompanyDocument {
 //   must never construct a ledger update that clobbers it.
 
 export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
+/**
+ * `mode` is chosen by which action triggered the deletion, never by member
+ * count — see the doc comment on `CompanyDeletionMode` in types/company.ts
+ * (that comment used to say "single member" and was wrong; it's the
+ * canonical explanation, read it there, not here).
+ */
 export type CompanyDeletionMode = 'immediate' | 'window';
 export type CompanyDeletionPhase =
   | 'stripe'
@@ -146,6 +152,15 @@ export interface CompanyDeletionDocument {
   completedPhases?: CompanyDeletionPhase[];
   phaseCounts?: Record<string, number>;
 
+  /** See the doc comment on this field in types/company.ts. */
+  formerMemberContacts?: {
+    uid: string;
+    name: string;
+    email: string;
+    accountStatus: 'kept' | 'scheduled' | 'already_gone';
+  }[];
+  // Doubles as the "members" phase's resume marker — see types/company.ts.
+
   attempts: number;
   lastHeartbeatAt?: Timestamp;
   lastError?: string;
@@ -163,4 +178,16 @@ export interface CompanyDeletionCancelTokenDocument {
   createdAt: Timestamp;
   expiresAt: Timestamp;
   usedAt?: Timestamp;
+}
+
+/**
+ * Mirror of `PendingAccountDeletion` in types/user.ts — written onto
+ * `users/{uid}.pendingDeletion` by the purge's "members" phase. See that
+ * file for the full rationale (thirty-day window, `setupNewCompany`'s
+ * clearing responsibility, the "Hård ordningsregel" about the sweep that
+ * eventually acts on it).
+ */
+export interface PendingAccountDeletionMirror {
+  scheduledFor: Timestamp;
+  requestId: string;
 }
