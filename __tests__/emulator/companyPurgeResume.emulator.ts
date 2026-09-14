@@ -110,6 +110,16 @@ describe('runCompanyPurge — resume', () => {
       expect.arrayContaining(['stripe', 'invitations', 'members', 'subtree', 'orphans']),
     )
 
+    // The earlier attempt's exception text is GONE, not merely superseded. It
+    // is uncapped free text that routinely quotes uids, email addresses and
+    // Stripe customer ids out of raw Auth/Stripe/Firestore errors, and on a
+    // row that succeeded there is nothing it can be used for — it would
+    // otherwise sit on the ledger until the 24-month identity redaction. The
+    // `attempts` counter deliberately stays: that a purge needed two tries is
+    // operator history, the error text is not.
+    expect('lastError' in afterResume).toBe(false)
+    expect(afterResume.attempts).toBe(1)
+
     const bookingSnap = await adminDb.doc(`companies/${companyId}/bookings/b1`).get()
     expect(bookingSnap.exists).toBe(false)
 

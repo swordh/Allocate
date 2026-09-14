@@ -4,9 +4,9 @@ import { logger } from 'firebase-functions/v2';
 
 /**
  * Firestore's own WriteBatch cap is 500 operations; 490 leaves headroom and
- * matches `functions/src/admin/purgeAuditLogs.ts`. Every redaction write in
- * this file goes through a chunk of at most this size — see
- * `runRedactionRule`.
+ * matches `functions/src/admin/purgeAuditLogs.ts`. Every redaction write goes
+ * through a chunk of at most this size, except the per-document fallback a
+ * failed chunk falls back to — see `runRedactionRule`.
  */
 export const BATCH_LIMIT = 490;
 
@@ -14,36 +14,46 @@ export const BATCH_LIMIT = 490;
 export interface RedactionRuleResult {
   /** Rows past this rule's deadline that hadn't been redacted by it yet. */
   eligible: number;
-  /** Rows actually written (a failed chunk's rows are NOT counted here). */
+  /** Rows actually written, including ones rescued by the per-document fallback. */
   redacted: number;
-  /** Chunks committed successfully. */
+  /** Chunks committed successfully (the fallback's individual writes are not chunks). */
   batches: number;
-  /** Chunks whose commit threw. Their rows stay eligible for the next run. */
+  /** Chunks whose commit threw and were retried one document at a time. */
   failedBatches: number;
+  /**
+   * Rows that could not be written at all — their update could not be built,
+   * or the fallback write failed too. These keep their (absent) marker and
+   * are picked up again next run; everything else on the row is untouched.
+   */
+  failedRows: number;
 }
 
 export interface PurgeCompanyDeletionLogsResult {
+  /**
+   * DISTINCT ROWS, not rule applications. One row can be due for the identity
+   * rule and a contacts rule in the same sweep — the ordinary case on the
+   * first run against an existing ledger — and counting it twice would make
+   * every log line and error message overstate the work by exactly the amount
+   * nobody would notice. `byRule` below is per rule and is where a number
+   * being bigger than this one is correct rather than a bug.
+   */
   eligible: number;
   redacted: number;
   failedBatches: number;
+  failedRows: number;
   byRule: Record<string, RedactionRuleResult>;
 }
 
 /**
- * One retention rule over `companyDeletions`. Deliberately a data shape
- * rather than inline code in the sweep, because a SECOND rule is already
- * known to be coming and must not require rewriting this function:
- * `formerMemberContacts` (the name/email snapshot the purge's members phase
- * copies onto the ledger) has to be redacted on a SHORTER window than the
- * 24 months below — an ordinary crew member's address is not carried by the
- * Art. 17(3)(e) basis that covers the person who REQUESTED the deletion.
- * That window is not decided yet (a GDPR analysis is running separately), so
- * the rule is not written here; the shape it will slot into is.
+ * One retention rule over `companyDeletions`. A data shape rather than inline
+ * code in the sweep, because the file carries THREE rules on three different
+ * clocks and will carry more: the 24-month identity redaction, and the two
+ * that clear `formerMemberContacts` at 30 days after completion and 90 days
+ * after a failure. They share one engine and agree on nothing else.
  *
- * Adding that rule means: one more entry in `REDACTION_RULES`, one more
- * deadline field written at request time, and one more single-field index on
- * that deadline field in `firestore.indexes.json`. Nothing in
- * `runRedactionRule` or the sweep changes.
+ * Adding a fourth means: one entry in `REDACTION_RULES`, a deadline the rule
+ * can measure (a stored field, or a window it subtracts in `cutoff`), and an
+ * index that serves its query. `runRedactionRule` and the sweep do not change.
  */
 interface LedgerRedactionRule {
   /** Stable key for logs and `byRule`. */
@@ -74,11 +84,31 @@ interface LedgerRedactionRule {
   /** Written when this rule has run on a row; also what makes the rule idempotent. */
   markerField: string;
   /**
-   * Optional extra precondition, evaluated per row. A rule that only applies
-   * to rows carrying a particular field (the coming `formerMemberContacts`
-   * rule, for instance) says so here rather than by widening the query.
+   * Optional extra precondition, evaluated per row against data the query
+   * could not narrow on. Both contact rules use it to require that the row
+   * still carries contact data at all, and `contacts_completed` uses it for
+   * its terminal-state check as well.
    */
   applies?: (data: FirebaseFirestore.DocumentData) => boolean;
+  /**
+   * Whether this rule may run on a row it has ALREADY marked.
+   *
+   * Default (false) is the identity rule: the marker settles it forever, so a
+   * second run never rewrites `identityRedactedAt` and never lies about when
+   * the identity went away.
+   *
+   * The contact rules set it, because their data can COME BACK. Step 6 plans
+   * a "re-run" action for failed purges; a re-run whose `completedPhases`
+   * lacks `members` runs the members phase again and writes a fresh
+   * `formerMemberContacts` full of names and addresses onto a row that
+   * already carries `contactsRedactedAt`. With the marker alone as the gate,
+   * that row would be immune to both contact rules forever — PII kept
+   * permanently by the very field that records it was removed. With this set,
+   * `applies` decides: a marked row that no longer carries contact data is
+   * skipped (the ordinary case), and one that carries it again is redacted
+   * again.
+   */
+  reappliesToNewData?: boolean;
   /**
    * The fields this rule blanks, for this specific row. Returning only the
    * fields that are actually present on the row is the rule's own
@@ -140,14 +170,26 @@ const IDENTITY_REDACTION_RULE: LedgerRedactionRule = {
     // sequence of interventions; who did it and what they wrote do not.
     // Arrays can't be partially updated in Firestore, so this rewrites the
     // whole array — hence the presence check, same as everywhere else here.
+    //
+    // Every value here is coerced, and `undefined` is never produced. The
+    // Admin SDK rejects `undefined` field values outright (nothing in this
+    // codebase configures `ignoreUndefinedProperties`), and this write is one
+    // entry in a shared `WriteBatch` — so a single entry missing its `action`
+    // would fail the whole chunk and leave up to 489 innocent rows
+    // un-redacted, every Monday, forever. A malformed entry (not an object,
+    // or missing its fields) is blanked rather than skipped: the safe
+    // direction for something that might be carrying a note.
     const actions = data['operatorActions'];
     if (Array.isArray(actions)) {
-      redaction['operatorActions'] = actions.map((entry) => ({
-        action: (entry as Record<string, unknown>)['action'],
-        at: (entry as Record<string, unknown>)['at'],
-        byUid: null,
-        byName: null,
-      }));
+      redaction['operatorActions'] = actions.map((entry) => {
+        const e = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+        return {
+          action: typeof e['action'] === 'string' ? e['action'] : 'unknown',
+          at: typeof e['at'] === 'string' ? e['at'] : '',
+          byUid: null,
+          byName: null,
+        };
+      });
     }
 
     return redaction;
@@ -235,8 +277,15 @@ function buildContactsRedaction(data: FirebaseFirestore.DocumentData): Record<st
     if (status === 'kept' || status === 'scheduled' || status === 'already_gone') summary[status] += 1;
   }
 
-  const redaction: Record<string, unknown> = { formerMemberSummary: summary };
-  if (data['formerMemberContacts'] !== undefined) redaction['formerMemberContacts'] = FieldValue.delete();
+  // The aggregate is written only when there was actually a list to aggregate.
+  // A row carrying `finalizeMailQueuedUids` alone would otherwise be given
+  // `formerMemberSummary: { total: 0 }` — a claim that the deletion had no
+  // members, on a row that provably mailed some.
+  const redaction: Record<string, unknown> = {};
+  if (data['formerMemberContacts'] !== undefined) {
+    redaction['formerMemberSummary'] = summary;
+    redaction['formerMemberContacts'] = FieldValue.delete();
+  }
   if (data['finalizeMailQueuedUids'] !== undefined) redaction['finalizeMailQueuedUids'] = FieldValue.delete();
   return redaction;
 }
@@ -260,6 +309,15 @@ function buildContactsRedaction(data: FirebaseFirestore.DocumentData): Record<st
  *     `lastHeartbeatAt` IS an existing index and `lastHeartbeatAt` on its
  *     own matches every ledger row that ever ran.
  *
+ * A PRECONDITION, not an implementation detail: `failed` is TERMINAL. No
+ * sweep pass resumes a failed row — `resumeStuck` queries `state ==
+ * 'executing'` and `claimStaleLease` refuses everything else — which is the
+ * only reason `contacts_failed` is allowed to touch a resume marker at all.
+ * If someone ever makes the sweep retry failed rows, this rule stops being
+ * safe on the same day, and its 90-day window becomes a race against a purge
+ * that can restart. Read that as a cost of adding failed-retry, not as a
+ * reason to weaken this.
+ *
  * KNOWN GAP, written down rather than papered over: a purge that keeps
  * timing out never increments `attempts` (a 540s SIGKILL skips the catch
  * block), so it can stay `executing` indefinitely and neither rule will ever
@@ -274,6 +332,7 @@ const CONTACTS_COMPLETED_RULE: LedgerRedactionRule = {
   cutoff: (now) => Timestamp.fromMillis(now.toMillis() - FORMER_MEMBER_CONTACTS_RETENTION_MS),
   markerField: 'contactsRedactedAt',
   applies: (data) => data['state'] === 'completed' && carriesMemberContactData(data),
+  reappliesToNewData: true,
   buildRedaction: buildContactsRedaction,
 };
 
@@ -284,6 +343,7 @@ const CONTACTS_FAILED_RULE: LedgerRedactionRule = {
   equals: { field: 'state', value: 'failed' },
   markerField: 'contactsRedactedAt',
   applies: (data) => carriesMemberContactData(data),
+  reappliesToNewData: true,
   buildRedaction: buildContactsRedaction,
 };
 
@@ -308,14 +368,26 @@ const REDACTION_RULES: LedgerRedactionRule[] = [
  * `functions/src/admin/purgeAuditLogs.ts` is the cautionary tale the plan
  * calls out by name: it used to commit everything in ONE `batch.commit()`,
  * which throws outright past 500 documents and logged nothing when it did.
- * Hence both the chunking and the per-chunk `try/catch`: one chunk that fails
- * must not silently take the rest of the sweep with it, and it must be
- * visible in the logs when it does.
+ * Hence the chunking — and, beyond it, two layers that exist so that ONE bad
+ * row can never hold the rest of the collection hostage:
+ *
+ *   1. every row's update is BUILT before any batching, inside its own
+ *      try/catch. A `buildRedaction` that throws on one malformed row costs
+ *      that row, not the sweep.
+ *   2. a chunk whose commit fails is retried ONE DOCUMENT AT A TIME. Without
+ *      it, a single un-writable row (a doc deleted between the read and the
+ *      write, a value the SDK refuses) takes its whole chunk down with it —
+ *      up to 489 rows that keep their identity every Monday for good, with
+ *      nothing but the same weekly log line to show for it. A per-document
+ *      `update()` is still a single atomic write, so the field blanking and
+ *      the marker still land together or not at all.
  */
 async function runRedactionRule(
   db: Firestore,
   rule: LedgerRedactionRule,
   now: Timestamp,
+  eligibleIds: Set<string>,
+  redactedIds: Set<string>,
 ): Promise<RedactionRuleResult> {
   // Firestore has no "field is absent" query, and a rule's marker field is
   // absent (not null) on every row that hasn't been redacted by it yet —
@@ -335,7 +407,9 @@ async function runRedactionRule(
   const candidatesSnap = await query.where(rule.dueField, '<=', rule.cutoff(now)).get();
   const eligibleDocs = candidatesSnap.docs.filter((doc) => {
     const data = doc.data();
-    if (data[rule.markerField]) return false;
+    // The marker normally settles it. `reappliesToNewData` is the exception
+    // and the reason this isn't a plain early return — see its docblock.
+    if (data[rule.markerField] && !rule.reappliesToNewData) return false;
     return rule.applies ? rule.applies(data) : true;
   });
 
@@ -344,37 +418,71 @@ async function runRedactionRule(
     redacted: 0,
     batches: 0,
     failedBatches: 0,
+    failedRows: 0,
   };
+  for (const doc of eligibleDocs) eligibleIds.add(doc.id);
 
-  for (let start = 0; start < eligibleDocs.length; start += BATCH_LIMIT) {
-    const chunk = eligibleDocs.slice(start, start + BATCH_LIMIT);
-    const batch = db.batch();
-    for (const doc of chunk) {
-      // The marker goes in the SAME batch as the blanking, never a second
-      // commit afterwards. A crash between two commits would leave a row
-      // that is redacted but unmarked (re-redacted forever — harmless but
-      // dishonest about WHEN it happened) or marked but unredacted (identity
-      // retained past its deadline, and invisible to every later run because
-      // the marker filters it out). One atomic write makes both impossible.
-      batch.update(doc.ref, { ...rule.buildRedaction(doc.data()), [rule.markerField]: now });
+  // Layer 1: build every update up front, each row on its own. The marker
+  // goes in the SAME write as the blanking, never a second one afterwards: a
+  // crash between two writes would leave a row redacted but unmarked
+  // (re-redacted forever, dishonest about WHEN) or marked but unredacted
+  // (identity kept past its deadline, and invisible to every later run
+  // because the marker filters it out).
+  const updates: { id: string; ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }[] = [];
+  for (const doc of eligibleDocs) {
+    try {
+      updates.push({
+        id: doc.id,
+        ref: doc.ref,
+        data: { ...rule.buildRedaction(doc.data()), [rule.markerField]: now },
+      });
+    } catch (err) {
+      result.failedRows += 1;
+      logger.error('purgeCompanyDeletionLogsSweep: could not build redaction for row', {
+        rule: rule.name,
+        docId: doc.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
+  }
+
+  for (let start = 0; start < updates.length; start += BATCH_LIMIT) {
+    const chunk = updates.slice(start, start + BATCH_LIMIT);
+    const batch = db.batch();
+    for (const update of chunk) batch.update(update.ref, update.data);
 
     try {
       await batch.commit();
       result.redacted += chunk.length;
       result.batches += 1;
+      for (const update of chunk) redactedIds.add(update.id);
     } catch (err) {
-      // Do NOT rethrow here: the remaining chunks are independent, and one
-      // bad row must not park the whole retention job. The rows in this
-      // chunk keep their (absent) marker and are picked up again next run.
+      // Layer 2. Do NOT rethrow: the remaining chunks are independent, and
+      // one bad row must not park the whole retention job — nor take the 489
+      // rows it happens to share a batch with.
       result.failedBatches += 1;
-      logger.error('purgeCompanyDeletionLogsSweep: redaction chunk failed', {
+      logger.error('purgeCompanyDeletionLogsSweep: redaction chunk failed, retrying per document', {
         rule: rule.name,
         chunkStart: start,
         chunkSize: chunk.length,
         firstDocId: chunk[0]?.id,
         error: err instanceof Error ? err.message : String(err),
       });
+
+      for (const update of chunk) {
+        try {
+          await update.ref.update(update.data);
+          result.redacted += 1;
+          redactedIds.add(update.id);
+        } catch (rowErr) {
+          result.failedRows += 1;
+          logger.error('purgeCompanyDeletionLogsSweep: row could not be redacted', {
+            rule: rule.name,
+            docId: update.id,
+            error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+          });
+        }
+      }
     }
   }
 
@@ -382,27 +490,42 @@ async function runRedactionRule(
 }
 
 /**
- * The retention sweep over `companyDeletions`. Runs every rule in
- * `REDACTION_RULES`; today that is the single 24-month identity redaction.
+ * The retention sweep over `companyDeletions`. Runs all three rules in
+ * `REDACTION_RULES`: the 24-month identity redaction and the two contact
+ * rules (30 days after completion, 90 after a failure).
+ *
+ * INVARIANT the rules depend on: each rule issues its OWN `.get()`, in
+ * sequence, so a later rule reads the earlier ones' committed writes. A row
+ * due for two rules in the same sweep — the ordinary case the first time this
+ * runs against an existing ledger — is therefore redacted twice against
+ * current data, not twice against one stale snapshot. Hoisting the queries
+ * out of the loop to save reads would break that quietly.
+ *
+ * `now` is a parameter so windows can be tested at their exact boundary and
+ * markers can be asserted by value; production never passes it.
  *
  * Exported as a plain function of `(db)` like every other function in this
  * neighborhood — see `runCompanyPurge`'s docblock in
  * functions/src/company/purge.ts for the pattern and why the `onSchedule`
  * wrapper below is kept this thin.
  */
-export async function purgeCompanyDeletionLogsSweep(db: Firestore): Promise<PurgeCompanyDeletionLogsResult> {
-  const now = Timestamp.now();
+export async function purgeCompanyDeletionLogsSweep(
+  db: Firestore,
+  now: Timestamp = Timestamp.now(),
+): Promise<PurgeCompanyDeletionLogsResult> {
   const byRule: Record<string, RedactionRuleResult> = {};
-  let eligible = 0;
-  let redacted = 0;
+  // Distinct rows, counted across rules — see the docblock on
+  // `PurgeCompanyDeletionLogsResult.eligible`.
+  const eligibleIds = new Set<string>();
+  const redactedIds = new Set<string>();
   let failedBatches = 0;
+  let failedRows = 0;
 
   for (const rule of REDACTION_RULES) {
-    const ruleResult = await runRedactionRule(db, rule, now);
+    const ruleResult = await runRedactionRule(db, rule, now, eligibleIds, redactedIds);
     byRule[rule.name] = ruleResult;
-    eligible += ruleResult.eligible;
-    redacted += ruleResult.redacted;
     failedBatches += ruleResult.failedBatches;
+    failedRows += ruleResult.failedRows;
 
     logger.info('purgeCompanyDeletionLogsSweep: rule complete', {
       rule: rule.name,
@@ -410,25 +533,44 @@ export async function purgeCompanyDeletionLogsSweep(db: Firestore): Promise<Purg
       redacted: ruleResult.redacted,
       batches: ruleResult.batches,
       failedBatches: ruleResult.failedBatches,
+      failedRows: ruleResult.failedRows,
     });
   }
 
-  logger.info('purgeCompanyDeletionLogsSweep: complete', { eligible, redacted, failedBatches });
+  const result: PurgeCompanyDeletionLogsResult = {
+    eligible: eligibleIds.size,
+    redacted: redactedIds.size,
+    failedBatches,
+    failedRows,
+    byRule,
+  };
+  logger.info('purgeCompanyDeletionLogsSweep: complete', {
+    rows: result.eligible,
+    rowsRedacted: result.redacted,
+    failedBatches,
+    failedRows,
+  });
 
-  return { eligible, redacted, failedBatches, byRule };
+  return result;
 }
 
 export const purgeCompanyDeletionLogs = onSchedule(
   { schedule: 'every monday 04:00', region: 'europe-west1' },
   async () => {
     const result = await purgeCompanyDeletionLogsSweep(getFirestore());
-    // The sweep itself swallows a failed chunk on purpose (the other chunks
-    // still have to run). Throwing HERE is what makes the failure visible as
-    // a failed scheduled execution rather than a line in a log nobody reads;
-    // the rows themselves are simply retried next Monday.
-    if (result.failedBatches > 0) {
+    // The sweep swallows failures on purpose (the other rows still have to be
+    // done). Throwing HERE is what makes them visible as a failed scheduled
+    // execution rather than a line in a log nobody reads; the rows themselves
+    // are simply retried next Monday.
+    //
+    // The condition is `failedRows`, not `failedBatches`: a chunk that failed
+    // and was then rescued document by document left nothing un-redacted, and
+    // raising an alarm for it would train whoever reads these to ignore the
+    // one that matters. `failedRows` is exactly "rows whose data is still
+    // there and should not be".
+    if (result.failedRows > 0) {
       throw new Error(
-        `purgeCompanyDeletionLogs: ${result.failedBatches} redaction chunk(s) failed; ${result.redacted} of ${result.eligible} eligible rows redacted`,
+        `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted; ${result.redacted} of ${result.eligible} due rows redacted`,
       );
     }
   },

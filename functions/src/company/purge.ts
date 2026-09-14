@@ -450,10 +450,22 @@ async function markPhaseComplete(
  *
  * On phase failure: increments `attempts`, records `lastError`, and — once
  * `attempts` reaches `MAX_ATTEMPTS` — sets `state: 'failed'`, which is what
- * step 6's "stuck" operator view will hang off of. Does not rethrow: a
- * failed purge is recorded, not crashed out of, so the sweep's stuck-lease
- * pass can find and retry it on its own schedule rather than relying on
- * Cloud Functions' infra-level retry (which has no idea what a "phase" is).
+ * step 6's "stuck" operator view will hang off of. Does not rethrow: a failed
+ * phase is RECORDED, not crashed out of, so the sweep's stuck-lease pass can
+ * pick the purge up again rather than relying on Cloud Functions' infra-level
+ * retry (which has no idea what a "phase" is).
+ *
+ * CORRECTION to what this comment used to claim: that only holds while the
+ * row is still `executing`. `resumeStuck` (sweep.ts) queries `state ==
+ * 'executing'` and `claimStaleLease` (lease.ts) refuses anything else, so
+ * once `attempts` hits `MAX_ATTEMPTS` and the state becomes `failed`,
+ * NOTHING retries it. `failed` is terminal, and waits for a human.
+ *
+ * That terminality is load-bearing elsewhere: the contacts retention rule in
+ * company/purgeLogs.ts redacts a failed row's `formerMemberContacts` — the
+ * members phase's own resume marker — 90 days after its last heartbeat,
+ * which is only safe because no code path can resume it. Adding failed-retry
+ * to the sweep means dealing with that rule in the same change.
  */
 export async function runCompanyPurge(db: Firestore, requestId: string): Promise<void> {
   const ledgerRef = db.collection('companyDeletions').doc(requestId);

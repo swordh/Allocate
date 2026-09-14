@@ -19,6 +19,7 @@ import { Timestamp } from 'firebase-admin/firestore'
 import { describe, expect, it } from 'vitest'
 import { adminDb } from '@/lib/firebase-admin'
 import { purgeCompanyDeletionLogsSweep } from '../../functions/src/company/purgeLogs'
+import { expectOnlyTheseFieldsChanged } from './redactionAssertions'
 import { getTestFunctionsDb } from '../../functions/src/testSupport/emulatorInit'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -43,6 +44,8 @@ function ledgerRow(opts: {
   completedAt?: Timestamp
   lastHeartbeatAt?: Timestamp
   withContacts?: boolean
+  /** Seeds ONLY `finalizeMailQueuedUids` — the half of the guard no other fixture covers. */
+  uidsOnly?: boolean
 }) {
   return {
     requestId: opts.requestId,
@@ -59,12 +62,14 @@ function ledgerRow(opts: {
     purgeAfter: future(600),
     ...(opts.completedAt ? { completedAt: opts.completedAt } : {}),
     ...(opts.lastHeartbeatAt ? { lastHeartbeatAt: opts.lastHeartbeatAt } : {}),
-    ...(opts.withContacts === false
-      ? {}
-      : {
-          formerMemberContacts: CONTACTS,
-          finalizeMailQueuedUids: ['u1', 'u2', 'u3', 'u4'],
-        }),
+    ...(opts.uidsOnly
+      ? { finalizeMailQueuedUids: ['u1', 'u2', 'u3', 'u4'] }
+      : opts.withContacts === false
+        ? {}
+        : {
+            formerMemberContacts: CONTACTS,
+            finalizeMailQueuedUids: ['u1', 'u2', 'u3', 'u4'],
+          }),
   }
 }
 
@@ -74,11 +79,25 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
     await adminDb.doc(`companyDeletions/${requestId}`).set(
       ledgerRow({ requestId, state: 'completed', completedAt: past(40) }),
     )
+    const before = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.byRule['contacts_completed'].redacted).toBe(1)
+    expect(result.failedBatches).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+
+    // Key-set diff, not a list of survivors: only these two keys may go, only
+    // these two may arrive, and nothing else may move. `purgeAfter` is the
+    // reason this is worth the ceremony — if a contacts redaction ever removed
+    // it, the row would fall out of the identity rule's range query for good
+    // (Firestore skips documents missing the compared field) and the
+    // requester's name, address and uid would be kept forever, silently.
+    expectOnlyTheseFieldsChanged(before, after, {
+      mayChange: ['formerMemberContacts', 'finalizeMailQueuedUids'],
+      mayAppear: ['formerMemberSummary', 'contactsRedactedAt'],
+    })
 
     // Both per-uid lists gone outright — not nulled. `formerMemberSummary`
     // plus the marker already say "this was redacted"; there is no
@@ -115,6 +134,7 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.byRule['contacts_completed'].eligible).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
     expect(after.formerMemberContacts).toHaveLength(4)
@@ -147,11 +167,18 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
     await adminDb.doc(`companyDeletions/${requestId}`).set(
       ledgerRow({ requestId, state: 'failed', lastHeartbeatAt: past(100) }),
     )
+    const before = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.byRule['contacts_failed'].redacted).toBe(1)
+    expect(result.failedBatches).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expectOnlyTheseFieldsChanged(before, after, {
+      mayChange: ['formerMemberContacts', 'finalizeMailQueuedUids'],
+      mayAppear: ['formerMemberSummary', 'contactsRedactedAt'],
+    })
     expect('formerMemberContacts' in after).toBe(false)
     expect('finalizeMailQueuedUids' in after).toBe(false)
     expect(after.formerMemberSummary).toEqual({ total: 4, kept: 1, scheduled: 2, already_gone: 1 })
@@ -169,6 +196,7 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.byRule['contacts_failed'].eligible).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
     expect(after.formerMemberContacts).toHaveLength(4)
@@ -198,6 +226,7 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.byRule['contacts_completed'].eligible).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
     // No empty summary, no marker — nothing was redacted, so the row must not
@@ -228,6 +257,82 @@ describe('purgeCompanyDeletionLogsSweep — formerMemberContacts retention', () 
     // Rule two's marker keeps its original value — it did not run again.
     expect(after.contactsRedactedAt).toEqual(contactsMarker)
     expect(after.formerMemberSummary).toEqual({ total: 4, kept: 1, scheduled: 2, already_gone: 1 })
+  })
+
+  it('picks up a row carrying ONLY finalizeMailQueuedUids, and writes no summary for it', async () => {
+    // The other half of `carriesMemberContactData`. Without this fixture the
+    // `|| Array.isArray(data['finalizeMailQueuedUids'])` half can be deleted
+    // outright and every other test still passes — a guard claiming two fields
+    // with one of them proven.
+    const requestId = 'uids-only'
+    await adminDb.doc(`companyDeletions/${requestId}`).set(
+      ledgerRow({ requestId, state: 'completed', completedAt: past(40), uidsOnly: true }),
+    )
+
+    const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
+    expect(result.byRule['contacts_completed'].redacted).toBe(1)
+    expect(result.failedRows).toBe(0)
+
+    const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expect('finalizeMailQueuedUids' in after).toBe(false)
+    // And NO aggregate: there was no contact list to aggregate, and
+    // `formerMemberSummary: { total: 0 }` would claim this deletion had no
+    // members on a row that provably mailed four.
+    expect('formerMemberSummary' in after).toBe(false)
+    expect(after.contactsRedactedAt).toBeInstanceOf(Timestamp)
+  })
+
+  it('redacts contacts that COME BACK on an already-marked row', async () => {
+    // Step 6 plans a "re-run" action for failed purges. A re-run whose
+    // completedPhases lacks `members` runs the members phase again and writes
+    // a fresh `formerMemberContacts` — names and addresses — onto a row that
+    // already carries `contactsRedactedAt`. If the marker alone gated the
+    // rule, that row would be immune to it forever: PII kept permanently by
+    // the very field that records the PII was removed.
+    const requestId = 'contacts-resurrected'
+    const oldMarker = past(200)
+    await adminDb.doc(`companyDeletions/${requestId}`).set({
+      ...ledgerRow({ requestId, state: 'failed', lastHeartbeatAt: past(100) }),
+      contactsRedactedAt: oldMarker,
+      formerMemberSummary: { total: 4, kept: 1, scheduled: 2, already_gone: 1 },
+    })
+
+    const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
+    expect(result.byRule['contacts_failed'].redacted).toBe(1)
+
+    const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expect('formerMemberContacts' in after).toBe(false)
+    expect('finalizeMailQueuedUids' in after).toBe(false)
+    expect(JSON.stringify(after)).not.toContain('anna@example.com')
+    // The marker moves — it now records the SECOND redaction, which is when
+    // this row's identities actually went away.
+    expect(after.contactsRedactedAt).not.toEqual(oldMarker)
+  })
+
+  it('redacts a row that is due for the identity rule AND a contacts rule in the same sweep', async () => {
+    // The ordinary case the first time this job runs against an existing
+    // ledger: every completed row older than two years is due for both. Also
+    // pins the counting — this is ONE row, whatever the rules did to it.
+    const requestId = 'due-for-both'
+    await adminDb.doc(`companyDeletions/${requestId}`).set({
+      ...ledgerRow({ requestId, state: 'completed', completedAt: past(800) }),
+      purgeAfter: past(70),
+    })
+
+    const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
+    expect(result.byRule['identity'].redacted).toBe(1)
+    expect(result.byRule['contacts_completed'].redacted).toBe(1)
+    // One row, not two. `eligible`/`redacted` count DISTINCT rows; only
+    // `byRule` counts rule applications.
+    expect(result.eligible).toBe(1)
+    expect(result.redacted).toBe(1)
+
+    const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+    expect(after.requestedByName).toBeNull()
+    expect(after.identityRedactedAt).toBeInstanceOf(Timestamp)
+    expect('formerMemberContacts' in after).toBe(false)
+    expect(after.formerMemberSummary).toEqual({ total: 4, kept: 1, scheduled: 2, already_gone: 1 })
+    expect(after.contactsRedactedAt).toBeInstanceOf(Timestamp)
   })
 
   it('is idempotent: a second sweep redacts nothing and changes nothing', async () => {

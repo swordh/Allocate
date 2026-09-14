@@ -187,15 +187,28 @@ export interface CompanyDeletionStripeOutcome {
 
 /**
  * One entry per operator intervention on this deletion (steg 6, not built
- * yet). Written only from `app/operator/...` server actions — the purge
+ * yet). AUTHORED only from `app/operator/...` server actions — the purge
  * itself never appends here, it only reads/writes the phase/progress and
- * lease fields below.
+ * lease fields below. One other writer exists and only ever subtracts: the
+ * 24-month retention job (functions/src/company/purgeLogs.ts) rewrites the
+ * array keeping `action` and `at` and blanking the rest.
  */
 export interface CompanyDeletionOperatorAction {
   action: string
-  byUid: string
-  byName: string
+  /**
+   * `null` = REDACTED by that job; absent = never carried one. Exactly the
+   * convention `requestedByUid` on `CompanyDeletionRecord` below documents
+   * at length — read it there. This pair is the easiest in the file to miss,
+   * because it sits inside a nested array type that is only ever written
+   * through untyped object literals and read through `data[...]`: nothing in
+   * the compiler was ever going to point at it, and a step 6 view rendering
+   * `{a.byName}` on the promise of `string` would print the text "null" on
+   * every row older than two years.
+   */
+  byUid: string | null
+  byName: string | null
   at: string                       // ISO string
+  /** Staff free text about a customer. Removed outright, not nulled, by the retention job. */
   note?: string
 }
 
@@ -218,14 +231,22 @@ export interface CompanyDeletionOperatorAction {
  *    deletion.
  *
  * GDPR: `identityRedactedAt` is when the 24-month retention job (PR G) blanks
- * out `requestedByUid`/`requestedByName`/`requestedByEmail` and the cancel
- * equivalents while leaving the rest of the row intact — the event stays
+ * out `requestedByUid`/`requestedByName`/`requestedByEmail`, the cancel
+ * equivalents, `lastError` (raw exception text that routinely quotes uids,
+ * addresses and Stripe ids) and the actor and note on every
+ * `operatorActions` entry, while leaving the rest of the row intact — the event stays
  * visible in the operator history, the person behind it doesn't. Legal basis
  * is GDPR Art. 17(3)(e) (processing necessary for the establishment, exercise
  * or defence of legal claims — an accountability trail for who requested a
  * company's deletion). **That interpretation has not yet been confirmed by
  * counsel.** The decision to build it this way is made; the confirmation is
  * outstanding. Do not treat this comment as that confirmation.
+ *
+ * `formerMemberContacts` does NOT wait for this marker. It carries OTHER
+ * people's names and addresses, runs on its own much shorter clock (30
+ * days after completion, 90 after a failure) and has its own marker,
+ * `contactsRedactedAt`. functions/src/company/purgeLogs.ts is where every
+ * one of these windows is decided and derived.
  *
  * NEVER add this collection to `deleteAccount`'s anonymisation loop. The
  * entire purpose of `requestedByName`/`requestedByEmail`/`requestedByUid` is

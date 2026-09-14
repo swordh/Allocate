@@ -17,10 +17,11 @@
  * fabricated "someone cancelled this, and we scrubbed them" marker.
  */
 import { Timestamp } from 'firebase-admin/firestore'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { adminDb } from '@/lib/firebase-admin'
 import { purgeCompanyDeletionLogsSweep, BATCH_LIMIT } from '../../functions/src/company/purgeLogs'
-import { getTestFunctionsDb } from '../../functions/src/testSupport/emulatorInit'
+import { expectOnlyTheseFieldsChanged, spyOnBatchWrites } from './redactionAssertions'
+import { getTestFunctionsDb, FunctionsTimestamp } from '../../functions/src/testSupport/emulatorInit'
 
 const DAY = 24 * 60 * 60 * 1000
 const past = (ms: number) => Timestamp.fromMillis(Date.now() - ms)
@@ -78,13 +79,36 @@ describe('purgeCompanyDeletionLogsSweep — 24-month identity redaction', () => 
     const requestId = 'overdue-canceled'
     const row = fullLedgerRow(requestId, past(1 * DAY), { canceled: true })
     await adminDb.doc(`companyDeletions/${requestId}`).set(row)
+    const before = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
 
     const result = await purgeCompanyDeletionLogsSweep(getTestFunctionsDb())
     expect(result.eligible).toBe(1)
     expect(result.redacted).toBe(1)
     expect(result.failedBatches).toBe(0)
+    expect(result.failedRows).toBe(0)
 
     const after = (await adminDb.doc(`companyDeletions/${requestId}`).get()).data()!
+
+    // The whole claim, as a key-set diff rather than a list of fields anyone
+    // can forget to extend: exactly these keys may differ, exactly this one
+    // may appear, and NOTHING may disappear. An enumeration cannot catch a
+    // field that vanishes or one that is quietly added — and a vanished
+    // `purgeAfter` in particular would drop the row out of this rule's own
+    // range query forever, since Firestore does not return documents missing
+    // the field being compared.
+    expectOnlyTheseFieldsChanged(before, after, {
+      mayChange: [
+        'requestedByUid',
+        'requestedByName',
+        'requestedByEmail',
+        'canceledByUid',
+        'canceledByName',
+        'canceledByEmail',
+        'lastError',
+        'operatorActions',
+      ],
+      mayAppear: ['identityRedactedAt'],
+    })
 
     // The row is still there. Never deleted, that is the entire point.
     expect(after).toBeTruthy()
@@ -211,6 +235,39 @@ describe('purgeCompanyDeletionLogsSweep — 24-month identity redaction', () => 
     expect(after.identityRedactedAt).toBeInstanceOf(Timestamp)
   })
 
+  it('redacts a row exactly AT its deadline, and not one millisecond before', async () => {
+    // The `<=` in the query cannot be pinned without controlling the clock:
+    // `Timestamp.now()` taken inside the sweep can never equal a seeded
+    // `purgeAfter`. With `now` injected it can, which is the only way to tell
+    // `<=` from `<` — a mutation that silently postpones every deadline by one
+    // sweep interval, forever, on rows nobody is watching.
+    const atMs = Date.now() - 60_000
+    await adminDb.doc('companyDeletions/exactly-due').set(
+      fullLedgerRow('exactly-due', Timestamp.fromMillis(atMs)),
+    )
+    await adminDb.doc('companyDeletions/one-ms-early').set(
+      fullLedgerRow('one-ms-early', Timestamp.fromMillis(atMs + 1)),
+    )
+
+    // Built with functions/'s own Timestamp class: this value is passed INTO
+    // functions/src code and written from there, and the Admin SDK refuses a
+    // Timestamp instance from a different copy of firebase-admin. Values read
+    // back below come through the root package and are compared by millis.
+    const result = await purgeCompanyDeletionLogsSweep(
+      getTestFunctionsDb(),
+      FunctionsTimestamp.fromMillis(atMs),
+    )
+    expect(result.redacted).toBe(1)
+
+    const due = (await adminDb.doc('companyDeletions/exactly-due').get()).data()!
+    const early = (await adminDb.doc('companyDeletions/one-ms-early').get()).data()!
+    expect(due.requestedByUid).toBeNull()
+    // The marker is the injected instant, exactly — no wall-clock slop.
+    expect(due.identityRedactedAt.toMillis()).toBe(atMs)
+    expect(early.requestedByUid).toBe('requester-uid')
+    expect('identityRedactedAt' in early).toBe(false)
+  })
+
   it('redacts every one of 600 overdue rows, in batches that stay under Firestore\'s 500-write cap', async () => {
     const COUNT = 600
     expect(COUNT).toBeGreaterThan(BATCH_LIMIT)
@@ -233,34 +290,29 @@ describe('purgeCompanyDeletionLogsSweep — 24-month identity redaction', () => 
     // asserted structurally, by counting the writes that went into each batch,
     // rather than by waiting for an over-limit commit to throw. Same technique
     // and same reason as companyPurgeChunking.emulator.ts.
-    const writesPerBatch: number[] = []
-    const realBatch = db.batch.bind(db)
-    const batchSpy = vi.spyOn(db, 'batch').mockImplementation(() => {
-      const batch = realBatch()
-      const slot = writesPerBatch.push(0) - 1
-      const realUpdate = batch.update.bind(batch)
-      const counting = (...args: unknown[]) => {
-        writesPerBatch[slot] += 1
-        return (realUpdate as (...a: unknown[]) => FirebaseFirestore.WriteBatch)(...args)
-      }
-      batch.update = counting as unknown as typeof batch.update
-      return batch
-    })
-
-    const result = await purgeCompanyDeletionLogsSweep(db)
-    batchSpy.mockRestore()
+    // Counts EVERY write operation, not just `update`: a future version that
+    // adds a `set` or a `delete` per row is exactly the divergence this guard
+    // exists for, and a spy watching `update` alone would report 490 while the
+    // real batch carried 980. Restored in a `finally` — `getTestFunctionsDb()`
+    // is a singleton for the whole file, so a throw here would otherwise leak
+    // the patched `batch` into every test that runs after this one.
+    const { writesPerBatch, restore } = spyOnBatchWrites(db)
+    let result
+    try {
+      result = await purgeCompanyDeletionLogsSweep(db)
+    } finally {
+      restore()
+    }
 
     expect(result.eligible).toBe(COUNT)
     expect(result.redacted).toBe(COUNT)
     expect(result.failedBatches).toBe(0)
+    expect(result.failedRows).toBe(0)
 
-    // More than one batch, and no batch anywhere near the real limit. An
-    // unchunked implementation puts all 600 in one batch: the emulator would
-    // happily accept it and every other assertion here would still pass,
-    // which is exactly how the purgeAuditLogs.ts bug survived unnoticed.
-    expect(writesPerBatch.length).toBeGreaterThan(1)
-    expect(Math.max(...writesPerBatch)).toBeLessThanOrEqual(500)
-    expect(writesPerBatch.reduce((a, b) => a + b, 0)).toBe(COUNT)
+    // Pins the constant, not just "somewhere under 500". `BATCH_LIMIT` raised
+    // to 600 or lowered to 1 both keep every other assertion here green — one
+    // is an unchunked batch, the other is 600 separate commits in production.
+    expect(writesPerBatch).toEqual([BATCH_LIMIT, COUNT - BATCH_LIMIT])
 
     // And the data itself: zero rows left unredacted.
     const all = await adminDb.collection('companyDeletions').get()
