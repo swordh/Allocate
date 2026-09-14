@@ -1063,3 +1063,92 @@ describe('deleteAccount — memberCounts delta', () => {
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
 })
+
+// ── Interaction with the immediate company purge (issue #252 step 5) ──────────
+
+describe('deleteAccount — companies scheduled for immediate deletion', () => {
+  it('MUTATION GUARD: does not anonymise documents the purge is concurrently deleting', async () => {
+    // Writing the ledger row starts `runCompanyPurge` through
+    // `onCompanyDeletionCreated`, typically within a second — while this
+    // function is still running. Every anonymisation write targets a document
+    // the purge is deleting, and a WriteBatch update against a document that
+    // no longer exists fails the WHOLE batch with NOT_FOUND. That would abort
+    // the account deletion halfway: memberships gone, company being purged,
+    // Auth record still there, and an error telling her nothing worked.
+    //
+    // Delete the `immediatelyDeletedCompanyIds.has(companyId)` skip in
+    // actions/account.ts and this test fails.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const docs: DocMap = {
+      'companies/company-A': { name: 'Solo AB', createdBy: UID },
+      [`companies/company-A/members/${UID}`]: { role: 'admin', name: 'Solo', email: 'solo@example.com' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      // A booking this user authored. If the skip is removed, the
+      // anonymisation loop finds it and batches an update against a document
+      // the purge is deleting.
+      if (ctx.path === 'companies/company-A/bookings') {
+        return [{ id: 'b1', path: 'companies/company-A/bookings/b1', data: { userId: UID } }]
+      }
+      return []
+    }
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
+      docs,
+      query,
+      collectionGroup: () => [],
+    })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // The company IS scheduled for deletion…
+    expect(tx.set.mock.calls.some(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'))).toBe(true)
+    // …and nothing under it was queued for anonymisation.
+    const touchedPaths = wired.batch.update.mock.calls.map(([ref]) => (ref as DocRefStub).path)
+    expect(touchedPaths).not.toContain('companies/company-A/bookings/b1')
+    expect(touchedPaths).not.toContain('companies/company-A')
+  })
+
+  it('MUTATION GUARD: processes reversible companies BEFORE any irreversible one', async () => {
+    // Ordering only — the authoritative decision is still per company, live,
+    // inside each transaction. What it buys: if a reversible company's
+    // transaction fails transiently, the loop bails out with an error before
+    // any company has been torn down. With the memberships listed
+    // close-company-first, an unordered loop would schedule the destruction
+    // first and only then find out whether the rest of the run works.
+    stubSession({ activeCompanyId: 'company-A' })
+    const { tx } = wireScenario({
+      memberships: [
+        { companyId: 'company-close', role: 'admin' },
+        { companyId: 'company-A', role: 'admin' },
+      ],
+      companies: {
+        'company-close': { memberRole: 'admin', metaCounts: { members: 1, admins: 1 } },
+        'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } },
+      },
+    })
+
+    await deleteAccount()
+
+    const ledgerSet = tx.set.mock.calls.findIndex(([ref]) =>
+      (ref as DocRefStub).path.startsWith('companyDeletions/'),
+    )
+    const ledgerOrder = tx.set.mock.invocationCallOrder[ledgerSet]!
+    const safeDeleteOrder = tx.delete.mock.calls
+      .map((call, i) => ({ path: (call[0] as DocRefStub).path, order: tx.delete.mock.invocationCallOrder[i]! }))
+      .find((c) => c.path === `companies/company-A/members/${UID}`)!.order
+
+    expect(safeDeleteOrder).toBeLessThan(ledgerOrder)
+  })
+})
