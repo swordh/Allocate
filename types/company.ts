@@ -364,6 +364,25 @@ export interface CompanyDeletionRecord {
   purgeAfter: string               // ISO string
   /** Set by the 24-month retention job; see the GDPR note above. */
   identityRedactedAt?: string      // ISO string
+
+  /**
+   * What `formerMemberContacts` is replaced BY once the contacts retention
+   * rule has run (30 days after `completedAt`, 90 days after a `failed` row's
+   * last heartbeat — see functions/src/company/purgeLogs.ts). Anonymous by
+   * construction: counts only, no uid, no name, no address, so it needs no
+   * legal basis and can be kept for as long as the row itself. This is what
+   * step 6's operator view renders for any deletion older than a month —
+   * `formerMemberContacts` is the exception, not the rule, and code reading
+   * it must handle its absence rather than assume a recent row.
+   */
+  formerMemberSummary?: {
+    total: number
+    kept: number
+    scheduled: number
+    already_gone: number
+  }
+  /** Set when the contacts rule has run on this row. Absent = not yet. */
+  contactsRedactedAt?: string      // ISO string
 }
 
 // ─── Company deletion cancel tokens (companyDeletionCancelTokens/{token}) ─────

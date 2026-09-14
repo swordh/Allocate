@@ -1,4 +1,4 @@
-import { Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionPhase } from '../types';
 import { cleanupOneMember } from './memberCleanup';
@@ -404,6 +404,15 @@ async function runFinalizePhase(
     state: 'completed',
     completedAt: Timestamp.now(),
     lastHeartbeatAt: Timestamp.now(),
+    // A purge that succeeded has no use for the exception text of an earlier
+    // attempt, and that text is uncapped free-form data that routinely quotes
+    // uids, email addresses and Stripe customer ids out of raw Auth/Stripe/
+    // Firestore errors. Removed rather than nulled: on a successful row the
+    // honest statement is "there is no error here", not "an error was
+    // redacted" (see the null-vs-delete rationale in purgeLogs.ts). Safe
+    // against the resume machinery — `lastError` is written by the catch
+    // block and read by nothing that decides control flow.
+    lastError: FieldValue.delete(),
   });
 }
 

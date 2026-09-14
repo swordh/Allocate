@@ -25,6 +25,7 @@ import { getTestFunctionsDb } from '../../functions/src/testSupport/emulatorInit
 const DAY = 24 * 60 * 60 * 1000
 const past = (ms: number) => Timestamp.fromMillis(Date.now() - ms)
 const future = (ms: number) => Timestamp.fromMillis(Date.now() + ms)
+const OPERATOR_ACTION_AT = new Date(Date.now() - 794 * DAY).toISOString()
 
 /**
  * A ledger row as a COMPLETED deletion leaves it — deliberately rich, since
@@ -57,8 +58,17 @@ function fullLedgerRow(requestId: string, purgeAfter: Timestamp, opts: { cancele
     phase: 'finalize',
     completedPhases: ['stripe', 'invitations', 'members', 'subtree', 'orphans', 'finalize'],
     phaseCounts: { bookings: 42, companyEvents: 7 },
-    operatorActions: [{ action: 'note_added', byUid: 'op-uid', byName: 'Operator', at: past(794 * DAY).toDate().toISOString() }],
+    operatorActions: [
+      {
+        action: 'note_added',
+        byUid: 'op-uid',
+        byName: 'Olga Operator',
+        at: OPERATOR_ACTION_AT,
+        note: 'Rang kunden, de ville inte ha kvar kontot. Ring inte igen.',
+      },
+    ],
     attempts: 1,
+    lastError: 'FirebaseAuthError: no user record for uid mR8xQ (tobias@example.com), stripe cus_TESTCUSTOMER',
     purgeAfter,
   }
 }
@@ -109,8 +119,22 @@ describe('purgeCompanyDeletionLogsSweep — 24-month identity redaction', () => 
     expect(after.phase).toBe('finalize')
     expect(after.completedPhases).toEqual(row.completedPhases)
     expect(after.phaseCounts).toEqual(row.phaseCounts)
-    expect(after.operatorActions).toEqual(row.operatorActions)
     expect(after.attempts).toBe(1)
+
+    // `lastError` is raw exception text and quotes a uid, an email address and
+    // a Stripe customer id — nulled, and provably gone from the row.
+    expect(after.lastError).toBeNull()
+
+    // Operator notes: the intervention stays, the intervening person and what
+    // they wrote about the customer do not.
+    expect(after.operatorActions).toEqual([
+      { action: 'note_added', at: OPERATOR_ACTION_AT, byUid: null, byName: null },
+    ])
+
+    const serialized = JSON.stringify(after)
+    for (const needle of ['Olga Operator', 'Ring inte igen', 'tobias@example.com', 'cus_TESTCUSTOMER', 'mR8xQ', 'op-uid']) {
+      expect(serialized).not.toContain(needle)
+    }
     expect(after.purgeAfter).toEqual(row.purgeAfter)
   })
 

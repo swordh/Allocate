@@ -1,4 +1,4 @@
-import { Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 
@@ -48,8 +48,29 @@ export interface PurgeCompanyDeletionLogsResult {
 interface LedgerRedactionRule {
   /** Stable key for logs and `byRule`. */
   name: string;
-  /** The ledger field carrying THIS rule's own deadline. Each rule has its own. */
+  /**
+   * The ledger field this rule's deadline is measured on. Either a stored
+   * deadline (`purgeAfter`, compared against `now`) or an event timestamp the
+   * rule measures its own window back from (`completedAt` + 30 days) — that
+   * is what `cutoff` below decides.
+   */
   dueField: string;
+  /**
+   * The value `dueField` is compared against: the rule matches rows where
+   * `dueField <= cutoff(now)`. A rule whose deadline is stored on the row
+   * passes `now` through unchanged; a rule that measures a window back from
+   * an event subtracts it here. Keeping this per-rule is what lets two rules
+   * with completely different clocks share one engine.
+   */
+  cutoff: (now: Timestamp) => Timestamp;
+  /**
+   * Optional equality clause folded into the QUERY (not the in-memory
+   * filter). Use it when a composite index for `equals.field` + `dueField`
+   * exists, so the rule doesn't read the whole collection every run. A rule
+   * without one narrows in `applies` instead — see the two contact rules
+   * below, which differ on exactly this point and say why.
+   */
+  equals?: { field: string; value: unknown };
   /** Written when this rule has run on a row; also what makes the rule idempotent. */
   markerField: string;
   /**
@@ -95,6 +116,7 @@ interface LedgerRedactionRule {
 const IDENTITY_REDACTION_RULE: LedgerRedactionRule = {
   name: 'identity',
   dueField: 'purgeAfter',
+  cutoff: (now) => now,
   markerField: 'identityRedactedAt',
   buildRedaction: (data) => {
     const redaction: Record<string, unknown> = {
@@ -105,11 +127,179 @@ const IDENTITY_REDACTION_RULE: LedgerRedactionRule = {
     for (const field of ['canceledByUid', 'canceledByName', 'canceledByEmail'] as const) {
       if (data[field] !== undefined) redaction[field] = null;
     }
+
+    // `lastError` is the raw exception text from a failed phase — uncapped
+    // free text that routinely quotes uids, email addresses and Stripe
+    // customer ids straight out of an Auth/Stripe/Firestore error. It is
+    // cleared outright when a purge succeeds (see the completion write in
+    // purge.ts), so in practice only failed rows still carry one this far.
+    if (data['lastError'] !== undefined) redaction['lastError'] = null;
+
+    // Operator notes are staff free text ABOUT a customer, and `byName` is a
+    // named employee. `action` and `at` stay so the history still reads as a
+    // sequence of interventions; who did it and what they wrote do not.
+    // Arrays can't be partially updated in Firestore, so this rewrites the
+    // whole array — hence the presence check, same as everywhere else here.
+    const actions = data['operatorActions'];
+    if (Array.isArray(actions)) {
+      redaction['operatorActions'] = actions.map((entry) => ({
+        action: (entry as Record<string, unknown>)['action'],
+        at: (entry as Record<string, unknown>)['at'],
+        byUid: null,
+        byName: null,
+      }));
+    }
+
     return redaction;
   },
 };
 
-const REDACTION_RULES: LedgerRedactionRule[] = [IDENTITY_REDACTION_RULE];
+/**
+ * DECIDED, NOT OVERLOOKED: `companyName` is deliberately NOT redacted.
+ *
+ * On a `mode: 'immediate'` row the company is often a one-person business
+ * named after its owner, so the field can in practice be the requester's own
+ * name surviving the blanking of `requestedByName` right above. The decision
+ * is to keep it anyway: the company name is the event's OBJECT, not its
+ * actor, and an operator history that cannot say which company a deletion
+ * was about is not a history. Don't "finish the job" by adding it here.
+ */
+
+/**
+ * How long `formerMemberContacts` — every former member's name and email,
+ * snapshotted by the purge's members phase — may be kept after the company
+ * is gone. Thirty days, and NOT `purgeAfter`: that clock belongs to the
+ * person who REQUESTED the deletion, and Art. 17(3)(e) does not stretch to
+ * cover an ordinary crew member's address just because she happened to work
+ * there. Three independent mechanisms land on <= 30 days:
+ *
+ *   - the mail queue's retry budget is spent in ~30 MINUTES
+ *     (`MAX_MAIL_ATTEMPTS = 5`, backoff capped at 30 min) — it cannot
+ *     justify keeping addresses for days, let alone years.
+ *   - there is no Resend webhook, so the ONLY signal that a `companyDeleted`
+ *     never arrived is the `critical_mail_delivery_failed` log line. Cloud
+ *     Logging's default retention is 30 days; after that nobody can even
+ *     discover the failure, so nobody can act on the addresses either.
+ *   - 30 days is exactly `STRANDED_MEMBER_WINDOW_MS` in memberCleanup.ts.
+ *     While a `scheduled` member's window is still running, the mail she was
+ *     sent has live legal effect for her; once it closes, it doesn't.
+ */
+const FORMER_MEMBER_CONTACTS_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The same data on a ledger that never reached `completed`. A `failed` row
+ * has no `completedAt` at all — `completedAt` is written on exactly one line
+ * in purge.ts, together with `state: 'completed'` — so without this second
+ * rule a crashed purge would quietly keep every former member's address for
+ * the full 24 months, through a rule that looks like it covers everything.
+ *
+ * Ninety days rather than thirty because a `failed` row is an open incident:
+ * an operator has to be able to see who was affected long enough to finish
+ * the deletion by hand. Measured from `lastHeartbeatAt`, which for a failed
+ * row is frozen at the moment of failure (the same write sets `state:
+ * 'failed'`, and nothing runs against it afterwards) — so no new field is
+ * needed, and the `state` + `lastHeartbeatAt` composite index already in
+ * firestore.indexes.json is exactly the one this query wants.
+ */
+const FAILED_LEDGER_CONTACTS_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** True for a row that still carries either of the two per-uid lists. */
+function carriesMemberContactData(data: FirebaseFirestore.DocumentData): boolean {
+  return Array.isArray(data['formerMemberContacts']) || Array.isArray(data['finalizeMailQueuedUids']);
+}
+
+/**
+ * Replaces both per-uid lists with an anonymous aggregate.
+ *
+ * `uid` goes with the name and the address. It is personal data in its own
+ * right (Art. 4(1) — a direct key into `users/{uid}` and Auth), and its
+ * operator value is zero: a raw uid cannot be rendered as anything
+ * meaningful once the user is either deleted or repointed at another
+ * company. `formerMemberSummary` carries the whole of what the operator view
+ * actually needs — "14 members, 11 kept their account, 2 scheduled, 1
+ * already gone" — and is anonymous, so it needs no legal basis at all.
+ *
+ * `finalizeMailQueuedUids` is the same list of uids with the same absence of
+ * a basis (it is the finalize phase's per-uid resume marker) and is removed
+ * in the SAME write. Both are removed with `FieldValue.delete()` rather than
+ * the `null` this file's identity rule uses, and the difference is
+ * deliberate: `null` exists there to keep "redacted" distinguishable from
+ * "never existed", and here `formerMemberSummary` plus the marker field
+ * already say that unambiguously.
+ */
+function buildContactsRedaction(data: FirebaseFirestore.DocumentData): Record<string, unknown> {
+  const contacts = Array.isArray(data['formerMemberContacts']) ? data['formerMemberContacts'] : [];
+  const summary = { total: contacts.length, kept: 0, scheduled: 0, already_gone: 0 };
+  for (const contact of contacts) {
+    const status = (contact as Record<string, unknown>)['accountStatus'];
+    if (status === 'kept' || status === 'scheduled' || status === 'already_gone') summary[status] += 1;
+  }
+
+  const redaction: Record<string, unknown> = { formerMemberSummary: summary };
+  if (data['formerMemberContacts'] !== undefined) redaction['formerMemberContacts'] = FieldValue.delete();
+  if (data['finalizeMailQueuedUids'] !== undefined) redaction['finalizeMailQueuedUids'] = FieldValue.delete();
+  return redaction;
+}
+
+/**
+ * THE GUARD THAT MATTERS ON BOTH CONTACT RULES: neither may ever touch a row
+ * that is not in a terminal state. `formerMemberContacts` doubles as the
+ * members phase's resume marker (see its docblock in types/company.ts) — a
+ * purge that is still `requested` or `executing` can be resumed at any time,
+ * and redacting its resume marker would make the resumed run re-process
+ * every member it had already finished. The state check is not tidiness; it
+ * is what keeps this job from corrupting a live purge.
+ *
+ * The two rules enforce it differently, on purpose:
+ *   - `contacts_completed` filters in `applies`. A composite index for
+ *     `state` + `completedAt` does not exist, and querying `completedAt`
+ *     alone already selects exactly the completed rows (it is written on one
+ *     line, with `state: 'completed'`) — so the state check is a belt to
+ *     that braces, held in code.
+ *   - `contacts_failed` filters in the QUERY, because `state` +
+ *     `lastHeartbeatAt` IS an existing index and `lastHeartbeatAt` on its
+ *     own matches every ledger row that ever ran.
+ *
+ * KNOWN GAP, written down rather than papered over: a purge that keeps
+ * timing out never increments `attempts` (a 540s SIGKILL skips the catch
+ * block), so it can stay `executing` indefinitely and neither rule will ever
+ * reach it. That is the correct trade — breaking a live purge is worse than
+ * keeping contacts too long — and the existing signal for it is the
+ * `lastResumePhaseCount` warning in purge.ts, which step 6's "stuck" view is
+ * meant to surface. Fixing it means fixing stuck purges, not loosening this.
+ */
+const CONTACTS_COMPLETED_RULE: LedgerRedactionRule = {
+  name: 'contacts_completed',
+  dueField: 'completedAt',
+  cutoff: (now) => Timestamp.fromMillis(now.toMillis() - FORMER_MEMBER_CONTACTS_RETENTION_MS),
+  markerField: 'contactsRedactedAt',
+  applies: (data) => data['state'] === 'completed' && carriesMemberContactData(data),
+  buildRedaction: buildContactsRedaction,
+};
+
+const CONTACTS_FAILED_RULE: LedgerRedactionRule = {
+  name: 'contacts_failed',
+  dueField: 'lastHeartbeatAt',
+  cutoff: (now) => Timestamp.fromMillis(now.toMillis() - FAILED_LEDGER_CONTACTS_RETENTION_MS),
+  equals: { field: 'state', value: 'failed' },
+  markerField: 'contactsRedactedAt',
+  applies: (data) => carriesMemberContactData(data),
+  buildRedaction: buildContactsRedaction,
+};
+
+/**
+ * INCOMPLETE UNTIL #325: redacting the ledger does not reach the `mail`
+ * collection. Every `companyDeleted` document queued by the finalize phase
+ * carries a former member's address in its own `to` field and lives in
+ * `mail/{id}` indefinitely — so the addresses this file removes at 30 days
+ * still exist one collection over. Mail retention is its own track (issue
+ * #325); don't assume the ledger rules below close it.
+ */
+const REDACTION_RULES: LedgerRedactionRule[] = [
+  IDENTITY_REDACTION_RULE,
+  CONTACTS_COMPLETED_RULE,
+  CONTACTS_FAILED_RULE,
+];
 
 /**
  * Applies one rule across every row past its deadline, in `BATCH_LIMIT`-sized
@@ -140,7 +330,9 @@ async function runRedactionRule(
   // single-field index. It is left in place rather than deleted here because
   // step 6's operator view is the other plausible consumer; deleting an index
   // is its own decision, not a side effect of this PR.
-  const candidatesSnap = await db.collection('companyDeletions').where(rule.dueField, '<=', now).get();
+  let query: FirebaseFirestore.Query = db.collection('companyDeletions');
+  if (rule.equals) query = query.where(rule.equals.field, '==', rule.equals.value);
+  const candidatesSnap = await query.where(rule.dueField, '<=', rule.cutoff(now)).get();
   const eligibleDocs = candidatesSnap.docs.filter((doc) => {
     const data = doc.data();
     if (data[rule.markerField]) return false;

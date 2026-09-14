@@ -189,6 +189,19 @@ export interface CompanyDeletionDocument {
 
   purgeAfter: Timestamp;
   identityRedactedAt?: Timestamp;
+
+  /**
+   * Replaces `formerMemberContacts` once the contacts retention rule has run
+   * — anonymous counts, no uids or addresses. See types/company.ts for the
+   * canonical doc comment and purgeLogs.ts for the two windows.
+   */
+  formerMemberSummary?: {
+    total: number;
+    kept: number;
+    scheduled: number;
+    already_gone: number;
+  };
+  contactsRedactedAt?: Timestamp;
 }
 
 /** Mirror of `CompanyDeletionCancelToken` in types/company.ts. */
