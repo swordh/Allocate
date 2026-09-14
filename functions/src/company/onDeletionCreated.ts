@@ -6,6 +6,7 @@ import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionCancelTokenDocument } from '../types';
 import { runCompanyPurge } from './purge';
 import { formatDateFull, formatDateShort, buildCancelUrl } from './format';
+import { claimRequestedLease } from './lease';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -104,19 +105,37 @@ async function queueRequestedMail(
  * token; the purge itself starts later, when the sweep's lease claims an
  * overdue request.
  *
- * `mode: 'immediate'`: starts the purge right here, synchronously. This is
- * deliberate, not a shortcut — see "Begäran och avbrytning" in the plan:
- * doing it from THIS trigger (idempotent, retried by Cloud Functions'
- * infra on its own if it fails) rather than from the Next.js server action
- * that created the ledger doc is what keeps a slow or failed HTTP response
- * from ever being the reason an entire company's purge does or doesn't
- * start.
+ * `mode: 'immediate'`: claims the SAME `requested` → `executing` lease
+ * `executeOverdue` (sweep.ts) uses, then starts the purge right here,
+ * synchronously. Claiming first is not optional: an immediate request's
+ * `scheduledFor` is in the past from the moment it's created, so it matches
+ * `executeOverdue`'s own query from the very first sweep tick — without
+ * this claim, a sweep landing mid-purge would start a SECOND concurrent
+ * purge of the same company. Doing the purge itself from THIS trigger
+ * (idempotent, retried by Cloud Functions' infra on its own if it fails)
+ * rather than from the Next.js server action that created the ledger doc is
+ * what keeps a slow or failed HTTP response from ever being the reason an
+ * entire company's purge does or doesn't start; the lease claim is what
+ * keeps that trigger from racing the sweep's own safety net for the exact
+ * same request.
+ *
+ * `mode` is checked explicitly against `'immediate'` — anything else,
+ * including `'window'` (handled above), `undefined`, or a typo some future
+ * caller introduces, is logged and refused rather than falling through into
+ * the destructive branch by default.
  */
 export async function handleCompanyDeletionCreated(
   db: Firestore,
   requestId: string,
   ledger: CompanyDeletionDocument,
 ): Promise<void> {
+  if (typeof ledger.companyId !== 'string' || ledger.companyId.length === 0) {
+    logger.error('onCompanyDeletionCreated: ledger has no usable companyId, refusing to act on it', {
+      requestId,
+    });
+    return;
+  }
+
   const ledgerRef = db.collection('companyDeletions').doc(requestId);
 
   if (ledger.mode === 'window') {
@@ -124,8 +143,28 @@ export async function handleCompanyDeletionCreated(
     return;
   }
 
-  // mode === 'immediate'
-  await runCompanyPurge(db, requestId);
+  if (ledger.mode !== 'immediate') {
+    logger.error('onCompanyDeletionCreated: unrecognized mode, refusing to purge', {
+      requestId,
+      companyId: ledger.companyId,
+      mode: ledger.mode,
+    });
+    return;
+  }
+
+  const claimedRequestId = await claimRequestedLease(db, ledger.companyId, Timestamp.now());
+  if (!claimedRequestId) {
+    // Already claimed elsewhere (the sweep's executeOverdue pass, or a
+    // retried invocation of this very trigger) — not an error, just not
+    // this call's job to start.
+    logger.info('onCompanyDeletionCreated: lease already claimed, not starting a second purge', {
+      requestId,
+      companyId: ledger.companyId,
+    });
+    return;
+  }
+
+  await runCompanyPurge(db, claimedRequestId);
 }
 
 export const onCompanyDeletionCreated = onDocumentCreated(

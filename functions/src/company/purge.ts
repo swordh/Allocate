@@ -49,6 +49,15 @@ const SUBTREE_COLLECTIONS = ['bookings', 'equipment', 'categories', 'invitations
  * NOT nested under `companies/{cid}` — found via query, not tree walk, so
  * they use the chunked-`WriteBatch` house pattern like the rest of the repo,
  * not `recursiveDelete`.
+ *
+ * MAINTENANCE: nothing in the codebase enforces that this list stays
+ * complete. Any FUTURE top-level collection that gets a `companyId` field
+ * (a new operator- or billing-side collection, say) needs to be added here
+ * by hand, or the purge will silently leave its rows behind for a deleted
+ * company — there is no compiler error, no test failure, and no runtime
+ * warning for "a collection with companyId exists that this list doesn't
+ * know about". Check this list whenever you add a new collection with a
+ * denormalized `companyId`.
  */
 const ORPHAN_COLLECTIONS = ['companyEvents', 'operatorNotes', 'operatorFeedback', 'stripeFailedPayments'] as const;
 
@@ -140,10 +149,22 @@ async function runInvitationsPhase(db: Firestore, companyId: string): Promise<vo
  *
  * Resumable at per-member granularity: `formerMemberContacts` on the ledger
  * IS the resume marker. A uid is only appended after `cleanupOneMember`
- * returns successfully, and the ledger is updated before the next uid
- * starts — so a crash mid-list resumes by skipping every uid already
- * present, never redoing committed work. See the field's doc comment in
- * types/company.ts.
+ * returns successfully AND reports `claimsUpdated: true`, and the ledger is
+ * updated before the next uid starts — so a crash mid-list resumes by
+ * skipping every uid already present, never redoing committed work. See the
+ * field's doc comment in types/company.ts.
+ *
+ * A uid whose claims update failed is deliberately left OUT of `contacts` —
+ * `cleanupOneMember`'s idempotency guard on its "stranded" branch (see that
+ * function's docblock) makes it safe to call again for her specifically on
+ * the next resume, rather than either silently leaving her Auth claims
+ * pointed at a company that no longer exists, or treating "members" as done
+ * while she was never fully processed. This function THROWS if any member
+ * had a claims failure this pass, instead of returning normally — that's
+ * what stops `runCompanyPurge` from marking the 'members' phase complete,
+ * and routes the failure through the normal attempts/lastError machinery so
+ * it's visible to the sweep's stuck/failed handling rather than silently
+ * retried forever with no operator-visible signal.
  */
 async function runMembersPhase(
   db: Firestore,
@@ -155,6 +176,7 @@ async function runMembersPhase(
   const membersSnap = await db.collection(`companies/${companyId}/members`).get();
   const contacts = [...existingContacts];
   const done = new Set(contacts.map((c) => c.uid));
+  let hadClaimsFailure = false;
 
   for (const doc of membersSnap.docs) {
     const uid = doc.id;
@@ -163,15 +185,36 @@ async function runMembersPhase(
     const data = doc.data();
     const outcome = await cleanupOneMember(db, companyId, uid, requestId);
 
+    if (!outcome.claimsUpdated) {
+      hadClaimsFailure = true;
+      logger.error('runMembersPhase: claims update failed, uid will be retried on resume', {
+        uid: uid.slice(0, 8) + '...',
+        companyId,
+        requestId,
+      });
+      continue; // not added to contacts — see docblock
+    }
+
     contacts.push({
       uid,
       name: (data['name'] as string | undefined) ?? '',
       email: (data['email'] as string | undefined) ?? '',
       accountStatus: outcome.accountStatus,
+      ...(outcome.pendingDeletionScheduledFor
+        ? { pendingDeletionScheduledFor: outcome.pendingDeletionScheduledFor }
+        : {}),
     });
     done.add(uid);
 
     await ledgerRef.update({ formerMemberContacts: contacts, lastHeartbeatAt: Timestamp.now() });
+  }
+
+  if (hadClaimsFailure) {
+    // Still persist whatever DID succeed this pass before throwing — the
+    // per-uid writes above already committed one at a time, so this is
+    // belt-and-suspenders, not load-bearing.
+    await ledgerRef.update({ formerMemberContacts: contacts, lastHeartbeatAt: Timestamp.now() });
+    throw new Error('runMembersPhase: one or more members had a claims update failure');
   }
 
   return contacts;
@@ -242,6 +285,25 @@ async function runOrphansPhase(db: Firestore, companyId: string): Promise<void> 
  * docblock in memberCleanup.ts for why that is a materially different case
  * from `scheduled`, which must NOT claim the account is gone: it isn't, it
  * has thirty days left and the recipient can still sign in.
+ *
+ * IDEMPOTENT ACROSS A CRASH — this is the one phase `runCompanyPurge`'s
+ * outer `completed.has('finalize')` check can't protect on its own, because
+ * "queue mail" → "delete company" → "mark completed" spans three separate
+ * writes and a crash between the first and the third would otherwise resume
+ * by re-running the whole phase — including re-queuing `companyDeleted` to
+ * every former member a second time. That mail's own docblock in
+ * mailDelivery.ts calls it the last message a member whose account is gone
+ * will ever get from us; a duplicate is not a cosmetic bug.
+ *
+ * The fix is `ledger.finalizeMailQueuedUids`: each contact's uid is added to
+ * it in the SAME `WriteBatch.commit()` as her `mail/{id}` doc, so "her mail
+ * doc exists" and "she's recorded as mailed" can never observably disagree
+ * — one commits, or neither does. On resume, contacts already in that list
+ * are skipped, so a crash between mail-queuing and the company-doc delete
+ * (or between that and `state: 'completed'`) resumes into a no-op mail step
+ * followed by an idempotent delete (deleting an already-gone doc is a
+ * no-op) and an idempotent ledger update (re-writing the same `completed`
+ * state is harmless).
  */
 async function runFinalizePhase(
   db: Firestore,
@@ -249,15 +311,40 @@ async function runFinalizePhase(
   companyId: string,
   ledger: CompanyDeletionDocument,
 ): Promise<void> {
+  const ledgerRef = db.collection('companyDeletions').doc(requestId);
   const contacts = ledger.formerMemberContacts ?? [];
+  let mailedUids = new Set(ledger.finalizeMailQueuedUids ?? []);
   const deletedAtFormatted = formatDateFull(Timestamp.now());
   const requestedAtFormatted = formatDateFull(ledger.requestedAt);
 
+  const pending = contacts.filter((c) => c.email && !mailedUids.has(c.uid));
+
   let batch = db.batch();
   let opCount = 0;
-  for (const contact of contacts) {
-    if (!contact.email) continue;
-    const accountAlsoDeleted = contact.accountStatus === 'already_gone';
+  let mailedThisChunk: string[] = [];
+
+  async function commitChunk(): Promise<void> {
+    if (opCount === 0) return;
+    const updated = Array.from(new Set([...mailedUids, ...mailedThisChunk]));
+    batch.update(ledgerRef, { finalizeMailQueuedUids: updated });
+    await batch.commit();
+    mailedUids = new Set(updated);
+    batch = db.batch();
+    opCount = 0;
+    mailedThisChunk = [];
+  }
+
+  for (const contact of pending) {
+    // Three distinct destinations, one per accountStatus — see
+    // CompanyDeletedData.ctaUrl's docblock in the template. 'scheduled'
+    // gets a sign-in URL, not signup: her account still exists.
+    const ctaUrl =
+      contact.accountStatus === 'already_gone'
+        ? 'https://allocate.at/signup'
+        : contact.accountStatus === 'scheduled'
+          ? 'https://allocate.at/login'
+          : 'https://allocate.at/company/new';
+
     const mailRef = db.collection('mail').doc();
     batch.set(mailRef, {
       to: contact.email,
@@ -274,25 +361,38 @@ async function runFinalizePhase(
         requestedAtFormatted,
         deletedAtFormatted,
         mode: ledger.mode,
-        accountAlsoDeleted,
-        ctaUrl: accountAlsoDeleted ? 'https://allocate.at/signup' : 'https://allocate.at/company/new',
+        accountStatus: contact.accountStatus,
+        // Never invented here — always the exact timestamp cleanupOneMember
+        // wrote onto users/{uid}.pendingDeletion, copied into the ledger's
+        // formerMemberContacts by runMembersPhase. Only meaningful (and
+        // only read by the template) when accountStatus === 'scheduled'.
+        // Omitted entirely rather than `undefined` — Firestore's Admin SDK
+        // rejects `undefined` field values by default (no
+        // ignoreUndefinedProperties configured anywhere in this codebase).
+        ...(contact.pendingDeletionScheduledFor
+          ? { pendingDeletionScheduledForFormatted: formatDateFull(contact.pendingDeletionScheduledFor) }
+          : {}),
+        ctaUrl,
       },
     });
+    mailedThisChunk.push(contact.uid);
     opCount++;
     if (opCount >= BATCH_LIMIT) {
-      batch = await commitAndReset(db, batch);
-      opCount = 0;
+      await commitChunk();
     }
   }
-  if (opCount > 0) await batch.commit();
+  await commitChunk();
 
   // No tombstone — see "Verkställd radering raderar företagsdokumentet" in
   // the plan: a leftover shell would keep showing up in the operator
   // customer list, match the webhook's customer search, and keep the
   // per-member read rule alive for a session running on stale claims.
+  // Idempotent: deleting an already-deleted doc is a no-op, so a resumed
+  // finalize that reaches this line again after the delete already
+  // committed does not error.
   await db.doc(`companies/${companyId}`).delete();
 
-  await db.collection('companyDeletions').doc(requestId).update({
+  await ledgerRef.update({
     state: 'completed',
     completedAt: Timestamp.now(),
     lastHeartbeatAt: Timestamp.now(),
@@ -349,6 +449,29 @@ export async function runCompanyPurge(db: Firestore, requestId: string): Promise
   const ledger = ledgerSnap.data() as CompanyDeletionDocument;
   const companyId = ledger.companyId;
   const completed = new Set<CompanyDeletionPhase>(ledger.completedPhases ?? []);
+
+  // Diagnostic only — NOT part of the attempts/failed budget. A 540s
+  // function timeout SIGKILLs this process mid-phase with no chance to run
+  // the catch block below, so `attempts` never increments for that death —
+  // the sweep's resumeStuck pass just calls this again from wherever
+  // completedPhases last got checkpointed to. That can repeat forever with
+  // no operator-visible signal if the SAME phase keeps timing out. This
+  // compares this invocation's starting phase count against the previous
+  // invocation's (persisted on the ledger, so it survives a SIGKILL) and
+  // logs — nothing else — when they match, i.e. this resume made zero
+  // progress last time. Left as a log line deliberately: folding this into
+  // the attempts counter is a real design decision (does a timeout count
+  // the same as a thrown error?) that shouldn't be made as a side effect of
+  // adding visibility.
+  const lastResumePhaseCount = ledger.lastResumePhaseCount;
+  if (lastResumePhaseCount !== undefined && lastResumePhaseCount === completed.size) {
+    logger.warn('runCompanyPurge: resumed with the same completedPhases count as last time — possible timed-out attempt making no progress', {
+      requestId,
+      companyId,
+      phaseCount: completed.size,
+    });
+  }
+  await ledgerRef.update({ lastResumePhaseCount: completed.size });
 
   try {
     if (!completed.has('stripe')) {

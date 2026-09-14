@@ -6,6 +6,7 @@ import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionMirror } from '../types';
 import { runCompanyPurge } from './purge';
 import { formatDateFull, buildCancelUrl } from './format';
+import { claimRequestedLease, claimStaleLease } from './lease';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -27,45 +28,15 @@ export interface SweepResult {
 }
 
 /**
- * Transactionally flips `requested` → `executing`, on BOTH the company's
- * member-visible `deletion` mirror and the `companyDeletions` ledger, and
- * returns the `requestId` only to the caller that performed the flip. This
- * transaction — not the sweep's 30-minute cadence — is the entire
- * double-run guard: two overlapping sweep invocations racing the same
- * overdue company both read `state: 'requested'`, but Firestore serializes
- * the conflicting writes, so only one commits and the other's re-read sees
- * `state: 'executing'` already and returns `null`. See "Svepet" in the
- * plan — "dubbelkörningsskyddet är en lease, inte frekvensen."
- */
-async function claimLease(db: Firestore, companyId: string, now: Timestamp): Promise<string | null> {
-  return db.runTransaction(async (tx) => {
-    const companyRef = db.doc(`companies/${companyId}`);
-    const companySnap = await tx.get(companyRef);
-    if (!companySnap.exists) return null;
-
-    const deletion = companySnap.data()?.['deletion'] as CompanyDeletionMirror | undefined;
-    if (!deletion || deletion.state !== 'requested') return null;
-
-    const requestId = deletion.requestId;
-    const ledgerRef = db.doc(`companyDeletions/${requestId}`);
-    const ledgerSnap = await tx.get(ledgerRef);
-    if (!ledgerSnap.exists || (ledgerSnap.data() as CompanyDeletionDocument)['state'] !== 'requested') {
-      return null;
-    }
-
-    tx.update(companyRef, { 'deletion.state': 'executing', 'deletion.claimedAt': now });
-    tx.update(ledgerRef, { state: 'executing', lastHeartbeatAt: now });
-    return requestId;
-  });
-}
-
-/**
  * Pass 1 — claims and starts every company whose window has expired.
  * `mode: 'immediate'` requests are normally started directly by
  * `onCompanyDeletionCreated`, not by this pass — this is only the safety
  * net for one that, for whatever reason, is still sitting in `requested`
  * with `scheduledFor <= now` (which is true for an immediate request from
- * the moment it's created).
+ * the moment it's created; `onCompanyDeletionCreated` claims its OWN lease
+ * via the same `claimRequestedLease` before calling `runCompanyPurge`, so
+ * this pass finding it already `executing` and skipping it is the normal,
+ * expected outcome, not a race it loses).
  */
 async function executeOverdue(db: Firestore, now: Timestamp): Promise<number> {
   const overdueSnap = await db
@@ -76,7 +47,7 @@ async function executeOverdue(db: Firestore, now: Timestamp): Promise<number> {
 
   let count = 0;
   for (const companyDoc of overdueSnap.docs) {
-    const requestId = await claimLease(db, companyDoc.id, now);
+    const requestId = await claimRequestedLease(db, companyDoc.id, now);
     if (!requestId) continue;
     await runCompanyPurge(db, requestId);
     count++;
@@ -141,6 +112,17 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
     }
 
     const token = ledger.cancelTokenIds?.[0];
+    if (!token) {
+      // Should not happen — onCompanyDeletionCreated mints the token before
+      // any 'window'-mode ledger can reach this point — but a silent
+      // fallback to a URL that cancels nothing would hand an admin a
+      // 48h-left reminder with a dead-end CTA. Log loudly so it's
+      // investigated rather than discovered by a confused admin.
+      logger.error('claimAndQueueReminder: no cancel token on ledger, reminder CTA will not cancel anything', {
+        companyId,
+        requestId: deletion.requestId,
+      });
+    }
     const stopUrl = token ? buildCancelUrl(token) : 'https://allocate.at/';
     const daysRemaining = Math.max(
       1,
@@ -178,8 +160,15 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
  * Pass 3 — resumes any purge whose lease is stale: `state: 'executing'` but
  * no heartbeat within `STALE_LEASE_MS`. `runCompanyPurge` is resumable by
  * construction (see its own docblock), so "resuming" here is just calling
- * it again with the same `requestId` — it picks up from
- * `completedPhases`.
+ * it again with the same `requestId` — it picks up from `completedPhases`.
+ *
+ * `claimStaleLease` is this pass's own compare-and-swap — Cloud Scheduler
+ * is documented at-least-once, so two overlapping sweep invocations both
+ * finding the same stale `companyDeletions/{id}` is a real possibility, not
+ * a hypothetical. Without a claim here, both would call `runCompanyPurge`
+ * concurrently for the same `requestId`: duplicate `companyDeleted` mail,
+ * lost updates on `formerMemberContacts` (a read-modify-write `.update()`
+ * with no compare-and-swap), duplicate `deletionAuditLog` rows.
  */
 async function resumeStuck(db: Firestore, now: Timestamp): Promise<number> {
   const staleCutoff = Timestamp.fromMillis(now.toMillis() - STALE_LEASE_MS);
@@ -191,6 +180,8 @@ async function resumeStuck(db: Firestore, now: Timestamp): Promise<number> {
 
   let count = 0;
   for (const doc of stuckSnap.docs) {
+    const claimed = await claimStaleLease(db, doc.id, staleCutoff, now);
+    if (!claimed) continue;
     await runCompanyPurge(db, doc.id);
     count++;
   }

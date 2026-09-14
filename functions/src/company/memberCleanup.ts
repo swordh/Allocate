@@ -27,6 +27,26 @@ export type MemberAccountStatus = 'kept' | 'scheduled' | 'already_gone';
 export interface MemberCleanupOutcome {
   uid: string;
   accountStatus: MemberAccountStatus;
+  /**
+   * False only when an Auth claims update was actually NEEDED (her
+   * `activeCompanyId` pointed at the company being purged) and the call to
+   * `setCustomUserClaims` threw. True when no update was needed at all, or
+   * when it was needed and succeeded.
+   *
+   * `runMembersPhase` (purge.ts) uses this to decide whether this uid may
+   * be treated as done for resume purposes: a uid with `claimsUpdated:
+   * false` is NOT added to the ledger's `formerMemberContacts` (the
+   * per-uid resume marker), so a later resume attempt calls
+   * `cleanupOneMember` for her again rather than silently leaving her
+   * Auth claims pointed at a company that no longer exists. See this
+   * function's own idempotency guard on the "stranded" branch below —
+   * that's what makes a full re-run of an already-partially-succeeded uid
+   * safe rather than a source of duplicate audit entries or a reset
+   * thirty-day clock.
+   */
+  claimsUpdated: boolean;
+  /** Only set when `accountStatus === 'scheduled'` — the thirty-day deadline just written (or already present) on `users/{uid}.pendingDeletion`. */
+  pendingDeletionScheduledFor?: Timestamp;
 }
 
 /**
@@ -81,6 +101,11 @@ export async function cleanupOneMember(
   const userData = userSnap.exists ? userSnap.data()! : {};
   const remaining = remainingSnap.docs;
 
+  // Tracked separately from "membership pointer removed" — see
+  // MemberCleanupOutcome.claimsUpdated's docblock. Stays `true` when no
+  // update was needed at all (her active company was something else).
+  let claimsUpdated = true;
+
   if (userData['activeCompanyId'] === companyId) {
     try {
       if (remaining.length > 0) {
@@ -94,9 +119,13 @@ export async function cleanupOneMember(
         await getAuth().setCustomUserClaims(uid, { activeCompanyId: null, role: null });
       }
     } catch (err) {
-      // Non-fatal, same precedent as removeMember (actions/team.ts) — the
-      // membership pointer is already gone regardless of whether claims
-      // could be refreshed.
+      // NOT swallowed silently as far as the caller is concerned — see
+      // claimsUpdated below. Still non-fatal to THIS function's own
+      // control flow (the membership pointer is already gone regardless of
+      // whether claims could be refreshed, and revokeRefreshTokens below
+      // still runs unconditionally), but the caller must not treat this uid
+      // as fully done.
+      claimsUpdated = false;
       const message = err instanceof Error ? err.message : String(err);
       logger.error('cleanupOneMember: activeCompanyId/claims update failed', {
         uid: uid.slice(0, 8) + '...',
@@ -118,23 +147,47 @@ export async function cleanupOneMember(
   }
 
   if (remaining.length > 0) {
-    return { uid, accountStatus: 'kept' };
+    return { uid, accountStatus: 'kept', claimsUpdated };
   }
 
   if (!userSnap.exists) {
     // deleteAccount (PR F) already deleted this user's own account, ahead of
     // (or independent of) this purge — see MemberAccountStatus's docblock.
     // Nothing left here to schedule.
-    return { uid, accountStatus: 'already_gone' };
+    return { uid, accountStatus: 'already_gone', claimsUpdated };
   }
 
   // ── Stranded: schedule the account for deletion, do not delete it ────────
+  //
+  // Idempotency guard: a uid can reach this branch more than once for the
+  // SAME purge — `runMembersPhase` deliberately re-processes any uid whose
+  // claims update failed on a prior pass (see claimsUpdated above), and this
+  // is the one branch that is NOT safe to blindly redo, since it writes a
+  // fresh thirty-day deadline and a new audit-log row every time it runs.
+  // If `pendingDeletion` already points at THIS requestId, the schedule was
+  // already written by an earlier pass — reuse it rather than resetting the
+  // clock or duplicating the audit entry.
+  const existingPendingDeletion = userData['pendingDeletion'] as
+    | { scheduledFor: Timestamp; requestId: string }
+    | undefined;
+
+  if (existingPendingDeletion && existingPendingDeletion.requestId === requestId) {
+    return { uid, accountStatus: 'scheduled', claimsUpdated, pendingDeletionScheduledFor: existingPendingDeletion.scheduledFor };
+  }
+
   const scheduledFor = Timestamp.fromMillis(Date.now() + STRANDED_MEMBER_WINDOW_MS);
   await userRef.set({ pendingDeletion: { scheduledFor, requestId } }, { merge: true });
 
   const userIdHash = createHash('sha256').update(uid).digest('hex');
   await db.collection('deletionAuditLog').add({
     userIdHash,
+    // `scheduledAt` — when this SCHEDULE was written, not when anything was
+    // deleted. Deliberately does NOT also carry `deletedAt`: nothing has
+    // been deleted yet, only scheduled, and a `deletedAt` here would
+    // misrepresent the event. See purgeOldAuditLogs (admin/purgeAuditLogs.ts)
+    // — it queries on `scheduledAt` as well as `deletedAt` for exactly this
+    // reason, so this row still ages out under the same 12-month retention
+    // rule despite the different field name.
     scheduledAt: FieldValue.serverTimestamp(),
     scheduledFor,
     requestId,
@@ -145,5 +198,5 @@ export async function cleanupOneMember(
     triggeredBy: 'company_deletion_stranded_member',
   });
 
-  return { uid, accountStatus: 'scheduled' };
+  return { uid, accountStatus: 'scheduled', claimsUpdated, pendingDeletionScheduledFor: scheduledFor };
 }
