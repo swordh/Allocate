@@ -346,6 +346,63 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     expect((mirrorWrite![1] as { deletion: { mode: string } }).deletion.mode).toBe('immediate')
   })
 
+  it('MUTATION GUARD: a counter that says 0 but a live count that says 3 must NOT delete the company', async () => {
+    // The guard fires on `members <= 1`, so ZERO is inside it too — and a
+    // counter stuck at 0 is the more alarming drift of the two, since it
+    // claims the company has nobody in it at all. The plan's verification
+    // list only names "counter says 1, live says 5", and the tests followed
+    // the plan; this is the case that was missing.
+    //
+    // Same pre-flight/transaction split as the test below, and for the same
+    // reason: `getDeletionOutcomes` runs its own `confirmSoleMember`, so a
+    // shared counter would be caught there and prove nothing about the
+    // commit loop's copy.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const liveMembers: QueryDocInput[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `member-${i}`,
+      path: `companies/company-A/members/member-${i}`,
+      data: { role: i === 0 ? 'admin' : 'crew' },
+    }))
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 0, admins: 0 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/members') {
+        const roleFilter = filterValue(ctx, 'role')
+        return roleFilter
+          ? liveMembers.filter((d) => (d.data as { role?: string }).role === roleFilter)
+          : liveMembers
+      }
+      return []
+    }
+
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('company-A', 3))
+    expect(
+      tx.set.mock.calls.filter(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/')),
+    ).toHaveLength(0)
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
   it('MUTATION GUARD: a counter that says 1 but a live count that says 5 must NOT delete the company', async () => {
     // The single most dangerous calculation in step 5. `_meta/memberCounts`
     // is denormalised and can drift; here it says the user is alone, while

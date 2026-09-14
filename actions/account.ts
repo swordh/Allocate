@@ -177,9 +177,18 @@ export async function updateUserProfile(data: {
  *      memberCounts delta (lib/companyStats.ts) all happen together. Skips a
  *      company outright if it no longer exists (a stale membership pointer),
  *      and is idempotent against a retry whose member doc is already gone.
+ *      For a company whose sole member this is, the same transaction ALSO
+ *      writes a `mode: 'immediate'` deletion request — see that branch.
  *   3. Anonymisation — a chunked WriteBatch over bookings/equipment/units/
  *      invitations/Stripe, followed by session + Auth-record deletion. Only
- *      reached if every company in phase 2 succeeded or was safely skipped.
+ *      reached if every company in phase 2 succeeded or was safely skipped,
+ *      and it skips any company phase 2 scheduled for immediate deletion.
+ *
+ * NOT side-effect free on failure. Phase 2 can start an irreversible company
+ * purge before a later company's transaction fails, in which case this
+ * function returns an error while a company is already being deleted. See the
+ * long note in phase 2's catch block; it is the one thing about this function
+ * that a reader is most likely to get wrong.
  */
 export async function deleteAccount(): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
@@ -480,6 +489,27 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       // already had their membership removed stay that way; the caller sees
       // one clear error and can retry, which is safe because of the two
       // early returns above.
+      //
+      // READ THIS BEFORE TRUSTING THE PARAGRAPH ABOVE: as of issue #252 step
+      // 5, a `deleteAccount` that returns an error is NOT side-effect free.
+      // "Nothing was deleted" was true when every step of this loop was a
+      // reversible membership removal. It stopped being true the moment the
+      // loop gained the `mode: 'immediate'` branch: writing that ledger row
+      // starts `runCompanyPurge` asynchronously, through
+      // `onCompanyDeletionCreated`, and NOTHING here can call it back. So if
+      // the loop passes a `close` company and then fails on a later one, the
+      // user is told her account could not be deleted while one of her
+      // companies is already, irreversibly, on its way out.
+      //
+      // That behaviour is the right one — trying to unwind a purge that has
+      // begun deleting subcollections would be far worse than letting it
+      // finish. What must not happen is a future reader concluding from the
+      // paragraph above that a failed call left the world untouched. The
+      // `closeFirstGuess` ordering where `companyIds` is built is the
+      // mitigation: it makes the irreversible work happen last, so a
+      // transient failure on an ordinary company almost always lands before
+      // any company has been scheduled. "Almost always" is not "never", and
+      // that gap is the honest statement of this function's failure mode.
       console.error('[actions/account]', {
         uid: uid.slice(0, 8) + '...',
         companyId,
