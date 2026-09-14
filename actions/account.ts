@@ -2,17 +2,31 @@
 
 import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
+import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession, verifyAuthenticatedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
-import { getDeletionOutcomes, type CompanyDeletionOutcome } from '@/lib/queries/deletionOutcomes'
+import {
+  confirmSoleMember,
+  getDeletionOutcomes,
+  type CompanyDeletionOutcome,
+} from '@/lib/queries/deletionOutcomes'
 import { stripe } from '@/lib/stripe'
-import type { Role } from '@/types'
 import { deleteSession } from './auth'
 
 const BATCH_LIMIT = 490
+
+/**
+ * 24 months, for the `purgeAfter` field on a `companyDeletions` ledger row —
+ * when its IDENTITY fields become eligible for redaction (PR G), not when the
+ * row is deleted. Same value and same meaning as the constant of the same
+ * name in actions/companyDeletion.ts; both are the plan's "revisionsloggen
+ * bevarar läsbar identitet i 24 månader". Duplicated rather than shared
+ * because a `'use server'` module can only export async functions, so neither
+ * file can export it to the other.
+ */
+const IDENTITY_RETENTION_MS = 730 * 24 * 60 * 60 * 1000
 
 async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   await batch.commit()
@@ -84,53 +98,23 @@ function buildBlockedClause(companies: CompanyDeletionOutcome[]): string {
 }
 
 /**
- * Sentence for the `close` companies in a `deleteAccount` rejection: the
- * caller is the company's ONLY member, so there is no colleague to promote —
- * `buildBlockedClause`'s advice would be a dead end here. This codebase
- * doesn't yet implement removing a company together with its sole member's
- * account (issue #252 Part 2 / step 5 — the designbrief's "ensam medlem"
- * exception), so today this is a genuine, self-service-free block, and the
- * only honest instruction is to ask a human. An earlier version of this
- * message folded `close` into `buildBlockedClause`'s "make someone else an
- * administrator" advice — which is exactly the bug issue #252 exists to
- * fix, just relocated: a message that tells someone with nobody left to
- * promote to go promote somebody.
- *
- * Names "Help & feedback" (`components/support/SupportModal.tsx`'s modal
- * title, opened via `openHelp()` from `lib/support-context.tsx`), not
- * support@allocate.at: `PrimaryNav` (`components/nav/PrimaryNav.tsx`) renders
- * on every route under `app/(app)/layout.tsx` — including
- * `/settings/account`, where this message is shown — so the user can open it
- * without leaving the page they're already on and without switching to an
- * email client. Pointing at a concrete, already-open surface rather than an
- * address is the same fix `buildBlockedClause` makes by naming
- * "Settings → Team" instead of just saying "ask an admin" — vague-but-true
- * is the failure mode this whole change exists to remove, and a mailto
- * address the user has to go find is still vague in that sense.
- */
-function buildCloseClause(companies: CompanyDeletionOutcome[]): string {
-  if (companies.length === 1) {
-    const company = companies[0]!
-    return `you are the only member of ${company.companyName}, so deleting your account would also remove the company. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
-  }
-
-  const names = companies.map((company) => company.companyName).join(', ')
-  return `you are the only member of ${companies.length} companies — ${names} — so deleting your account would also remove them. We can't do that automatically yet — open Help & feedback and we'll take care of it.`
-}
-
-/**
  * Builds the message for `deleteAccount`'s sole-admin block from one or more
  * `getDeletionOutcomes` results (lib/queries/deletionOutcomes.ts) whose
- * outcome is `blocked` or `close`.
+ * outcome is `blocked`.
  *
- * These two outcomes get genuinely different sentences, not a shared
- * "make someone else an administrator" line: `blocked` companies have a
- * colleague to promote, `close` companies don't. A user who is `blocked` in
- * one company and `close` in another sees BOTH sentences — the designbrief
- * is explicit that consequences must be reported per company, never
- * collapsed into one verdict, and a merged message here would hide the
- * `close` company's completely different fix behind the `blocked` company's
- * advice.
+ * REMOVED HERE in issue #252 step 5 (PR F2): a `buildCloseClause` that told a
+ * sole member to "open Help & feedback and we'll take care of it", because
+ * removing a company together with its last member's account wasn't
+ * implemented. It is implemented now — `deleteAccount`'s commit loop creates
+ * a `mode: 'immediate'` company deletion for exactly that case — so `close`
+ * is no longer a blocking outcome and no longer reaches this function. That
+ * message was the last remnant of the dead end issue #252 exists to remove;
+ * do not re-add a clause here for `close`.
+ *
+ * `blocked` is now the only outcome this builds for, and it keeps the
+ * per-company reporting the designbrief requires: a user who is the sole
+ * admin of two companies is told about both, not sent to fix one and then
+ * blocked again by a company nobody mentioned.
  */
 function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
   // `otherAdminCount` (lib/queries/deletionOutcomes.ts) is 0 for every
@@ -157,18 +141,9 @@ function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
   }
 
   const blockedCompanies = blocking.filter((company) => company.outcome === 'blocked')
-  const closeCompanies = blocking.filter((company) => company.outcome === 'close')
+  if (blockedCompanies.length === 0) return COULD_NOT_VERIFY_ERROR
 
-  const clauses: string[] = []
-  if (blockedCompanies.length > 0) clauses.push(buildBlockedClause(blockedCompanies))
-  if (closeCompanies.length > 0) clauses.push(buildCloseClause(closeCompanies))
-
-  // ' Also, ' joins at most two clauses today (one `blocked`, one `close`) —
-  // if a future outcome type needs a third clause here, this join still
-  // works (`Array.join` handles any length), but the "Also," wording was
-  // only proven to read naturally for exactly two; re-check it out loud
-  // before adding a third clause kind.
-  return `Cannot delete account: ${clauses.join(' Also, ')}`
+  return `Cannot delete account: ${buildBlockedClause(blockedCompanies)}`
 }
 
 export async function updateUserProfile(data: {
@@ -249,15 +224,13 @@ export async function deleteAccount(): Promise<{ error?: string }> {
     return { error: COULD_NOT_VERIFY_ERROR }
   }
 
-  // `close` still counts as "blocking" here — this codebase doesn't yet
-  // implement removing a company together with its sole member's account
-  // (issue #252 Part 2 / step 5), so a `close` company genuinely can't be
-  // deleted through today. It is NOT folded into the same message as
-  // `blocked`, though — see `buildSoleAdminMessage`'s docblock: a sole
-  // member has no colleague to promote, so "make someone else an
-  // administrator" would be advice they cannot act on, which is the exact
-  // failure mode issue #252 point 1 exists to fix.
-  const blocking = outcomes.filter((o) => o.outcome === 'blocked' || o.outcome === 'close')
+  // `close` is NO LONGER blocking (issue #252 step 5, PR F2). A company whose
+  // only member is deleting her account is now removed along with it, via a
+  // `mode: 'immediate'` deletion request created by the commit loop below.
+  // `blocked` — sole admin with colleagues still in the company — remains the
+  // one genuine block, and it stays a block for the reason it always was:
+  // other people's work is in there and somebody has to own it.
+  const blocking = outcomes.filter((o) => o.outcome === 'blocked')
   if (blocking.length > 0) {
     console.error('[actions/account]', {
       uid: uid.slice(0, 8) + '...',
@@ -288,10 +261,40 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   // read of a small per-user collection (bounded by how many companies one
   // person can join) is cheap next to the rest of this function's work.
   const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
-  const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
+  const unorderedCompanyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
+
+  // Companies the pre-flight thinks will be `close` are processed LAST.
+  //
+  // Ordering only — the authoritative decision is still made per company,
+  // live, inside each transaction below, and a company that lands here by a
+  // stale pre-flight reading simply gets handled in a different position.
+  // What this buys: creating a `mode: 'immediate'` request starts a purge
+  // that cannot be undone, while every other company in this loop is a
+  // reversible membership removal. If one of those fails transiently, the
+  // loop returns an error — and doing the destructive work last means no
+  // company has been torn down at the point that happens. The existing
+  // "compensation is deliberately not attempted" note below still applies,
+  // but the cost of a partial run is now much higher than it was when every
+  // step was just a membership delete, so the cheap ordering is worth having.
+  const closeFirstGuess = new Set(
+    outcomes.filter((o) => o.outcome === 'close').map((o) => o.companyId),
+  )
+  const companyIds = [
+    ...unorderedCompanyIds.filter((id) => !closeFirstGuess.has(id)),
+    ...unorderedCompanyIds.filter((id) => closeFirstGuess.has(id)),
+  ]
+
   let completedCompanies = 0
+  /** Companies this run has scheduled for immediate deletion — skipped by the anonymisation loop in step 3. */
+  const immediatelyDeletedCompanyIds = new Set<string>()
 
   for (const companyId of companyIds) {
+    // Generated outside runTransaction so a transaction retry reuses the same
+    // ids and the same instant instead of minting new ones per attempt.
+    const requestId = adminDb.collection('companyDeletions').doc().id
+    const requestNow = Timestamp.now()
+    const purgeAfter = Timestamp.fromMillis(requestNow.toMillis() + IDENTITY_RETENTION_MS)
+
     try {
       await adminDb.runTransaction(async (tx) => {
         const companyRef = adminDb.doc(`companies/${companyId}`)
@@ -339,17 +342,94 @@ export async function deleteAccount(): Promise<{ error?: string }> {
         // that invariant is ever weakened, a non-admin sole member must
         // still block here exactly like an admin one does, and checking
         // `members <= 1` first, unconditionally, is what guarantees that.
-        if (counts.members <= 1) {
+        //
+        // ── The one calculation in step 5 that must not be wrong ───────────
+        //
+        // `counts.members` comes from `_meta/memberCounts`, a denormalised
+        // counter. Everywhere else in this codebase a stale-LOW counter fails
+        // closed: it blocks something that should have gone through, the user
+        // retries, nothing is lost. Here it would do the opposite. `members
+        // <= 1` now authorises tearing a company down with no window and no
+        // undo, so a counter wrongly stuck at 1 for a five-person company
+        // would delete four other people's bookings, equipment and history,
+        // with nothing to retry.
+        //
+        // `confirmSoleMember` (lib/queries/deletionOutcomes.ts) is the
+        // protection, and it is passed `tx` so the live aggregate read is
+        // part of THIS transaction's read set — a member joining between the
+        // read and the commit aborts and retries rather than being deleted.
+        // The live count wins over the counter, always. A live count that is
+        // too HIGH just means this company falls through to the ordinary
+        // branches below and the account deletion is refused or proceeds
+        // normally — harmless. A live count that is too low is what this
+        // read exists to make impossible.
+        //
+        // If a future refactor is tempted to drop this second read because
+        // "we already have the count": don't. The failure it prevents is
+        // silent right up until the day it isn't.
+        let liveMembers = counts.members
+        if (liveMembers <= 1) {
+          liveMembers = await confirmSoleMember(companyId, counts.members, tx)
+        }
+
+        if (liveMembers <= 1) {
+          // The designbrief's "ensam medlem i eget företag": the company goes
+          // with the account, immediately and without a window. There is
+          // nobody left a window could protect, and the account deletion that
+          // causes it is itself immediate and irreversible.
+          //
+          // `mode: 'immediate'` is set HERE AND NOWHERE ELSE in this
+          // codebase. `requestCompanyDeletion` (actions/companyDeletion.ts)
+          // always writes `'window'`, even for a one-member company — it is
+          // the ACTION that picks the tempo, never a member count. This
+          // branch is the sole exception, and it is one because the action
+          // performed was an account deletion, not a company deletion.
+          //
+          // Writing the ledger row is what starts the purge:
+          // `onCompanyDeletionCreated` (functions/src/company/onDeletionCreated.ts)
+          // claims the lease and runs it. Nothing is purged from this
+          // process, which is deliberate — a Next.js request must never be
+          // the thing holding a whole company's destruction open.
           const companyName = (companySnap.data()?.name as string | undefined) ?? ''
-          const blockingOutcome: CompanyDeletionOutcome = {
+          const memberData = memberSnap.data() ?? {}
+
+          counts.applyHeal()
+
+          tx.set(adminDb.doc(`companyDeletions/${requestId}`), {
+            requestId,
             companyId,
             companyName,
-            role: (role as Role | undefined) ?? 'crew',
-            memberCount: counts.members,
-            otherAdminCount: Math.max(counts.admins - (role === 'admin' ? 1 : 0), 0),
-            outcome: 'close',
-          }
-          throw guardError('sole-admin', buildSoleAdminMessage([blockingOutcome]))
+            mode: 'immediate',
+            state: 'requested',
+            requestedAt: requestNow,
+            requestedByUid: uid,
+            requestedByName: (memberData.name as string | undefined) || session.email || 'Account holder',
+            requestedByEmail: (memberData.email as string | undefined) || session.email || '',
+            // Immediate mode has no window, so "scheduled for" is now. The
+            // sweep's overdue query matches it from the first tick, which is
+            // the intended safety net: if the trigger never fires, the sweep
+            // picks it up. `claimRequestedLease` makes the two harmless.
+            scheduledFor: requestNow,
+            attempts: 0,
+            purgeAfter,
+          })
+
+          tx.update(companyRef, {
+            deletion: {
+              state: 'requested',
+              requestId,
+              requestedAt: requestNow,
+              requestedByName: (memberData.name as string | undefined) || session.email || 'Account holder',
+              scheduledFor: requestNow,
+              mode: 'immediate',
+            },
+          })
+
+          tx.delete(memberRef)
+          memberCountsDelta(tx, companyId, { members: -1, admins: role === 'admin' ? -1 : 0 })
+
+          immediatelyDeletedCompanyIds.add(companyId)
+          return
         }
 
         if (role === 'admin' && counts.admins <= 1) {
@@ -364,7 +444,15 @@ export async function deleteAccount(): Promise<{ error?: string }> {
             companyId,
             companyName,
             role: 'admin',
-            memberCount: counts.members,
+            // `liveMembers`, not `counts.members`: when the counter read low
+            // enough to trigger `confirmSoleMember` above, the live number is
+            // the one that just decided this company is NOT being deleted, so
+            // it is also the one the user should be told about. Quoting the
+            // stale counter here would produce "you are the only
+            // administrator of Acme, where no one else works" for a company
+            // with four colleagues in it — which reads as a bug in the
+            // sentence, not as the counter drift it actually is.
+            memberCount: liveMembers,
             otherAdminCount: Math.max(counts.admins - 1, 0),
             outcome: 'blocked',
           }
@@ -433,6 +521,26 @@ export async function deleteAccount(): Promise<{ error?: string }> {
     }
 
     for (const companyId of companyIds) {
+      // A company scheduled for IMMEDIATE deletion in step 2 is skipped here
+      // entirely, and that is a correctness requirement, not an optimisation.
+      //
+      // Creating that ledger row starts `runCompanyPurge` through
+      // `onCompanyDeletionCreated`, typically within a second — while this
+      // loop is still running. Every `batch.update()` below targets a
+      // document the purge is concurrently deleting, and a WriteBatch whose
+      // update hits a document that no longer exists fails the ENTIRE batch
+      // with NOT_FOUND. That would abort this user's account deletion
+      // halfway: her memberships gone, her company being purged, her Auth
+      // record still there, and an error message telling her nothing worked.
+      //
+      // Skipping costs nothing, either. Anonymising fields on documents that
+      // are about to be deleted outright achieves the same end state by a
+      // longer route, and the purge's own Stripe phase
+      // (functions/src/company/purge.ts) cancels the subscription and
+      // anonymises the customer — the two things the tail of this loop body
+      // would otherwise have done for this company.
+      if (immediatelyDeletedCompanyIds.has(companyId)) continue
+
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const equipmentRef = adminDb.collection(`companies/${companyId}/equipment`)
       const companyRef = adminDb.doc(`companies/${companyId}`)
