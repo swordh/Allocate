@@ -6,22 +6,29 @@ import { signOut } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { setupNewCompany, createSession, deleteSession } from '@/actions/auth'
 import { exportUserData } from '@/actions/account'
-import { daysLeftLabel } from '@/lib/pendingDeletionCountdown'
+import { pendingDeletionCountdown } from '@/lib/pendingDeletionCountdown'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Field from '@/components/ui/Field'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import styles from './NoCompanyView.module.css'
 
-interface PendingDeletionProps {
-  scheduledFor: string // ISO string
-}
-
 interface NoCompanyViewProps {
   name: string
   email: string
-  /** Set only for a stranded former member — see types/user.ts's `PendingAccountDeletion`. */
-  pendingDeletion: PendingDeletionProps | null
+  /**
+   * True only for a stranded former member — see types/user.ts's
+   * `PendingAccountDeletion`.
+   */
+  deletionScheduled: boolean
+  /**
+   * The deadline, ISO, or null when it is missing or unreadable. Deliberately
+   * the DATE and nothing else: the rest of `pendingDeletion` — in particular
+   * `requestId`, the `companyDeletions` document id — must not cross the RSC
+   * boundary into the page payload. See the prop comment in
+   * app/(auth)/no-company/page.tsx.
+   */
+  deletionScheduledFor: string | null
 }
 
 /**
@@ -44,8 +51,20 @@ interface NoCompanyViewProps {
  * `pendingDeletion: FieldValue.delete()` write inside `setupNewCompany`,
  * actions/auth.ts).
  */
-export default function NoCompanyView({ name, email, pendingDeletion }: NoCompanyViewProps) {
+export default function NoCompanyView({
+  name,
+  email,
+  deletionScheduled,
+  deletionScheduledFor,
+}: NoCompanyViewProps) {
   const router = useRouter()
+
+  // Computed on the client, from `Date.now()` at render time. `kind` is
+  // 'unknown' whenever the date is missing or unparseable, which is why the
+  // countdown block below is gated on the kind and not on
+  // `deletionScheduled`: she is told she is scheduled either way, but a
+  // number is only shown when there is a real one to show.
+  const countdown = pendingDeletionCountdown(deletionScheduledFor)
 
   const [companyName, setCompanyName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -118,26 +137,48 @@ export default function NoCompanyView({ name, email, pendingDeletion }: NoCompan
       <span className={styles.logo}>ALLOCATE</span>
 
       <div className={styles.intro}>
-        <span className={styles.eyebrow}>{pendingDeletion ? 'COMPANY DELETED' : 'NO COMPANY'}</span>
+        <span className={styles.eyebrow}>{deletionScheduled ? 'COMPANY DELETED' : 'NO COMPANY'}</span>
         <h1 className={styles.heading}>
-          {pendingDeletion ? "You're not part of a company anymore" : 'Create your company'}
+          {deletionScheduled ? "You're not part of a company anymore" : 'Create your company'}
         </h1>
         <p className={styles.subheading}>
-          {pendingDeletion ? (
+          {deletionScheduled ? (
             <>
               The company you belonged to was deleted, and you were its only member left. You can still
-              sign in, export your data, or create a new company — doing so cancels the countdown below.
-              If you do neither, your account is deleted in{' '}
-              <strong>{daysLeftLabel(pendingDeletion.scheduledFor)}</strong>.
+              sign in, export your data, or create a new company — doing so cancels the deletion of your
+              account.{' '}
+              {countdown.kind === 'counting' && (
+                <>
+                  If you do neither, your account is deleted in{' '}
+                  <strong>{countdown.label}</strong>.
+                </>
+              )}
+              {/*
+                * Past the deadline the sentence above would be a lie, and
+                * "Less than a day left" — what this rendered before — is a
+                * lie that repeats forever. The sweep that executes a
+                * scheduled account deletion is deliberately outside PR E and
+                * PR F, so this is the normal state of every stranded user
+                * from day 31 until that sweep exists, not a rare edge case.
+                */}
+              {countdown.kind === 'passed' && (
+                <>
+                  Your account is <strong>past its scheduled deletion date</strong> and can be removed as
+                  soon as it is processed. Create a company now if you want to keep it.
+                </>
+              )}
+              {countdown.kind === 'unknown' && (
+                <>Your account is scheduled for deletion.</>
+              )}
             </>
           ) : (
             <>You&apos;re signed in as {email}, but not part of a company yet. Create one to continue.</>
           )}
         </p>
-        {pendingDeletion && (
+        {countdown.kind !== 'unknown' && deletionScheduled && (
           <div className={styles.countdown} role="status">
-            <span className={styles.countdownValue}>{daysLeftLabel(pendingDeletion.scheduledFor)}</span>
-            <span className={styles.countdownLabel}>until your account is deleted</span>
+            <span className={styles.countdownValue}>{countdown.label}</span>
+            <span className={styles.countdownLabel}>{countdown.caption}</span>
           </div>
         )}
       </div>

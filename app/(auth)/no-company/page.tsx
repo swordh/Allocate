@@ -25,7 +25,26 @@ export default async function NoCompanyPage() {
     <NoCompanyView
       name={profile?.name ?? ''}
       email={session.email}
-      pendingDeletion={profile?.pendingDeletion ?? null}
+      /*
+       * Only the date crosses the RSC boundary — never the whole
+       * `pendingDeletion` object. A React Server Component serialises a prop
+       * in full regardless of which parts the client component reads, so
+       * passing the object would put `requestId` — the document id in
+       * `companyDeletions` — into the page's network payload. It grants no
+       * access (firestore.rules denies every client read of that collection,
+       * and says in so many words that it must never be readable to
+       * members), but the point of that rule is that the ledger is not
+       * member-visible; leaking its primary key into the browser is the
+       * first half of contradicting it for free.
+       *
+       * The two props are separate on purpose: a schedule whose date is
+       * unreadable (see `toIsoStringOrEmpty`, lib/queries/users.ts) must
+       * still tell her she is scheduled — a single nullable date prop would
+       * collapse that case into "nothing is happening", which is the one
+       * thing this screen must never say to a stranded user.
+       */
+      deletionScheduled={profile?.pendingDeletion !== undefined}
+      deletionScheduledFor={profile?.pendingDeletion?.scheduledFor || null}
     />
   )
 }
