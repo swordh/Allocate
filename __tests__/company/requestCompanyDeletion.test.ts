@@ -132,6 +132,24 @@ function wire(opts: WireOptions = {}) {
   return { docs, tx, wired }
 }
 
+/**
+ * What `recordStripeOutcome` (lib/companyDeletionStripe.ts) wrote onto the
+ * ledger. It goes through `adminDb.doc(...).update(...)`, not through the
+ * transaction, so it is captured from the doc-ref spy rather than from `tx`.
+ */
+function recordedStripeResume(): unknown {
+  const calls = vi.mocked(adminDb.doc).mock.results
+  for (const r of calls) {
+    const ref = r.value as { path: string; update?: ReturnType<typeof vi.fn> }
+    if (!ref?.path?.startsWith('companyDeletions/')) continue
+    const update = ref.update
+    if (!update) continue
+    const call = update.mock.calls.find((c) => (c[0] as Record<string, unknown>)?.['stripeResume'])
+    if (call) return (call[0] as Record<string, unknown>)['stripeResume']
+  }
+  return undefined
+}
+
 function ledgerWrite(tx: ReturnType<typeof makeTransaction>) {
   return tx.set.mock.calls.find(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'))
 }
@@ -342,6 +360,65 @@ describe('cancelCompanyDeletion', () => {
     // Never attempted — an update on a canceled subscription is exactly the
     // call Stripe rejects, and the plan requires resume to never throw.
     expect(mockSubscriptionsUpdate).not.toHaveBeenCalled()
+  })
+
+  it("MUTATION GUARD: an `unpaid` subscription resumes, but is NEVER reported as 'applied'", async () => {
+    // `pause_collection: null` succeeds on an unpaid subscription, so without
+    // its own branch this would land on the ledger as
+    // `stripeResume: { effect: 'applied' }` — a failure wearing the costume
+    // of a success, in front of the one person who could act on it. Stripe
+    // has exhausted dunning here; billing did not resume "as if nothing
+    // happened", it resumed into a state only the customer can fix.
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: 'unpaid' })
+    const { wired } = wire({ deletion: PENDING, ledger: LEDGER, stripeSubscriptionId: 'sub_123' })
+
+    const result = await cancelCompanyDeletion()
+
+    // The cancellation itself still succeeds — billing trouble must never be
+    // a reason an admin cannot stop a deletion.
+    expect(result.error).toBeUndefined()
+    // The pause IS lifted: leaving collection paused on top of an unpaid
+    // subscription would only add a second problem.
+    expect(mockSubscriptionsUpdate).toHaveBeenCalledWith('sub_123', { pause_collection: null })
+
+    const ledgerAnnotation = wired.doc.mock.calls.filter(([path]) =>
+      (path as string).startsWith('companyDeletions/'),
+    )
+    expect(ledgerAnnotation.length).toBeGreaterThan(0)
+    expect(recordedStripeResume()).toMatchObject({ effect: 'resumed_unpaid' })
+  })
+
+  it("a healthy subscription is still reported as 'applied' — the unpaid branch must not swallow the normal case", async () => {
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: 'active' })
+    wire({ deletion: PENDING, ledger: LEDGER, stripeSubscriptionId: 'sub_123' })
+
+    await cancelCompanyDeletion()
+
+    expect(recordedStripeResume()).toMatchObject({ effect: 'applied' })
+  })
+
+  it("a past_due subscription is reported as 'applied' — Stripe is still retrying, which is the state it was in before", async () => {
+    // Deliberately NOT flagged: past_due is the ordinary, self-resolving
+    // dunning path, and a company can have been past_due before the deletion
+    // was requested. An anomaly signal that fires on a normal state stops
+    // being read.
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: 'past_due' })
+    wire({ deletion: PENDING, ledger: LEDGER, stripeSubscriptionId: 'sub_123' })
+
+    await cancelCompanyDeletion()
+
+    expect(recordedStripeResume()).toMatchObject({ effect: 'applied' })
+  })
+
+  it('records WHICH Stripe call failed, so a ledger row says whether the pause is still on', async () => {
+    mockSubscriptionsRetrieve.mockRejectedValue(new Error('network blip'))
+    wire({ deletion: PENDING, ledger: LEDGER, stripeSubscriptionId: 'sub_123' })
+
+    await cancelCompanyDeletion()
+
+    const recorded = recordedStripeResume() as { effect: string; error: string }
+    expect(recorded.effect).toBe('failed')
+    expect(recorded.error).toContain('retrieve:')
   })
 
   it('queues the cancellation mail to admins only', async () => {

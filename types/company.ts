@@ -174,8 +174,14 @@ export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link'
 /** One Stripe side effect of the reversible half of a deletion — see `stripePause`/`stripeResume` below. */
 export interface CompanyDeletionStripeOutcome {
   at: string                       // ISO string
-  /** Mirrors `StripeDeletionEffect` in lib/companyDeletionStripe.ts. */
-  effect: 'applied' | 'no_subscription' | 'already_canceled' | 'failed'
+  /**
+   * Mirrors `StripeDeletionEffect` in lib/companyDeletionStripe.ts — read the
+   * per-value docs there. Note that `resumed_unpaid` is NOT a success:
+   * the pause was lifted, but onto a subscription Stripe had already given up
+   * collecting on. It is a separate value precisely so the operator view does
+   * not render it as `applied`.
+   */
+  effect: 'applied' | 'no_subscription' | 'already_canceled' | 'resumed_unpaid' | 'failed'
   error?: string
 }
 
