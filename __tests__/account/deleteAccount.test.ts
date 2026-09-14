@@ -138,6 +138,16 @@ interface Scenario {
 function wireScenario(scenario: Scenario) {
   const docs: DocMap = {}
 
+  // getVerifiedSession (lib/dal.ts, issue #252 step 5, PR F) now verifies
+  // the SESSION's own activeCompanyId company exists before deleteAccount
+  // ever runs. stubSession() defaults activeCompanyId to 'company-A', which
+  // is unrelated to whatever membership companies a given scenario is
+  // exercising below — seed it as existing by default so that entry check
+  // never interferes with what these tests actually assert. A scenario that
+  // explicitly configures 'company-A' (most already do, as one of the
+  // memberships under test) overrides this below.
+  docs['companies/company-A'] = { name: 'company-A' }
+
   for (const [companyId, fixture] of Object.entries(scenario.companies ?? {})) {
     const exists = fixture.exists ?? true
     docs[`companies/${companyId}`] = exists

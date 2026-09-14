@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
-import { getVerifiedSession } from '@/lib/dal'
+import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
-import { adminDb } from '@/lib/firebase-admin'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileMenu } from '@/components/nav/MobileMenu'
 import styles from './app-layout.module.css'
@@ -10,12 +9,11 @@ import styles from './app-layout.module.css'
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getVerifiedSession()
 
-  const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
-  if (!companyDoc.exists) {
-    console.error('[layout] company document not found', { companyId: session.activeCompanyId })
-    redirect('/subscribe')
-  }
-
+  // getVerifiedSession() already redirected to /no-company if this document
+  // didn't exist (lib/dal.ts) — no need to re-check existence here. Reading
+  // it via the same `getCompanyDoc` it used means React's cache() dedupes
+  // the two calls into one Firestore read for this request rather than two.
+  const companyDoc = await getCompanyDoc(session.activeCompanyId)
   const companyData = companyDoc.data()
   const subscription = companyData?.subscription
   const subStatus = subscription?.status
