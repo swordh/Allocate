@@ -70,40 +70,45 @@ const renders: Record<string, string> = {
     scheduledForFormatted: '19 September 2026',
     openUrl: 'https://allocate.at/',
   }).html,
-  'companyDeleted-window.html': companyDeletedEmail({
+  'companyDeleted-window-kept.html': companyDeletedEmail({
     companyName: 'Nordfilm AB',
     requestedByName: 'Erik Lundqvist',
     requestedAtFormatted: '12 September 2026',
     deletedAtFormatted: '19 September 2026',
     mode: 'window',
-    accountAlsoDeleted: false,
+    accountStatus: 'kept',
     ctaUrl: 'https://allocate.at/company/new',
   }).html,
-  'companyDeleted-window-account-also-deleted.html': companyDeletedEmail({
+  // The case this preview exists to catch: a crew member stranded by this
+  // deletion — her account is NOT gone, it is scheduled, and the copy must
+  // say so with the real date, not fall back to 'kept's "untouched" text.
+  // See the PR E review that added this branch.
+  'companyDeleted-window-scheduled.html': companyDeletedEmail({
     companyName: 'Nordfilm AB',
     requestedByName: 'Erik Lundqvist',
     requestedAtFormatted: '12 September 2026',
     deletedAtFormatted: '19 September 2026',
     mode: 'window',
-    accountAlsoDeleted: true,
+    accountStatus: 'scheduled',
+    pendingDeletionScheduledForFormatted: '19 October 2026',
+    ctaUrl: 'https://allocate.at/login',
+  }).html,
+  'companyDeleted-window-already-gone.html': companyDeletedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    deletedAtFormatted: '19 September 2026',
+    mode: 'window',
+    accountStatus: 'already_gone',
     ctaUrl: 'https://allocate.at/signup',
   }).html,
-  'companyDeleted-immediate.html': companyDeletedEmail({
+  'companyDeleted-immediate-already-gone.html': companyDeletedEmail({
     companyName: 'Solo Studio',
     requestedByName: 'Maria Öberg',
     requestedAtFormatted: '14 September 2026',
     deletedAtFormatted: '14 September 2026',
     mode: 'immediate',
-    accountAlsoDeleted: false,
-    ctaUrl: 'https://allocate.at/company/new',
-  }).html,
-  'companyDeleted-immediate-account-also-deleted.html': companyDeletedEmail({
-    companyName: 'Solo Studio',
-    requestedByName: 'Maria Öberg',
-    requestedAtFormatted: '14 September 2026',
-    deletedAtFormatted: '14 September 2026',
-    mode: 'immediate',
-    accountAlsoDeleted: true,
+    accountStatus: 'already_gone',
     ctaUrl: 'https://allocate.at/signup',
   }).html,
 };
