@@ -187,15 +187,28 @@ export interface CompanyDeletionStripeOutcome {
 
 /**
  * One entry per operator intervention on this deletion (steg 6, not built
- * yet). Written only from `app/operator/...` server actions — the purge
+ * yet). AUTHORED only from `app/operator/...` server actions — the purge
  * itself never appends here, it only reads/writes the phase/progress and
- * lease fields below.
+ * lease fields below. One other writer exists and only ever subtracts: the
+ * 24-month retention job (functions/src/company/purgeLogs.ts) rewrites the
+ * array keeping `action` and `at` and blanking the rest.
  */
 export interface CompanyDeletionOperatorAction {
   action: string
-  byUid: string
-  byName: string
+  /**
+   * `null` = REDACTED by that job; absent = never carried one. Exactly the
+   * convention `requestedByUid` on `CompanyDeletionRecord` below documents
+   * at length — read it there. This pair is the easiest in the file to miss,
+   * because it sits inside a nested array type that is only ever written
+   * through untyped object literals and read through `data[...]`: nothing in
+   * the compiler was ever going to point at it, and a step 6 view rendering
+   * `{a.byName}` on the promise of `string` would print the text "null" on
+   * every row older than two years.
+   */
+  byUid: string | null
+  byName: string | null
   at: string                       // ISO string
+  /** Staff free text about a customer. Removed outright, not nulled, by the retention job. */
   note?: string
 }
 
@@ -218,14 +231,22 @@ export interface CompanyDeletionOperatorAction {
  *    deletion.
  *
  * GDPR: `identityRedactedAt` is when the 24-month retention job (PR G) blanks
- * out `requestedByUid`/`requestedByName`/`requestedByEmail` and the cancel
- * equivalents while leaving the rest of the row intact — the event stays
+ * out `requestedByUid`/`requestedByName`/`requestedByEmail`, the cancel
+ * equivalents, `lastError` (raw exception text that routinely quotes uids,
+ * addresses and Stripe ids) and the actor and note on every
+ * `operatorActions` entry, while leaving the rest of the row intact — the event stays
  * visible in the operator history, the person behind it doesn't. Legal basis
  * is GDPR Art. 17(3)(e) (processing necessary for the establishment, exercise
  * or defence of legal claims — an accountability trail for who requested a
  * company's deletion). **That interpretation has not yet been confirmed by
  * counsel.** The decision to build it this way is made; the confirmation is
  * outstanding. Do not treat this comment as that confirmation.
+ *
+ * `formerMemberContacts` does NOT wait for this marker. It carries OTHER
+ * people's names and addresses, runs on its own much shorter clock (30
+ * days after completion, 90 after a failure) and has its own marker,
+ * `contactsRedactedAt`. functions/src/company/purgeLogs.ts is where every
+ * one of these windows is decided and derived.
  *
  * NEVER add this collection to `deleteAccount`'s anonymisation loop. The
  * entire purpose of `requestedByName`/`requestedByEmail`/`requestedByUid` is
@@ -243,15 +264,27 @@ export interface CompanyDeletionRecord {
   state: CompanyDeletionLedgerState
 
   requestedAt: string              // ISO string
-  requestedByUid: string
-  requestedByName: string
-  requestedByEmail: string
+  /**
+   * `null` means REDACTED, and it is deliberately observable as its own
+   * state — see the `null`-vs-`FieldValue.delete()` rationale in
+   * functions/src/company/purgeLogs.ts. The 24-month retention job writes
+   * null here; a field that is absent instead never carried an identity at
+   * all (`canceledBy*` on a deletion nobody ever cancelled). Step 6's
+   * operator view is supposed to be able to render "redacted" as distinct
+   * from "never happened", which it can only do if the type admits null.
+   * Do NOT narrow these back to `string` because "every writer writes a
+   * string" — the retention job is also a writer.
+   */
+  requestedByUid: string | null
+  requestedByName: string | null
+  requestedByEmail: string | null
   scheduledFor: string             // ISO string ("deleteAt")
 
   canceledAt?: string              // ISO string
-  canceledByUid?: string
-  canceledByName?: string
-  canceledByEmail?: string
+  /** `null` = redacted, absent = never cancelled. See `requestedByUid` above. */
+  canceledByUid?: string | null
+  canceledByName?: string | null
+  canceledByEmail?: string | null
   cancelSource?: CompanyDeletionCancelSource
 
   completedAt?: string             // ISO string
@@ -337,15 +370,64 @@ export interface CompanyDeletionRecord {
   attempts: number
   /** Written roughly every 15s while a purge is running; the sweep's stuck-lease signal. */
   lastHeartbeatAt?: string         // ISO string
-  lastError?: string
+  /**
+   * Raw exception text from a failed phase — uncapped free text that
+   * routinely quotes uids, email addresses and Stripe customer ids straight
+   * out of Auth/Stripe/Firestore errors. Cleared on success (purge.ts) and
+   * nulled by the 24-month retention job; `null` = redacted, as above.
+   */
+  lastError?: string | null
 
-  /** Cancel tokens issued for this request, so they can be invalidated together on cancel/completion. */
+  /**
+   * Cancel tokens minted for this request (by `onCompanyDeletionCreated`).
+   *
+   * CORRECTION to what this comment used to claim: nothing deletes these
+   * documents, on cancel or on completion or ever, and they are NOT
+   * "invalidated together". What actually neutralises a token is the pair of
+   * checks in `cancelCompanyDeletionByToken` and `lookupCancelToken`: the
+   * token's own one-time `usedAt`, and the ledger state it points at. A
+   * spent, expired or completed token is refused by those, not by being
+   * absent.
+   *
+   * That the document OUTLIVES the deletion is deliberate, and the reason
+   * deleting it would be a regression rather than a cleanup: the existence
+   * check runs before the ledger-state check, so a token doc that is gone
+   * turns a second click — two admins clicking the same mailed link, the
+   * ordinary case — from "this deletion was already stopped, the company is
+   * safe" into "unknown link". `usedAt` exists precisely to tell those
+   * apart. See the state ordering in lib/queries/companyDeletionCancel.ts.
+   *
+   * What the token doc carries is a requestId, a companyId and two
+   * timestamps — no name, no address, no uid. It is a bearer secret that
+   * never leaves Firestore (top-level, default-deny), it expires with the
+   * window, and it is single-use. A retention rule for it belongs with the
+   * `mail` retention track (issue #325), not bolted onto a live cancel path.
+   */
   cancelTokenIds?: string[]
 
   /** When this ledger row itself becomes eligible for deletion (PR G retention job). */
   purgeAfter: string               // ISO string
   /** Set by the 24-month retention job; see the GDPR note above. */
   identityRedactedAt?: string      // ISO string
+
+  /**
+   * What `formerMemberContacts` is replaced BY once the contacts retention
+   * rule has run (30 days after `completedAt`, 90 days after a `failed` row's
+   * last heartbeat — see functions/src/company/purgeLogs.ts). Anonymous by
+   * construction: counts only, no uid, no name, no address, so it needs no
+   * legal basis and can be kept for as long as the row itself. This is what
+   * step 6's operator view renders for any deletion older than a month —
+   * `formerMemberContacts` is the exception, not the rule, and code reading
+   * it must handle its absence rather than assume a recent row.
+   */
+  formerMemberSummary?: {
+    total: number
+    kept: number
+    scheduled: number
+    already_gone: number
+  }
+  /** Set when the contacts rule has run on this row. Absent = not yet. */
+  contactsRedactedAt?: string      // ISO string
 }
 
 // ─── Company deletion cancel tokens (companyDeletionCancelTokens/{token}) ─────

@@ -84,7 +84,15 @@ async function queueRequestedMail(
       companyId: ledger.companyId,
       data: {
         companyName: ledger.companyName,
-        requestedByName: ledger.requestedByName,
+        // `requestedByName` is `string | null` — null once the 24-month
+        // retention job has redacted the row (purgeLogs.ts). Unreachable
+        // here in practice (redaction happens two years after the request,
+        // on a row that reached a terminal state within days), but the
+        // failure mode if it ever were reached is an email that literally
+        // says "null asked for ... to be deleted", so it takes a stance
+        // rather than a cast. Same fallback wording as
+        // lib/subscription-state.ts and CancelDeletionView.
+        requestedByName: ledger.requestedByName ?? 'An administrator',
         requestedAtFormatted: formatDateFull(ledger.requestedAt),
         scheduledForFormatted: formatDateFull(ledger.scheduledFor),
         scheduledForShort: formatDateShort(ledger.scheduledFor),

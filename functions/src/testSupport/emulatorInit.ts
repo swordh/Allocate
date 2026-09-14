@@ -59,3 +59,15 @@ export function ensureFunctionsAdminAppInitialized(projectId: string): void {
 export function getTestFunctionsDb(): Firestore {
   return getFirestore();
 }
+
+/**
+ * functions/'s OWN `Timestamp` class. Emulator tests that pass a Timestamp
+ * INTO functions/src code (the retention sweep's injectable `now`, say) must
+ * build it with this one: the Admin SDK rejects a Timestamp instance that
+ * came from a different copy of firebase-admin with "Please ensure that the
+ * Firestore types you are using are from the same NPM package". Reading
+ * values back through the root project's `adminDb` is unaffected — those come
+ * out as the root package's Timestamps, so compare with `toMillis()` rather
+ * than by instance.
+ */
+export { Timestamp as FunctionsTimestamp } from 'firebase-admin/firestore';

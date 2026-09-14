@@ -1,4 +1,4 @@
-import { Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionPhase } from '../types';
 import { cleanupOneMember } from './memberCleanup';
@@ -357,7 +357,15 @@ async function runFinalizePhase(
       companyId,
       data: {
         companyName: ledger.companyName,
-        requestedByName: ledger.requestedByName,
+        // `requestedByName` is `string | null` — null once the 24-month
+        // retention job has redacted the row (purgeLogs.ts). Unreachable
+        // here in practice (redaction happens two years after the request,
+        // on a row that reached a terminal state within days), but the
+        // failure mode if it ever were reached is an email that literally
+        // says "null asked for ... to be deleted", so it takes a stance
+        // rather than a cast. Same fallback wording as
+        // lib/subscription-state.ts and CancelDeletionView.
+        requestedByName: ledger.requestedByName ?? 'An administrator',
         requestedAtFormatted,
         deletedAtFormatted,
         mode: ledger.mode,
@@ -396,6 +404,15 @@ async function runFinalizePhase(
     state: 'completed',
     completedAt: Timestamp.now(),
     lastHeartbeatAt: Timestamp.now(),
+    // A purge that succeeded has no use for the exception text of an earlier
+    // attempt, and that text is uncapped free-form data that routinely quotes
+    // uids, email addresses and Stripe customer ids out of raw Auth/Stripe/
+    // Firestore errors. Removed rather than nulled: on a successful row the
+    // honest statement is "there is no error here", not "an error was
+    // redacted" (see the null-vs-delete rationale in purgeLogs.ts). Safe
+    // against the resume machinery — `lastError` is written by the catch
+    // block and read by nothing that decides control flow.
+    lastError: FieldValue.delete(),
   });
 }
 
@@ -433,10 +450,22 @@ async function markPhaseComplete(
  *
  * On phase failure: increments `attempts`, records `lastError`, and — once
  * `attempts` reaches `MAX_ATTEMPTS` — sets `state: 'failed'`, which is what
- * step 6's "stuck" operator view will hang off of. Does not rethrow: a
- * failed purge is recorded, not crashed out of, so the sweep's stuck-lease
- * pass can find and retry it on its own schedule rather than relying on
- * Cloud Functions' infra-level retry (which has no idea what a "phase" is).
+ * step 6's "stuck" operator view will hang off of. Does not rethrow: a failed
+ * phase is RECORDED, not crashed out of, so the sweep's stuck-lease pass can
+ * pick the purge up again rather than relying on Cloud Functions' infra-level
+ * retry (which has no idea what a "phase" is).
+ *
+ * CORRECTION to what this comment used to claim: that only holds while the
+ * row is still `executing`. `resumeStuck` (sweep.ts) queries `state ==
+ * 'executing'` and `claimStaleLease` (lease.ts) refuses anything else, so
+ * once `attempts` hits `MAX_ATTEMPTS` and the state becomes `failed`,
+ * NOTHING retries it. `failed` is terminal, and waits for a human.
+ *
+ * That terminality is load-bearing elsewhere: the contacts retention rule in
+ * company/purgeLogs.ts redacts a failed row's `formerMemberContacts` — the
+ * members phase's own resume marker — 90 days after its last heartbeat,
+ * which is only safe because no code path can resume it. Adding failed-retry
+ * to the sweep means dealing with that rule in the same change.
  */
 export async function runCompanyPurge(db: Firestore, requestId: string): Promise<void> {
   const ledgerRef = db.collection('companyDeletions').doc(requestId);

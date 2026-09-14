@@ -92,13 +92,22 @@ export interface CompanyDocument {
 // - `CompanyDeletionOperatorAction` and the ledger's cancel fields
 //   (`canceledAt`, `canceledByUid/Name/Email`, `cancelSource`) — those are
 //   only ever written by root-side code (`app/operator/...` and
-//   `actions/companyDeletion.ts`'s `cancelCompanyDeletion*`, both PR F/step 6),
-//   never by a Cloud Function. Giving them a home here would invite a
+//   `actions/companyDeletion.ts`'s `cancelCompanyDeletion*`, both PR F/step 6).
+//   CORRECTION (PR G): one Cloud Function does WRITE them — the retention
+//   job in company/purgeLogs.ts blanks them on schedule. It is not an
+//   author: it never decides what a cancel or an operator note says, only
+//   that a two-year-old one stops naming a person, and it touches them
+//   through untyped `data[...]` access precisely so this mirror can stay
+//   the subset it claims to be. types/company.ts carries their canonical
+//   shape, including the `string | null` that redaction makes possible.
+//   Giving them a home here would invite a
 //   function to start writing them "for convenience" and drift from the
 //   root type instead of importing this discipline the other way.
-// - `identityRedactedAt`'s producer (the 24-month retention job, PR G) is not
-//   built yet; the field is included here only because `runCompanyPurge`
-//   must never construct a ledger update that clobbers it.
+// - `identityRedactedAt`'s producer is the 24-month retention job in
+//   company/purgeLogs.ts, built in PR G. It is mirrored here because
+//   `runCompanyPurge` must never construct a ledger update that clobbers
+//   it — and for the same reason so are `contactsRedactedAt` and
+//   `formerMemberSummary`, which the same job writes on a 30/90-day clock.
 
 export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
 /**
@@ -141,9 +150,15 @@ export interface CompanyDeletionDocument {
   state: CompanyDeletionState | 'completed' | 'canceled';
 
   requestedAt: Timestamp;
-  requestedByUid: string;
-  requestedByName: string;
-  requestedByEmail: string;
+  /**
+   * `null` = REDACTED by the 24-month retention job (purgeLogs.ts), and
+   * deliberately distinguishable from an absent field. Mirrors
+   * `CompanyDeletionRecord` in types/company.ts — read the doc comment
+   * there, it is the canonical one.
+   */
+  requestedByUid: string | null;
+  requestedByName: string | null;
+  requestedByEmail: string | null;
   scheduledFor: Timestamp;
 
   completedAt?: Timestamp;
@@ -176,12 +191,26 @@ export interface CompanyDeletionDocument {
 
   attempts: number;
   lastHeartbeatAt?: Timestamp;
-  lastError?: string;
+  /** `null` = redacted (or cleared on success). See types/company.ts. */
+  lastError?: string | null;
 
   cancelTokenIds?: string[];
 
   purgeAfter: Timestamp;
   identityRedactedAt?: Timestamp;
+
+  /**
+   * Replaces `formerMemberContacts` once the contacts retention rule has run
+   * — anonymous counts, no uids or addresses. See types/company.ts for the
+   * canonical doc comment and purgeLogs.ts for the two windows.
+   */
+  formerMemberSummary?: {
+    total: number;
+    kept: number;
+    scheduled: number;
+    already_gone: number;
+  };
+  contactsRedactedAt?: Timestamp;
 }
 
 /** Mirror of `CompanyDeletionCancelToken` in types/company.ts. */
