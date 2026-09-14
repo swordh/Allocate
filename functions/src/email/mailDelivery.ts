@@ -126,7 +126,13 @@ export async function deliverMail(
       logger.error('deliverMail: critical mail exhausted retries', {
         mailId,
         template: mail['template'] ?? 'raw',
-        to: mail['to'],
+        // The recipient address is deliberately NOT logged. This is the one
+        // log line that fires when a critical mail never reached a person, so
+        // it is also the one most likely to be read, copied and pasted around
+        // — and a job that logs the very data it is handling is its own leak
+        // (the same reason every uid in this codebase is logged truncated to
+        // eight characters). `mailId` finds the document, which carries the
+        // address for whoever actually needs it.
         companyId: mail['companyId'],
         attempts,
         error: message,

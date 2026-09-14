@@ -1,4 +1,5 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { logger } from 'firebase-functions/v2';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const BATCH_LIMIT = 490;
@@ -72,6 +73,11 @@ export async function purgeOldAuditLogsSweep(db: Firestore): Promise<{ purged: n
 export const purgeOldAuditLogs = onSchedule(
   { schedule: 'every monday 03:00', region: 'europe-west1' },
   async () => {
-    await purgeOldAuditLogsSweep(getFirestore());
+    const { purged } = await purgeOldAuditLogsSweep(getFirestore());
+    // The original version of this function logged nothing at all, which is
+    // half of why its unchunked-batch bug went unnoticed for so long: a
+    // retention job that says nothing is indistinguishable from one that
+    // never ran.
+    logger.info('purgeOldAuditLogs: sweep complete', { purged });
   }
 );
