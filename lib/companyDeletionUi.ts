@@ -45,7 +45,19 @@ export function confirmationMatchesCompanyName(input: string, companyName: strin
  * that silently vanished. Neither is "visa det verkliga läget" — the caller
  * is expected to render a real, state-specific message when this is false,
  * not simply omit the button.
+ *
+ * Takes `Pick<CompanyDeletion, 'state'>` rather than the full `CompanyDeletion`
+ * — only `state` is ever read here — so a caller that has normalized just
+ * that one field (e.g. `CompanyDeletionBanner`, which is handed a minimal
+ * `{state, scheduledFor}` shape rather than the full mirror) can call this
+ * without casting. Widening this back to read a second field is a real
+ * change: it should fail to compile at every caller that cannot supply that
+ * field, not silently see `undefined` there — do not "fix" a future
+ * type error here by widening the parameter back to `CompanyDeletion` instead
+ * of fixing the caller.
  */
-export function canCancelCompanyDeletionInProduct(deletion: CompanyDeletion | null | undefined): boolean {
+export function canCancelCompanyDeletionInProduct(
+  deletion: Pick<CompanyDeletion, 'state'> | null | undefined,
+): boolean {
   return deletion?.state === 'requested'
 }
