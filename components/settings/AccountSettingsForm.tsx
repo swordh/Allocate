@@ -477,11 +477,26 @@ export default function AccountSettingsForm({
               {closingCompanies.length > 0 && (
                 <>
                   {' '}
-                  This also permanently deletes{' '}
+                  {/* Hedged on WHICH companies, not on what happens to them: this
+                      reads from `preview`, which can go stale the moment a tab
+                      elsewhere changes something (see getAccountDeletionPreview's
+                      and loadPreview's own docblocks). "As last checked" is
+                      honest about that without softening the consequence itself —
+                      deleteAccount's own guard decides for real, live, when
+                      CONFIRM is pressed; this sentence never claims to. */}
+                  As last checked, this also permanently deletes{' '}
                   {closingCompanies.length === 1
                     ? closingCompanies[0]!.companyName || 'the company above'
                     : `${closingCompanies.length} companies`}{' '}
-                  immediately — there&apos;s no undo.
+                  — immediately, no undo.{' '}
+                  <button
+                    type="button"
+                    className={styles.dismissBtn}
+                    onClick={loadPreview}
+                    disabled={previewLoading}
+                  >
+                    {previewLoading ? 'CHECKING…' : 'REFRESH'}
+                  </button>
                 </>
               )}
             </span>
