@@ -21,3 +21,6 @@ export { retryFailedMail } from './email/retryFailedMail';
 export { onCompanyDeletionCreated } from './company/onDeletionCreated';
 export { companyDeletionSweep } from './company/sweep';
 export { purgeCompanyDeletionLogs } from './company/purgeLogs';
+
+// ─── Stranded account enforcement (issue #252, step 6) ────────────────────────
+export { strandedAccountSweep } from './company/strandedAccountSweep';

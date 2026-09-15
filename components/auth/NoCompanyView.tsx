@@ -156,10 +156,13 @@ export default function NoCompanyView({
               {/*
                 * Past the deadline the sentence above would be a lie, and
                 * "Less than a day left" — what this rendered before — is a
-                * lie that repeats forever. The sweep that executes a
-                * scheduled account deletion is deliberately outside PR E and
-                * PR F, so this is the normal state of every stranded user
-                * from day 31 until that sweep exists, not a rare edge case.
+                * lie that repeats forever. `strandedAccountSweep`
+                * (functions/src/company/strandedAccountSweep.ts, issue #252
+                * step 6) now enforces the deadline, running at most every 24
+                * hours — so this state is reachable for up to a day after
+                * the deadline passes, on every stranded user, not a rare
+                * edge case. The copy below ("can be removed as soon as it
+                * is processed") is written to stay true either way.
                 */}
               {countdown.kind === 'passed' && (
                 <>
