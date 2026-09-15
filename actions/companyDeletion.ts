@@ -10,8 +10,9 @@ import {
   resumeSubscriptionAfterCancel,
 } from '@/lib/companyDeletionStripe'
 import { confirmationMatchesCompanyName } from '@/lib/companyDeletionUi'
+import { applyCancelWrites } from '@/lib/companyDeletionCancelWrites'
 import type { CancelTokenState } from '@/lib/queries/companyDeletionCancel'
-import type { CompanyDeletionCancelSource, CompanyDeletionCancelToken, CompanyDeletionRecord } from '@/types'
+import type { CompanyDeletionCancelToken, CompanyDeletionRecord } from '@/types'
 
 /**
  * Server actions for deleting a COMPANY (issue #252 step 5, PR F2). Deleting
@@ -314,35 +315,6 @@ async function finishCancellation(
       action: 'cancel_notification_mail_failed',
     })
   }
-}
-
-/**
- * The writes that turn a `requested` deletion into a cancelled one, applied
- * by both cancel paths through their own transactions.
- *
- * `FieldValue.delete()` on `deletion`, rather than a `state: 'canceled'`
- * value on it, is the data model's own rule: absence of the field is the ONLY
- * "nothing is going on" signal, so every reader — the sweep's query, the
- * banner, `docToCompany` — gets the right answer without learning a new
- * state. See the docblock on `CompanyDeletionState` in types/company.ts.
- */
-function applyCancelWrites(
-  tx: FirebaseFirestore.Transaction,
-  companyId: string,
-  requestId: string,
-  now: Timestamp,
-  source: CompanyDeletionCancelSource,
-  identity: { uid?: string; name: string; email?: string },
-): void {
-  tx.update(adminDb.doc(`companies/${companyId}`), { deletion: FieldValue.delete() })
-  tx.update(adminDb.doc(`companyDeletions/${requestId}`), {
-    state: 'canceled',
-    canceledAt: now,
-    canceledByName: identity.name,
-    ...(identity.uid ? { canceledByUid: identity.uid } : {}),
-    ...(identity.email ? { canceledByEmail: identity.email } : {}),
-    cancelSource: source,
-  })
 }
 
 export interface CancelCompanyDeletionResult {
