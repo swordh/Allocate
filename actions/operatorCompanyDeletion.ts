@@ -4,12 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
 import { getOperatorSession, rethrowRedirect, type OperatorSession } from '@/lib/operator-dal'
-import { applyCancelWrites } from '@/lib/companyDeletionCancelWrites'
-import {
-  pauseSubscriptionForDeletion,
-  recordStripeOutcome,
-  resumeSubscriptionAfterCancel,
-} from '@/lib/companyDeletionStripe'
+import { applyCancelWrites, finishCancellation } from '@/lib/companyDeletionCancelWrites'
+import { pauseSubscriptionForDeletion, recordStripeOutcome } from '@/lib/companyDeletionStripe'
 import { confirmationMatchesCompanyName } from '@/lib/companyDeletionUi'
 import { STALE_LEASE_MS } from '@/lib/operatorDeletionView'
 import type { CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/types'
@@ -43,10 +39,11 @@ import type { CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/typ
  *
  * ── Traceability, shared by all three ──────────────────────────────────────
  * Every one of these appends a `CompanyDeletionOperatorAction` entry to the
- * ledger's `operatorActions` array — the write path types/company.ts:189-190
- * says does not exist yet, and that PR 4's read view already renders (see
- * `DeletionHistoryList.tsx`). `byUid` and `byName` are ALWAYS set explicitly,
- * to a real string — never omitted — because `lib/operatorDeletionQueries.ts`
+ * ledger's `operatorActions` array — this file is the writer named in that
+ * type's own docblock (types/company.ts:199-216), and PR 4's read view
+ * already renders the result (see `DeletionHistoryList.tsx`). `byUid` and
+ * `byName` are ALWAYS set explicitly, to a real string — never omitted —
+ * because `lib/operatorDeletionQueries.ts`
  * (PR 4) collapses an OMITTED field to `null`, i.e. "redacted by the 24-month
  * retention job". Omitting them here would make a brand-new operator action
  * misrepresent itself as a two-year-old redacted one the moment it's read.
@@ -152,7 +149,7 @@ export async function cancelCompanyDeletionAsOperator(
   }
 
   const now = Timestamp.now()
-  let cancelled: { requestId: string } | null = null
+  let cancelled: { requestId: string; ledger: CompanyDeletionRecord } | null = null
 
   try {
     await adminDb.runTransaction(async (tx) => {
@@ -207,7 +204,7 @@ export async function cancelCompanyDeletionAsOperator(
         operatorActions,
       )
 
-      cancelled = { requestId: deletion.requestId }
+      cancelled = { requestId: deletion.requestId, ledger }
     })
   } catch (err) {
     const code = (err as { code?: GuardCode }).code
@@ -227,7 +224,7 @@ export async function cancelCompanyDeletionAsOperator(
     return { ok: true, nothingToCancel: true }
   }
 
-  const done: { requestId: string } = cancelled
+  const done: { requestId: string; ledger: CompanyDeletionRecord } = cancelled
   console.log('[actions/operatorCompanyDeletion]', {
     operator: session.email,
     companyId,
@@ -235,11 +232,15 @@ export async function cancelCompanyDeletionAsOperator(
     action: 'operator_cancelled_company_deletion',
   })
 
-  // Same Stripe resume every cancel path performs — best-effort, never
-  // fails the cancellation itself. See lib/companyDeletionStripe.ts's
-  // docblock on why neither Stripe call here is allowed to throw.
-  const stripeOutcome = await resumeSubscriptionAfterCancel(companyId)
-  await recordStripeOutcome(done.requestId, 'stripeResume', stripeOutcome)
+  // Same post-cancel effects every cancel path performs — Stripe resume AND
+  // mailing every remaining admin that the deletion was stopped. Sharing
+  // `finishCancellation` (not just the Stripe half) is the fix for this
+  // action being the one cancel path out of three that used to never queue
+  // that mail: the design brief's central case is zero admins left (nothing
+  // to mail), but an operator can just as well cancel for a company that
+  // STILL has administrators, and they deserve the same "it's stopped" mail
+  // any other cancellation gives them.
+  await finishCancellation(companyId, done.requestId, done.ledger, session.email, now.toDate().toISOString())
 
   revalidatePath(`/operator/customers/${companyId}`)
   revalidatePath('/operator/deletions')

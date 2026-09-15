@@ -4,13 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
-import {
-  pauseSubscriptionForDeletion,
-  recordStripeOutcome,
-  resumeSubscriptionAfterCancel,
-} from '@/lib/companyDeletionStripe'
+import { pauseSubscriptionForDeletion, recordStripeOutcome } from '@/lib/companyDeletionStripe'
 import { confirmationMatchesCompanyName } from '@/lib/companyDeletionUi'
-import { applyCancelWrites } from '@/lib/companyDeletionCancelWrites'
+import { applyCancelWrites, finishCancellation, toIso } from '@/lib/companyDeletionCancelWrites'
 import type { CancelTokenState } from '@/lib/queries/companyDeletionCancel'
 import type { CompanyDeletionCancelToken, CompanyDeletionRecord } from '@/types'
 
@@ -42,21 +38,6 @@ type GuardError = Error & { code: GuardCode }
 
 function guardError(code: GuardCode, message: string): GuardError {
   return Object.assign(new Error(message), { code })
-}
-
-/** e.g. "12 September 2026" — matches functions/src/company/format.ts's `formatDateFull`,
- *  duplicated because functions/ compiles as its own project with no alias back here. */
-function formatDateFull(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-function toIso(value: unknown): string {
-  if (value && typeof (value as { toDate?: () => Date }).toDate === 'function') {
-    return (value as { toDate: () => Date }).toDate().toISOString()
-  }
-  return typeof value === 'string' ? value : ''
 }
 
 // ── Request ───────────────────────────────────────────────────────────────────
@@ -248,74 +229,16 @@ export async function requestCompanyDeletion(
 }
 
 // ── Cancel ────────────────────────────────────────────────────────────────────
-
-/**
- * Everything that has to happen after a cancellation has been COMMITTED,
- * shared by the in-product cancel and the mailed-link cancel so the two can
- * never drift on what "cancelled" means for the customer.
- *
- * Both effects are best-effort and neither can un-cancel the deletion: by
- * the time this runs, the company document no longer carries a `deletion`
- * field and the ledger says `canceled`. Failing here must never turn a
- * successful cancellation into an error the admin sees, because the one
- * thing worse than a missing confirmation email is an admin who believes
- * her cancellation did not take and goes looking for another way to stop a
- * deletion that is already stopped.
- */
-async function finishCancellation(
-  companyId: string,
-  requestId: string,
-  ledger: CompanyDeletionRecord,
-  cancelledByName: string,
-  cancelledAtIso: string,
-): Promise<void> {
-  const stripeOutcome = await resumeSubscriptionAfterCancel(companyId)
-  await recordStripeOutcome(requestId, 'stripeResume', stripeOutcome)
-
-  // "Deletion stopped" goes to every ADMIN, mirroring who was told it was
-  // requested. Crew are never mailed about the deletion lifecycle — the
-  // in-product banner vanishing is their signal (design brief, "Mail går
-  // bara till administratörer").
-  try {
-    const adminsSnap = await adminDb
-      .collection(`companies/${companyId}/members`)
-      .where('role', '==', 'admin')
-      .get()
-
-    const openUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://allocate.at'}/bookings`
-    const scheduledForFormatted = formatDateFull(toIso(ledger.scheduledFor))
-    const cancelledAtFormatted = formatDateFull(cancelledAtIso)
-
-    const batch = adminDb.batch()
-    let queued = 0
-    for (const adminDoc of adminsSnap.docs) {
-      const email = adminDoc.data().email as string | undefined
-      if (!email) continue
-      batch.set(adminDb.collection('mail').doc(), {
-        to: email,
-        status: 'queued',
-        template: 'companyDeletionCancelled',
-        companyId,
-        data: {
-          companyName: ledger.companyName ?? '',
-          cancelledByName,
-          cancelledAtFormatted,
-          scheduledForFormatted,
-          openUrl,
-        },
-      })
-      queued++
-    }
-    if (queued > 0) await batch.commit()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/companyDeletion]', {
-      companyId,
-      error: message,
-      action: 'cancel_notification_mail_failed',
-    })
-  }
-}
+//
+// `finishCancellation` — everything that has to happen after a cancellation
+// has been COMMITTED (resuming Stripe, mailing admins) — now lives in
+// lib/companyDeletionCancelWrites.ts, alongside `applyCancelWrites`. It moved
+// there so `actions/operatorCompanyDeletion.ts` (issue #252 step 6, PR 5)
+// could share the exact same post-cancel effects for its own cancel path,
+// rather than the operator cancel being the one path out of three that never
+// tells a company's administrators their deletion was stopped. See that
+// function's docblock for why it deliberately is NOT exported as a server
+// action itself.
 
 export interface CancelCompanyDeletionResult {
   ok?: true
