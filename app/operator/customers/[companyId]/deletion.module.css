@@ -1,0 +1,159 @@
+/*
+ * New file for the deletion history views (issue #252 step 6, PR 4) —
+ * deliberately NOT added to detail.module.css. That file owns the existing
+ * bespoke status badges (statusColor() etc.) the brief says not to touch;
+ * keeping the new deletion states in their own module means nothing here
+ * can collide with or get mistaken for those.
+ */
+
+.sectionLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.sectionLabelSmall {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-pale);
+  text-transform: uppercase;
+}
+
+.deletionSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statusCallout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-medium);
+}
+
+.statusCalloutDanger {
+  border-color: var(--danger);
+}
+
+.noAdminsNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-transform: uppercase;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.historyRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-medium);
+}
+
+.historyRowHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.historyBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaLine {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-secondary);
+}
+
+.remaining {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  color: var(--danger);
+}
+
+.redacted {
+  color: var(--text-pale);
+  font-style: italic;
+}
+
+.errorText {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.companyLink {
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+
+.stripeLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operatorActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle, var(--border-medium));
+}
+
+.operatorActionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The deleted-company fallback page (DeletedCompanyView) — the rest of
+ * CustomerDetailView's layout (header, metric grid, etc.) doesn't apply
+ * here since every subcollection it reads is gone with the company doc. */
+.deletedPage {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}

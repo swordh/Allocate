@@ -1,0 +1,37 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-weight: var(--fw-bold);
+  font-size: 22px;
+  color: var(--text-primary);
+}
+
+.segmentRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmentRow a {
+  text-decoration: none;
+}
+
+.cappedNotice {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-pale);
+}
