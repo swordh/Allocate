@@ -197,12 +197,22 @@ export interface CompanyDeletionStripeOutcome {
 }
 
 /**
- * One entry per operator intervention on this deletion (steg 6, not built
- * yet). AUTHORED only from `app/operator/...` server actions — the purge
- * itself never appends here, it only reads/writes the phase/progress and
- * lease fields below. One other writer exists and only ever subtracts: the
- * 24-month retention job (functions/src/company/purgeLogs.ts) rewrites the
- * array keeping `action` and `at` and blanking the rest.
+ * One entry per operator intervention on this deletion (issue #252 step 6).
+ * AUTHORED by `actions/operatorCompanyDeletion.ts` (PR 5) — its three
+ * exports (`cancelCompanyDeletionAsOperator`, `requestCompanyDeletionAsOperator`,
+ * `requeueFailedCompanyDeletion`) are the only writers of NEW entries; the
+ * purge itself never appends here, it only reads/writes the phase/progress
+ * and lease fields below. One other writer exists and only ever subtracts:
+ * the 24-month retention job (functions/src/company/purgeLogs.ts) rewrites
+ * the array keeping `action` and `at` and blanking the rest.
+ *
+ * Every writer — this one included, and any future one — MUST set `byUid`
+ * and `byName` EXPLICITLY on every entry it appends, to a real string or to
+ * `null`, never by omitting the field. `lib/operatorDeletionQueries.ts`'s
+ * mapping treats an omitted field as `null` (see the `byUid`/`byName` pair's
+ * own docblock immediately below), which reads back as "redacted by the
+ * 24-month retention job" — an entry an operator wrote five minutes ago must
+ * never be able to look two years old.
  */
 export interface CompanyDeletionOperatorAction {
   action: string
