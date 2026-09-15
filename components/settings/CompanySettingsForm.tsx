@@ -326,9 +326,9 @@ export default function CompanySettingsForm({
               )
             ) : (
               <>
-                Deletes {initialName || 'this company'} and everything in it, seven days after you confirm.
-                It keeps working as normal for every member during that time, and any administrator can
-                cancel. Remaining paid time is not refunded.
+                Deletes {initialName || 'this company'} seven days after you confirm, removing every
+                member&apos;s access along with it. Until then it keeps working as normal, any
+                administrator can cancel, and remaining paid time is not refunded.
               </>
             )}
           </div>
