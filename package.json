@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:emulator": "PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" firebase emulators:exec --project demo-allocate-test --only firestore,auth \"vitest run --config vitest.emulator.config.ts\""
+    "test:emulator": "PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" firebase emulators:exec --project demo-allocate-test --only firestore,auth \"vitest run --config vitest.emulator.config.ts\"",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "firebase": "^12.11.0",
