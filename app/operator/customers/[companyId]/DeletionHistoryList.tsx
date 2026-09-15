@@ -88,7 +88,34 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
   return (
     <div className={styles.historyRow}>
       <div className={styles.historyRowHeader}>
-        <Chip size="tag" interactive={false} tone={row.state === 'failed' || stuck ? 'danger' : row.state === 'completed' ? 'neutral' : 'accent'}>
+        {/*
+         * `accent` is this app's genuine-success tone — STRIPE_EFFECT_LABELS.applied
+         * (lib/operatorDeletionView.ts) uses it for a Stripe action that actually
+         * succeeded. 'requested' is a pending, destructive, time-sensitive state, not
+         * a success, so it must never render in that tone — an operator scanning the
+         * list would read "DELETION REQUESTED" as "this went fine". 'canceled' is a
+         * resolved, harmless outcome (the deletion was averted) rather than a success
+         * to celebrate either, so it groups with 'completed' instead of `accent`.
+         * Only `danger` (failed/stuck) and `accent` (executing — the one state still
+         * genuinely "in flight towards a positive Stripe-style outcome") keep a
+         * non-neutral tone; everything already resolved, including 'requested'
+         * pending resolution, falls back to `neutral`. The row's own "Scheduled for
+         * ... — N days left" text (`styles.remaining`) carries the actual urgency
+         * signal for 'requested', not this chip's color — see Chip.tsx, whose three
+         * tones (neutral | accent | danger) have no fourth "caution" option to spend
+         * on that here.
+         */}
+        <Chip
+          size="tag"
+          interactive={false}
+          tone={
+            row.state === 'failed' || stuck
+              ? 'danger'
+              : row.state === 'executing'
+                ? 'accent'
+                : 'neutral'
+          }
+        >
           {LEDGER_STATE_LABELS[row.state]}
         </Chip>
         {stuck && (

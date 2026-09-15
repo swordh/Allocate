@@ -61,6 +61,18 @@ function mapDeletionDoc(doc: FirebaseFirestore.QueryDocumentSnapshot): CompanyDe
     operatorActions: Array.isArray(d.operatorActions)
       ? d.operatorActions.map((a: Record<string, unknown>) => ({
           action: String(a.action ?? ''),
+          // `?? null` is safe here, unlike on requestedByUid/canceledByUid above:
+          // the only writer that exists today is the 24-month retention job
+          // (functions/src/company/purgeLogs.ts), and it always sets both fields
+          // to an explicit `null`, never omits them — `CompanyDeletionOperatorAction`
+          // also types them as `string | null`, not optional, so there is no
+          // "never had an identity" case to collapse into "redacted" yet. The
+          // step 6 authoring path that appends operator-written entries has not
+          // been built (see the docblock on that type in types/company.ts). If a
+          // future writer on that path ever omits byUid/byName instead of writing
+          // null, this line will silently misreport "redacted" for an entry that
+          // in fact never carried an actor — replace `?? null` with a pass-through
+          // (like requestedByUid above) at that point.
           byUid: (a.byUid as string | null) ?? null,
           byName: (a.byName as string | null) ?? null,
           at: iso(a.at as TimestampLike),
