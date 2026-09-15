@@ -1,6 +1,6 @@
 import { formatDateFullInZone } from '@/lib/dates'
 import { canCancelCompanyDeletionInProduct } from '@/lib/companyDeletionUi'
-import type { CompanyDeletion, CompanyDeletionState, Role } from '@/types'
+import type { CompanyDeletionState, Role } from '@/types'
 import type { NoticeTone } from '@/components/ui/ErrorBanner'
 
 /**
@@ -39,9 +39,10 @@ export interface CompanyDeletionBannerDisplay {
  * Reuses `canCancelCompanyDeletionInProduct` rather than re-deriving "is this
  * still `requested`" here, so this banner and `CompanySettingsForm` /
  * `SubscriptionView` can never disagree about whether the cancel path is
- * honest to offer. Only `state` is read from `deletion` by that function, so
- * a `{ state }`-only value stands in for the full `CompanyDeletion` shape
- * this banner never has.
+ * honest to offer. That function takes `Pick<CompanyDeletion, 'state'>`
+ * precisely so a caller with only `CompanyDeletionBannerData` — never the
+ * full `CompanyDeletion` mirror — can pass `deletion` straight through
+ * without a cast.
  */
 export function getCompanyDeletionBannerDisplay(
   deletion: CompanyDeletionBannerData | null,
@@ -52,15 +53,25 @@ export function getCompanyDeletionBannerDisplay(
 
   const isAdmin = role === 'admin'
   const date = formatDateFullInZone(deletion.scheduledFor, timezone)
+  // formatDateFullInZone's own "cannot render this" sentinel. `scheduledFor`
+  // should always be a real ISO string by the time it reaches here, but
+  // app/(app)/layout.tsx can hand down '' if the company document ever has
+  // `deletion.state` set without `deletion.scheduledFor` (should not happen,
+  // nothing upstream guarantees it structurally). "scheduled for deletion on
+  // —" would be a strange sentence, not a false one, but it is also not
+  // useful — if we don't know when, the honest sentence has no date clause
+  // at all rather than a placeholder standing in for one.
+  const hasKnownDate = date !== '—'
 
   switch (deletion.state) {
     case 'requested': {
-      const cancelable = isAdmin && canCancelCompanyDeletionInProduct({ state: deletion.state } as CompanyDeletion)
+      const cancelable = isAdmin && canCancelCompanyDeletionInProduct(deletion)
+      const dateClause = hasKnownDate ? ` on ${date}` : ''
       return {
         tone: 'danger',
         message: isAdmin
-          ? `This company is scheduled for deletion on ${date}. Every member will lose access when it happens — cancel it below if that's not intended.`
-          : `This company is scheduled for deletion on ${date}. Every member, including you, will lose access when it happens. Only an administrator can cancel it.`,
+          ? `This company is scheduled for deletion${dateClause}. Every member will lose access when it happens — cancel it below if that's not intended.`
+          : `This company is scheduled for deletion${dateClause}. Every member, including you, will lose access when it happens. Only an administrator can cancel it.`,
         cancelHref: cancelable ? '/settings/company' : undefined,
       }
     }

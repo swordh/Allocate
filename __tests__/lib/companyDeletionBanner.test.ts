@@ -61,6 +61,40 @@ describe('getCompanyDeletionBannerDisplay', () => {
       expect(d!.message).toContain('23 September 2026')
       expect(d!.message).not.toContain('22 September 2026')
     })
+
+    // app/(app)/layout.tsx can in principle hand down `scheduledFor: ''` if
+    // `deletion.state` is present on the company document without
+    // `deletion.scheduledFor` (nothing upstream guarantees the pair — see
+    // the layout's own comment). formatDateFullInZone renders that as the
+    // sentinel '—', which would make "scheduled for deletion on —" a
+    // strange, useless sentence — not false, just uninformative. The chosen
+    // fix: drop the date clause entirely rather than print the sentinel.
+    it('drops the date clause instead of printing "—" when scheduledFor is empty', () => {
+      const admin = getCompanyDeletionBannerDisplay(deletion({ scheduledFor: '' }), 'admin', TIMEZONE)
+      // The admin copy legitimately contains an em dash as punctuation
+      // ("— cancel it below…") — what must NOT appear is the sentinel
+      // standing in for a date, i.e. "on —".
+      expect(admin!.message).not.toContain('on —')
+      expect(admin!.message).toBe(
+        "This company is scheduled for deletion. Every member will lose access when it happens — cancel it below if that's not intended.",
+      )
+      // Still cancelable for an admin — the missing date says nothing about
+      // whether `state` is still 'requested'.
+      expect(admin!.cancelHref).toBe('/settings/company')
+
+      const crew = getCompanyDeletionBannerDisplay(deletion({ scheduledFor: '' }), 'crew', TIMEZONE)
+      expect(crew!.message).not.toContain('on —')
+      expect(crew!.message).toBe(
+        'This company is scheduled for deletion. Every member, including you, will lose access when it happens. Only an administrator can cancel it.',
+      )
+    })
+
+    // Same sentinel, reached via an unparseable date instead of an empty one.
+    it('drops the date clause for an unparseable scheduledFor too', () => {
+      const d = getCompanyDeletionBannerDisplay(deletion({ scheduledFor: 'not-a-date' }), 'admin', TIMEZONE)
+      expect(d!.message).not.toContain('on —')
+      expect(d!.message).toContain('This company is scheduled for deletion.')
+    })
   })
 
   describe('state: executing', () => {
@@ -122,7 +156,12 @@ describe('getCompanyDeletionBannerDisplay', () => {
     })
   })
 
-  it('falls back to UTC for an unknown timezone instead of throwing', () => {
-    expect(() => getCompanyDeletionBannerDisplay(deletion(), 'admin', 'Not/AZone')).not.toThrow()
+  it('falls back to UTC for an unknown timezone and still renders a real date', () => {
+    // scheduledFor is 10:00 UTC, so the UTC fallback reads the same calendar
+    // day as the Stockholm-zoned tests above — this isn't just "didn't
+    // throw", it locks that the fallback still produces a real date rather
+    // than silently going blank.
+    const d = getCompanyDeletionBannerDisplay(deletion(), 'admin', 'Not/AZone')
+    expect(d!.message).toContain('22 September 2026')
   })
 })
