@@ -9,6 +9,7 @@ import {
   recordStripeOutcome,
   resumeSubscriptionAfterCancel,
 } from '@/lib/companyDeletionStripe'
+import { confirmationMatchesCompanyName } from '@/lib/companyDeletionUi'
 import type { CancelTokenState } from '@/lib/queries/companyDeletionCancel'
 import type { CompanyDeletionCancelSource, CompanyDeletionCancelToken, CompanyDeletionRecord } from '@/types'
 
@@ -40,31 +41,6 @@ type GuardError = Error & { code: GuardCode }
 
 function guardError(code: GuardCode, message: string): GuardError {
   return Object.assign(new Error(message), { code })
-}
-
-/**
- * Server-side confirmation check. The client asks the admin to type the
- * company's name; this is where that actually counts for something.
- *
- * The brief requires "en medveten handling, inte bara ett klick", and a
- * client-side comparison is not that — it is a suggestion the browser is
- * free to skip. Every server action in this codebase is a public endpoint to
- * anyone holding a session cookie (see the CRITICAL note in proxy.ts:
- * actions are not routes and the middleware never sees them), so a
- * confirmation enforced only in a React component is enforced nowhere.
- *
- * Case and surrounding whitespace are forgiven, interior wording is not: an
- * admin who types "rigg & rep ab" plainly meant the company called "Rigg &
- * Rep AB", and refusing that teaches people to paste rather than read. What
- * is NOT forgiven is a different name, an empty string, or the literal word
- * "DELETE" — the point of the ritual is that you have to have looked at
- * which company you are on.
- */
-function confirmationMatches(input: string, companyName: string): boolean {
-  const normalize = (s: string) => s.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
-  const normalizedName = normalize(companyName)
-  if (normalizedName.length === 0) return false
-  return normalize(input) === normalizedName
 }
 
 /** e.g. "12 September 2026" — matches functions/src/company/format.ts's `formatDateFull`,
@@ -180,7 +156,7 @@ export async function requestCompanyDeletion(
       // (correct) text anyway — so nothing legitimate is lost by demanding it
       // every time, and a caller who never typed the name never gets a
       // success out of this action.
-      if (!confirmationMatches(confirmationText, companyName)) {
+      if (!confirmationMatchesCompanyName(confirmationText, companyName)) {
         throw guardError(
           'confirmation',
           `To delete this company, type its name exactly: ${companyName}`,

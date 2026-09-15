@@ -1,18 +1,28 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { updateCompanySettings, addCategory, removeCategory } from '@/actions/company'
+import { requestCompanyDeletion, cancelCompanyDeletion } from '@/actions/companyDeletion'
+import { confirmationMatchesCompanyName, canCancelCompanyDeletionInProduct } from '@/lib/companyDeletionUi'
 import { TIMEZONE_OPTIONS } from '@/constants/company'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import type { Category } from '@/types'
+import type { Category, CompanyDeletion } from '@/types'
 import styles from './CompanySettingsForm.module.css'
 
 function pluralize(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? '' : 'S'}`
+}
+
+function formatDateFull(iso: string | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 interface CompanySettingsFormProps {
@@ -20,6 +30,8 @@ interface CompanySettingsFormProps {
   categories: Category[]
   typeCounts: Record<string, number>
   timezone?: string
+  /** Present when this company already has a deletion scheduled (issue #252 step 6). */
+  deletion?: CompanyDeletion | null
 }
 
 export default function CompanySettingsForm({
@@ -27,7 +39,9 @@ export default function CompanySettingsForm({
   categories: initialCategories,
   typeCounts,
   timezone: initialTimezone,
+  deletion = null,
 }: CompanySettingsFormProps) {
+  const router = useRouter()
   const [companyName, setCompanyName] = useState(initialName)
   const [categories, setCategories] = useState<Category[]>(
     [...(initialCategories ?? [])].sort((a, b) => a.name.localeCompare(b.name))
@@ -46,6 +60,13 @@ export default function CompanySettingsForm({
   // Remove-category confirmation.
   const [removeTarget, setRemoveTarget] = useState<Category | null>(null)
   const [removing, setRemoving] = useState(false)
+
+  // Danger zone — request/cancel company deletion (issue #252 step 6).
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('')
+  const [requestingDeletion, setRequestingDeletion] = useState(false)
+  const [deletionError, setDeletionError] = useState<string | null>(null)
+  const [cancellingDeletion, setCancellingDeletion] = useState(false)
 
   useEffect(() => {
     try {
@@ -123,7 +144,58 @@ export default function CompanySettingsForm({
     setRemoveTarget(null)
   }
 
+  async function handleRequestDeletion() {
+    setRequestingDeletion(true)
+    setDeletionError(null)
+
+    const result = await requestCompanyDeletion(deleteConfirmInput)
+
+    setRequestingDeletion(false)
+
+    if (result.error) {
+      setDeletionError(result.error)
+      return
+    }
+
+    // Success covers BOTH a fresh request and `alreadyRequested` — the
+    // server treats a repeat as a no-op double-click guard, not an error,
+    // and the UI does the same. Re-fetching from the server (rather than
+    // fabricating a CompanyDeletion locally) is what makes `requestedByName`
+    // and the rest of the record correct without duplicating server logic
+    // here.
+    setDeleteOpen(false)
+    setDeleteConfirmInput('')
+    router.refresh()
+  }
+
+  async function handleCancelDeletion() {
+    setCancellingDeletion(true)
+    setDeletionError(null)
+
+    const result = await cancelCompanyDeletion()
+
+    setCancellingDeletion(false)
+
+    if (result.error) {
+      setDeletionError(result.error)
+      return
+    }
+
+    // `deletion` is FieldValue.delete()'d server-side, never set to a
+    // 'canceled' value — re-fetching is what makes it disappear here too.
+    router.refresh()
+  }
+
   const tzChanged = timezone !== (initialTimezone ?? 'UTC')
+  const deletionCancelable = canCancelCompanyDeletionInProduct(deletion)
+  // Matched against `initialName` (the SAVED name), not the possibly-edited
+  // `companyName` field state above — `requestCompanyDeletion` checks the
+  // typed text against the name on the Firestore document, which is
+  // `initialName` until "SAVE CHANGES" is pressed. Matching the live input
+  // instead would let this button enable on text the server is certain to
+  // reject.
+  const confirmDisabled =
+    requestingDeletion || !confirmationMatchesCompanyName(deleteConfirmInput, initialName)
 
   return (
     <div className={styles.container}>
@@ -228,6 +300,100 @@ export default function CompanySettingsForm({
           </div>
         </div>
       </div>
+
+      {/* Danger zone — request/cancel company deletion. Admin-only in
+          practice because this whole page redirects non-admins before it
+          renders (app/(app)/settings/company/page.tsx), but the server
+          action re-checks the role live from the transaction regardless —
+          this component is never the only gate. */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>Delete company</div>
+          <div className={styles.rowHelp}>
+            {deletion ? (
+              deletionCancelable ? (
+                <>
+                  {deletion.requestedByName || 'An administrator'} requested this on{' '}
+                  {formatDateFull(deletion.requestedAt)}. {initialName} works as usual until it is deleted
+                  on {formatDateFull(deletion.scheduledFor)} — every member is affected, and any
+                  administrator can cancel before then. Remaining paid time is not refunded.
+                </>
+              ) : (
+                <>
+                  The deletion of {initialName} has already started and can no longer be stopped here.
+                  Contact support.
+                </>
+              )
+            ) : (
+              <>
+                Deletes {initialName || 'this company'} seven days after you confirm, removing every
+                member&apos;s access along with it. Until then it keeps working as normal, any
+                administrator can cancel, and remaining paid time is not refunded.
+              </>
+            )}
+          </div>
+        </div>
+        <div className={styles.buttonsRow}>
+          {deletion ? (
+            deletionCancelable && (
+              <Button variant="secondary" size="sm" onClick={handleCancelDeletion} disabled={cancellingDeletion}>
+                {cancellingDeletion ? 'CANCELLING…' : 'CANCEL DELETION'}
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setDeleteOpen((v) => !v)}
+              disabled={requestingDeletion}
+            >
+              REQUEST DELETION
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {!deletion && deleteOpen && (
+        <div className={styles.deleteConfirm}>
+          <span className={styles.deleteText}>
+            Type <strong>{initialName}</strong> to confirm. This starts a seven-day countdown; the
+            company keeps working until then, and any administrator can cancel it before it runs out.
+          </span>
+          <div className={styles.deleteInputRow}>
+            <Input
+              value={deleteConfirmInput}
+              onChange={(e) => {
+                setDeleteConfirmInput(e.target.value)
+                setDeletionError(null)
+              }}
+              placeholder={initialName}
+              className={styles.deleteInput}
+            />
+            <Button
+              variant="danger-solid"
+              size="sm"
+              onClick={handleRequestDeletion}
+              disabled={confirmDisabled}
+            >
+              {requestingDeletion ? 'REQUESTING…' : 'CONFIRM'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setDeleteOpen(false)
+                setDeleteConfirmInput('')
+                setDeletionError(null)
+              }}
+              disabled={requestingDeletion}
+            >
+              CANCEL
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {deletionError && <ErrorBanner tone="danger">{deletionError}</ErrorBanner>}
 
       <div className={styles.saveRow}>
         {saved && <span className={styles.saveNote}>COMPANY SETTINGS SAVED</span>}
