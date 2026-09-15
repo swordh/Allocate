@@ -29,9 +29,16 @@ export interface NavItem {
 // The operator desktop nav (design_handoff_allocate/screens/operator/*.dc.html,
 // header <nav>) carries no icons, and neither does the drawer's nav list —
 // so this reuses the plain NavItem shape rather than TopNavItem.
+// 'DELETIONS' added for issue #252 step 6 (PR 4) — the two site-wide entry
+// points the design brief requires ("hitta alla företag som har en radering
+// på gång" / "hitta allt som fastnat eller misslyckats") need a home that
+// doesn't presuppose knowing which company to look at, same as CUSTOMERS
+// and FEEDBACK. See app/operator/deletions/page.tsx's own docblock for why
+// it's one segmented page rather than two.
 export const OPERATOR_NAV: NavItem[] = [
-  { label: 'CUSTOMERS', href: '/operator/customers' },
-  { label: 'FEEDBACK',  href: '/operator/feedback'  },
+  { label: 'CUSTOMERS',  href: '/operator/customers' },
+  { label: 'DELETIONS',  href: '/operator/deletions' },
+  { label: 'FEEDBACK',   href: '/operator/feedback'  },
 ]
 
 export const BOOKINGS_ITEMS: NavItem[] = [

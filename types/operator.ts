@@ -197,3 +197,81 @@ export const PLAN_FILTER_LABELS: Record<PlanFilter, string> = {
   starter: 'Starter',
   basic: 'Basic',
 }
+
+// ─── Company deletion — operator views (issue #252 step 6, PR 4) ──────────
+//
+// Read-only shapes for the two site-wide deletion list entries and the
+// per-company history. Sourced from `companyDeletions/{requestId}` — the
+// ledger, never `companies/{cid}.deletion` — per the plan's "läs ledgern,
+// inte spegeln": the mirror on the company document can never carry
+// `'failed'` (see types/company.ts's `CompanyDeletionState` docblock) and
+// does not survive a completed purge, so a view built on it would be blind
+// to exactly the two things this screen exists to surface.
+
+/**
+ * One row of `companyDeletions/{requestId}`, projected down to what the
+ * list and detail views render. Every timestamp is already an ISO string —
+ * conversion from Firestore `Timestamp` happens once, in the server page,
+ * via lib/firestore-timestamps.ts.
+ *
+ * The identity fields keep the `null` (redacted) vs `undefined` (never
+ * happened) distinction from `CompanyDeletionRecord` verbatim — see
+ * lib/operatorDeletionView.ts's `identityDisplay`. Do not default either to
+ * `''` or `'—'` anywhere upstream of that function; that is precisely the
+ * collapse the design brief forbids.
+ */
+export interface CompanyDeletionRow {
+  requestId: string
+  companyId: string
+  /** Snapshot at request time — may be the only surviving name once the
+   *  company document itself is gone. */
+  companyName: string
+  mode: 'immediate' | 'window'
+  state: 'requested' | 'executing' | 'completed' | 'canceled' | 'failed'
+
+  requestedAt: string                 // ISO string
+  requestedByUid: string | null | undefined
+  requestedByName: string | null | undefined
+  requestedByEmail: string | null | undefined
+  scheduledFor: string                // ISO string
+
+  canceledAt?: string                 // ISO string
+  canceledByUid?: string | null
+  canceledByName?: string | null
+  canceledByEmail?: string | null
+  cancelSource?: 'admin_ui' | 'cancel_link'
+
+  completedAt?: string                // ISO string
+
+  stripePause?: { at: string; effect: string; error?: string }
+  stripeResume?: { at: string; effect: string; error?: string }
+
+  operatorActions?: {
+    action: string
+    byUid: string | null
+    byName: string | null
+    at: string
+    note?: string
+  }[]
+
+  phase?: 'stripe' | 'invitations' | 'members' | 'subtree' | 'orphans' | 'finalize'
+  completedPhases?: string[]
+  phaseCounts?: Record<string, number>
+
+  attempts: number
+  lastHeartbeatAt?: string            // ISO string
+  lastError?: string | null
+}
+
+export const DELETION_SEGMENTS = ['active', 'stuck', 'all'] as const
+export type DeletionSegment = (typeof DELETION_SEGMENTS)[number]
+
+export const DELETION_SEGMENT_LABELS: Record<DeletionSegment, string> = {
+  // The support entry point: "someone got in touch, something's wrong" —
+  // start from everything currently in flight.
+  active: 'In progress',
+  // The self-discovery entry point: nobody has to report this for it to be
+  // findable. See lib/operatorDeletionView.ts's `isStuckDeletion`.
+  stuck: 'Stuck or failed',
+  all: 'All history',
+}

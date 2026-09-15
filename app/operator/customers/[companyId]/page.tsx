@@ -2,8 +2,10 @@ import { getOperatorSession } from '@/lib/operator-dal'
 import { adminDb } from '@/lib/firebase-admin'
 import { stripe } from '@/lib/stripe'
 import CustomerDetailView from './CustomerDetailView'
+import DeletedCompanyView from './DeletedCompanyView'
 import { notFound } from 'next/navigation'
 import { iso, isoOrNull, tsToMillis, isoToMillis, unixSecondsToMillis } from '@/lib/firestore-timestamps'
+import { queryDeletionsByCompany } from '@/lib/operatorDeletionQueries'
 import { sortFeed, type FeedEntry } from './activity'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -44,7 +46,7 @@ export default async function CustomerDetailPage({
   // without it — so it stays unwrapped, same as the list page leaves its
   // main `companies` scan unwrapped. Every other read here is optional: the
   // page degrades that one section rather than disappearing.
-  const [companyDoc, membersSnap, bookingsCountSnap, equipmentCountSnap, bookings30dSnap, recentBookingsSnap, notesSnap, planEventsSnap] =
+  const [companyDoc, membersSnap, bookingsCountSnap, equipmentCountSnap, bookings30dSnap, recentBookingsSnap, notesSnap, planEventsSnap, deletionRows, adminCountSnap] =
     await Promise.all([
       adminDb.doc(`companies/${companyId}`).get(),
       safeRead(adminDb.collection(`companies/${companyId}/members`).get(), 'members', { companyId }),
@@ -64,9 +66,35 @@ export default async function CustomerDetailPage({
         { companyId },
       ),
       safeRead(adminDb.collection('companyEvents').where('companyId', '==', companyId).orderBy('at', 'desc').limit(20).get(), 'companyEvents', { companyId }),
+      // Read from the LEDGER, never `companies/{id}.deletion` — see
+      // lib/operatorDeletionQueries.ts's docblock. Fetched unconditionally
+      // (not gated on companyDoc.exists) because it also has to answer the
+      // "company doc is gone" case below.
+      safeRead(queryDeletionsByCompany(companyId), 'companyDeletions', { companyId }),
+      // Admins remaining — "kan företaget stoppas inifrån, eller är supporten
+      // enda vägen" per the design brief. A plain count query, not
+      // lib/companyStats.ts's `readMemberCounts` — that helper requires a
+      // `Transaction` and can self-heal by WRITING the counter doc, which
+      // this read-only page must never do (PR 5's job, not this one's).
+      safeRead(adminDb.collection(`companies/${companyId}/members`).where('role', '==', 'admin').count().get(), 'adminCount', { companyId }),
     ])
 
-  if (!companyDoc.exists) notFound()
+  // A company whose document is gone can still have a full deletion
+  // history — that survival is the entire point of the ledger being a
+  // top-level collection (see types/company.ts on CompanyDeletionRecord).
+  // Falling straight to notFound() here, as this page used to, would make
+  // every completed deletion permanently unreachable from this URL — which
+  // is exactly the operator view the design brief asks for ("Att företaget
+  // är raderat ... ska synas att det inte går"). Only fall back to a true
+  // 404 when there is no ledger trail either (an actually-unknown id) or
+  // the ledger read itself failed (degrade honestly rather than claim
+  // either outcome).
+  if (!companyDoc.exists) {
+    if (deletionRows && deletionRows.length > 0) {
+      return <DeletedCompanyView companyId={companyId} rows={deletionRows} />
+    }
+    notFound()
+  }
 
   const data = companyDoc.data()!
   const companyCreatedAtMs = tsToMillis(data.createdAt)
@@ -272,6 +300,11 @@ export default async function CustomerDetailPage({
         bookingHistory: bookingHistoryUnavailable,
         notes: notesUnavailable,
         planEvents: planEventsUnavailable,
+      }}
+      deletion={{
+        rows: deletionRows ?? [],
+        unavailable: deletionRows === null,
+        adminCount: adminCountSnap ? adminCountSnap.data().count : null,
       }}
     />
   )

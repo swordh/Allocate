@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { addOperatorNote } from './actions'
 import type { FeedEntry } from './activity'
 import Icon from '@/components/ui/Icon'
+import DeletionSection from './DeletionSection'
+import type { CompanyDeletionRow } from '@/types/operator'
 import styles from './detail.module.css'
 
 interface Subscription {
@@ -73,6 +75,11 @@ interface CustomerDetailViewProps {
   feed: FeedEntry[]
   paymentsUnavailable: boolean
   unavailable: Unavailable
+  deletion: {
+    rows: CompanyDeletionRow[]
+    unavailable: boolean
+    adminCount: number | null
+  }
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -396,6 +403,7 @@ export default function CustomerDetailView({
   feed,
   paymentsUnavailable,
   unavailable,
+  deletion,
 }: CustomerDetailViewProps) {
   const [copied, setCopied] = useState(false)
   const [draft, setDraft] = useState('')
@@ -511,9 +519,10 @@ export default function CustomerDetailView({
             </div>
           </div>
           <TeamSection members={members} teamUnavailable={unavailable.team} />
+          <DeletionSection rows={deletion.rows} historyUnavailable={deletion.unavailable} adminCount={deletion.adminCount} />
         </div>
 
-        {/* ---- Mobile: USAGE -> SUBSCRIPTION -> ACTIVITY -> TEAM -> NOTES ---- */}
+        {/* ---- Mobile: USAGE -> SUBSCRIPTION -> ACTIVITY -> TEAM -> DELETION -> NOTES ---- */}
         <div className={styles.mobileOnly}>
           <UsageSection company={company} members={members} stats={stats} teamUnavailable={unavailable.team} />
           <SubscriptionSection rows={subRows} />
@@ -525,6 +534,7 @@ export default function CustomerDetailView({
             planEventsUnavailable={unavailable.planEvents}
           />
           <TeamSection members={members} teamUnavailable={unavailable.team} />
+          <DeletionSection rows={deletion.rows} historyUnavailable={deletion.unavailable} adminCount={deletion.adminCount} />
           <NotesPanel {...notesPanelSharedProps} variant="inline" />
         </div>
       </div>
