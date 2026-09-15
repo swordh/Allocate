@@ -146,6 +146,51 @@ function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
   return `Cannot delete account: ${buildBlockedClause(blockedCompanies)}`
 }
 
+/**
+ * Structured, per-company result of `getAccountDeletionPreview` below.
+ * Deliberately two-level: `status: 'error'` is the TOP-LEVEL failure (the
+ * membership list itself couldn't be read — nothing to show at all), kept
+ * distinct from a per-company `outcome: 'unknown'` inside `companies`, which
+ * means every OTHER company's outcome is still trustworthy and only this one
+ * company's read failed. Collapsing the two would force the UI to treat "we
+ * know nothing" and "we know everything except this one company" the same
+ * way, which is exactly the "blocked and unknown look identical" problem the
+ * designbrief calls out for the existing `{ error: string }` shape.
+ */
+export type AccountDeletionPreview = { status: 'ready'; companies: CompanyDeletionOutcome[] } | { status: 'error' }
+
+/**
+ * Read-only, per-company preview of what `deleteAccount` would do — issue
+ * #252 step 6 PR 2, designbrief "Del 1": "Förstå exakt vad som händer med
+ * varje företag hen tillhör, innan raderingen påbörjas." A thin wrapper
+ * around `getDeletionOutcomes` (lib/queries/deletionOutcomes.ts, already
+ * read-only) that turns a thrown error into the same `'error'` shape
+ * `deleteAccount`'s own pre-flight falls back to (COULD_NOT_VERIFY_ERROR).
+ *
+ * ADVISORY ONLY — never authoritative, and must never become authoritative.
+ * `deleteAccount`'s commit loop re-reads live, per company, inside the
+ * transaction that actually deletes the membership (`confirmSoleMember`
+ * exists specifically because a counter can drift between two reads). This
+ * function's result can be stale the instant it's returned — a colleague
+ * could leave or a counter could heal in the time between rendering this
+ * preview and the user pressing confirm. Do not add logic anywhere that
+ * lets `deleteAccount` skip or shortcut its own guard because a preview
+ * already looked safe; that guard is the actual protection, this is only
+ * what the user reads beforehand.
+ */
+export async function getAccountDeletionPreview(): Promise<AccountDeletionPreview> {
+  const session = await getVerifiedSession()
+
+  try {
+    const companies = await getDeletionOutcomes(session.uid)
+    return { status: 'ready', companies }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { error: message, action: 'account_deletion_preview_failed' })
+    return { status: 'error' }
+  }
+}
+
 export async function updateUserProfile(data: {
   name?: string
   defaultBookingView?: 'list' | 'week' | 'month' | '4weeks'
