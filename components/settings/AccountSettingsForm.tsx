@@ -1,17 +1,66 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateUserProfile, deleteAccount, exportUserData } from '@/actions/account'
+import {
+  updateUserProfile,
+  deleteAccount,
+  exportUserData,
+  getAccountDeletionPreview,
+  type AccountDeletionPreview,
+} from '@/actions/account'
 import { deleteSession } from '@/actions/auth'
 import { requestEmailChange, requestPasswordReset } from '@/actions/auth-email'
 import { auth } from '@/lib/firebase'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
-import Chip from '@/components/ui/Chip'
+import Chip, { type ChipTone } from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import { BOOKING_VIEW_OPTIONS, BOOKING_VIEW_LABELS, type BookingViewOption } from '@/constants/company'
+import type { CompanyDeletionOutcome, DeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import styles from './AccountSettingsForm.module.css'
+
+// ── Account-deletion preview copy (issue #252 step 6 PR 2) ─────────────────
+//
+// One entry per `DeletionOutcome` (lib/queries/deletionOutcomes.ts). Kept as
+// small lookup tables rather than inline in the JSX so `close`'s wording is
+// easy to audit in one place: per the designbrief, this is the ONE outcome
+// whose copy must never mention a deadline, a 7-day window, or support being
+// able to stop it — none of that applies here, and PR 1 just introduced all
+// three phrases elsewhere in this app's company-deletion copy, which is
+// exactly the context a "quick" wording pass on this outcome could bleed in
+// from by habit.
+const PREVIEW_LABELS: Record<DeletionOutcome, string> = {
+  leave: 'STAYS OPEN',
+  blocked: 'NEEDS ACTION',
+  close: 'DELETED WITH ACCOUNT',
+  unknown: 'COULD NOT CHECK',
+}
+
+const PREVIEW_CHIP_TONE: Record<DeletionOutcome, ChipTone> = {
+  leave: 'neutral',
+  blocked: 'danger',
+  close: 'danger',
+  unknown: 'neutral',
+}
+
+function previewBody(company: CompanyDeletionOutcome): string {
+  switch (company.outcome) {
+    case 'leave':
+      return "You'll leave this company. It carries on without you."
+    case 'blocked': {
+      const otherCount = Math.max(company.memberCount - 1, 0)
+      const people = otherCount === 1 ? '1 other person works' : `${otherCount} other people work`
+      return `You're the only administrator here, where ${people}. Make someone else an administrator first, then you'll be able to delete your account.`
+    }
+    case 'close':
+      // No mention of a deadline, a window, or support stopping it — none of
+      // that applies to this outcome. See this table's own comment above.
+      return "You're its only member, so it will be permanently deleted the moment your account is — immediately, with no way to undo it."
+    case 'unknown':
+      return "Something went wrong reading this company. That's a technical problem, not something blocking you — try again in a moment."
+  }
+}
 
 interface AccountSettingsFormProps {
   name: string
@@ -37,6 +86,15 @@ export default function AccountSettingsForm({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // Per-company consequence preview (issue #252 step 6 PR 2). Fetched fresh
+  // every time the delete panel opens, and again on demand via "REFRESH" —
+  // e.g. after the user hands over admin rights on /settings/team and comes
+  // back. Advisory only: see getAccountDeletionPreview's own docblock. Never
+  // used to enable/disable the CONFIRM button below — a stale "safe" or
+  // stale "blocked" reading here must not change what deleteAccount does.
+  const [preview, setPreview] = useState<AccountDeletionPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   const [signingOut, setSigningOut] = useState(false)
 
@@ -142,6 +200,24 @@ export default function AccountSettingsForm({
     URL.revokeObjectURL(url)
   }
 
+  async function loadPreview() {
+    setPreviewLoading(true)
+    const result = await getAccountDeletionPreview()
+    setPreview(result)
+    setPreviewLoading(false)
+  }
+
+  // Fetch the preview when the delete panel opens — not on every render, and
+  // not eagerly on page load, since it's a read the user only needs once she
+  // has expressed intent to delete. Re-fetches every time deleteOpen flips
+  // to true, which also covers the "closed the panel, went to Team, came
+  // back and reopened it" path without needing a full page reload.
+  useEffect(() => {
+    if (deleteOpen) {
+      loadPreview()
+    }
+  }, [deleteOpen])
+
   async function handleDeleteAccount() {
     if (confirmInput !== 'DELETE') return
     setDeleting(true)
@@ -156,6 +232,13 @@ export default function AccountSettingsForm({
       router.push('/login')
     }
   }
+
+  // Derived purely for the extra warning sentence next to the DELETE input
+  // below — never used to gate the CONFIRM button. See loadPreview's and
+  // getAccountDeletionPreview's docblocks: this preview can be stale, and
+  // deleteAccount's own guard (not this component) is what actually decides.
+  const closingCompanies =
+    preview?.status === 'ready' ? preview.companies.filter((c) => c.outcome === 'close') : []
 
   return (
     <div className={styles.container}>
@@ -329,28 +412,100 @@ export default function AccountSettingsForm({
       )}
 
       {deleteOpen && (
-        <div className={styles.deleteConfirm}>
-          <span className={styles.deleteText}>Type DELETE to permanently remove your account.</span>
-          <div className={styles.deleteInputRow}>
-            <Input
-              value={confirmInput}
-              onChange={(e) => {
-                setConfirmInput(e.target.value)
-                setDeleteError(null)
-              }}
-              placeholder="DELETE"
-              className={styles.deleteInput}
-            />
-            <Button
-              variant="danger-solid"
-              size="sm"
-              onClick={handleDeleteAccount}
-              disabled={confirmInput !== 'DELETE' || deleting}
+        <div className={styles.deletePanel}>
+          {/* Per-company consequence preview — designbrief "Del 1": "Förstå
+              exakt vad som händer med varje företag hen tillhör, innan
+              raderingen påbörjas." Every company gets its own line; this is
+              never collapsed into a single worst-case message. */}
+          {previewLoading && !preview && (
+            <p className={styles.previewStatus}>Checking your companies…</p>
+          )}
+
+          {preview?.status === 'error' && (
+            <ErrorBanner
+              tone="neutral"
+              action={
+                <button
+                  type="button"
+                  className={styles.dismissBtn}
+                  onClick={loadPreview}
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? 'CHECKING…' : 'RETRY'}
+                </button>
+              }
             >
-              {deleting ? 'DELETING…' : 'CONFIRM'}
-            </Button>
+              Could not check your companies right now. That&apos;s a technical problem — it doesn&apos;t mean
+              you&apos;re blocked. Try again, or delete anyway and we&apos;ll check for real at that point.
+            </ErrorBanner>
+          )}
+
+          {preview?.status === 'ready' && preview.companies.length > 0 && (
+            <ul className={styles.previewList}>
+              {preview.companies.map((company) => (
+                <li key={company.companyId} className={styles.previewItem}>
+                  <div className={styles.previewHeader}>
+                    <span className={styles.previewCompany}>{company.companyName || 'Untitled company'}</span>
+                    <Chip size="sm" tone={PREVIEW_CHIP_TONE[company.outcome]} interactive={false}>
+                      {PREVIEW_LABELS[company.outcome]}
+                    </Chip>
+                  </div>
+                  <p className={styles.previewBody}>{previewBody(company)}</p>
+                  {company.outcome === 'blocked' && (
+                    <div className={styles.previewActions}>
+                      <Button variant="secondary" size="sm" href="/settings/team">
+                        GO TO TEAM →
+                      </Button>
+                      <button
+                        type="button"
+                        className={styles.dismissBtn}
+                        onClick={loadPreview}
+                        disabled={previewLoading}
+                      >
+                        {previewLoading ? 'CHECKING…' : 'REFRESH'}
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className={styles.deleteConfirm}>
+            <span className={styles.deleteText}>
+              Type DELETE to permanently remove your account.
+              {closingCompanies.length > 0 && (
+                <>
+                  {' '}
+                  This also permanently deletes{' '}
+                  {closingCompanies.length === 1
+                    ? closingCompanies[0]!.companyName || 'the company above'
+                    : `${closingCompanies.length} companies`}{' '}
+                  immediately — there&apos;s no undo.
+                </>
+              )}
+            </span>
+            <div className={styles.deleteInputRow}>
+              <Input
+                value={confirmInput}
+                onChange={(e) => {
+                  setConfirmInput(e.target.value)
+                  setDeleteError(null)
+                }}
+                placeholder="DELETE"
+                className={styles.deleteInput}
+              />
+              <Button
+                variant="danger-solid"
+                size="sm"
+                onClick={handleDeleteAccount}
+                disabled={confirmInput !== 'DELETE' || deleting}
+              >
+                {deleting ? 'DELETING…' : 'CONFIRM'}
+              </Button>
+            </div>
+            {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
           </div>
-          {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
         </div>
       )}
     </div>
