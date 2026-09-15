@@ -5,23 +5,40 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 const BATCH_LIMIT = 490;
 
 /**
- * `deletionAuditLog` carries two shapes, both governed by the same 12-month
- * GDPR Art. 5(1)(e) storage-limitation rule, on two different field names:
+ * `deletionAuditLog` carries three shapes, all governed by the same
+ * 12-month GDPR Art. 5(1)(e) storage-limitation rule, on three different
+ * field names. The `triggeredBy` values named below (all but `'user_self'`)
+ * are exported as constants from `functions/src/deletionAuditLogTriggers.ts`
+ * — quoted here as literals only for readability of this comment, not
+ * because this function ever compares against one; it never reads
+ * `triggeredBy` at all, only the timestamp field name each shape carries:
  *
  *   - self-service account deletion (`actions/account.ts`, `triggeredBy:
- *     'user_self'`) carries `deletedAt` — something was actually deleted
- *     when this row was written.
+ *     'user_self'`) and the stranded-account enforcement sweep's own
+ *     deletion branch (`functions/src/company/strandedAccountSweep.ts`,
+ *     `triggeredBy: 'stranded_account_sweep_enforced'`, issue #252 step 6)
+ *     both carry `deletedAt` — something was actually deleted when the row
+ *     was written.
  *   - a stranded member's account-deletion SCHEDULE
  *     (`functions/src/company/memberCleanup.ts`, `triggeredBy:
  *     'company_deletion_stranded_member'`, issue #252 step 5) carries
  *     `scheduledAt` instead. Nothing was deleted when THIS row was
  *     written — only scheduled — so it deliberately does NOT also carry a
  *     `deletedAt`; writing one would misrepresent the event.
+ *   - that same sweep's SPARE branch (`functions/src/company/
+ *     strandedAccountSweep.ts`, `triggeredBy:
+ *     'stranded_account_sweep_spared_membership_found'`, issue #252 step 6)
+ *     carries `clearedAt` instead of either — the schedule was cancelled,
+ *     not fulfilled and not freshly created, and neither existing field name
+ *     would honestly describe that.
  *
- * Querying only `deletedAt` (as this function used to) means every
- * scheduling row is invisible to this purge forever — no error, no empty
- * result, just permanently un-matched — which is retention with no legal
- * basis for exactly the rows meant to be covered by it. Query both fields.
+ * Querying only `deletedAt` (as this function used to, before `scheduledAt`
+ * was added) means every scheduling row is invisible to this purge
+ * forever — no error, no empty result, just permanently un-matched — which
+ * is retention with no legal basis for exactly the rows meant to be covered
+ * by it. The same failure mode applies to any field this function doesn't
+ * query, which is why `clearedAt` joins the other two here rather than
+ * living as a fourth, silently-immortal row shape. Query all three fields.
  *
  * Exported as a plain function of `(db)` for the same reason every other
  * function in this file's neighborhood is — see `runCompanyPurge`'s
@@ -31,18 +48,20 @@ export async function purgeOldAuditLogsSweep(db: Firestore): Promise<{ purged: n
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
 
-  const [byDeletedAt, byScheduledAt] = await Promise.all([
+  const [byDeletedAt, byScheduledAt, byClearedAt] = await Promise.all([
     db.collection('deletionAuditLog').where('deletedAt', '<', cutoff).get(),
     db.collection('deletionAuditLog').where('scheduledAt', '<', cutoff).get(),
+    db.collection('deletionAuditLog').where('clearedAt', '<', cutoff).get(),
   ]);
 
-  // De-duplicated by doc id — the two queries are mutually exclusive by
-  // construction (a row carries one field or the other, never both), but a
-  // Map keyed by id costs nothing and removes any need to trust that stays
-  // true forever.
+  // De-duplicated by doc id — the three queries are mutually exclusive by
+  // construction (a row carries exactly one of the three fields, never more
+  // than one), but a Map keyed by id costs nothing and removes any need to
+  // trust that stays true forever.
   const refs = new Map<string, FirebaseFirestore.DocumentReference>();
   for (const doc of byDeletedAt.docs) refs.set(doc.id, doc.ref);
   for (const doc of byScheduledAt.docs) refs.set(doc.id, doc.ref);
+  for (const doc of byClearedAt.docs) refs.set(doc.id, doc.ref);
 
   if (refs.size === 0) return { purged: 0 };
 

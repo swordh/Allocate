@@ -94,7 +94,15 @@ service cloud.firestore {
     }
 
     // ── GDPR deletion audit log ───────────────────────────────────────────────
-    // Written only by the deleteAccount Cloud Function. Never readable by clients.
+    // Never readable by clients — only ever written by the Admin SDK. Three
+    // row shapes, all governed by the same 12-month retention rule
+    // (functions/src/admin/purgeAuditLogs.ts), from three writers:
+    //   - `actions/account.ts` (deleteAccount) — self-service deletion, `deletedAt`.
+    //   - `functions/src/company/memberCleanup.ts` — a stranded member's
+    //     account-deletion SCHEDULE, `scheduledAt` (issue #252 step 5).
+    //   - `functions/src/company/strandedAccountSweep.ts` — that schedule's
+    //     enforcement sweep, either fulfilling it (`deletedAt`) or clearing it
+    //     because a live membership was found (`clearedAt`, issue #252 step 6).
     match /deletionAuditLog/{logId} {
       allow read, write: if false;
     }

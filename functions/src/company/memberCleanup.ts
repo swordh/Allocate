@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
+import { TRIGGERED_BY_STRANDED_MEMBER_SCHEDULED } from '../deletionAuditLogTriggers';
 
 /** Thirty days, per "Del 3" of the design brief and "Fattade beslut" in the plan. */
 export const STRANDED_MEMBER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -69,11 +70,15 @@ export interface MemberCleanupOutcome {
  *      thirty days out (`users/{uid}.pendingDeletion`, see
  *      `PendingAccountDeletion` in types/user.ts) and leaves every other
  *      part of her account exactly as it was: she can still sign in, export
- *      her data, and create a new company (which — PR F — clears this
- *      schedule in the same transaction as the new membership). The actual
- *      enforcement sweep is a separate, not-yet-built piece of work that may
- *      not go live before that create-company path exists (see the plan's
- *      "Hård ordningsregel").
+ *      her data, and create a new company or accept an invitation into one
+ *      (both clear this schedule in the same transaction/batch as the write
+ *      that gives her a company again — `setupNewCompany` in actions/auth.ts
+ *      and `acceptInvitationByToken` in
+ *      functions/src/auth/acceptInvitation.ts, issue #252 step 6). The
+ *      actual enforcement sweep, `strandedAccountSweep`
+ *      (functions/src/company/strandedAccountSweep.ts, issue #252 step 6),
+ *      only went live once both of those existed (see the plan's "Hård
+ *      ordningsregel") — that precondition is now met.
  *
  * A `deletionAuditLog` entry is written for the scheduling itself, with its
  * own `triggeredBy` value distinct from `deleteAccount`'s `'user_self'` —
@@ -195,7 +200,7 @@ export async function cleanupOneMember(
     // Distinct from deleteAccount's 'user_self' — this account was not
     // scheduled by its own owner, it lost its only company to an
     // administrator's decision.
-    triggeredBy: 'company_deletion_stranded_member',
+    triggeredBy: TRIGGERED_BY_STRANDED_MEMBER_SCHEDULED,
   });
 
   return { uid, accountStatus: 'scheduled', claimsUpdated, pendingDeletionScheduledFor: scheduledFor };

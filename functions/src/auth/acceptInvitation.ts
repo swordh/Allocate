@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
 import { blockMemberWrite } from '../company/acceptsMembers';
@@ -151,6 +151,18 @@ export const acceptInvitationByToken = onCall(
         };
         tx.set(userMembershipRef, membership);
 
+        // 2b. Clear any scheduled account deletion (types/user.ts,
+        // `PendingAccountDeletion`) in the SAME transaction as the
+        // membership write above, not as a follow-up that could be
+        // skipped. Accepting an invitation is a second route back to
+        // having a company, alongside `setupNewCompany` (actions/auth.ts)
+        // — the reasoning is identical for both: having a company at all
+        // is the cancellation condition ("Avbrottsvillkoret" in
+        // plan/det-k-nns-som-att-stateless-conway.md), not any one specific
+        // way of getting one. Harmless when the field was never set
+        // (`FieldValue.delete()` on an absent field is a no-op).
+        tx.set(userRef, { pendingDeletion: FieldValue.delete() }, { merge: true });
+
         // 3. Mark invitation accepted
         tx.update(inviteRef, {
           status: 'accepted',
@@ -176,8 +188,13 @@ export const acceptInvitationByToken = onCall(
     }
 
     // Always write name + email to user root doc — runs regardless of which
-    // path won the race (callable tx or onUserCreate trigger).
-    await userRef.set({ name: displayName, email: callerEmail }, { merge: true });
+    // path won the race (callable tx or onUserCreate trigger). Also clears
+    // `pendingDeletion` here, same reasoning as the in-transaction clear
+    // above: when `onUserCreate` won the race this is a brand-new user who
+    // cannot have the field, so the clear is a harmless no-op on that path,
+    // and it costs nothing to do it unconditionally rather than branch on
+    // which path won.
+    await userRef.set({ name: displayName, email: callerEmail, pendingDeletion: FieldValue.delete() }, { merge: true });
 
     // ── Set custom claims if none exist (only when we ran the full tx) ────────
     // If onUserCreate won the race, it already set claims — skip to avoid churn.

@@ -10,16 +10,18 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
  * operation and neither is a countdown:
  *
  *  - `counting` — a deadline in the future. The ordinary case.
- *  - `passed`   — the deadline has already gone by. This is NOT an unlikely
- *                 edge case: the sweep that actually executes a scheduled
- *                 account deletion is deliberately outside both PR E and
- *                 PR F (see "Hård ordningsregel" in
- *                 plan/det-k-nns-som-att-stateless-conway.md), so from day
- *                 31 until that sweep is built this is the NORMAL state of
- *                 every stranded user. Rendering "Less than a day left"
- *                 forever — which is what this module did before — is a
- *                 sentence that is simply false, on the one screen whose
- *                 entire job is telling her the truth about her account.
+ *  - `passed`   — the deadline has already gone by. Still not a rare edge
+ *                 case now that `strandedAccountSweep`
+ *                 (functions/src/company/strandedAccountSweep.ts, issue #252
+ *                 step 6) is live: the sweep runs at most every 24 hours, so
+ *                 there is always a window — up to a day — between a
+ *                 deadline passing and the sweep actually reaching that uid,
+ *                 during which this state is exactly true: overdue, but not
+ *                 yet acted on. Rendering "Less than a day left" forever —
+ *                 which is what this module did before the sweep existed —
+ *                 would still be a sentence that is simply false, on the one
+ *                 screen whose entire job is telling her the truth about her
+ *                 account.
  *  - `unknown`  — `scheduledFor` is missing, empty, or unparseable. No
  *                 current writer produces that (memberCleanup.ts writes a
  *                 Firestore Timestamp), but nothing structurally prevents
