@@ -23,6 +23,7 @@ export default async function SubscriptionSettingsPage() {
       companyName={company?.name ?? ''}
       equipmentCount={equipmentCount}
       memberCount={members.length}
+      deletion={company?.deletion ?? null}
     />
   )
 }
