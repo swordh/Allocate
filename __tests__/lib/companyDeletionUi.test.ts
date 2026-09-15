@@ -1,11 +1,10 @@
 /**
- * Pure UI-layer helpers for company deletion (issue #252 step 6, PR 1).
- *
- * `confirmationMatchesCompanyName` is asserted against the exact same cases
- * as the server's `confirmationMatches` (see
- * __tests__/company/requestCompanyDeletion.test.ts) — they must never drift,
- * because a mismatch means either a disabled button on a name the server
- * would accept, or an enabled one on a name it would reject.
+ * Pure helpers for company deletion (issue #252 step 6, PR 1), shared by the
+ * server action and the UI — there is one copy of the confirmation rule, not
+ * two, so it is tested from both angles instead of twice over. This file
+ * covers `confirmationMatchesCompanyName` at the string level directly;
+ * __tests__/company/requestCompanyDeletion.test.ts covers the same cases
+ * indirectly, through `requestCompanyDeletion` calling it.
  */
 
 import { describe, it, expect } from 'vitest'
