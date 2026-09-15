@@ -169,7 +169,18 @@ export type CompanyDeletionPhase =
   | 'orphans'
   | 'finalize'
 
-export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link'
+/**
+ * `operator` — canceled from the operator view (issue #252 step 6, PR 5),
+ * distinct from `admin_ui` because the actor is NOT a member of the company
+ * (an operator has no `companies/{cid}/members/{uid}` doc to read a role
+ * from) and, unlike `cancel_link`, a real identity IS available — see
+ * `cancelCompanyDeletionAsOperator` in actions/operatorCompanyDeletion.ts.
+ * `DeletionHistoryList.tsx`'s cancelSource label switch must keep a distinct
+ * case for this value — collapsing it into the `admin_ui` fallback would
+ * render "via admin UI" for a cancellation the customer's own admin never
+ * made.
+ */
+export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link' | 'operator'
 
 /** One Stripe side effect of the reversible half of a deletion — see `stripePause`/`stripeResume` below. */
 export interface CompanyDeletionStripeOutcome {

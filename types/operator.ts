@@ -239,7 +239,7 @@ export interface CompanyDeletionRow {
   canceledByUid?: string | null
   canceledByName?: string | null
   canceledByEmail?: string | null
-  cancelSource?: 'admin_ui' | 'cancel_link'
+  cancelSource?: 'admin_ui' | 'cancel_link' | 'operator'
 
   completedAt?: string                // ISO string
 
