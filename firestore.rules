@@ -94,7 +94,15 @@ service cloud.firestore {
     }
 
     // ── GDPR deletion audit log ───────────────────────────────────────────────
-    // Written only by the deleteAccount Cloud Function. Never readable by clients.
+    // Never readable by clients — only ever written by the Admin SDK. Three
+    // row shapes, all governed by the same 12-month retention rule
+    // (functions/src/admin/purgeAuditLogs.ts), from three writers:
+    //   - `actions/account.ts` (deleteAccount) — self-service deletion, `deletedAt`.
+    //   - `functions/src/company/memberCleanup.ts` — a stranded member's
+    //     account-deletion SCHEDULE, `scheduledAt` (issue #252 step 5).
+    //   - `functions/src/company/strandedAccountSweep.ts` — that schedule's
+    //     enforcement sweep, either fulfilling it (`deletedAt`) or clearing it
+    //     because a live membership was found (`clearedAt`, issue #252 step 6).
     match /deletionAuditLog/{logId} {
       allow read, write: if false;
     }
@@ -130,5 +138,33 @@ service cloud.firestore {
     // a matching `activeCompanyId`, so the operator's private notes about a
     // customer were readable by that customer. A top-level collection has no
     // such membership rule to inherit.
+
+    // ── companyDeletions / companyDeletionCancelTokens (no rule — intentional) ─
+    // Issue #252, step 5. Same reasoning as `operatorNotes`/`companyEvents`
+    // directly above, and the same absent-rule-is-default-deny mechanism: a
+    // top-level collection with no matching rule here is denied entirely,
+    // and neither name matches the `companies/{companyId}/{document=**}` or
+    // `{path=**}/units/{unitId}` wildcards, so nothing accidentally exposes
+    // them.
+    //
+    // `companyDeletions/{requestId}` is the deletion audit/progress ledger.
+    // It carries operator notes and internal lease/retry state that must
+    // never be member-readable, and it is written only by Cloud Functions
+    // and by `app/operator/...` server actions (Admin SDK) — never by a
+    // client. See the docblock on `CompanyDeletionRecord` in
+    // types/company.ts for the full rationale, including why it is
+    // top-level rather than nested under `companies/{cid}` (it must survive
+    // the company document itself being deleted).
+    //
+    // `companyDeletionCancelTokens/{token}` are bearer secrets mailed only
+    // to admins so they can cancel a pending deletion from an email link
+    // without being signed in. If this collection had a rule at all — and
+    // especially if it were nested under `companies/{cid}`, where it would
+    // inherit the wildcard above — any member, crew included, could read or
+    // guess another admin's cancel token and cancel a deletion they have no
+    // authority over. The verifying/consuming code path (PR F) reads these
+    // with the Admin SDK, never the client SDK, so no rule is ever needed.
+    //
+    // This absence is a documented decision, not a gap to "fix" later.
   }
 }

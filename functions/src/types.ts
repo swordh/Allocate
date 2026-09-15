@@ -66,3 +66,167 @@ export interface CompanyDocument {
   hadTrial: boolean;
   subscription: CompanySubscription;
 }
+
+// ─── Company deletion (issue #252, step 5) ────────────────────────────────────
+//
+// Mirrored from types/company.ts for the same reason `MemberCountsDelta` is
+// duplicated in companyStats.ts above: functions/ compiles as its own
+// project with no path alias back to the repo root, so these can't be
+// imported, only kept in lockstep by hand. The canonical definitions,
+// including the docblocks explaining *why* this data model looks the way it
+// does (rules wildcards, GDPR basis, why the ledger is top-level), live in
+// types/company.ts — read those before changing either copy.
+//
+// This mirror is deliberately a SUBSET of the root types. Only fields the
+// Cloud Functions in PR E actually read or write are duplicated here:
+//
+// - `CompanyDeletionState` / `CompanyDeletionMode` / `CompanyDeletionPhase`:
+//   the sweep and purge functions transition through these directly.
+// - `CompanyDeletionDocument`: the ledger fields the purge/sweep/mail
+//   functions touch (state, phase progress, lease/retry bookkeeping, the
+//   mail template inputs, and the cancel token bookkeeping the deletion-
+//   requested mail trigger writes when it mints a cancel link).
+// - `CompanyDeletionCancelTokenDocument`: minted by the same mail trigger.
+//
+// NOT mirrored, on purpose:
+// - `CompanyDeletionOperatorAction` and the ledger's cancel fields
+//   (`canceledAt`, `canceledByUid/Name/Email`, `cancelSource`) — those are
+//   only ever written by root-side code (`app/operator/...` and
+//   `actions/companyDeletion.ts`'s `cancelCompanyDeletion*`, both PR F/step 6).
+//   CORRECTION (PR G): one Cloud Function does WRITE them — the retention
+//   job in company/purgeLogs.ts blanks them on schedule. It is not an
+//   author: it never decides what a cancel or an operator note says, only
+//   that a two-year-old one stops naming a person, and it touches them
+//   through untyped `data[...]` access precisely so this mirror can stay
+//   the subset it claims to be. types/company.ts carries their canonical
+//   shape, including the `string | null` that redaction makes possible.
+//   Giving them a home here would invite a
+//   function to start writing them "for convenience" and drift from the
+//   root type instead of importing this discipline the other way.
+// - `identityRedactedAt`'s producer is the 24-month retention job in
+//   company/purgeLogs.ts, built in PR G. It is mirrored here because
+//   `runCompanyPurge` must never construct a ledger update that clobbers
+//   it — and for the same reason so are `contactsRedactedAt` and
+//   `formerMemberSummary`, which the same job writes on a 30/90-day clock.
+
+export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
+/**
+ * `mode` is chosen by which action triggered the deletion, never by member
+ * count — see the doc comment on `CompanyDeletionMode` in types/company.ts
+ * (that comment used to say "single member" and was wrong; it's the
+ * canonical explanation, read it there, not here).
+ */
+export type CompanyDeletionMode = 'immediate' | 'window';
+export type CompanyDeletionPhase =
+  | 'stripe'
+  | 'invitations'
+  | 'members'
+  | 'subtree'
+  | 'orphans'
+  | 'finalize';
+
+/** Mirror of `companies/{cid}.deletion` — see `CompanyDeletion` in types/company.ts. */
+export interface CompanyDeletionMirror {
+  state: CompanyDeletionState;
+  requestId: string;
+  requestedAt: Timestamp;
+  requestedByName: string;
+  scheduledFor: Timestamp;
+  mode: CompanyDeletionMode;
+  remindedAt?: Timestamp;
+  claimedAt?: Timestamp;
+}
+
+/**
+ * Subset mirror of `CompanyDeletionRecord` in types/company.ts — see that
+ * file for the full shape (including operator/cancel fields functions never
+ * touch) and for the GDPR/Art. 17(3)(e) rationale.
+ */
+export interface CompanyDeletionDocument {
+  requestId: string;
+  companyId: string;
+  companyName: string;
+  mode: CompanyDeletionMode;
+  state: CompanyDeletionState | 'completed' | 'canceled';
+
+  requestedAt: Timestamp;
+  /**
+   * `null` = REDACTED by the 24-month retention job (purgeLogs.ts), and
+   * deliberately distinguishable from an absent field. Mirrors
+   * `CompanyDeletionRecord` in types/company.ts — read the doc comment
+   * there, it is the canonical one.
+   */
+  requestedByUid: string | null;
+  requestedByName: string | null;
+  requestedByEmail: string | null;
+  scheduledFor: Timestamp;
+
+  completedAt?: Timestamp;
+
+  phase?: CompanyDeletionPhase;
+  completedPhases?: CompanyDeletionPhase[];
+  phaseCounts?: Record<string, number>;
+
+  /** See the doc comment on this field in types/company.ts. */
+  formerMemberContacts?: {
+    uid: string;
+    name: string;
+    email: string;
+    accountStatus: 'kept' | 'scheduled' | 'already_gone';
+    /** Only set when accountStatus === 'scheduled' — see types/company.ts. */
+    pendingDeletionScheduledFor?: Timestamp;
+  }[];
+  // Doubles as the "members" phase's resume marker — see types/company.ts.
+  // A uid is only ever added here once cleanupOneMember reports
+  // claimsUpdated: true (functions/src/company/memberCleanup.ts) — a uid
+  // whose Auth claims update failed is deliberately left OUT so a later
+  // resume retries her specifically, instead of leaving her claims pointed
+  // at a company that no longer exists.
+
+  /** See the doc comment on this field in types/company.ts — finalize's own per-uid resume marker. */
+  finalizeMailQueuedUids?: string[];
+
+  /** Diagnostic only — see the comment where runCompanyPurge writes and reads this in purge.ts. Not part of the attempts/failed budget. */
+  lastResumePhaseCount?: number;
+
+  attempts: number;
+  lastHeartbeatAt?: Timestamp;
+  /** `null` = redacted (or cleared on success). See types/company.ts. */
+  lastError?: string | null;
+
+  cancelTokenIds?: string[];
+
+  purgeAfter: Timestamp;
+  identityRedactedAt?: Timestamp;
+
+  /**
+   * Replaces `formerMemberContacts` once the contacts retention rule has run
+   * — anonymous counts, no uids or addresses. See types/company.ts for the
+   * canonical doc comment and purgeLogs.ts for the two windows.
+   */
+  formerMemberSummary?: {
+    total: number;
+    kept: number;
+    scheduled: number;
+    already_gone: number;
+  };
+  contactsRedactedAt?: Timestamp;
+}
+
+/** Mirror of `CompanyDeletionCancelToken` in types/company.ts. */
+export interface CompanyDeletionCancelTokenDocument {
+  requestId: string;
+  companyId: string;
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+  usedAt?: Timestamp;
+}
+
+// No `PendingAccountDeletionMirror` type here — `cleanupOneMember`
+// (functions/src/company/memberCleanup.ts) writes `users/{uid}.pendingDeletion`
+// as an inline object literal (`{ scheduledFor, requestId }`), matching
+// `PendingAccountDeletion` in types/user.ts by hand rather than through a
+// named mirror type. A named-but-unused mirror was flagged as dead code in
+// review — add one back here only if/when something under functions/src
+// actually needs to READ this shape back (same "mirror what's called, not
+// what might be" rule companyStats.ts documents for `readMemberCounts`).

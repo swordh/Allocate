@@ -15,6 +15,10 @@ import { invitationEmail } from '../src/email/templates/invitation';
 import { verifyEmailEmail } from '../src/email/templates/verifyEmail';
 import { resetPasswordEmail } from '../src/email/templates/resetPassword';
 import { changeEmailEmail } from '../src/email/templates/changeEmail';
+import { companyDeletionRequestedEmail } from '../src/email/templates/companyDeletionRequested';
+import { companyDeletionReminderEmail } from '../src/email/templates/companyDeletionReminder';
+import { companyDeletionCancelledEmail } from '../src/email/templates/companyDeletionCancelled';
+import { companyDeletedEmail } from '../src/email/templates/companyDeleted';
 
 const outDir = join(__dirname, '__previews__');
 mkdirSync(outDir, { recursive: true });
@@ -41,6 +45,71 @@ const renders: Record<string, string> = {
   'changeEmail.html': changeEmailEmail({
     verifyUrl: 'https://allocate.at/auth/action?mode=verifyAndChangeEmail&oobCode=REPLACE_ME',
     newEmail: 'erik.lundqvist@nordfilm.se',
+  }).html,
+  'companyDeletionRequested.html': companyDeletionRequestedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    scheduledForFormatted: '19 September 2026',
+    scheduledForShort: '19 Sep',
+    stopUrl: 'https://allocate.at/company/nordfilm/deletion/stop?token=REPLACE_ME',
+    whatGoesSummary: '23 bookings, 14 pieces of equipment, access for all 6 members',
+  }).html,
+  'companyDeletionReminder.html': companyDeletionReminderEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    scheduledForFormatted: '19 September 2026',
+    daysRemaining: 2,
+    stopUrl: 'https://allocate.at/company/nordfilm/deletion/stop?token=REPLACE_ME',
+  }).html,
+  'companyDeletionCancelled.html': companyDeletionCancelledEmail({
+    companyName: 'Nordfilm AB',
+    cancelledByName: 'Sara Wikström',
+    cancelledAtFormatted: '14 September 2026',
+    scheduledForFormatted: '19 September 2026',
+    openUrl: 'https://allocate.at/',
+  }).html,
+  'companyDeleted-window-kept.html': companyDeletedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    deletedAtFormatted: '19 September 2026',
+    mode: 'window',
+    accountStatus: 'kept',
+    ctaUrl: 'https://allocate.at/company/new',
+  }).html,
+  // The case this preview exists to catch: a crew member stranded by this
+  // deletion — her account is NOT gone, it is scheduled, and the copy must
+  // say so with the real date, not fall back to 'kept's "untouched" text.
+  // See the PR E review that added this branch.
+  'companyDeleted-window-scheduled.html': companyDeletedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    deletedAtFormatted: '19 September 2026',
+    mode: 'window',
+    accountStatus: 'scheduled',
+    pendingDeletionScheduledForFormatted: '19 October 2026',
+    ctaUrl: 'https://allocate.at/login',
+  }).html,
+  'companyDeleted-window-already-gone.html': companyDeletedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    deletedAtFormatted: '19 September 2026',
+    mode: 'window',
+    accountStatus: 'already_gone',
+    ctaUrl: 'https://allocate.at/signup',
+  }).html,
+  'companyDeleted-immediate-already-gone.html': companyDeletedEmail({
+    companyName: 'Solo Studio',
+    requestedByName: 'Maria Öberg',
+    requestedAtFormatted: '14 September 2026',
+    deletedAtFormatted: '14 September 2026',
+    mode: 'immediate',
+    accountStatus: 'already_gone',
+    ctaUrl: 'https://allocate.at/signup',
   }).html,
 };
 

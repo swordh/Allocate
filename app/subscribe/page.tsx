@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation'
-import { getVerifiedSession } from '@/lib/dal'
-import { adminDb } from '@/lib/firebase-admin'
+import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import SubscribePage from './SubscribePage'
 
 export default async function SubscribeRoute() {
   const session = await getVerifiedSession()
-  const companyDoc = await adminDb.doc(`companies/${session.activeCompanyId}`).get()
+  // Same document getVerifiedSession() just read to confirm it exists —
+  // getCompanyDoc's React.cache() dedupes this into the same Firestore read.
+  const companyDoc = await getCompanyDoc(session.activeCompanyId)
   const companyData = companyDoc.data()
   const subStatus = companyData?.subscription?.status
   const trialEnd = companyData?.subscription?.trialEnd ?? null

@@ -4,6 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
+import { blockMemberWrite } from '../company/acceptsMembers';
 
 /**
  * Triggered when a new Firebase Auth user is created.
@@ -73,11 +74,32 @@ export const onUserCreate = functions
         // call. That's why the increment below sits after this guard rather
         // than, say, wrapping the whole callback: placed here, it only ever
         // runs on the branch that actually creates a new member doc.
-        const existingMember = await tx.get(memberRef);
+        const companyRef = db.doc(`companies/${companyId}`);
+        const [existingMember, companySnap] = await Promise.all([tx.get(memberRef), tx.get(companyRef)]);
         if (existingMember.exists) {
           logger.warn('onUserCreate: member already exists, skipping', {
             uid: uid.slice(0, 8) + '...',
             companyId,
+          });
+          return;
+        }
+
+        // The same `blockMemberWrite` guard acceptInvitation.ts uses — this
+        // is the OTHER way an invitation becomes a membership (a brand-new
+        // signup whose address had a pending invite), and leaving it out
+        // would make "you can't join a company being deleted" true only for
+        // people who already had an account.
+        //
+        // Same empty-commit `return` as the duplicate-member guard above,
+        // not a throw: this invitation stays pending, the loop moves on to
+        // this user's other invitations, and the purge's invitation phase
+        // deletes it along with everything else under the company.
+        const block = blockMemberWrite(companySnap);
+        if (block) {
+          logger.warn('onUserCreate: company cannot accept new members, skipping invitation', {
+            uid: uid.slice(0, 8) + '...',
+            companyId,
+            reason: block.code,
           });
           return;
         }

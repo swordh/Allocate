@@ -229,6 +229,8 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
       template: 'invitation',
       data: { companyName, inviterName, acceptUrl, role: submittedRole },
       status: 'queued',
+      companyId: cid,
+      priority: 'normal',
       createdAt: nowIso,
     })
 
@@ -308,6 +310,8 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
     template: 'invitation',
     data: { companyName, inviterName, acceptUrl, role },
     status: 'queued',
+    companyId: cid,
+    priority: 'normal',
     createdAt: new Date().toISOString(),
   })
 

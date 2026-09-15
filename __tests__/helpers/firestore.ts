@@ -25,6 +25,26 @@ export interface DocRefStub {
   path: string
   id: string
   get: () => Promise<DocSnapStub>
+  /**
+   * Direct (non-batched, non-transactional) writes on a document reference.
+   *
+   * Spies rather than no-ops so a test can assert what production code wrote
+   * outside a batch or transaction — `recordStripeOutcome`
+   * (lib/companyDeletionStripe.ts) is the case that forced these to exist: it
+   * annotates the ledger with `adminDb.doc(...).update(...)` and swallows its
+   * own errors, so before these spies were here the call threw
+   * "update is not a function", was caught, and the test saw nothing at all
+   * rather than a failure. A missing method on a stub that production code
+   * deliberately try/catches is invisible; that is worth knowing about
+   * generally, not just here.
+   *
+   * They resolve rather than mutate `docs` — nothing in this suite reads its
+   * own writes back through the same map, and making them write-through would
+   * quietly change what every existing test's later reads return.
+   */
+  update: ReturnType<typeof vi.fn>
+  set: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
 }
 
 export interface DocSnapStub {
@@ -65,6 +85,9 @@ function makeDocRef(path: string, docs: DocMap): DocRefStub {
     path,
     id,
     get: async () => makeDocSnap(path, docs),
+    update: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
   }
   return ref
 }
@@ -161,21 +184,34 @@ export function makeTransaction(docs: DocMap = {}): TransactionStub {
 // ── Query chain ───────────────────────────────────────────────────────────────
 
 /**
- * A chainable query stub. Every `.where()` returns the same chain with the
- * clause recorded, so the resolver sees all filters regardless of chain depth —
- * unlike a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }`, which
- * silently throws the moment production code adds a third filter.
+ * A chainable query stub. `.where()` returns a NEW chain carrying the parent's
+ * filters plus the new clause — never mutates the parent's own filter list —
+ * so the resolver sees the right filters regardless of chain depth, the same
+ * way a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }` would, but
+ * without throwing the moment production code adds a third filter.
+ *
+ * This immutability is load-bearing, not cosmetic: real Firestore
+ * `Query`/`CollectionReference` objects are immutable — `.where()` returns a
+ * new query rather than mutating the one it was called on — and more than
+ * one production code path relies on exactly that (lib/companyStats.ts's
+ * `readMemberCounts`, and `lib/queries/deletionOutcomes.ts`'s
+ * `readCompanyCounts`): both take ONE collection reference and derive TWO
+ * independent queries from it — an unfiltered `.count()` and a
+ * `.where('role','==','admin').count()` — run concurrently via `Promise.all`.
+ * A mock that pushed into one shared array would make the "unfiltered" count
+ * retroactively pick up the admin filter too (both `count().get()` calls read
+ * the array lazily, after both synchronous `.where()`/`.count()` calls have
+ * already run), silently halving the reported member count in exactly that
+ * scenario. Branching instead of mutating is what makes those two counts
+ * independent here the same way they are against real Firestore.
  */
-function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap) {
-  const filters: Filter[] = []
-
+function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap, filters: Filter[] = []) {
   const run = () => makeQuerySnap(resolver({ path, filters }), docs)
 
   const chain: Record<string, unknown> = {
     path,
     where(field: string, op: string, value: unknown) {
-      filters.push({ field, op, value })
-      return chain
+      return makeQueryChain(path, resolver, docs, [...filters, { field, op, value }])
     },
     orderBy: () => chain,
     limit: () => chain,

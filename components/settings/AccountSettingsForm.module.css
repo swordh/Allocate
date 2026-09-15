@@ -148,14 +148,72 @@
 
 /* ── Delete confirm ────────────────────────────────────────────────────── */
 
+.deletePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 22px;
+  max-width: 640px;
+}
+
+/* Per-company consequence preview — issue #252 step 6 PR 2. */
+
+.previewStatus {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-faint);
+}
+
+.previewList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.previewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-medium);
+  padding: 14px;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.previewCompany {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.previewBody {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: var(--lh-body);
+}
+
+.previewActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+
 .deleteConfirm {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 22px;
   border: 1px solid var(--danger-border);
   padding: 18px;
-  max-width: 640px;
 }
 
 .deleteText {
@@ -196,15 +254,22 @@
     max-width: none;
   }
 
+  .deletePanel {
+    max-width: none;
+  }
+
   .deleteConfirm {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
-    max-width: none;
   }
 
   .deleteInput {
     width: auto;
+  }
+
+  .previewActions {
+    flex-wrap: wrap;
   }
 
   .saveRow {

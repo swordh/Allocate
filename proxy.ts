@@ -10,6 +10,14 @@ const PUBLIC_PATHS = [
   '/forgot-password',
   '/auth/action',
   '/invite',
+  // The company-deletion cancellation link is opened from an email, often in
+  // a browser that was never signed in — and for the one-person company that
+  // case is the ONLY way back, since there may be no account left to sign in
+  // with. The token in the URL is the authorisation (one-time, expiring,
+  // readable by no client), and the page itself only reads: cancelling
+  // requires submitting the form. See
+  // app/company-deletion/cancel/[token]/page.tsx.
+  '/company-deletion',
   '/api/auth/session',
   '/privacy',
   '/terms',

@@ -112,6 +112,54 @@
         { "fieldPath": "companyId", "order": "ASCENDING" },
         { "fieldPath": "submittedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "deletion.state", "order": "ASCENDING" },
+        { "fieldPath": "deletion.scheduledFor", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyDeletions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "lastHeartbeatAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyDeletions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "purgeAfter", "order": "ASCENDING" },
+        { "fieldPath": "identityRedactedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyDeletions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyDeletions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mail",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

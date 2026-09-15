@@ -15,3 +15,12 @@ export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
 export { onMailQueued } from './email/onMailQueued';
+export { retryFailedMail } from './email/retryFailedMail';
+
+// ─── Company deletion (issue #252, step 5, PR E) ──────────────────────────────
+export { onCompanyDeletionCreated } from './company/onDeletionCreated';
+export { companyDeletionSweep } from './company/sweep';
+export { purgeCompanyDeletionLogs } from './company/purgeLogs';
+
+// ─── Stranded account enforcement (issue #252, step 6) ────────────────────────
+export { strandedAccountSweep } from './company/strandedAccountSweep';
