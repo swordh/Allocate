@@ -29,6 +29,7 @@ export default async function CompanySettingsPage() {
       categories={categories}
       typeCounts={typeCounts}
       timezone={company.preferences?.timezone}
+      deletion={company.deletion ?? null}
     />
   )
 }
