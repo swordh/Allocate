@@ -218,3 +218,31 @@ export function formatStampInZone(iso: string, timezone: string): string {
     return `${formatDayShort(d.toISOString().slice(0, 10))} · ${formatTimeInZone(iso, timezone)}`
   }
 }
+
+/**
+ * An ISO timestamp → "22 September 2026" in the company's zone.
+ *
+ * Added for the company-deletion banner (issue #252 step 6, PR 3): the
+ * scheduled deletion instant must read as the same calendar date the
+ * company's own bookings use, not whichever date the viewer's browser
+ * happens to sit in. Booking dates are civil dates interpreted in the
+ * company's `preferences.timezone` (see the file docblock) — a member near a
+ * day boundary who read this in browser-local time could see a date one day
+ * off from the one their bookings are dated in, which is exactly the
+ * mistake this banner exists to prevent.
+ */
+export function formatDateFullInZone(iso: string, timezone: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone, day: 'numeric', month: 'long', year: 'numeric',
+    }).format(d)
+  } catch {
+    // An unknown zone must not take the banner down — fall back to UTC,
+    // matching todayInTimezone's fallback above.
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
+    }).format(d)
+  }
+}
