@@ -519,7 +519,13 @@ export default function CustomerDetailView({
             </div>
           </div>
           <TeamSection members={members} teamUnavailable={unavailable.team} />
-          <DeletionSection rows={deletion.rows} historyUnavailable={deletion.unavailable} adminCount={deletion.adminCount} />
+          <DeletionSection
+            companyId={company.id}
+            companyName={company.name}
+            rows={deletion.rows}
+            historyUnavailable={deletion.unavailable}
+            adminCount={deletion.adminCount}
+          />
         </div>
 
         {/* ---- Mobile: USAGE -> SUBSCRIPTION -> ACTIVITY -> TEAM -> DELETION -> NOTES ---- */}
@@ -534,7 +540,13 @@ export default function CustomerDetailView({
             planEventsUnavailable={unavailable.planEvents}
           />
           <TeamSection members={members} teamUnavailable={unavailable.team} />
-          <DeletionSection rows={deletion.rows} historyUnavailable={deletion.unavailable} adminCount={deletion.adminCount} />
+          <DeletionSection
+            companyId={company.id}
+            companyName={company.name}
+            rows={deletion.rows}
+            historyUnavailable={deletion.unavailable}
+            adminCount={deletion.adminCount}
+          />
           <NotesPanel {...notesPanelSharedProps} variant="inline" />
         </div>
       </div>

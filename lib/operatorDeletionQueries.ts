@@ -61,20 +61,24 @@ function mapDeletionDoc(doc: FirebaseFirestore.QueryDocumentSnapshot): CompanyDe
     operatorActions: Array.isArray(d.operatorActions)
       ? d.operatorActions.map((a: Record<string, unknown>) => ({
           action: String(a.action ?? ''),
-          // `?? null` is safe here, unlike on requestedByUid/canceledByUid above:
-          // the only writer that exists today is the 24-month retention job
-          // (functions/src/company/purgeLogs.ts), and it always sets both fields
-          // to an explicit `null`, never omits them — `CompanyDeletionOperatorAction`
-          // also types them as `string | null`, not optional, so there is no
-          // "never had an identity" case to collapse into "redacted" yet. The
-          // step 6 authoring path that appends operator-written entries has not
-          // been built (see the docblock on that type in types/company.ts). If a
-          // future writer on that path ever omits byUid/byName instead of writing
-          // null, this line will silently misreport "redacted" for an entry that
-          // in fact never carried an actor — replace `?? null` with a pass-through
-          // (like requestedByUid above) at that point.
-          byUid: (a.byUid as string | null) ?? null,
-          byName: (a.byName as string | null) ?? null,
+          // Passed through untouched, same rule as requestedByUid/canceledByUid
+          // above — `null` (redacted by the 24-month retention job) and
+          // `undefined` (this entry never carried an actor) must survive
+          // exactly as Firestore returned them. This USED to be `?? null`,
+          // back when the only writer was that retention job and it always
+          // set both fields explicitly. That writer is no longer the only
+          // one: `actions/operatorCompanyDeletion.ts` (issue #252 step 6, PR
+          // 5) now appends entries too, and every one of its three actions is
+          // required to set `byUid`/`byName` explicitly (see that file's
+          // docblock and `CompanyDeletionOperatorAction`'s in
+          // types/company.ts:199-216) — but a `?? null` here would silently
+          // paper over a REGRESSION in that requirement: an entry some future
+          // writer wrote five minutes ago, with the field merely omitted by
+          // mistake, would render as "redacted (24-month retention)" instead
+          // of surfacing as the bug it is. Pass-through is what makes that
+          // failure visible instead of quietly correct-looking.
+          byUid: a.byUid as string | null | undefined,
+          byName: a.byName as string | null | undefined,
           at: iso(a.at as TimestampLike),
           note: a.note as string | undefined,
         }))

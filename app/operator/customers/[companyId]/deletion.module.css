@@ -146,6 +146,74 @@
   gap: 2px;
 }
 
+/*
+ * Operator write actions (issue #252 step 6, PR 5) — cancel / requeue /
+ * request-on-behalf. New classes only; nothing above this block (including
+ * the existing status badges via Chip) is touched.
+ */
+.actionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--border-medium);
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.actionNote {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  padding: 8px 10px;
+  border: 1px solid var(--border-medium);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.actionButton {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border: 1px solid var(--text-primary);
+  background: var(--text-primary);
+  color: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actionButtonDanger {
+  composes: actionButton;
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.actionError {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--danger);
+}
+
+.actionSuccess {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-secondary);
+}
+
 /* The deleted-company fallback page (DeletedCompanyView) — the rest of
  * CustomerDetailView's layout (header, metric grid, etc.) doesn't apply
  * here since every subcollection it reads is gone with the company doc. */

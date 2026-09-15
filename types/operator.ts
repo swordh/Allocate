@@ -239,7 +239,7 @@ export interface CompanyDeletionRow {
   canceledByUid?: string | null
   canceledByName?: string | null
   canceledByEmail?: string | null
-  cancelSource?: 'admin_ui' | 'cancel_link'
+  cancelSource?: 'admin_ui' | 'cancel_link' | 'operator'
 
   completedAt?: string                // ISO string
 
@@ -248,8 +248,16 @@ export interface CompanyDeletionRow {
 
   operatorActions?: {
     action: string
-    byUid: string | null
-    byName: string | null
+    // `string` = known, `null` = redacted (24-month retention job), `undefined`
+    // = this entry never carried an actor (a malformed/legacy doc — every
+    // writer in actions/operatorCompanyDeletion.ts is required to set both
+    // explicitly). Widened from `string | null` once
+    // lib/operatorDeletionQueries.ts stopped coalescing an omitted field to
+    // `null` — see that file's `mapDeletionDoc` for why the coalescing had to
+    // go, and identityDisplay (lib/operatorDeletionView.ts) for how the three
+    // states render differently.
+    byUid: string | null | undefined
+    byName: string | null | undefined
     at: string
     note?: string
   }[]

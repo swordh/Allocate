@@ -153,7 +153,12 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
             <IdentityLine label="by" value={row.canceledByName} email={row.canceledByEmail ?? undefined} />
             {row.cancelSource && (
               <span className={styles.metaLine}>
-                via {row.cancelSource === 'cancel_link' ? 'emailed cancel link' : 'admin UI'}
+                via{' '}
+                {row.cancelSource === 'cancel_link'
+                  ? 'emailed cancel link'
+                  : row.cancelSource === 'operator'
+                    ? 'operator'
+                    : 'admin UI'}
               </span>
             )}
           </>
