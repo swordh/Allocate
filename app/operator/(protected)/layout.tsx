@@ -1,5 +1,5 @@
 import { getOperatorSession } from '@/lib/operator-dal'
-import OperatorShellClient from './_components/OperatorShellClient'
+import OperatorShellClient from '../_components/OperatorShellClient'
 import styles from './layout.module.css'
 
 export default async function OperatorLayout({ children }: { children: React.ReactNode }) {

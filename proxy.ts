@@ -8,6 +8,11 @@ const PUBLIC_PATHS = [
   '/login',
   '/signup',
   '/forgot-password',
+  // Operator (internal staff) sign-in — the only entry point into
+  // app/operator/(protected)/**. Gated server-side by the operatorSignIn
+  // action (actions/operator-auth.ts), not by this proxy: a signed-out
+  // request must reach the page itself before any check runs.
+  '/operator/login',
   '/auth/action',
   '/invite',
   // The company-deletion cancellation link is opened from an email, often in
