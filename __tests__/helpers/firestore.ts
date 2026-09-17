@@ -45,6 +45,15 @@ export interface DocRefStub {
   update: ReturnType<typeof vi.fn>
   set: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
+  /**
+   * `deleteAccount`'s per-uid lock (issue #349, actions/account.ts) uses
+   * `DocumentReference.create()` for its atomic acquire — real Firestore
+   * throws `{ code: 6 }` (ALREADY_EXISTS) if the doc exists, but this stub
+   * always resolves, same as `update`/`set`/`delete` above. A test that needs
+   * to exercise the "lock already held" path overrides this per-call, e.g.
+   * `vi.mocked(adminDb.doc).mockReturnValueOnce({ ...ref, create: vi.fn().mockRejectedValue(...) })`.
+   */
+  create: ReturnType<typeof vi.fn>
 }
 
 export interface DocSnapStub {
@@ -88,6 +97,7 @@ function makeDocRef(path: string, docs: DocMap): DocRefStub {
     update: vi.fn().mockResolvedValue(undefined),
     set: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
+    create: vi.fn().mockResolvedValue(undefined),
   }
   return ref
 }

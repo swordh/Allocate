@@ -86,6 +86,11 @@ export default function AccountSettingsForm({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // issue #349: `setDeleting(true)` isn't synchronous, so a fast double click
+  // can fire handleDeleteAccount twice before `disabled` re-renders. This ref
+  // is set synchronously, before any `await`, closing that window on the
+  // client — the server-side lock (actions/account.ts) is the real guard.
+  const deletingRef = useRef(false)
 
   // Per-company consequence preview (issue #252 step 6 PR 2). Fetched fresh
   // every time the delete panel opens, and again on demand via "REFRESH" —
@@ -219,7 +224,8 @@ export default function AccountSettingsForm({
   }, [deleteOpen])
 
   async function handleDeleteAccount() {
-    if (confirmInput !== 'DELETE') return
+    if (confirmInput !== 'DELETE' || deletingRef.current) return
+    deletingRef.current = true
     setDeleting(true)
     setDeleteError(null)
 
@@ -228,6 +234,7 @@ export default function AccountSettingsForm({
     if (result.error) {
       setDeleteError(result.error)
       setDeleting(false)
+      deletingRef.current = false
     } else {
       router.push('/login')
     }
