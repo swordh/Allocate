@@ -1,0 +1,79 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 0;
+  font-family: var(--font-ui);
+}
+
+.row:disabled {
+  cursor: default;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.active .name {
+  color: var(--text-primary);
+}
+
+.tag {
+  flex-shrink: 0;
+  font-size: var(--fs-eyebrow-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-btn);
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ── Desktop user-menu row ────────────────────────────────────────────────── */
+
+.menu {
+  padding: 12px 10px;
+  border: none;
+  border-left: 2px solid transparent;
+}
+
+.menu.active {
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
+}
+
+.menu:not(.active):not(:disabled):hover {
+  background: var(--fill);
+}
+
+.menu .name {
+  font-size: 14px;
+}
+
+/* ── Mobile SWITCH COMPANY sub-view row ──────────────────────────────────── */
+
+.list {
+  padding: 15px 14px;
+  border: 1px solid var(--fill-medium);
+  border-left: 3px solid var(--border-medium);
+}
+
+.list.active {
+  background: var(--accent-tint);
+  border-color: var(--fill-medium);
+  border-left-color: var(--accent);
+}
+
+.list .name {
+  font-size: 15px;
+}

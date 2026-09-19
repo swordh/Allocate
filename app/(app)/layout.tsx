@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
+import { listUserCompanies } from '@/lib/queries/companies'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileMenu } from '@/components/nav/MobileMenu'
 import CompanyDeletionBanner from '@/components/company/CompanyDeletionBanner'
@@ -46,6 +47,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const profile = await getUserProfile(session.uid)
 
+  // Company switcher (issue #352) — the membership list is the same for
+  // every render in this request, so one fetch here serves both PrimaryNav
+  // (desktop) and MobileMenu (mobile); companyData is already loaded above.
+  const companies = await listUserCompanies(session.uid)
+  const companyName = companyData?.name ?? ''
+
   // Company-deletion banner (issue #252 step 6, PR 3) — visible to every
   // member, not just admins; see CompanyDeletionBanner's own docblock for
   // why. `companyData` is raw Firestore data, not the `docToCompany`-mapped
@@ -70,7 +77,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div data-role={session.role} data-company={session.activeCompanyId}>
-      <PrimaryNav role={session.role} />
+      <PrimaryNav
+        role={session.role}
+        name={profile?.name ?? ''}
+        email={session.email}
+        activeCompanyId={session.activeCompanyId}
+      />
       <main className={styles.main}>
         <CompanyDeletionBanner
           deletion={deletionForBanner}
@@ -80,7 +92,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         {children}
       </main>
-      <MobileMenu role={session.role} name={profile?.name ?? ''} email={session.email} />
+      <MobileMenu
+        role={session.role}
+        name={profile?.name ?? ''}
+        email={session.email}
+        companyName={companyName}
+        activeCompanyId={session.activeCompanyId}
+        companies={companies}
+      />
     </div>
   )
 }

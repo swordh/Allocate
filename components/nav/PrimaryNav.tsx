@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { useSupportContext } from '@/lib/support-context'
 import Button from '@/components/ui/Button'
+import CompanyMenu from './CompanyMenu'
 import { TOP_NAV } from './nav-items'
 import styles from './PrimaryNav.module.css'
 
@@ -15,6 +16,9 @@ const ENV_LABELS: Record<string, string> = {
 
 interface PrimaryNavProps {
   role: Role
+  name: string
+  email: string
+  activeCompanyId: string
 }
 
 /**
@@ -22,7 +26,7 @@ interface PrimaryNavProps {
  * Uses usePathname() for live active-link detection on client-side navigation.
  * The nav itself is the same for every role — Settings is always visible.
  */
-export default function PrimaryNav({ role }: PrimaryNavProps) {
+export default function PrimaryNav({ role, name, email, activeCompanyId }: PrimaryNavProps) {
   const pathname = usePathname()
   const isActive = (path: string) => pathname.startsWith(path)
   const { helpOpen, openHelp } = useSupportContext()
@@ -63,6 +67,7 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
             >
               ?
             </button>
+            <CompanyMenu name={name} email={email} activeCompanyId={activeCompanyId} />
           </div>
 
           {/* NEW BOOKING on every screen, per the design. The equipment page
