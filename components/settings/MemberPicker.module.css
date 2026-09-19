@@ -1,0 +1,81 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-medium);
+  cursor: pointer;
+}
+
+.input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-circle);
+  border: 1px solid var(--border-strong);
+  position: relative;
+}
+
+.dot::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.input:checked + .dot {
+  border-color: var(--accent);
+}
+
+.input:checked + .dot::after {
+  opacity: 1;
+}
+
+.input:focus-visible + .dot {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-input);
+  color: var(--text-primary);
+}
+
+.email {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-body-sm);
+  color: var(--text-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
