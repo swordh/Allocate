@@ -951,7 +951,19 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
     })
   }
 
-  revalidatePath('/settings/account')
+  // Deliberately NOT calling revalidatePath here when the left company was
+  // active — same race actions/auth.ts's switchCompany hit (caught live
+  // against alpha, see its docblock): a Server Action invoked from a Client
+  // Component eagerly re-renders the invoking route's revalidated segments
+  // as part of THIS SAME request/response, using the request's own (still
+  // the OLD, now revoked) session cookie — bouncing the client to /login
+  // before it ever reaches `establishSessionFromCustomToken`. Every active-
+  // company caller already does a hard `window.location.href` reload after
+  // that handshake (LeaveCompanyReceipt's CONTINUE), which busts the cache
+  // on its own. The non-active case has no such revoke to race against, but
+  // skips this uniformly rather than making the hazard depend on a branch a
+  // future edit could get wrong — its caller (AccountSettingsForm) already
+  // does its own `router.refresh()` on close.
   console.log('[actions/team]', {
     uid: session.uid.slice(0, 8) + '...',
     companyId: cid,

@@ -11,6 +11,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import LeaveCompanyFlow from './LeaveCompanyFlow'
 import type { Category, CompanyDeletion } from '@/types'
 import styles from './CompanySettingsForm.module.css'
 
@@ -26,6 +27,7 @@ function formatDateFull(iso: string | undefined): string {
 }
 
 interface CompanySettingsFormProps {
+  companyId: string
   name: string
   categories: Category[]
   typeCounts: Record<string, number>
@@ -35,6 +37,7 @@ interface CompanySettingsFormProps {
 }
 
 export default function CompanySettingsForm({
+  companyId,
   name: initialName,
   categories: initialCategories,
   typeCounts,
@@ -67,6 +70,9 @@ export default function CompanySettingsForm({
   const [requestingDeletion, setRequestingDeletion] = useState(false)
   const [deletionError, setDeletionError] = useState<string | null>(null)
   const [cancellingDeletion, setCancellingDeletion] = useState(false)
+
+  // My membership (issue #352) — leaving your own active company.
+  const [leavingOpen, setLeavingOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -301,6 +307,22 @@ export default function CompanySettingsForm({
         </div>
       </div>
 
+      {/* My membership (issue #352) — leaving the company you're viewing
+          settings for. Unlike Account Settings' "My companies" list (every
+          membership), this is always scoped to the active company, since
+          that's what this whole page is about. */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>My membership</div>
+          <div className={styles.rowHelp}>Leave {initialName || 'this company'}. It carries on without you.</div>
+        </div>
+        <div className={styles.buttonsRow}>
+          <Button variant="secondary" size="sm" onClick={() => setLeavingOpen(true)}>
+            LEAVE…
+          </Button>
+        </div>
+      </div>
+
       {/* Danger zone — request/cancel company deletion. Admin-only in
           practice because this whole page redirects non-admins before it
           renders (app/(app)/settings/company/page.tsx), but the server
@@ -422,6 +444,15 @@ export default function CompanySettingsForm({
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}
       />
+
+      {leavingOpen && (
+        <LeaveCompanyFlow
+          companyId={companyId}
+          companyName={initialName}
+          isActiveCompany
+          onClose={() => setLeavingOpen(false)}
+        />
+      )}
     </div>
   )
 }
