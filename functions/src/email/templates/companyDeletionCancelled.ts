@@ -8,7 +8,7 @@ export interface CompanyDeletionCancelledData {
   cancelledAtFormatted: string;
   /** The date it would have happened on, now moot. */
   scheduledForFormatted: string;
-  /** Deep link into the app, e.g. `https://allocate.at/`. No token — plain URL. */
+  /** Deep link into the app, e.g. `https://app.allocate.at/`. No token — plain URL. */
   openUrl: string;
 }
 
