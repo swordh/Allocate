@@ -1,63 +1,90 @@
-.wrap {
+.screen {
+  position: fixed;
+  inset: 0;
+  /* Above --z-overlay, which is where MobileMenu's fixed hamburger trigger
+     sits — this screen is the whole page at that point, not a layer over it. */
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  text-align: center;
-  align-items: center;
-  padding: 20px 0;
+  justify-content: center;
+  background: var(--bg-page);
+  padding: 40px var(--page-margin);
+}
+
+.body {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.wordmark {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  color: var(--text-primary);
 }
 
 .eyebrow {
+  margin-top: 22px;
   font-family: var(--font-ui);
-  font-size: var(--fs-eyebrow-sm);
-  font-weight: var(--fw-bold);
-  letter-spacing: var(--ls-section);
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.title {
-  font-family: var(--font-ui);
-  font-size: var(--fs-modal-title);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
-  max-width: 32ch;
-}
-
-.facts {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  text-align: left;
-  border: 1px solid var(--border-medium);
-  padding: 16px 18px;
-}
-
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.fact dt {
-  font-family: var(--font-ui);
-  font-size: var(--fs-eyebrow-sm);
+  font-size: var(--fs-label-sm);
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-weak);
 }
 
-.fact dd {
-  margin: 0;
+.title {
+  margin-top: 12px;
+  font-family: var(--font-ui);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.lead {
+  margin-top: 12px;
   font-family: var(--font-ui);
   font-size: var(--fs-body-sm);
   font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
   color: var(--text-muted);
 }
 
+.facts {
+  margin-top: 22px;
+}
+
 .actions {
+  width: 100%;
+  max-width: 520px;
+  margin: 24px auto 0;
   display: flex;
   gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .screen {
+    justify-content: flex-start;
+    padding: 30px var(--page-margin-mobile) calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .title {
+    font-size: 23px;
+  }
+
+  /* The phone screens drop the lead — at this width the facts table says the
+     same thing with less scrolling. */
+  .lead {
+    display: none;
+  }
+
+  .actions {
+    margin-top: auto;
+    flex-direction: column;
+  }
 }

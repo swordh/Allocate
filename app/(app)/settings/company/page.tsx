@@ -25,7 +25,6 @@ export default async function CompanySettingsPage() {
 
   return (
     <CompanySettingsForm
-      companyId={session.activeCompanyId}
       name={company.name}
       categories={categories}
       typeCounts={typeCounts}

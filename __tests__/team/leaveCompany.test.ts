@@ -195,10 +195,12 @@ describe('leaveCompany', () => {
     expect(result.error).toBeUndefined()
     expect(result.left).toBeUndefined()
     expect(result.onlyMember).toBeUndefined()
+    // `role` rides along so the successor picker can show it without a
+    // second read — same shape getLeaveContext (actions/companies.ts) returns.
     expect(result.blocked).toEqual({
       promotable: [
-        { uid: 'crew-1', name: 'Crew One', email: 'crew1@example.com' },
-        { uid: 'crew-2', name: 'Crew Two', email: 'crew2@example.com' },
+        { uid: 'crew-1', name: 'Crew One', email: 'crew1@example.com', role: 'crew' },
+        { uid: 'crew-2', name: 'Crew Two', email: 'crew2@example.com', role: 'crew' },
       ],
     })
 
