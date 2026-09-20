@@ -11,10 +11,6 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import LeaveCompanyFlow from './LeaveCompanyFlow'
-import LeaveCompanyEntry from './LeaveCompanyEntry'
-import { getAccountDeletionPreview } from '@/actions/account'
-import type { CompanyDeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import type { Category, CompanyDeletion } from '@/types'
 import styles from './CompanySettingsForm.module.css'
 
@@ -30,9 +26,6 @@ function formatDateFull(iso: string | undefined): string {
 }
 
 interface CompanySettingsFormProps {
-  companyId: string
-  /** The caller's own address — the leave flow's RECEIPT lines name it. */
-  email: string
   name: string
   categories: Category[]
   typeCounts: Record<string, number>
@@ -42,8 +35,6 @@ interface CompanySettingsFormProps {
 }
 
 export default function CompanySettingsForm({
-  companyId,
-  email,
   name: initialName,
   categories: initialCategories,
   typeCounts,
@@ -76,27 +67,6 @@ export default function CompanySettingsForm({
   const [requestingDeletion, setRequestingDeletion] = useState(false)
   const [deletionError, setDeletionError] = useState<string | null>(null)
   const [cancellingDeletion, setCancellingDeletion] = useState(false)
-
-  // My membership (issue #352) — leaving your own active company. The
-  // outcome reading is the same one the Account page's "My companies" list
-  // uses (`getDeletionOutcomes` via `getAccountDeletionPreview`); it decides
-  // the entry card's copy and whether the blocked reason shows up front,
-  // while `leaveCompany` still decides for real when the user acts.
-  const [leavingOpen, setLeavingOpen] = useState(false)
-  const [membership, setMembership] = useState<CompanyDeletionOutcome | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getAccountDeletionPreview()
-      .then((preview) => {
-        if (cancelled || preview.status !== 'ready') return
-        setMembership(preview.companies.find((c) => c.companyId === companyId) ?? null)
-      })
-      .catch(() => {
-        /* Leaves the entry card on its neutral default. */
-      })
-    return () => { cancelled = true }
-  }, [companyId])
 
   useEffect(() => {
     try {
@@ -331,27 +301,6 @@ export default function CompanySettingsForm({
         </div>
       </div>
 
-      {/* My membership (issue #352) — leaving the company you're viewing
-          settings for. Unlike Account Settings' "My companies" list (every
-          membership), this is always scoped to the active company, since
-          that's what this whole page is about. */}
-      <div className={styles.row}>
-        <div>
-          <div className={styles.rowLabel}>My membership</div>
-          <div className={styles.rowHelp}>
-            Step out of {initialName || 'this company'} yourself. No administrator has to remove you.
-          </div>
-        </div>
-        <div className={styles.rowControl}>
-          <LeaveCompanyEntry
-            companyName={initialName || 'this company'}
-            outcome={membership?.outcome ?? 'leave'}
-            memberCount={membership?.memberCount ?? 0}
-            onOpen={() => setLeavingOpen(true)}
-          />
-        </div>
-      </div>
-
       {/* Danger zone — request/cancel company deletion. Admin-only in
           practice because this whole page redirects non-admins before it
           renders (app/(app)/settings/company/page.tsx), but the server
@@ -473,18 +422,6 @@ export default function CompanySettingsForm({
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}
       />
-
-      {leavingOpen && (
-        <LeaveCompanyFlow
-          companyId={companyId}
-          companyName={initialName}
-          isActiveCompany
-          email={email}
-          outcome={membership?.outcome ?? 'leave'}
-          memberCount={membership?.memberCount ?? 0}
-          onClose={() => setLeavingOpen(false)}
-        />
-      )}
     </div>
   )
 }
