@@ -1,11 +1,13 @@
 'use client'
 
+import type { Role } from '@/types'
 import styles from './MemberPicker.module.css'
 
 export interface PromotableMember {
   uid: string
   name: string
   email: string
+  role: Role
 }
 
 interface MemberPickerProps {
@@ -29,10 +31,9 @@ export default function MemberPicker({ members, selected, onSelect, name }: Memb
             onChange={() => onSelect(member.uid)}
           />
           <span className={styles.dot} aria-hidden="true" />
-          <span className={styles.info}>
-            <span className={styles.name}>{member.name}</span>
-            <span className={styles.email}>{member.email}</span>
-          </span>
+          <span className={styles.name}>{member.name}</span>
+          <span className={styles.email}>{member.email}</span>
+          <span className={styles.role}>{member.role}</span>
         </label>
       ))}
     </div>

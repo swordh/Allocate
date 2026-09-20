@@ -734,8 +734,11 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
 export interface LeaveCompanyResult {
   error?: string
   /** The caller is the company's sole admin and other members remain — UI
-   *  shows a picker to promote one of `promotable` before leaving is possible. */
-  blocked?: { promotable: { uid: string; name: string; email: string }[] }
+   *  shows a picker to promote one of `promotable` before leaving is possible.
+   *  Same shape `getLeaveContext` (actions/companies.ts) returns, so the UI
+   *  can show the list before the guard ever trips and still accept this one
+   *  when a stale advisory outcome sends it down the write path first. */
+  blocked?: { promotable: { uid: string; name: string; email: string; role: Role }[] }
   /** The caller is the company's only member — there is nobody to leave it
    *  to. UI routes into the EXISTING company-deletion confirm flow
    *  (requestCompanyDeletion) instead of a new mechanism. */
@@ -843,7 +846,7 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
       const members = await listMembers(cid)
       const promotable = members
         .filter((m) => m.uid !== session.uid)
-        .map((m) => ({ uid: m.uid, name: m.name, email: m.email }))
+        .map((m) => ({ uid: m.uid, name: m.name, email: m.email, role: m.role }))
       return { blocked: { promotable } }
     }
 

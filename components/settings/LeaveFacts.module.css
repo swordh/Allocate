@@ -1,0 +1,55 @@
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--fill-medium);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding-top: 2px;
+}
+
+.label.danger {
+  color: var(--danger);
+}
+
+.label.accent {
+  color: var(--accent);
+}
+
+.value {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+/* Mobile stacks the pair — label above value — per the design's phone
+   screens, where a 150px label column would leave nothing for the text. */
+@media (max-width: 768px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .label {
+    padding-top: 0;
+  }
+}

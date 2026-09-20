@@ -17,6 +17,7 @@ import Input from '@/components/ui/Input'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import LeaveCompanyFlow from './LeaveCompanyFlow'
+import LeaveCompanyEntry from './LeaveCompanyEntry'
 import { BOOKING_VIEW_OPTIONS, BOOKING_VIEW_LABELS, type BookingViewOption } from '@/constants/company'
 import type { CompanyDeletionOutcome, DeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import styles from './AccountSettingsForm.module.css'
@@ -370,7 +371,9 @@ export default function AccountSettingsForm({
       <div className={styles.row}>
         <div>
           <div className={styles.rowLabel}>My companies</div>
-          <div className={styles.rowHelp}>Leave any company you belong to. The company carries on without you.</div>
+          <div className={styles.rowHelp}>
+            Step out of a company yourself. No administrator has to remove you.
+          </div>
         </div>
         <div className={styles.rowControl}>
           {previewLoading && !preview && <p className={styles.previewStatus}>Checking your companies…</p>}
@@ -378,23 +381,17 @@ export default function AccountSettingsForm({
             <p className={styles.previewStatus}>You are not a member of any company.</p>
           )}
           {preview?.status === 'ready' && preview.companies.length > 0 && (
-            <ul className={styles.companiesList}>
+            <div className={styles.companiesList}>
               {preview.companies.map((company) => (
-                <li key={company.companyId} className={styles.companyItem}>
-                  <span className={styles.companyName}>
-                    {company.companyName || 'Untitled company'}
-                    {company.companyId === activeCompanyId && (
-                      <Chip size="tag" tone="accent" interactive={false}>
-                        Active
-                      </Chip>
-                    )}
-                  </span>
-                  <Button variant="secondary" size="sm" onClick={() => setLeavingCompany(company)}>
-                    LEAVE…
-                  </Button>
-                </li>
+                <LeaveCompanyEntry
+                  key={company.companyId}
+                  companyName={company.companyName || 'Untitled company'}
+                  outcome={company.outcome}
+                  memberCount={company.memberCount}
+                  onOpen={() => setLeavingCompany(company)}
+                />
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </div>
@@ -583,6 +580,9 @@ export default function AccountSettingsForm({
           companyId={leavingCompany.companyId}
           companyName={leavingCompany.companyName || 'this company'}
           isActiveCompany={leavingCompany.companyId === activeCompanyId}
+          email={email}
+          outcome={leavingCompany.outcome}
+          memberCount={leavingCompany.memberCount}
           onClose={() => {
             setLeavingCompany(null)
             loadPreview()

@@ -1,7 +1,9 @@
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: var(--z-overlay);
+  /* Same layer MobileMenu's own overlay uses — anything lower leaves the
+     fixed hamburger trigger (--z-overlay) floating on top of the sheet. */
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   background: var(--surface-sunken);
