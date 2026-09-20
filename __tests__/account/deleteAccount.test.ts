@@ -189,6 +189,15 @@ interface CompanyFixture {
   /** Members subcollection docs, used only when metaCounts is omitted. */
   members?: QueryDocInput[]
   createdBy?: string
+  /**
+   * companies/{cid}/equipment docs, each optionally carrying its own `units`
+   * subcollection docs. Exercises the issue #347 fix — the unfiltered
+   * `equipmentRef.get()` walk that replaced the broken
+   * `collectionGroup('units').where('companyId', ...)` query, which threw
+   * FAILED_PRECONDITION in every environment because no COLLECTION_GROUP_ASC
+   * index on `companyId` ever existed.
+   */
+  equipment?: Array<{ id: string; units?: QueryDocInput[] }>
 }
 
 interface Scenario {
@@ -254,6 +263,31 @@ function wireScenario(scenario: Scenario) {
         : allMembers
     }
 
+    // Equipment: the unfiltered path-form walk `equipmentRef.get()` performs
+    // (issue #347 — see CompanyFixture.equipment's docblock). The filtered
+    // createdBy/approverId queries against this same path fall through to
+    // the catch-all `[]` below, same as before.
+    const equipmentMatch = ctx.path.match(/^companies\/([^/]+)\/equipment$/)
+    if (equipmentMatch && ctx.filters.length === 0) {
+      const cid = equipmentMatch[1] as string
+      const fixture = scenario.companies?.[cid]
+      return (fixture?.equipment ?? []).map((eq) => ({
+        id: eq.id,
+        path: `companies/${cid}/equipment/${eq.id}`,
+        data: {},
+      }))
+    }
+
+    // Equipment units subcollection — companies/{cid}/equipment/{eqId}/units,
+    // reached via `eqDoc.ref.collection('units').get()`.
+    const unitsMatch = ctx.path.match(/^companies\/([^/]+)\/equipment\/([^/]+)\/units$/)
+    if (unitsMatch) {
+      const cid = unitsMatch[1] as string
+      const eqId = unitsMatch[2] as string
+      const eq = scenario.companies?.[cid]?.equipment?.find((e) => e.id === eqId)
+      return eq?.units ?? []
+    }
+
     // Bookings/equipment — nothing to anonymise by default in these tests.
     return []
   }
@@ -261,7 +295,7 @@ function wireScenario(scenario: Scenario) {
   const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
     docs,
     query,
-    collectionGroup: () => [], // 'units' — no unit docs to anonymise in these tests
+    collectionGroup: () => [], // memberships/invitations never used collectionGroup; units no longer do either (issue #347 — see equipmentMatch/unitsMatch above)
   })
 
   const tx = makeTransaction(docs)
@@ -1084,6 +1118,111 @@ describe('deleteAccount — invitation anonymisation', () => {
 
     expect(result.error).toBeUndefined()
     expect(wired.batch.delete).toHaveBeenCalledWith(expect.objectContaining({ id: 'inv-5' }))
+  })
+})
+
+// ── issue #347: units anonymisation ──────────────────────────────────────────
+//
+// `anonymizeMemberReferences`'s units step used to be a single-filter
+// collectionGroup('units').where('companyId', ...) query. That shape needs a
+// COLLECTION_GROUP_ASC index on `companyId` that firestore.indexes.json never
+// had, so it threw FAILED_PRECONDITION before ever returning — deterministic
+// breakage of GDPR Art. 17 deletion, in every environment, for every user.
+// The old fixture wiring for this ('units' — no unit docs to anonymise in
+// these tests', `collectionGroup: () => []`) is exactly why: it stubbed the
+// broken query's result rather than exercising the code path at all. The fix
+// walks equipmentRef.get() and eqDoc.ref.collection('units').get() directly
+// (mirrors actions/team.ts's anonymizeMemberReferences), so these tests wire
+// equipment/units fixtures instead and assert the walk actually runs.
+
+describe('deleteAccount — units anonymisation (issue #347)', () => {
+  const BASE_SCENARIO = {
+    memberships: [{ companyId: 'company-A', role: 'crew' }],
+    companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+  } satisfies Scenario
+
+  it('nulls createdBy/updatedBy/deactivatedBy on a unit matching the deleted user, leaves another user\'s fields alone', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      ...BASE_SCENARIO,
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          equipment: [
+            {
+              id: 'eq-1',
+              units: [
+                {
+                  id: 'unit-1',
+                  path: 'companies/company-A/equipment/eq-1/units/unit-1',
+                  data: { createdBy: UID, updatedBy: UID, deactivatedBy: 'other-user', active: true },
+                },
+                {
+                  id: 'unit-2',
+                  path: 'companies/company-A/equipment/eq-1/units/unit-2',
+                  data: { createdBy: 'other-user', updatedBy: 'other-user', deactivatedBy: 'other-user', active: true },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // unit-1: createdBy and updatedBy matched the deleted uid — nulled.
+    // deactivatedBy belonged to someone else, so it's excluded from the
+    // update object entirely (addOp is only called with the fields that
+    // changed, not a full nulled-out shape).
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-1' }),
+      { createdBy: null, updatedBy: null },
+    )
+    // unit-2: nothing on it references the deleted uid — no update at all.
+    expect(wired.batch.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-2' }),
+      expect.anything(),
+    )
+  })
+
+  it('anonymises a unit with no `active` field at all — the fix must not depend on it', async () => {
+    // The rejected alternative fix queried active==true and active==false
+    // separately, which silently skipped any unit doc missing `active`
+    // entirely. This locks in that the equipment-subcollection walk has no
+    // such dependency: the unit below carries no `active` field whatsoever.
+    stubSession()
+    const { wired } = wireScenario({
+      ...BASE_SCENARIO,
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          equipment: [
+            {
+              id: 'eq-2',
+              units: [
+                {
+                  id: 'unit-3',
+                  path: 'companies/company-A/equipment/eq-2/units/unit-3',
+                  data: { deactivatedBy: UID },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-3' }),
+      { deactivatedBy: null },
+    )
   })
 })
 

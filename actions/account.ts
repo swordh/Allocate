@@ -738,18 +738,35 @@ async function runAccountDeletion(
       const byEquipmentApprover = await equipmentRef.where('approverId', '==', uid).get()
       for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
 
-      // Units: read all units in company, filter in-code for user references
-      const unitsSnap = await adminDb
-        .collectionGroup('units')
-        .where('companyId', '==', companyId)
-        .get()
-      for (const doc of unitsSnap.docs) {
-        const data = doc.data()
-        const updates: Record<string, null> = {}
-        if (data.createdBy === uid) updates.createdBy = null
-        if (data.updatedBy === uid) updates.updatedBy = null
-        if (data.deactivatedBy === uid) updates.deactivatedBy = null
-        if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+      // Units: iterate equipment subcollections directly — avoids collectionGroup
+      // index requirement. A single-filter collectionGroup('units').where('companyId',
+      // ...) query needs a COLLECTION_GROUP_ASC index on companyId that firestore.indexes.json
+      // never had, so this threw FAILED_PRECONDITION before the query ever ran, making
+      // GDPR Art. 17 deletion fail deterministically for every user (issue #347). No index
+      // is needed here because equipmentRef is already scoped to this company. Same pattern
+      // as anonymizeMemberReferences in actions/team.ts.
+      //
+      // The per-equipment units reads are fired in parallel (basic plan caps
+      // equipment at 100 — lib/plans.ts — so sequential awaits here, stacked
+      // on top of the ~9 other sequential queries this per-company loop
+      // already does, could push a user in several near-limit companies
+      // toward a Server Action timeout). Only the reads are parallelised:
+      // `addOp` mutates the shared `batch`/`opCount` closure state and must
+      // stay called one at a time, so the writes below remain a plain
+      // sequential loop over the resolved snapshots.
+      const allEquipmentSnap = await equipmentRef.get()
+      const unitsSnaps = await Promise.all(
+        allEquipmentSnap.docs.map((eqDoc) => eqDoc.ref.collection('units').get()),
+      )
+      for (const unitsSnap of unitsSnaps) {
+        for (const doc of unitsSnap.docs) {
+          const data = doc.data()
+          const updates: Record<string, null> = {}
+          if (data.createdBy === uid) updates.createdBy = null
+          if (data.updatedBy === uid) updates.updatedBy = null
+          if (data.deactivatedBy === uid) updates.deactivatedBy = null
+          if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+        }
       }
 
       // Invitations: this user's PII shows up on invitation docs in three
