@@ -50,6 +50,10 @@ export default defineConfig({
       'next/cache': path.resolve(__dirname, '__tests__/__mocks__/next-cache.ts'),
       'next/headers': path.resolve(__dirname, '__tests__/__mocks__/next-headers.ts'),
       'next/navigation': path.resolve(__dirname, '__tests__/__mocks__/next-navigation.ts'),
+      // functions/src modules import this, but 'firebase-functions' is only
+      // installed under functions/node_modules — a root-only `npm ci` would
+      // fail to resolve it. See the stub's own docblock.
+      'firebase-functions/v2': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2.ts'),
     },
   },
 })

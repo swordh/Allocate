@@ -1,4 +1,5 @@
 import type { Timestamp } from 'firebase-admin/firestore';
+import { appUrl } from '../appUrl';
 
 /** e.g. "12 September 2026" — matches the example dates in the mail template docblocks. */
 export function formatDateFull(ts: Timestamp): string {
@@ -11,5 +12,5 @@ export function formatDateShort(ts: Timestamp): string {
 }
 
 export function buildCancelUrl(token: string): string {
-  return `https://allocate.at/company-deletion/cancel/${token}`;
+  return appUrl(`/company-deletion/cancel/${token}`);
 }

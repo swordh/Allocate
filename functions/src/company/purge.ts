@@ -4,6 +4,7 @@ import type { CompanyDeletionDocument, CompanyDeletionPhase } from '../types';
 import { cleanupOneMember } from './memberCleanup';
 import { getStripeClient } from './stripeClient';
 import { formatDateFull } from './format';
+import { appUrl } from '../appUrl';
 
 /** Matches actions/account.ts and actions/team.ts's chunked-WriteBatch convention. */
 const BATCH_LIMIT = 490;
@@ -340,10 +341,10 @@ async function runFinalizePhase(
     // gets a sign-in URL, not signup: her account still exists.
     const ctaUrl =
       contact.accountStatus === 'already_gone'
-        ? 'https://allocate.at/signup'
+        ? appUrl('/signup')
         : contact.accountStatus === 'scheduled'
-          ? 'https://allocate.at/login'
-          : 'https://allocate.at/company/new';
+          ? appUrl('/login')
+          : appUrl('/company/new');
 
     const mailRef = db.collection('mail').doc();
     batch.set(mailRef, {
