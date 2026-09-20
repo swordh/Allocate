@@ -46,7 +46,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 16px;
-  padding: 26px 28px 28px;
+  padding: 26px 28px 18px;
 }
 
 .stack > :global(dl),
@@ -225,12 +225,20 @@
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 
+/* Modal's footer slot has no padding of its own (the card's padding is
+   neutralised by .modal above), so the gutter and the divider live here —
+   inset to the same 28px as .header and .stack, rather than a hairline
+   running edge to edge. FullScreenSheet brings its own padded, divided
+   footer, so the mobile query below hands all of this back. */
 .footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  width: 100%;
+  flex: 1;
+  margin: 0 28px 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
 }
 
 .footerNote {
@@ -284,6 +292,9 @@
     flex-direction: column;
     align-items: stretch;
     gap: 14px;
+    margin: 0;
+    padding-top: 0;
+    border-top: none;
   }
 
   /* Primary sits on top on a phone — the actions are rendered
