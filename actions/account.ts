@@ -544,6 +544,8 @@ async function runAccountDeletion(
           // the thing holding a whole company's destruction open.
           const companyName = (companySnap.data()?.name as string | undefined) ?? ''
           const memberData = memberSnap.data() ?? {}
+          const requesterName = (memberData.name as string | undefined) || session.email || 'Account holder'
+          const requesterEmail = (memberData.email as string | undefined) || session.email || ''
 
           counts.applyHeal()
 
@@ -555,8 +557,8 @@ async function runAccountDeletion(
             state: 'requested',
             requestedAt: requestNow,
             requestedByUid: uid,
-            requestedByName: (memberData.name as string | undefined) || session.email || 'Account holder',
-            requestedByEmail: (memberData.email as string | undefined) || session.email || '',
+            requestedByName: requesterName,
+            requestedByEmail: requesterEmail,
             // Immediate mode has no window, so "scheduled for" is now. The
             // sweep's overdue query matches it from the first tick, which is
             // the intended safety net: if the trigger never fires, the sweep
@@ -564,6 +566,21 @@ async function runAccountDeletion(
             scheduledFor: requestNow,
             attempts: 0,
             purgeAfter,
+            // Seeded here, not left for the purge's members phase to fill in
+            // (functions/src/company/purge.ts's runMembersPhase, which
+            // normally builds formerMemberContacts by reading
+            // companies/{companyId}/members). `tx.delete(memberRef)` below
+            // removes that very member doc in this same transaction, so by
+            // the time the purge's async members phase runs there is nothing
+            // left there to read her name/email from — she would never be
+            // added to formerMemberContacts, and finalize's companyDeleted
+            // mail is only ever queued to uids that ARE in that list (issue
+            // #351). `accountStatus: 'already_gone'` is correct by
+            // construction: this branch is the one place her account is
+            // itself deleted, synchronously, later in this same call.
+            formerMemberContacts: [
+              { uid, name: requesterName, email: requesterEmail, accountStatus: 'already_gone' },
+            ],
           })
 
           tx.update(companyRef, {
@@ -571,7 +588,7 @@ async function runAccountDeletion(
               state: 'requested',
               requestId,
               requestedAt: requestNow,
-              requestedByName: (memberData.name as string | undefined) || session.email || 'Account holder',
+              requestedByName: requesterName,
               scheduledFor: requestNow,
               mode: 'immediate',
             },
