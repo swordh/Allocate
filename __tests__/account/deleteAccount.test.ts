@@ -431,6 +431,17 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
       attempts: 0,
     })
 
+    // issue #351: `companies/company-A/members/{UID}` is deleted (tx.delete
+    // below, same transaction) before the async purge's members phase ever
+    // runs, so it can never read her name/email to build
+    // formerMemberContacts itself. This ledger row must carry her contact
+    // up front, or the purge's finalize phase never queues her
+    // `companyDeleted` mail — see memberCleanup.ts's `already_gone`
+    // docblock.
+    expect((ledgerWrite![1] as { formerMemberContacts?: unknown[] }).formerMemberContacts).toEqual([
+      { uid: UID, name: 'user@example.com', email: 'user@example.com', accountStatus: 'already_gone' },
+    ])
+
     // …and the member-visible mirror on the company document, which is what
     // the sweep queries and what `claimRequestedLease` reads.
     const mirrorWrite = tx.update.mock.calls.find(

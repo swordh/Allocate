@@ -12,16 +12,25 @@ export const STRANDED_MEMBER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  *   into the purged company was removed.
  * `scheduled` — she had no other company. Her account is untouched but now
  *   carries `pendingDeletion` (thirty days out) — see the module docblock.
- * `already_gone` — `users/{uid}` did not exist when this ran. The only
- *   route to this today is the sole-member-deletes-her-own-account case
- *   (`mode: 'immediate'`, PR F): `deleteAccount` deletes her own account
- *   synchronously, before/independently of this purge, so by the time the
- *   purge's members phase reaches her there is nothing left to schedule —
- *   she is already, actually gone, not merely counting down. Callers (the
- *   finalize phase's `companyDeleted` mail) must treat this differently
- *   from `scheduled`: it is the one case where that mail's
- *   `accountAlsoDeleted: true` / "nothing left to sign back into" copy is
- *   actually true.
+ * `already_gone` — `users/{uid}` did not exist when this ran. Reachable
+ *   here in principle, but in practice the sole-member-deletes-her-own-
+ *   account case (`mode: 'immediate'`, PR F) never takes this branch:
+ *   `deleteAccount` (actions/account.ts) deletes `companies/{companyId}/
+ *   members/{uid}` itself, in the SAME transaction that writes the
+ *   `companyDeletions` ledger row — before this purge's members phase ever
+ *   runs. By the time `runMembersPhase` (purge.ts) queries
+ *   `companies/{companyId}/members`, her doc is already gone, so
+ *   `cleanupOneMember` is never even called for her uid. That is why
+ *   `deleteAccount` seeds the ledger's `formerMemberContacts` directly with
+ *   her `accountStatus: 'already_gone'` contact (see the docblock there,
+ *   issue #351) rather than relying on this function to produce it. This
+ *   branch is kept as a harmless fallback for any future path that leaves
+ *   `companies/{cid}/members/{uid}` intact while `users/{uid}` is already
+ *   gone — it just isn't how the self-delete case reaches `already_gone`
+ *   today. Callers (the finalize phase's `companyDeleted` mail) must treat
+ *   `already_gone` differently from `scheduled`: it is the one status
+ *   where that mail's `accountAlsoDeleted: true` / "nothing left to sign
+ *   back into" copy is actually true.
  */
 export type MemberAccountStatus = 'kept' | 'scheduled' | 'already_gone';
 
