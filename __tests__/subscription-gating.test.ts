@@ -1,8 +1,15 @@
 /**
  * Unit tests for the subscription gating logic (issue #71).
  *
- * The layout's gating condition is extracted here as a pure function so it
- * can be tested in isolation without Next.js server infrastructure.
+ * `needsSubscription` now lives in `lib/subscriptionAccess.ts` (issue #350)
+ * — this file used to carry a local copy of the same function because the
+ * real guard was still inline in `app/(app)/layout.tsx` when these tests
+ * were written. That inline guard is gone: `app/(app)/layout.tsx` now calls
+ * `evaluateAppAccess`, which calls `hasFullAccess`/`needsSubscription`
+ * directly (see `__tests__/subscription/appLayoutGate.test.ts` for the test
+ * that the layout actually wires it up). This file now imports the real
+ * function instead of a local stand-in, so these 13 cases exercise
+ * production code, not a copy of it that could silently drift.
  *
  * Bug: the old guard used `stripeCustomerId` presence as a proxy for an active
  * Stripe trial. A user could initiate checkout (which writes stripeCustomerId
@@ -24,17 +31,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-
-// ── Function under test ───────────────────────────────────────────────────────
-//
-// This is the logic that WILL replace the current layout guard once the fix
-// lands (app/(app)/layout.tsx). Tests written before the implementation so
-// the fix can be validated immediately on merge.
-
-function needsSubscription(subStatus: string | undefined, trialEnd: string | null): boolean {
-  const isRealTrial = subStatus === 'trialing' && trialEnd !== null
-  return subStatus !== 'active' && !isRealTrial
-}
+import { needsSubscription } from '@/lib/subscriptionAccess'
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

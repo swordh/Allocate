@@ -6,6 +6,7 @@ import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 import Button from '@/components/ui/Button'
 import Chip from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
+import AccountRightsLink from './AccountRightsLink'
 import type { BillingInterval } from '@/types'
 import s from './SubscribePage.module.css'
 
@@ -107,6 +108,8 @@ export default function SubscribePage({ companyName }: SubscribePageProps) {
       </div>
 
       {error && <ErrorBanner tone="danger">{error}</ErrorBanner>}
+
+      <AccountRightsLink />
     </div>
   )
 }
