@@ -14,7 +14,7 @@ import Glyph from '@/components/ui/Glyph'
 import CompanySwitchOverlay from '@/components/ui/CompanySwitchOverlay'
 import CompanyRow from './CompanyRow'
 import { useBookingFilters } from '@/hooks/useBookingFilters'
-import { TOP_NAV, settingsItemsForRole } from './nav-items'
+import { TOP_NAV, settingsItemsFor } from './nav-items'
 import styles from './MobileMenu.module.css'
 
 interface MobileMenuProps {
@@ -24,6 +24,8 @@ interface MobileMenuProps {
   companyName: string
   activeCompanyId: string
   companies: UserCompany[]
+  /** Issue #350 — mirrors SettingsTabs so the sheet never offers a tab (Team/Preferences) the layout guard would then bounce. */
+  hasFullAccess: boolean
 }
 
 /**
@@ -34,7 +36,7 @@ interface MobileMenuProps {
  * design's own `sc-if value="{{ menuOpen }}"` — so it never contributes
  * keyboard tab stops when hidden.
  */
-export function MobileMenu({ role, name, email, companyName, activeCompanyId, companies }: MobileMenuProps) {
+export function MobileMenu({ role, name, email, companyName, activeCompanyId, companies, hasFullAccess }: MobileMenuProps) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'menu' | 'companies'>('menu')
   const [signingOut, setSigningOut] = useState(false)
@@ -101,7 +103,7 @@ export function MobileMenu({ role, name, email, companyName, activeCompanyId, co
   const isEquipment = pathname.startsWith('/equipment')
   const isSettings = pathname.startsWith('/settings')
 
-  const settingsItems = settingsItemsForRole(role)
+  const settingsItems = settingsItemsFor(role, hasFullAccess)
 
   // Closing this sheet re-focuses the hamburger (see the [open] effect above)
   // before SupportModal mounts and steals focus into its subject field —

@@ -3,9 +3,11 @@ import { headers } from 'next/headers'
 import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
 import { listUserCompanies } from '@/lib/queries/companies'
+import { evaluateAppAccess, hasFullAccess } from '@/lib/subscriptionAccess'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileMenu } from '@/components/nav/MobileMenu'
 import CompanyDeletionBanner from '@/components/company/CompanyDeletionBanner'
+import NoPlanBanner from '@/components/subscription/NoPlanBanner'
 import type { CompanyDeletionBannerData } from '@/lib/companyDeletionBanner'
 import type { CompanyDeletionState } from '@/types'
 import styles from './app-layout.module.css'
@@ -23,27 +25,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const subStatus = subscription?.status
   const trialEnd = subscription?.trialEnd ?? null
 
-  // No subscription object at all — the company never started checkout.
-  if (!subscription) redirect('/subscribe')
-
-  // A real Stripe trial has trialEnd set by the webhook on subscription.created.
-  // The initial auto-trial (trialEnd=null) is not a real trial and stays blocked.
-  const isRealTrial = subStatus === 'trialing' && trialEnd !== null
-  const hasFullAccess = subStatus === 'active' || isRealTrial
-
-  // past_due / canceled / incomplete may reach /settings/** (e.g. to update
-  // their card) but nothing else under (app).
-  const settingsOnlyStatuses = ['past_due', 'canceled', 'incomplete']
-  const settingsOnly = settingsOnlyStatuses.includes(subStatus)
-
-  if (!hasFullAccess) {
-    if (settingsOnly) {
-      const pathname = (await headers()).get('x-pathname') ?? ''
-      if (!pathname.startsWith('/settings')) redirect('/subscribe')
-    } else {
-      redirect('/subscribe')
-    }
-  }
+  // Issue #350 (GDPR) — see lib/subscriptionAccess.ts for the full rationale.
+  // `headers()` is now read unconditionally (not just on the settings-only
+  // branch the old guard had) because evaluateAppAccess needs the pathname
+  // for every request, not only ones from a scoped status.
+  const pathname = (await headers()).get('x-pathname')
+  const access = evaluateAppAccess({ pathname, role: session.role, subStatus, trialEnd })
+  if (!access.allowed) redirect(access.redirectTo)
+  const fullAccess = hasFullAccess(subStatus, trialEnd)
 
   const profile = await getUserProfile(session.uid)
 
@@ -90,6 +79,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           timezone={timezone}
           className={styles.deletionBanner}
         />
+        <NoPlanBanner
+          hasFullAccess={fullAccess}
+          role={session.role}
+          className={styles.deletionBanner}
+        />
         {children}
       </main>
       <MobileMenu
@@ -99,6 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         companyName={companyName}
         activeCompanyId={session.activeCompanyId}
         companies={companies}
+        hasFullAccess={fullAccess}
       />
     </div>
   )
