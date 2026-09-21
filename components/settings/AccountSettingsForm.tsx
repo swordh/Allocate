@@ -16,6 +16,8 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Chip, { type ChipTone } from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
+import LeaveCompanyFlow from './LeaveCompanyFlow'
+import LeaveCompanyEntry from './LeaveCompanyEntry'
 import { BOOKING_VIEW_OPTIONS, BOOKING_VIEW_LABELS, type BookingViewOption } from '@/constants/company'
 import type { CompanyDeletionOutcome, DeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import styles from './AccountSettingsForm.module.css'
@@ -66,12 +68,14 @@ interface AccountSettingsFormProps {
   name: string
   email: string
   defaultBookingView?: BookingViewOption
+  activeCompanyId: string
 }
 
 export default function AccountSettingsForm({
   name: initialName,
   email,
   defaultBookingView: initialView,
+  activeCompanyId,
 }: AccountSettingsFormProps) {
   const router = useRouter()
 
@@ -86,6 +90,11 @@ export default function AccountSettingsForm({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // issue #349: `setDeleting(true)` isn't synchronous, so a fast double click
+  // can fire handleDeleteAccount twice before `disabled` re-renders. This ref
+  // is set synchronously, before any `await`, closing that window on the
+  // client — the server-side lock (actions/account.ts) is the real guard.
+  const deletingRef = useRef(false)
 
   // Per-company consequence preview (issue #252 step 6 PR 2). Fetched fresh
   // every time the delete panel opens, and again on demand via "REFRESH" —
@@ -95,6 +104,10 @@ export default function AccountSettingsForm({
   // stale "blocked" reading here must not change what deleteAccount does.
   const [preview, setPreview] = useState<AccountDeletionPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+
+  // Which company the "My companies" section (issue #352) is showing the
+  // leave-company flow for, if any.
+  const [leavingCompany, setLeavingCompany] = useState<CompanyDeletionOutcome | null>(null)
 
   const [signingOut, setSigningOut] = useState(false)
 
@@ -207,19 +220,20 @@ export default function AccountSettingsForm({
     setPreviewLoading(false)
   }
 
-  // Fetch the preview when the delete panel opens — not on every render, and
-  // not eagerly on page load, since it's a read the user only needs once she
-  // has expressed intent to delete. Re-fetches every time deleteOpen flips
-  // to true, which also covers the "closed the panel, went to Team, came
-  // back and reopened it" path without needing a full page reload.
+  // Fetched once on mount rather than lazily on delete-panel open (as it
+  // used to be pre-#352): the same per-company membership list now also
+  // backs the "My companies" section below, which is visible unconditionally,
+  // not just after expressing intent to delete. REFRESH buttons throughout
+  // (including inside the delete panel) re-run this on demand — e.g. after
+  // leaving/promoting on another tab, or after the delete panel's own
+  // "GO TO TEAM →" round trip.
   useEffect(() => {
-    if (deleteOpen) {
-      loadPreview()
-    }
-  }, [deleteOpen])
+    loadPreview()
+  }, [])
 
   async function handleDeleteAccount() {
-    if (confirmInput !== 'DELETE') return
+    if (confirmInput !== 'DELETE' || deletingRef.current) return
+    deletingRef.current = true
     setDeleting(true)
     setDeleteError(null)
 
@@ -228,6 +242,7 @@ export default function AccountSettingsForm({
     if (result.error) {
       setDeleteError(result.error)
       setDeleting(false)
+      deletingRef.current = false
     } else {
       router.push('/login')
     }
@@ -343,6 +358,41 @@ export default function AccountSettingsForm({
               {BOOKING_VIEW_LABELS[v]}
             </Chip>
           ))}
+        </div>
+      </div>
+
+      {/* My companies (issue #352) — one row per membership, each with its
+          own "Leave …" entry point. Shares the same fetched CompanyDeletionOutcome[]
+          the delete-account panel below already uses (loadPreview effect above) —
+          `outcome` doesn't map 1:1 onto leave-company UX (`close` here just
+          means "leave routes into the deletion flow", not "delete my
+          account"), but the underlying role/memberCount/adminCount read is
+          identical, so a second query would be pure duplication. */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>My companies</div>
+          <div className={styles.rowHelp}>
+            Step out of a company yourself. No administrator has to remove you.
+          </div>
+        </div>
+        <div className={styles.rowControl}>
+          {previewLoading && !preview && <p className={styles.previewStatus}>Checking your companies…</p>}
+          {preview?.status === 'ready' && preview.companies.length === 0 && (
+            <p className={styles.previewStatus}>You are not a member of any company.</p>
+          )}
+          {preview?.status === 'ready' && preview.companies.length > 0 && (
+            <div className={styles.companiesList}>
+              {preview.companies.map((company) => (
+                <LeaveCompanyEntry
+                  key={company.companyId}
+                  companyName={company.companyName || 'Untitled company'}
+                  outcome={company.outcome}
+                  memberCount={company.memberCount}
+                  onOpen={() => setLeavingCompany(company)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -522,6 +572,22 @@ export default function AccountSettingsForm({
             {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
           </div>
         </div>
+      )}
+
+      {leavingCompany && (
+        <LeaveCompanyFlow
+          key={leavingCompany.companyId}
+          companyId={leavingCompany.companyId}
+          companyName={leavingCompany.companyName || 'this company'}
+          isActiveCompany={leavingCompany.companyId === activeCompanyId}
+          email={email}
+          outcome={leavingCompany.outcome}
+          memberCount={leavingCompany.memberCount}
+          onClose={() => {
+            setLeavingCompany(null)
+            loadPreview()
+          }}
+        />
       )}
     </div>
   )

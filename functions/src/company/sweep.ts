@@ -6,6 +6,7 @@ import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionMirror } from '../types';
 import { runCompanyPurge } from './purge';
 import { formatDateFull, buildCancelUrl } from './format';
+import { appUrl } from '../appUrl';
 import { claimRequestedLease, claimStaleLease } from './lease';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
@@ -123,7 +124,7 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
         requestId: deletion.requestId,
       });
     }
-    const stopUrl = token ? buildCancelUrl(token) : 'https://allocate.at/';
+    const stopUrl = token ? buildCancelUrl(token) : appUrl('/');
     const daysRemaining = Math.max(
       1,
       Math.ceil((scheduledFor.toMillis() - now.toMillis()) / (24 * 60 * 60 * 1000)),

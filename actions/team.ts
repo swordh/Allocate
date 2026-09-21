@@ -6,6 +6,7 @@ import { WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
+import { listMembers } from '@/lib/queries/members'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
@@ -326,16 +327,17 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
   return {}
 }
 
-/** Typed sentinel thrown inside `updateMemberRole`'s and `removeMember`'s
- * transactions, mapped to a user-facing string in each catch block — same
- * pattern as `actions/equipment.ts`'s `createEquipment`. */
-type MemberGuardError = Error & { code: 'not-found' | 'sole-admin' }
+/** Typed sentinel thrown inside `updateMemberRole`'s, `removeMember`'s and
+ * `leaveCompany`'s transactions, mapped to a user-facing string in each catch
+ * block — same pattern as `actions/equipment.ts`'s `createEquipment`. */
+type MemberGuardError = Error & { code: 'not-found' | 'sole-admin' | 'sole-member' }
 
 function guardError(code: MemberGuardError['code'], message: string): MemberGuardError {
   return Object.assign(new Error(message), { code })
 }
 
 const CANNOT_DEMOTE_SOLE_ADMIN = 'Cannot demote the only admin. Promote another member first.'
+const CANNOT_LEAVE_SOLE_ADMIN = 'Cannot leave — you are the only administrator. Promote another member first.'
 
 /**
  * Changes `memberId`'s role within the caller's active company.
@@ -515,6 +517,85 @@ export async function updateMemberRole(
 }
 
 /**
+ * Anonymises `uid`'s references throughout `cid`'s bookings, equipment,
+ * units and the company doc's own `createdBy` — the uid is replaced with
+ * `null` everywhere it appears, in a chunked `WriteBatch`.
+ *
+ * Extracted from `removeMember` so `leaveCompany` (self-service) can apply
+ * the exact same anonymisation an admin-initiated removal already does,
+ * without the two copies drifting — the design for issue #352 explicitly
+ * wants a leaver's bookings anonymised the same way a removed member's are.
+ */
+async function anonymizeMemberReferences(cid: string, uid: string): Promise<void> {
+  let batch = adminDb.batch()
+  let opCount = 0
+
+  async function addOp(
+    ref: FirebaseFirestore.DocumentReference,
+    data: Record<string, null | string>,
+  ) {
+    batch.update(ref, data)
+    opCount++
+    if (opCount >= BATCH_LIMIT) {
+      batch = await commitAndReset(batch)
+      opCount = 0
+    }
+  }
+
+  const bookingsRef  = adminDb.collection(`companies/${cid}/bookings`)
+  const equipmentRef = adminDb.collection(`companies/${cid}/equipment`)
+  const companyRef   = adminDb.doc(`companies/${cid}`)
+
+  // Bookings: userId
+  const byUserId = await bookingsRef.where('userId', '==', uid).get()
+  for (const doc of byUserId.docs) await addOp(doc.ref, { userId: null, userName: null })
+
+  // Bookings: cancelledBy
+  const byCancelledBy = await bookingsRef.where('cancelledBy', '==', uid).get()
+  for (const doc of byCancelledBy.docs) await addOp(doc.ref, { cancelledBy: null })
+
+  // Bookings: approverId
+  const byApproverId = await bookingsRef.where('approverId', '==', uid).get()
+  for (const doc of byApproverId.docs) await addOp(doc.ref, { approverId: null })
+
+  // Equipment: createdBy
+  const byCreatedBy = await equipmentRef.where('createdBy', '==', uid).get()
+  for (const doc of byCreatedBy.docs) await addOp(doc.ref, { createdBy: null })
+
+  // Equipment: approverId
+  const byEquipmentApprover = await equipmentRef.where('approverId', '==', uid).get()
+  for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
+
+  // Units: iterate equipment subcollections directly — avoids collectionGroup index requirement
+  const allEquipmentSnap = await equipmentRef.get()
+  for (const eqDoc of allEquipmentSnap.docs) {
+    const unitsSnap = await eqDoc.ref.collection('units').get()
+    for (const doc of unitsSnap.docs) {
+      const data = doc.data()
+      const updates: Record<string, null> = {}
+      if (data.createdBy === uid)     updates.createdBy = null
+      if (data.updatedBy === uid)     updates.updatedBy = null
+      if (data.deactivatedBy === uid) updates.deactivatedBy = null
+      if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+    }
+  }
+
+  // Company doc: createdBy. Confirmed empirically (throwaway script against
+  // allocate-alpha, deleted after use) that a single WriteBatch permits more
+  // than one write to the same document — companies/{cid} already received
+  // its `_meta/memberCounts` + `stats.memberCount` writes in the caller's
+  // transaction, and this createdBy write here, in a separate WriteBatch
+  // entirely, is safe as an independent write rather than something that
+  // needs to be merged with those.
+  const companySnap = await companyRef.get()
+  if (companySnap.exists && companySnap.data()?.createdBy === uid) {
+    await addOp(companyRef, { createdBy: null })
+  }
+
+  await batch.commit()
+}
+
+/**
  * Removes `memberId` from the caller's active company (companies/{cid} and
  * users/{memberId} sides) and anonymises their uid references throughout the
  * company's bookings/equipment/units/invitations.
@@ -596,72 +677,7 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   }
 
   // ── 3. Anonymize uid-references scoped to this company (WriteBatch) ──────────
-  let batch = adminDb.batch()
-  let opCount = 0
-
-  async function addOp(
-    ref: FirebaseFirestore.DocumentReference,
-    data: Record<string, null | string>,
-  ) {
-    batch.update(ref, data)
-    opCount++
-    if (opCount >= BATCH_LIMIT) {
-      batch = await commitAndReset(batch)
-      opCount = 0
-    }
-  }
-
-  const bookingsRef  = adminDb.collection(`companies/${cid}/bookings`)
-  const equipmentRef = adminDb.collection(`companies/${cid}/equipment`)
-  const companyRef   = adminDb.doc(`companies/${cid}`)
-
-  // Bookings: userId
-  const byUserId = await bookingsRef.where('userId', '==', memberId).get()
-  for (const doc of byUserId.docs) await addOp(doc.ref, { userId: null, userName: null })
-
-  // Bookings: cancelledBy
-  const byCancelledBy = await bookingsRef.where('cancelledBy', '==', memberId).get()
-  for (const doc of byCancelledBy.docs) await addOp(doc.ref, { cancelledBy: null })
-
-  // Bookings: approverId
-  const byApproverId = await bookingsRef.where('approverId', '==', memberId).get()
-  for (const doc of byApproverId.docs) await addOp(doc.ref, { approverId: null })
-
-  // Equipment: createdBy
-  const byCreatedBy = await equipmentRef.where('createdBy', '==', memberId).get()
-  for (const doc of byCreatedBy.docs) await addOp(doc.ref, { createdBy: null })
-
-  // Equipment: approverId
-  const byEquipmentApprover = await equipmentRef.where('approverId', '==', memberId).get()
-  for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
-
-  // Units: iterate equipment subcollections directly — avoids collectionGroup index requirement
-  const allEquipmentSnap = await equipmentRef.get()
-  for (const eqDoc of allEquipmentSnap.docs) {
-    const unitsSnap = await eqDoc.ref.collection('units').get()
-    for (const doc of unitsSnap.docs) {
-      const data = doc.data()
-      const updates: Record<string, null> = {}
-      if (data.createdBy === memberId)     updates.createdBy = null
-      if (data.updatedBy === memberId)     updates.updatedBy = null
-      if (data.deactivatedBy === memberId) updates.deactivatedBy = null
-      if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
-    }
-  }
-
-  // Company doc: createdBy. Confirmed empirically (throwaway script against
-  // allocate-alpha, deleted after use) that a single WriteBatch permits more
-  // than one write to the same document — companies/{cid} already received
-  // its `_meta/memberCounts` + `stats.memberCount` writes in the transaction
-  // above, and this createdBy write here, in a separate WriteBatch entirely,
-  // is safe as an independent write rather than something that needs to be
-  // merged with those.
-  const companySnap = await companyRef.get()
-  if (companySnap.exists && companySnap.data()?.createdBy === memberId) {
-    await addOp(companyRef, { createdBy: null })
-  }
-
-  await batch.commit()
+  await anonymizeMemberReferences(cid, memberId)
 
   // ── 5. Handle target's activeCompanyId server-side ───────────────────────────
   try {
@@ -713,6 +729,251 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   })
 
   return {}
+}
+
+export interface LeaveCompanyResult {
+  error?: string
+  /** The caller is the company's sole admin and other members remain — UI
+   *  shows a picker to promote one of `promotable` before leaving is possible.
+   *  Same shape `getLeaveContext` (actions/companies.ts) returns, so the UI
+   *  can show the list before the guard ever trips and still accept this one
+   *  when a stale advisory outcome sends it down the write path first. */
+  blocked?: { promotable: { uid: string; name: string; email: string; role: Role }[] }
+  /** The caller is the company's only member — there is nobody to leave it
+   *  to. UI routes into the EXISTING company-deletion confirm flow
+   *  (requestCompanyDeletion) instead of a new mechanism. */
+  onlyMember?: { companyName: string }
+  /**
+   * Leaving succeeded. `sessionRefresh` is set only when `companyId` was the
+   * caller's ACTIVE company — leaving a non-active membership (the common
+   * case from Account Settings' "My companies" list) changes nothing about
+   * the caller's current session, so there is nothing to refresh. When set,
+   * `customToken` is required to re-establish a session — see
+   * switchCompany's docblock (actions/auth.ts): `revokeRefreshTokens` below
+   * invalidates the caller's own refresh token too, so `getIdToken(true)`
+   * cannot be used afterward. `redirectCompanyId` is the membership to
+   * switch into, or null if none remain (→ /no-company).
+   */
+  left?: { sessionRefresh: { redirectCompanyId: string | null; customToken: string } | null }
+}
+
+/**
+ * Self-service leave of `companyId` (issue #352) — `removeMember`'s error
+ * message has pointed here since before this function existed: "Use 'Leave
+ * company' instead." Same transactional sole-admin guard as `removeMember`/
+ * `updateMemberRole` (`readMemberCounts`/`memberCountsDelta`,
+ * lib/companyStats.ts), plus a sole-MEMBER guard neither of those needs
+ * (removing or demoting someone else never empties a company).
+ *
+ * `companyId` need not be the caller's currently active company — the
+ * design's primary entry point (Account Settings → "My companies") lists
+ * every membership and lets each be left directly, not just the active one.
+ * Authorization is the same either way: the transaction below only
+ * proceeds if `companies/{companyId}/members/{session.uid}` exists, exactly
+ * as `switchCompany` (actions/auth.ts) validates a membership rather than
+ * trusting `session.activeCompanyId`.
+ *
+ * No `memberId` parameter — this is always self-service, `session.uid`
+ * throughout. Three outcomes, decided by the SAME transaction that would
+ * perform the write:
+ *   - sole member  → nothing written; caller routes to the existing
+ *     `requestCompanyDeletion` confirm flow (actions/companyDeletion.ts).
+ *     This function never calls it — no parallel deletion mechanism.
+ *   - sole admin, others remain → nothing written; caller shows a promote
+ *     picker, promotes via the EXISTING `updateMemberRole`, then calls this
+ *     again (now falls through to the branch below).
+ *   - otherwise → transactional delete (mirrors removeMember), then the
+ *     same anonymisation pass `removeMember` applies to a removed member,
+ *     and — ONLY when `companyId` was the caller's active company — a
+ *     claims/activeCompanyId repoint to a remaining membership (or null)
+ *     plus an UNCONDITIONAL `revokeRefreshTokens` (see `left` above — this
+ *     is the one deliberate difference from `removeMember`'s
+ *     target-repoint: removing someone ELSE doesn't need to revoke their
+ *     tokens for the guard to hold, but leaving your OWN active company
+ *     must "revoke access across all sessions" per the design, and only
+ *     self-service can even do that), and always a queued receipt email.
+ */
+export async function leaveCompany(companyId: string): Promise<LeaveCompanyResult> {
+  const session = await getVerifiedSession()
+  const cid = companyId
+  const isActiveCompany = session.activeCompanyId === cid
+
+  const selfMemberRef     = adminDb.doc(`companies/${cid}/members/${session.uid}`)
+  const userMembershipRef = adminDb.doc(`users/${session.uid}/memberships/${cid}`)
+
+  try {
+    await adminDb.runTransaction(async (tx) => {
+      const [counts, selfSnap] = await Promise.all([
+        readMemberCounts(tx, cid),
+        tx.get(selfMemberRef),
+      ])
+
+      if (!selfSnap.exists) {
+        throw guardError('not-found', 'Membership not found')
+      }
+
+      const myRole = selfSnap.data()!.role as string | undefined
+
+      // Checked before sole-admin: a company with exactly one member is that
+      // member's own company regardless of role — always an admin in
+      // practice (the founder), but the member count is the real question
+      // here, not the role.
+      if (counts.members <= 1) {
+        throw guardError('sole-member', 'You are the only member')
+      }
+
+      if (myRole === 'admin' && counts.admins <= 1) {
+        throw guardError('sole-admin', CANNOT_LEAVE_SOLE_ADMIN)
+      }
+
+      // Only now, once neither guard has thrown, persist the heal — see
+      // removeMember above for why a throw must discard it instead.
+      counts.applyHeal()
+
+      tx.delete(selfMemberRef)
+      tx.delete(userMembershipRef)
+      memberCountsDelta(tx, cid, { members: -1, admins: myRole === 'admin' ? -1 : 0 })
+    })
+  } catch (err) {
+    const code = (err as { code?: string }).code
+
+    if (code === 'sole-member') {
+      const companySnap = await adminDb.doc(`companies/${cid}`).get()
+      return { onlyMember: { companyName: (companySnap.data()?.name as string | undefined) ?? '' } }
+    }
+
+    if (code === 'sole-admin') {
+      const members = await listMembers(cid)
+      const promotable = members
+        .filter((m) => m.uid !== session.uid)
+        .map((m) => ({ uid: m.uid, name: m.name, email: m.email, role: m.role }))
+      return { blocked: { promotable } }
+    }
+
+    if (code === 'not-found') return { error: 'Membership not found' }
+
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      companyId: cid,
+      uid: session.uid.slice(0, 8) + '...',
+      error: message,
+      action: 'leave_company_guard_failed',
+    })
+    return { error: "Could not verify this company's administrators right now. No changes were made." }
+  }
+
+  // Anonymize the leaver's own references — same treatment `removeMember`
+  // gives a removed member.
+  await anonymizeMemberReferences(cid, session.uid)
+
+  // Session repoint — ONLY when the company just left was the caller's
+  // active one. Leaving a non-active membership (the common case from
+  // Account Settings' "My companies" list) changes nothing the caller's
+  // current session depends on: no claims change, no revoke, no custom
+  // token, just the plain `router.refresh()` the client does on its own.
+  let sessionRefresh: { redirectCompanyId: string | null; customToken: string } | null = null
+
+  if (isActiveCompany) {
+    let redirectCompanyId: string | null = null
+    try {
+      const remainingSnap = await adminDb.collection(`users/${session.uid}/memberships`).get()
+
+      if (remainingSnap.docs.length > 0) {
+        const next = remainingSnap.docs[0]!.data()
+        redirectCompanyId = next.companyId as string
+        await adminDb.doc(`users/${session.uid}`).update({ activeCompanyId: redirectCompanyId })
+        await adminAuth.setCustomUserClaims(session.uid, {
+          activeCompanyId: redirectCompanyId,
+          role: next.role as string,
+        })
+      } else {
+        await adminDb.doc(`users/${session.uid}`).update({ activeCompanyId: null })
+        await adminAuth.setCustomUserClaims(session.uid, { activeCompanyId: null, role: null })
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[actions/team]', {
+        uid: session.uid.slice(0, 8) + '...',
+        companyId: cid,
+        error: message,
+        action: 'leave_company_claims_update_failed',
+      })
+    }
+
+    // Revoke unconditionally — see this function's docblock and `left`'s own
+    // comment above for why leaving your active company (unlike
+    // removeMember) must do this for itself, and why the caller needs a
+    // custom token afterward instead of a plain token refresh.
+    try {
+      await adminAuth.revokeRefreshTokens(session.uid)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[actions/team]', {
+        uid: session.uid.slice(0, 8) + '...',
+        companyId: cid,
+        error: message,
+        action: 'leave_company_revoke_tokens_failed',
+      })
+    }
+
+    const customToken = await adminAuth.createCustomToken(session.uid)
+    sessionRefresh = { redirectCompanyId, customToken }
+  }
+
+  // Receipt email — best-effort, queued the same way every other mail in
+  // this file is (onMailQueued Cloud Function delivers it).
+  try {
+    const companySnap = await adminDb.doc(`companies/${cid}`).get()
+    const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+    // Same NEXT_PUBLIC_APP_URL convention inviteUsers/resendInvitation use
+    // above — but this mail is best-effort (see the enclosing try/catch), so
+    // a misconfigured env just skips the receipt rather than failing the
+    // leave itself the way those two actions fail outright.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (!appUrl) {
+      console.error('[actions/team]', { companyId: cid, action: 'leave_company_mail_skipped', error: 'NEXT_PUBLIC_APP_URL not set' })
+    } else {
+      const ctaUrl = `${appUrl.replace(/\/$/, '')}/login`
+      await adminDb.collection('mail').add({
+        to: session.email,
+        template: 'leftCompany',
+        data: { companyName, ctaUrl },
+        status: 'queued',
+        companyId: cid,
+        priority: 'normal',
+        createdAt: new Date().toISOString(),
+      })
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      uid: session.uid.slice(0, 8) + '...',
+      companyId: cid,
+      error: message,
+      action: 'leave_company_mail_enqueue_failed',
+    })
+  }
+
+  // Deliberately NOT calling revalidatePath here when the left company was
+  // active — same race actions/auth.ts's switchCompany hit (caught live
+  // against alpha, see its docblock): a Server Action invoked from a Client
+  // Component eagerly re-renders the invoking route's revalidated segments
+  // as part of THIS SAME request/response, using the request's own (still
+  // the OLD, now revoked) session cookie — bouncing the client to /login
+  // before it ever reaches `establishSessionFromCustomToken`. Every active-
+  // company caller already does a hard `window.location.href` reload after
+  // that handshake (LeaveCompanyReceipt's CONTINUE), which busts the cache
+  // on its own. The non-active case has no such revoke to race against, but
+  // skips this uniformly rather than making the hazard depend on a branch a
+  // future edit could get wrong — its caller (AccountSettingsForm) already
+  // does its own `router.refresh()` on close.
+  console.log('[actions/team]', {
+    uid: session.uid.slice(0, 8) + '...',
+    companyId: cid,
+    action: 'leave_company',
+  })
+
+  return { left: { sessionRefresh } }
 }
 
 export async function revokeInvitation(inviteId: string): Promise<{ error?: string }> {

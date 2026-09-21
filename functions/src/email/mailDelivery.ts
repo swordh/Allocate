@@ -11,6 +11,7 @@ import { companyDeletionRequestedEmail } from './templates/companyDeletionReques
 import { companyDeletionReminderEmail } from './templates/companyDeletionReminder';
 import { companyDeletionCancelledEmail } from './templates/companyDeletionCancelled';
 import { companyDeletedEmail } from './templates/companyDeleted';
+import { leftCompanyEmail } from './templates/leftCompany';
 
 /**
  * Renders a queued `mail/{id}` doc into subject/html/text using its
@@ -36,6 +37,8 @@ export function renderMail(mail: FirebaseFirestore.DocumentData): RenderedEmail 
       return companyDeletionCancelledEmail(mail['data']);
     case 'companyDeleted':
       return companyDeletedEmail(mail['data']);
+    case 'leftCompany':
+      return leftCompanyEmail(mail['data']);
     case undefined:
     case null:
     case '': {

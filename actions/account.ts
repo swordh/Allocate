@@ -33,6 +33,61 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   return adminDb.batch()
 }
 
+// issue #349: the CONFIRM button can fire 2-3 near-simultaneous invocations
+// of `deleteAccount` for the same uid (observed ~14ms apart in the network
+// log). `deleteAccount` is partially destructive and only idempotent against
+// a *sequential* retry, not a *concurrent* one, so two overlapping runs can
+// race (e.g. one reads a membership another has already deleted). This lock
+// is what actually closes that window — the client-side `disabled` state
+// (AccountSettingsForm.tsx) helps but isn't atomic against a fast double
+// click.
+const LOCK_TTL_MS = 5 * 60 * 1000
+
+const ACCOUNT_DELETION_IN_PROGRESS_ERROR =
+  'Account deletion is already in progress. Please wait a moment and try again.'
+
+/**
+ * Acquires a per-uid lock via `accountDeletionLocks/{uid}`, using
+ * `DocumentReference.create()` rather than a transaction: `create()` is
+ * already atomic (it fails with ALREADY_EXISTS if the doc exists) without
+ * adding an `adminDb.runTransaction` call, which would otherwise inflate the
+ * transaction-count assertions `__tests__/account/deleteAccount.test.ts`
+ * makes against the per-company commit loop below.
+ *
+ * `LOCK_TTL_MS` guards against a permanently stuck lock if a process dies
+ * before reaching `releaseAccountDeletionLock`'s `finally` (e.g. a killed
+ * instance mid-anonymisation) — a lock older than that is taken over.
+ */
+async function acquireAccountDeletionLock(uid: string): Promise<boolean> {
+  const lockRef = adminDb.collection('accountDeletionLocks').doc(uid)
+  try {
+    await lockRef.create({ startedAt: FieldValue.serverTimestamp() })
+    return true
+  } catch (err) {
+    const code = (err as { code?: number }).code
+    if (code !== 6) throw err // not ALREADY_EXISTS — an unexpected failure, not a held lock
+
+    const snap = await lockRef.get()
+    const startedAt = (snap.data()?.startedAt as Timestamp | undefined)?.toMillis()
+    if (startedAt === undefined || Date.now() - startedAt > LOCK_TTL_MS) {
+      await lockRef.set({ startedAt: FieldValue.serverTimestamp() })
+      return true
+    }
+
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_lock_held' })
+    return false
+  }
+}
+
+async function releaseAccountDeletionLock(uid: string): Promise<void> {
+  try {
+    await adminDb.collection('accountDeletionLocks').doc(uid).delete()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_lock_release_failed' })
+  }
+}
+
 /** Typed sentinel thrown inside `deleteAccount`'s per-company transaction,
  * mapped to a user-facing string in the catch block — same pattern as
  * `actions/equipment.ts`'s `createEquipment` and `actions/team.ts`'s
@@ -214,6 +269,45 @@ export async function updateUserProfile(data: {
  * PII across every company they belong to, then deletes their Firebase Auth
  * record.
  *
+ * A thin wrapper around `runAccountDeletion` (see that function's docblock
+ * for the three phases) that holds the issue #349 per-uid lock
+ * (`acquireAccountDeletionLock`/`releaseAccountDeletionLock` above) for the
+ * duration of the run, so at most one deletion can be in flight per uid at a
+ * time.
+ */
+export async function deleteAccount(): Promise<{ error?: string }> {
+  const session = await getVerifiedSession()
+  const uid = session.uid
+
+  // issue #349: acquire the per-uid lock before any of the work below — see
+  // acquireAccountDeletionLock's docblock. A failure to even acquire it
+  // (anything other than the lock being held) is treated like every other
+  // unexpected read failure in this file: log it, tell the caller nothing
+  // was deleted, never let it throw out of a Server Action.
+  let lockAcquired: boolean
+  try {
+    lockAcquired = await acquireAccountDeletionLock(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_lock_acquire_failed' })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+  if (!lockAcquired) {
+    return { error: ACCOUNT_DELETION_IN_PROGRESS_ERROR }
+  }
+
+  // Released in `finally` so it always comes off, on every return path of
+  // `runAccountDeletion` below, including success — unlike `users/{uid}`,
+  // `accountDeletionLocks/{uid}` is a separate doc that the anonymisation
+  // batch never touches.
+  try {
+    return await runAccountDeletion(session, uid)
+  } finally {
+    await releaseAccountDeletionLock(uid)
+  }
+}
+
+/**
  * Three phases:
  *   1. Pre-flight sole-admin guard — read-only, best-effort, exists only to
  *      fail fast with a clear message; never authoritative on its own.
@@ -234,11 +328,15 @@ export async function updateUserProfile(data: {
  * function returns an error while a company is already being deleted. See the
  * long note in phase 2's catch block; it is the one thing about this function
  * that a reader is most likely to get wrong.
+ *
+ * Only ever called by `deleteAccount` above, which holds the issue #349
+ * per-uid lock for the duration of this call — nothing here needs to worry
+ * about a concurrent invocation for the same uid.
  */
-export async function deleteAccount(): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
-  const uid = session.uid
-
+async function runAccountDeletion(
+  session: Awaited<ReturnType<typeof getVerifiedSession>>,
+  uid: string,
+): Promise<{ error?: string }> {
   // ── 1. Pre-flight sole-admin guard (read-only, best-effort) ────────────────
   // Exists purely to return a clear rejection before doing ANY work, for the
   // common case. It is deliberately not authoritative — the commit loop in
@@ -640,18 +738,35 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       const byEquipmentApprover = await equipmentRef.where('approverId', '==', uid).get()
       for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
 
-      // Units: read all units in company, filter in-code for user references
-      const unitsSnap = await adminDb
-        .collectionGroup('units')
-        .where('companyId', '==', companyId)
-        .get()
-      for (const doc of unitsSnap.docs) {
-        const data = doc.data()
-        const updates: Record<string, null> = {}
-        if (data.createdBy === uid) updates.createdBy = null
-        if (data.updatedBy === uid) updates.updatedBy = null
-        if (data.deactivatedBy === uid) updates.deactivatedBy = null
-        if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+      // Units: iterate equipment subcollections directly — avoids collectionGroup
+      // index requirement. A single-filter collectionGroup('units').where('companyId',
+      // ...) query needs a COLLECTION_GROUP_ASC index on companyId that firestore.indexes.json
+      // never had, so this threw FAILED_PRECONDITION before the query ever ran, making
+      // GDPR Art. 17 deletion fail deterministically for every user (issue #347). No index
+      // is needed here because equipmentRef is already scoped to this company. Same pattern
+      // as anonymizeMemberReferences in actions/team.ts.
+      //
+      // The per-equipment units reads are fired in parallel (basic plan caps
+      // equipment at 100 — lib/plans.ts — so sequential awaits here, stacked
+      // on top of the ~9 other sequential queries this per-company loop
+      // already does, could push a user in several near-limit companies
+      // toward a Server Action timeout). Only the reads are parallelised:
+      // `addOp` mutates the shared `batch`/`opCount` closure state and must
+      // stay called one at a time, so the writes below remain a plain
+      // sequential loop over the resolved snapshots.
+      const allEquipmentSnap = await equipmentRef.get()
+      const unitsSnaps = await Promise.all(
+        allEquipmentSnap.docs.map((eqDoc) => eqDoc.ref.collection('units').get()),
+      )
+      for (const unitsSnap of unitsSnaps) {
+        for (const doc of unitsSnap.docs) {
+          const data = doc.data()
+          const updates: Record<string, null> = {}
+          if (data.createdBy === uid) updates.createdBy = null
+          if (data.updatedBy === uid) updates.updatedBy = null
+          if (data.deactivatedBy === uid) updates.deactivatedBy = null
+          if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+        }
       }
 
       // Invitations: this user's PII shows up on invitation docs in three

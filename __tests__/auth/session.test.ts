@@ -25,6 +25,7 @@ const {
   mockCreateSessionCookie,
   mockSetCustomUserClaims,
   mockRevokeRefreshTokens,
+  mockCreateCustomToken,
   mockMembershipGet,
   mockCookieGet,
   mockCookieSet,
@@ -36,6 +37,7 @@ const {
   mockCreateSessionCookie:  vi.fn(),
   mockSetCustomUserClaims:  vi.fn(),
   mockRevokeRefreshTokens:  vi.fn(),
+  mockCreateCustomToken:    vi.fn(),
   mockMembershipGet:        vi.fn(),
   mockCookieGet:            vi.fn(),
   mockCookieSet:            vi.fn(),
@@ -61,6 +63,7 @@ vi.mock('@/lib/firebase-admin', () => {
       createSessionCookie:  mockCreateSessionCookie,
       setCustomUserClaims:  mockSetCustomUserClaims,
       revokeRefreshTokens:  mockRevokeRefreshTokens,
+      createCustomToken:    mockCreateCustomToken,
     },
     adminDb: {
       doc:        vi.fn().mockReturnValue({ get: mockCompanyDocGet }),
@@ -454,15 +457,16 @@ describe('switchCompany', () => {
 
     mockSetCustomUserClaims.mockResolvedValue(undefined)
     mockRevokeRefreshTokens.mockResolvedValue(undefined)
+    mockCreateCustomToken.mockResolvedValue('custom-token-for-user-switch')
   })
 
-  it('calls revokeRefreshTokens with the correct uid after a successful company switch', async () => {
+  it('calls revokeRefreshTokens with the correct uid after a successful company switch, and returns a custom token', async () => {
     mockMembershipGet.mockResolvedValue({
       exists: true,
       data:   () => ({ role: 'admin' }),
     })
 
-    await switchCompany('company-new')
+    const result = await switchCompany('company-new')
 
     expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
       activeCompanyId: 'company-new',
@@ -470,6 +474,12 @@ describe('switchCompany', () => {
     })
     expect(mockRevokeRefreshTokens).toHaveBeenCalledOnce()
     expect(mockRevokeRefreshTokens).toHaveBeenCalledWith('user-switch')
+    // Not void — see switchCompany's docblock: the caller must
+    // signInWithCustomToken with this, not getIdToken(true), because
+    // revokeRefreshTokens above just invalidated the caller's own refresh
+    // token too.
+    expect(mockCreateCustomToken).toHaveBeenCalledWith('user-switch')
+    expect(result).toEqual({ customToken: 'custom-token-for-user-switch' })
   })
 
   it('does NOT call revokeRefreshTokens when the membership document does not exist', async () => {

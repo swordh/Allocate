@@ -45,6 +45,26 @@ export interface DocRefStub {
   update: ReturnType<typeof vi.fn>
   set: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
+  /**
+   * `deleteAccount`'s per-uid lock (issue #349, actions/account.ts) uses
+   * `DocumentReference.create()` for its atomic acquire — real Firestore
+   * throws `{ code: 6 }` (ALREADY_EXISTS) if the doc exists, but this stub
+   * always resolves, same as `update`/`set`/`delete` above. A test that needs
+   * to exercise the "lock already held" path overrides this per-call, e.g.
+   * `vi.mocked(adminDb.doc).mockReturnValueOnce({ ...ref, create: vi.fn().mockRejectedValue(...) })`.
+   */
+  create: ReturnType<typeof vi.fn>
+  /**
+   * `eqDoc.ref.collection('units')` — issue #347's fix (actions/account.ts,
+   * actions/team.ts) walks equipment subcollections directly instead of a
+   * collectionGroup query, so a doc ref needs to hand back a query chain
+   * rooted at its own path. Resolved by whatever `QueryResolver` the ref was
+   * built with (see `makeDocRef`'s `resolver` param) — a ref that came from
+   * `wireDb` or from a query result carries the real one; a ref built
+   * without one (e.g. a bare `makeDocSnap` in an older test) falls back to
+   * "no docs", same as `wireDb`'s own default.
+   */
+  collection: (id: string) => ReturnType<typeof makeQueryChain>
 }
 
 export interface DocSnapStub {
@@ -79,31 +99,42 @@ export interface QueryDocInput {
 /** Decides which documents a query returns, given its path and captured filters. */
 export type QueryResolver = (ctx: QueryContext) => QueryDocInput[]
 
-function makeDocRef(path: string, docs: DocMap): DocRefStub {
+/** A resolver that always answers "no docs" — the default for refs built without one. */
+const noDocsResolver: QueryResolver = () => []
+
+function makeDocRef(path: string, docs: DocMap, resolver: QueryResolver = noDocsResolver): DocRefStub {
   const id = path.split('/').pop() ?? path
   const ref: DocRefStub = {
     path,
     id,
-    get: async () => makeDocSnap(path, docs),
+    get: async () => makeDocSnap(path, docs, resolver),
     update: vi.fn().mockResolvedValue(undefined),
     set: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
+    create: vi.fn().mockResolvedValue(undefined),
+    collection: (subId: string) => {
+      const subPath = `${path}/${subId}`
+      const chain = makeQueryChain(subPath, resolver, docs) as Record<string, unknown>
+      chain['doc'] = (docId?: string) =>
+        makeDocRef(docId ? `${subPath}/${docId}` : `${subPath}/auto-id`, docs, resolver)
+      return chain as ReturnType<typeof makeQueryChain>
+    },
   }
   return ref
 }
 
-export function makeDocSnap(path: string, docs: DocMap): DocSnapStub {
+export function makeDocSnap(path: string, docs: DocMap, resolver: QueryResolver = noDocsResolver): DocSnapStub {
   const data = docs[path] ?? null
   const id = path.split('/').pop() ?? path
   return {
     exists: data !== null,
     id,
     data: () => data ?? undefined,
-    ref: makeDocRef(path, docs),
+    ref: makeDocRef(path, docs, resolver),
   }
 }
 
-export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}) {
+export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}, resolver: QueryResolver = noDocsResolver) {
   return {
     empty: inputs.length === 0,
     size: inputs.length,
@@ -112,7 +143,7 @@ export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}) {
       data: () => d.data,
       // deleteAccount does batch.delete(doc.ref) and batch.update(doc.ref, ...),
       // so query results must carry a usable reference.
-      ref: makeDocRef(d.path ?? d.id, docs),
+      ref: makeDocRef(d.path ?? d.id, docs, resolver),
     })),
   }
 }
@@ -206,7 +237,7 @@ export function makeTransaction(docs: DocMap = {}): TransactionStub {
  * independent here the same way they are against real Firestore.
  */
 function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap, filters: Filter[] = []) {
-  const run = () => makeQuerySnap(resolver({ path, filters }), docs)
+  const run = () => makeQuerySnap(resolver({ path, filters }), docs, resolver)
 
   const chain: Record<string, unknown> = {
     path,
@@ -257,14 +288,18 @@ export function wireDb(
   const resolveQuery = query ?? noDocs
   const resolveGroup = collectionGroup ?? noDocs
 
-  const docFn = vi.fn((path: string) => makeDocRef(path, docs))
+  // Refs handed out here carry `resolveQuery` so a `.collection()` called on
+  // one of them (e.g. `eqDoc.ref.collection('units')` in the #347 fix) is
+  // resolved by the same query resolver `wireDb`'s own collection chains use,
+  // rather than silently falling back to "no docs".
+  const docFn = vi.fn((path: string) => makeDocRef(path, docs, resolveQuery))
 
   // A collection reference is both a query root and a doc factory. Path-form
   // reads — adminDb.collection('users/{uid}/memberships').get() — go through
   // the same resolver as filtered ones, with an empty filter list.
   const collectionFn = vi.fn((path: string) => {
     const chain = makeQueryChain(path, resolveQuery, docs) as Record<string, unknown>
-    chain['doc'] = (id?: string) => makeDocRef(id ? `${path}/${id}` : `${path}/auto-id`, docs)
+    chain['doc'] = (id?: string) => makeDocRef(id ? `${path}/${id}` : `${path}/auto-id`, docs, resolveQuery)
     return chain
   })
 

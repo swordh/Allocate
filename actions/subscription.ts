@@ -78,7 +78,12 @@ export async function createCheckoutSession(
   plan: Plan = 'starter',
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
-  if (session.role !== 'admin') return { error: 'Unauthorized' }
+  // Issue #350 — no UI can produce this call for a non-admin any more
+  // (app/subscribe/page.tsx renders NoPlanNotice, not SubscribePage, for
+  // any role but admin), but the action is still directly callable, so the
+  // message stays human-readable rather than a bare 'Unauthorized' for
+  // whoever ends up looking at it (support, logs, a direct call in dev).
+  if (session.role !== 'admin') return { error: 'Only an administrator can change the plan.' }
   console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session', plan, interval })
 
   const priceId = interval === 'month' ? PRICE_ENV_BY_PLAN[plan].month : PRICE_ENV_BY_PLAN[plan].year

@@ -10,6 +10,22 @@ interface PopoverProps {
   anchor?: 'left' | 'right'
   children: ReactNode
   className?: string
+  /**
+   * Opt-in accessible-menu behaviour: `role="menu"` on the panel, focus moves
+   * to the first `[role="menuitem"]` on open, and Up/Down/Home/End/Tab move
+   * between menu items without letting focus leave the panel while it's
+   * open. Off by default so existing callers (e.g. OperatorTopBar's simple
+   * sign-out popover) are unaffected.
+   */
+  menu?: boolean
+  /** Only meaningful with `menu` — labels the `role="menu"` panel for assistive tech. */
+  ariaLabel?: string
+}
+
+function getMenuItems(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
+    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-disabled') !== 'true',
+  )
 }
 
 /**
@@ -22,6 +38,8 @@ export default function Popover({
   anchor = 'left',
   children,
   className,
+  menu = false,
+  ariaLabel,
 }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -32,11 +50,39 @@ export default function Popover({
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+
+      if (!menu || !ref.current) return
+
+      const items = getMenuItems(ref.current)
+      if (items.length === 0) return
+
+      const active = document.activeElement as HTMLElement | null
+      const currentIndex = active ? items.indexOf(active) : -1
+
+      if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault()
+        items[(currentIndex + 1 + items.length) % items.length]?.focus()
+      } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
+        e.preventDefault()
+        items[(currentIndex - 1 + items.length) % items.length]?.focus()
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        items[0]?.focus()
+      } else if (e.key === 'End') {
+        e.preventDefault()
+        items[items.length - 1]?.focus()
+      }
     }
 
     // Deferred so the click that opened the popover does not immediately close it.
-    const id = window.setTimeout(() => document.addEventListener('mousedown', onPointerDown))
+    const id = window.setTimeout(() => {
+      document.addEventListener('mousedown', onPointerDown)
+      if (menu) getMenuItems(ref.current!)[0]?.focus()
+    })
     document.addEventListener('keydown', onKeyDown)
 
     return () => {
@@ -44,7 +90,7 @@ export default function Popover({
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open, onClose])
+  }, [open, onClose, menu])
 
   if (!open) return null
 
@@ -57,7 +103,7 @@ export default function Popover({
     .join(' ')
 
   return (
-    <div ref={ref} className={classes}>
+    <div ref={ref} className={classes} role={menu ? 'menu' : undefined} aria-label={menu ? ariaLabel : undefined}>
       {children}
     </div>
   )

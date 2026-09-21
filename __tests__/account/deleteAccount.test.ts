@@ -128,6 +128,13 @@ const UID = 'user-1'
 const COULD_NOT_VERIFY_ERROR =
   'Could not verify your company administrators right now. Nothing was deleted — please try again in a moment.'
 
+/** Mirrors actions/account.ts's ACCOUNT_DELETION_IN_PROGRESS_ERROR (issue #349). */
+const ACCOUNT_DELETION_IN_PROGRESS_ERROR =
+  'Account deletion is already in progress. Please wait a moment and try again.'
+
+/** Mirrors actions/account.ts's LOCK_TTL_MS (issue #349). */
+const LOCK_TTL_MS = 5 * 60 * 1000
+
 /**
  * Mirrors `actions/account.ts`'s `otherPeoplePhrase` / `buildBlockedClause` /
  * `buildSoleAdminMessage` — kept in sync deliberately, same convention as the
@@ -182,6 +189,15 @@ interface CompanyFixture {
   /** Members subcollection docs, used only when metaCounts is omitted. */
   members?: QueryDocInput[]
   createdBy?: string
+  /**
+   * companies/{cid}/equipment docs, each optionally carrying its own `units`
+   * subcollection docs. Exercises the issue #347 fix — the unfiltered
+   * `equipmentRef.get()` walk that replaced the broken
+   * `collectionGroup('units').where('companyId', ...)` query, which threw
+   * FAILED_PRECONDITION in every environment because no COLLECTION_GROUP_ASC
+   * index on `companyId` ever existed.
+   */
+  equipment?: Array<{ id: string; units?: QueryDocInput[] }>
 }
 
 interface Scenario {
@@ -247,6 +263,31 @@ function wireScenario(scenario: Scenario) {
         : allMembers
     }
 
+    // Equipment: the unfiltered path-form walk `equipmentRef.get()` performs
+    // (issue #347 — see CompanyFixture.equipment's docblock). The filtered
+    // createdBy/approverId queries against this same path fall through to
+    // the catch-all `[]` below, same as before.
+    const equipmentMatch = ctx.path.match(/^companies\/([^/]+)\/equipment$/)
+    if (equipmentMatch && ctx.filters.length === 0) {
+      const cid = equipmentMatch[1] as string
+      const fixture = scenario.companies?.[cid]
+      return (fixture?.equipment ?? []).map((eq) => ({
+        id: eq.id,
+        path: `companies/${cid}/equipment/${eq.id}`,
+        data: {},
+      }))
+    }
+
+    // Equipment units subcollection — companies/{cid}/equipment/{eqId}/units,
+    // reached via `eqDoc.ref.collection('units').get()`.
+    const unitsMatch = ctx.path.match(/^companies\/([^/]+)\/equipment\/([^/]+)\/units$/)
+    if (unitsMatch) {
+      const cid = unitsMatch[1] as string
+      const eqId = unitsMatch[2] as string
+      const eq = scenario.companies?.[cid]?.equipment?.find((e) => e.id === eqId)
+      return eq?.units ?? []
+    }
+
     // Bookings/equipment — nothing to anonymise by default in these tests.
     return []
   }
@@ -254,7 +295,7 @@ function wireScenario(scenario: Scenario) {
   const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
     docs,
     query,
-    collectionGroup: () => [], // 'units' — no unit docs to anonymise in these tests
+    collectionGroup: () => [], // memberships/invitations never used collectionGroup; units no longer do either (issue #347 — see equipmentMatch/unitsMatch above)
   })
 
   const tx = makeTransaction(docs)
@@ -263,6 +304,61 @@ function wireScenario(scenario: Scenario) {
   )
 
   return { docs, wired, tx }
+}
+
+// ── issue #349: per-uid deletion lock ───────────────────────────────────────
+//
+// `acquireAccountDeletionLock` (actions/account.ts) goes through
+// `adminDb.collection('accountDeletionLocks').doc(uid)`, not the `docs`-map
+// path `wireDb` wires — its atomicity comes from `DocumentReference.create()`
+// rejecting when the doc already exists, which `makeDocRef`'s stub never does
+// on its own (see its docblock in __tests__/helpers/firestore.ts). These
+// tests need a lock doc ref whose `create`/`get`/`set`/`delete` spies they can
+// both script and assert on directly, so they stand up their own ref rather
+// than reusing `wireScenario`'s shared `docs` map.
+
+interface LockRefOptions {
+  /** Simulates `create()` rejecting — pass `{ code: 6 }` for ALREADY_EXISTS. */
+  createError?: { code: number }
+  /** `startedAt` (as millis) the existing lock doc reads back, if any. */
+  existingStartedAtMs?: number
+}
+
+function makeLockRef(opts: LockRefOptions = {}) {
+  return {
+    path: `accountDeletionLocks/${UID}`,
+    id: UID,
+    create: opts.createError
+      ? vi.fn().mockRejectedValue(Object.assign(new Error('lock already exists'), opts.createError))
+      : vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue({
+      exists: opts.existingStartedAtMs !== undefined,
+      data: () =>
+        opts.existingStartedAtMs !== undefined
+          ? { startedAt: { toMillis: () => opts.existingStartedAtMs } }
+          : undefined,
+    }),
+    set: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+  }
+}
+
+/**
+ * Routes `adminDb.collection('accountDeletionLocks')` to a fixed `lockRef`
+ * (so its spies are assertable) while leaving every other collection on
+ * `wireScenario`'s own wiring untouched — same "capture the normal
+ * implementation, override one path" pattern the "unknown outcome" test
+ * below already uses for `adminDb.doc`.
+ */
+function stubLockCollection(wired: ReturnType<typeof wireScenario>['wired'], lockRef: ReturnType<typeof makeLockRef>) {
+  const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+  vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+    if (path === 'accountDeletionLocks') {
+      return { doc: () => lockRef }
+    }
+    return resolveCollectionNormally(path)
+  }) as unknown as typeof adminDb.collection)
 }
 
 /**
@@ -796,6 +892,89 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
   })
 })
 
+describe('deleteAccount — issue #349 per-uid deletion lock', () => {
+  function scenario() {
+    return wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+  }
+
+  it('rejects a concurrent call while a fresh lock is held, before touching the commit loop', async () => {
+    stubSession()
+    const { wired } = scenario()
+    const lockRef = makeLockRef({ createError: { code: 6 }, existingStartedAtMs: Date.now() })
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(ACCOUNT_DELETION_IN_PROGRESS_ERROR)
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(lockRef.set).not.toHaveBeenCalled()
+  })
+
+  it('takes over a lock older than the TTL and proceeds normally', async () => {
+    stubSession()
+    const { wired } = scenario()
+    const staleStartedAt = Date.now() - LOCK_TTL_MS - 1
+    const lockRef = makeLockRef({ createError: { code: 6 }, existingStartedAtMs: staleStartedAt })
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(lockRef.set).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(lockRef.delete).toHaveBeenCalledOnce()
+  })
+
+  it('acquires and releases the lock around a successful deletion', async () => {
+    stubSession()
+    const { wired } = scenario()
+    const lockRef = makeLockRef()
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(lockRef.create).toHaveBeenCalledOnce()
+    expect(lockRef.delete).toHaveBeenCalledOnce()
+  })
+
+  it('releases the lock even when the sole-admin guard blocks the deletion', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 4, admins: 1 } } },
+    })
+    const lockRef = makeLockRef()
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('company-A', 4))
+    expect(lockRef.create).toHaveBeenCalledOnce()
+    expect(lockRef.delete).toHaveBeenCalledOnce()
+  })
+
+  it('reports a lock-acquire failure that is not ALREADY_EXISTS as the usual "could not verify" error', async () => {
+    stubSession()
+    const { wired } = scenario()
+    // code 2 (UNKNOWN) rather than 6 (ALREADY_EXISTS): an unrelated Firestore
+    // failure, not evidence of a held lock — must not be reported as "in
+    // progress", and must not leave anything to release afterwards.
+    const lockRef = makeLockRef({ createError: { code: 2 } })
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(lockRef.delete).not.toHaveBeenCalled()
+  })
+})
+
 // ── Invitation anonymisation ───────────────────────────────────────────────────
 //
 // companies/{cid}/invitations carries this user's PII in three roles
@@ -939,6 +1118,111 @@ describe('deleteAccount — invitation anonymisation', () => {
 
     expect(result.error).toBeUndefined()
     expect(wired.batch.delete).toHaveBeenCalledWith(expect.objectContaining({ id: 'inv-5' }))
+  })
+})
+
+// ── issue #347: units anonymisation ──────────────────────────────────────────
+//
+// `anonymizeMemberReferences`'s units step used to be a single-filter
+// collectionGroup('units').where('companyId', ...) query. That shape needs a
+// COLLECTION_GROUP_ASC index on `companyId` that firestore.indexes.json never
+// had, so it threw FAILED_PRECONDITION before ever returning — deterministic
+// breakage of GDPR Art. 17 deletion, in every environment, for every user.
+// The old fixture wiring for this ('units' — no unit docs to anonymise in
+// these tests', `collectionGroup: () => []`) is exactly why: it stubbed the
+// broken query's result rather than exercising the code path at all. The fix
+// walks equipmentRef.get() and eqDoc.ref.collection('units').get() directly
+// (mirrors actions/team.ts's anonymizeMemberReferences), so these tests wire
+// equipment/units fixtures instead and assert the walk actually runs.
+
+describe('deleteAccount — units anonymisation (issue #347)', () => {
+  const BASE_SCENARIO = {
+    memberships: [{ companyId: 'company-A', role: 'crew' }],
+    companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+  } satisfies Scenario
+
+  it('nulls createdBy/updatedBy/deactivatedBy on a unit matching the deleted user, leaves another user\'s fields alone', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      ...BASE_SCENARIO,
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          equipment: [
+            {
+              id: 'eq-1',
+              units: [
+                {
+                  id: 'unit-1',
+                  path: 'companies/company-A/equipment/eq-1/units/unit-1',
+                  data: { createdBy: UID, updatedBy: UID, deactivatedBy: 'other-user', active: true },
+                },
+                {
+                  id: 'unit-2',
+                  path: 'companies/company-A/equipment/eq-1/units/unit-2',
+                  data: { createdBy: 'other-user', updatedBy: 'other-user', deactivatedBy: 'other-user', active: true },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // unit-1: createdBy and updatedBy matched the deleted uid — nulled.
+    // deactivatedBy belonged to someone else, so it's excluded from the
+    // update object entirely (addOp is only called with the fields that
+    // changed, not a full nulled-out shape).
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-1' }),
+      { createdBy: null, updatedBy: null },
+    )
+    // unit-2: nothing on it references the deleted uid — no update at all.
+    expect(wired.batch.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-2' }),
+      expect.anything(),
+    )
+  })
+
+  it('anonymises a unit with no `active` field at all — the fix must not depend on it', async () => {
+    // The rejected alternative fix queried active==true and active==false
+    // separately, which silently skipped any unit doc missing `active`
+    // entirely. This locks in that the equipment-subcollection walk has no
+    // such dependency: the unit below carries no `active` field whatsoever.
+    stubSession()
+    const { wired } = wireScenario({
+      ...BASE_SCENARIO,
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          equipment: [
+            {
+              id: 'eq-2',
+              units: [
+                {
+                  id: 'unit-3',
+                  path: 'companies/company-A/equipment/eq-2/units/unit-3',
+                  data: { deactivatedBy: UID },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unit-3' }),
+      { deactivatedBy: null },
+    )
   })
 })
 

@@ -121,7 +121,7 @@ export async function finishCancellation(
       .where('role', '==', 'admin')
       .get()
 
-    const openUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://allocate.at'}/bookings`
+    const openUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at'}/bookings`
     const scheduledForFormatted = formatDateFull(toIso(ledger.scheduledFor))
     const cancelledAtFormatted = formatDateFull(cancelledAtIso)
 

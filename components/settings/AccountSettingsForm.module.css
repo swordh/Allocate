@@ -208,6 +208,14 @@
   margin-top: 4px;
 }
 
+/* ── My companies (issue #352) ────────────────────────────────────────── */
+
+.companiesList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .deleteConfirm {
   display: flex;
   align-items: center;

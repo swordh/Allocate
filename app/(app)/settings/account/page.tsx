@@ -14,6 +14,7 @@ export default async function AccountSettingsPage() {
       name={profile.name}
       email={session.email}
       defaultBookingView={profile.defaultBookingView}
+      activeCompanyId={session.activeCompanyId}
     />
   )
 }

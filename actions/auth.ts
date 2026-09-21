@@ -1,7 +1,6 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { revalidatePath } from 'next/cache'
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
@@ -347,13 +346,29 @@ export async function deleteSession(): Promise<void> {
  * be used to verify sessions server-side. Without revocation the stale cookie
  * remains valid for up to 14 days.
  *
+ * Returns a Firebase custom token, NOT void — caught live against alpha
+ * building the first real UI caller of this action (issue #352). The
+ * obvious-looking pattern (`getIdToken(true)` then `createSession`) does not
+ * work here: `revokeRefreshTokens` invalidates the CALLING browser's own
+ * refresh token too — Firebase has no "revoke everyone except this session"
+ * primitive — so the very next `getIdToken(true)` fails at Google's STS
+ * endpoint (`securetoken.googleapis.com/v1/token` → 400) regardless of any
+ * delay between the two calls. A custom token sidesteps this: minting one
+ * and having the client `signInWithCustomToken` performs a real, fresh
+ * sign-in that establishes a BRAND NEW refresh token, unrelated to the one
+ * just revoked. The persisted custom claims set below are picked up
+ * automatically on that new sign-in — the custom token itself carries no
+ * claims of its own.
+ *
  * IMPORTANT: After calling this action the caller MUST:
- *   1. Call `auth.currentUser.getIdToken(true)` to force a token refresh
- *   2. Call `createSession(freshIdToken)` to re-issue the session cookie
+ *   1. Call `signInWithCustomToken(auth, customToken)` (firebase/auth) — NOT
+ *      `getIdToken(true)` on the existing user, for the reason above
+ *   2. Call `createSession(freshIdToken)` with the resulting credential's ID
+ *      token, to re-issue the session cookie
  * Skipping these steps leaves the client with no valid session cookie and the
  * user will be redirected to /login on the next server request.
  */
-export async function switchCompany(companyId: string): Promise<void> {
+export async function switchCompany(companyId: string): Promise<{ customToken: string }> {
   const session = await getVerifiedSession()
   const uid = session.uid
 
@@ -379,15 +394,29 @@ export async function switchCompany(companyId: string): Promise<void> {
     })
 
     // Revoke all existing refresh tokens so the old session cookie (which
-    // carries the previous activeCompanyId) is immediately invalidated.
-    // Client must call getIdToken(true) then createSession() after this to
-    // get a valid session cookie.
+    // carries the previous activeCompanyId) is immediately invalidated, then
+    // mint a custom token so the client can re-establish a session without
+    // depending on the refresh token just revoked (see docblock above).
     await adminAuth.revokeRefreshTokens(uid)
+    const customToken = await adminAuth.createCustomToken(uid)
 
     console.log('[actions/auth]', { uid: uid.slice(0, 8) + '...', companyId, role, action: 'company_switched' })
 
-    // Invalidate all cached server data so the new company's data is loaded.
-    revalidatePath('/', 'layout')
+    // Deliberately NOT calling revalidatePath here (issue #352, caught live
+    // against alpha building the first real caller of this action). Server
+    // Actions invoked from a Client Component eagerly re-render the
+    // invoking route's revalidated segments as part of THIS SAME
+    // request/response — using the request's own (still the OLD, now
+    // revoked) session cookie. That re-render hits getVerifiedSession(),
+    // checkRevoked rejects the now-stale cookie, and its redirect('/login')
+    // takes over the client's navigation before the caller's own
+    // getIdToken(true)+createSession() handshake (required by this
+    // function's docblock) ever runs. Every caller already does a hard
+    // `window.location.href` reload after the handshake, which busts the
+    // Next.js cache on its own — revalidatePath buys nothing here and only
+    // creates this race.
+
+    return { customToken }
   } catch (err) {
     const code = err instanceof Error ? (err.message.split('/').pop() ?? 'unknown') : 'unknown'
     console.error('[actions/auth]', { code, action: 'switch_company_failed' })

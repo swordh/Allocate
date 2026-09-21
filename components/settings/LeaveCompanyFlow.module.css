@@ -1,0 +1,305 @@
+/* The modal card owns its own padding here (header row sits flush against
+   the hairline under it), so the shared Modal padding is neutralised. */
+.modal {
+  padding: 0;
+  gap: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-weak);
+}
+
+.cancel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.cancel:hover {
+  color: var(--text-primary);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 26px 28px 18px;
+}
+
+.stack > :global(dl),
+.stack > div:not([class*='inlineAction']) {
+  width: 100%;
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.lead {
+  max-width: 62ch;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-muted);
+}
+
+/* Amber confirmation line above the heading after a successful handover. */
+.handover {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.confirmedEyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.sectionLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Checkbox gate ────────────────────────────────────────────────────────── */
+
+.gate {
+  padding: 16px 18px;
+  border: 1px solid var(--fill-medium);
+}
+
+/* ── Blocked: "delete the company instead" alternative ───────────────────── */
+
+.alternative {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 18px;
+  border: 1px dashed var(--border-dashed);
+}
+
+.alternativeText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-muted);
+}
+
+/* ── Seven-day timeline (only-member overview) ───────────────────────────── */
+
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.phase {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--fill-medium);
+  border-left-width: 0;
+}
+
+.phase:first-child {
+  border-left-width: 1px;
+}
+
+.phaseNow {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  border-left-width: 1px;
+}
+
+.phaseEnd {
+  border-color: var(--danger-border);
+}
+
+.phaseLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.phaseLabelNow {
+  color: var(--accent);
+}
+
+.phaseLabelEnd {
+  color: var(--danger);
+}
+
+.phaseTitle {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.phaseBody {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-muted);
+}
+
+/* ── Type-the-name confirmation ──────────────────────────────────────────── */
+
+.confirmBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--fill-medium);
+}
+
+.confirmLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.back {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--text-primary);
+}
+
+.inlineAction {
+  display: flex;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+/* Modal's footer slot has no padding of its own (the card's padding is
+   neutralised by .modal above), so the gutter and the divider live here —
+   inset to the same 28px as .header and .stack, rather than a hairline
+   running edge to edge. FullScreenSheet brings its own padded, divided
+   footer, so the mobile query below hands all of this back. */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex: 1;
+  margin: 0 28px 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.footerNote {
+  max-width: 46ch;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-faint);
+}
+
+.footerActions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding: 0 0 16px;
+  }
+
+  .stack {
+    padding: 0;
+  }
+
+  .title {
+    font-size: 23px;
+  }
+
+  .timeline {
+    grid-template-columns: 1fr;
+  }
+
+  .phase {
+    border-left-width: 1px;
+    border-top-width: 0;
+  }
+
+  .phase:first-child {
+    border-top-width: 1px;
+  }
+
+  .alternative {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  /* Primary sits on top on a phone — the actions are rendered
+     secondary-first for the desktop row, so the column reverses them. */
+  .footerActions {
+    flex-direction: column-reverse;
+  }
+}

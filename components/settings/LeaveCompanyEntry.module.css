@@ -1,0 +1,77 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft);
+}
+
+.cardBlocked {
+  border-color: var(--accent-border);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-faint);
+}
+
+.action {
+  flex-shrink: 0;
+}
+
+/* Blocked reason — dashed amber row under the card, per the design's
+   sole-admin settings screen. */
+.reason {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px dashed var(--accent-border);
+}
+
+.reasonText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .reason {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
