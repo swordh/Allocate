@@ -72,8 +72,9 @@ async function commitAndReset(db: Firestore, batch: FirebaseFirestore.WriteBatch
 /**
  * Cancels the subscription without proration and anonymises (never deletes)
  * the Stripe customer — invoices survive for Bokföringslagen's seven years,
- * same trade-off as `actions/account.ts`'s own Stripe anonymisation
- * (account.ts:539-562). Best-effort and non-fatal by design: a company must
+ * same trade-off `runAccountDeletion`'s own Stripe billing-contact
+ * anonymisation (actions/account.ts, step 3's Stripe block) makes for a
+ * user's own account deletion. Best-effort and non-fatal by design: a company must
  * not become impossible to delete because Stripe is briefly unreachable, or
  * because this company never had a paid subscription in the first place.
  */

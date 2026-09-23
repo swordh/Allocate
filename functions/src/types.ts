@@ -58,6 +58,19 @@ export interface MembershipDocument {
   joinedAt: Timestamp;
 }
 
+/**
+ * Mirror of `CompanyBilling` in types/company.ts — see that file for the full
+ * doc comment (why it exists, who writes/clears it). Stored as ISO strings on
+ * the Firestore doc, same as the root type, not `Timestamp` — written by
+ * `actions/account.ts` (a Next.js server action, no `Timestamp` import) and
+ * only ever read/cleared here via plain string comparisons and
+ * `FieldValue.delete()`, so there was never a reason to convert.
+ */
+export interface CompanyBilling {
+  emailMissingSince: string;
+  lastReminderAt: string;
+}
+
 export interface CompanyDocument {
   name: string;
   createdAt: Timestamp;
@@ -65,6 +78,7 @@ export interface CompanyDocument {
   stripeCustomerId: string;
   hadTrial: boolean;
   subscription: CompanySubscription;
+  billing?: CompanyBilling;
 }
 
 // ─── Company deletion (issue #252, step 5) ────────────────────────────────────

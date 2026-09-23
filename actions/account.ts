@@ -33,6 +33,19 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   return adminDb.batch()
 }
 
+/**
+ * Trim + case-insensitive comparison for the Stripe customer `name` /
+ * deleting-user display-name match (step 3's Stripe block, below) — deliberately
+ * NOT `normalizeEmail` (lib/invite-recipients), which is email-specific
+ * (lowercases the whole string, no trimming semantics of its own beyond
+ * that). Display names carry incidental leading/trailing whitespace far more
+ * often than emails do (a stray space typed into a Checkout card-name field),
+ * so trimming here is load-bearing, not decorative.
+ */
+function normalizeDisplayName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 // issue #349: the CONFIRM button can fire 2-3 near-simultaneous invocations
 // of `deleteAccount` for the same uid (observed ~14ms apart in the network
 // log). `deleteAccount` is partially destructive and only idempotent against
@@ -850,6 +863,36 @@ async function runAccountDeletion(
       }
     }
 
+    // Same rotation as addOp/addDelete above, but for a `.set()` — needed for
+    // the `mail/{id}` docs the Stripe-billing-contact block below queues:
+    // `addOp` calls `batch.update()`, which throws NOT_FOUND against a mail
+    // doc id that doesn't exist yet (it's freshly minted via `.doc()`, never
+    // read back), so those writes need `.set()` instead while still sharing
+    // the same `batch`/`opCount` closure and BATCH_LIMIT rotation as every
+    // other write in this loop.
+    async function addSet(ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) {
+      batch.set(ref, data)
+      opCount++
+      if (opCount >= BATCH_LIMIT) {
+        batch = await commitAndReset(batch)
+        opCount = 0
+      }
+    }
+
+    // Deleting user's display name, for the Stripe name-match check below
+    // (GDPR finding: Checkout's `customer_update: { name: 'auto' }`,
+    // actions/subscription.ts, can leave a Stripe customer's `name` holding
+    // the payer's own personal name rather than the company's). No earlier
+    // read in this function carries it for the general case — step 2's
+    // per-company transaction reads `companies/{cid}/members/{uid}.name`
+    // only inside the sole-member/immediate branch, and that member doc is
+    // already deleted by the time this loop runs for every OTHER company
+    // (see the "Company member doc" comment below). `users/{uid}` is read
+    // fresh here instead: one read, not per-company, and the doc still
+    // exists — it isn't deleted until the very end of this same batch.
+    const deletingUserSnap = await adminDb.doc(`users/${uid}`).get()
+    const deletingUserName = deletingUserSnap.data()?.name as string | undefined
+
     for (const companyId of companyIds) {
       // A company scheduled for IMMEDIATE deletion in step 2 is skipped here
       // entirely, and that is a correctness requirement, not an optimisation.
@@ -993,25 +1036,129 @@ async function runAccountDeletion(
 
       // Stripe customer anonymisation — must run before Auth deletion while
       // stripeCustomerId is still readable. Anonymise rather than delete so
-      // invoices are preserved (Bokföringslagen 7 years).
+      // invoices are preserved (Bokföringslagen 7 years) — BUT only when the
+      // Stripe customer's own email OR name is the deleting user's own. A
+      // company's Stripe customer is shared billing infrastructure, not any
+      // one member's personal record: this used to overwrite it with
+      // 'Deleted User' / 'deleted@allocate.invalid' for EVERY surviving
+      // company the deleting user belonged to, including a crew member who
+      // was never the billing contact — breaking a live subscription's
+      // invoices/receipts for everyone else in that company. (Already hit in
+      // alpha: cus_VIpkpdx4xNrLof, QA Switch Second AB.) Matching on email is
+      // what confines the FULL anonymisation to the one case it's meant for:
+      // the deleting user WAS the billing contact, and now nobody is.
+      //
+      // The name check is a narrower, separate GDPR fix: Checkout creates the
+      // Stripe customer with `customer_update: { name: 'auto' }`
+      // (actions/subscription.ts), which lets Stripe fill `name` with
+      // whatever the payer typed on the card form — routinely her own
+      // personal name, not the company's, even when her email was never the
+      // billing email at all (e.g. she paid once from a personal address
+      // that was never wired into Allocate as the contact). A name-only
+      // match therefore does NOT imply she was the billing contact — it only
+      // means her personal name is sitting on a company's Stripe customer,
+      // which is corrected on its own: replace `name` with the COMPANY's
+      // name (never a placeholder), and touch NOTHING else. No email clear,
+      // no `billing` flag, no admin mail — none of those follow from a name
+      // coincidence the way they follow from an actual missing billing
+      // contact.
       const stripeCustomerId = companySnap.data()?.stripeCustomerId as string | undefined
       if (stripeCustomerId) {
+        let customerEmailMatches = false
+        let customerNameMatches = false
         try {
-          await stripe.customers.update(stripeCustomerId, {
-            email: 'deleted@allocate.invalid',
-            name: 'Deleted User',
-            metadata: { deletedAt: new Date().toISOString() },
-          })
+          const customer = await stripe.customers.retrieve(stripeCustomerId)
+          if (!customer.deleted) {
+            if (customer.email) {
+              customerEmailMatches = normalizeEmail(customer.email) === normalizeEmail(session.email)
+            }
+            if (customer.name && deletingUserName) {
+              customerNameMatches = normalizeDisplayName(customer.name) === normalizeDisplayName(deletingUserName)
+            }
+          }
         } catch (stripeErr) {
           const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
-          console.error('[actions/account] Stripe anonymisation failed', { stripeCustomerId, error: msg })
+          console.error('[actions/account] Stripe customer retrieve failed', { stripeCustomerId, error: msg })
         }
 
-        // Clear the Stripe link from the company doc if the subscription is
-        // already cancelled — it no longer serves a purpose. Keep it for
-        // active/trialing subscriptions so the billing portal still works.
+        if (!customerEmailMatches && customerNameMatches) {
+          // Name-only match — see the docblock above for why this branch
+          // touches only `name`. Skipped entirely (not even attempted) when
+          // the company has no name to fall back to: writing nothing is
+          // always safer than writing a placeholder that looks like a person
+          // just got renamed to it.
+          const companyName = companySnap.data()?.name as string | undefined
+          if (companyName) {
+            try {
+              await stripe.customers.update(stripeCustomerId, { name: companyName })
+            } catch (stripeErr) {
+              const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+              console.error('[actions/account] Stripe customer name correction failed', { stripeCustomerId, error: msg })
+            }
+          }
+        }
+
+        if (customerEmailMatches) {
+          const companyName = companySnap.data()?.name as string | undefined
+          let updateSucceeded = false
+          try {
+            await stripe.customers.update(stripeCustomerId, {
+              email: '',
+              ...(companyName ? { name: companyName } : {}),
+              metadata: { billingEmailRemovedAt: new Date().toISOString() },
+            })
+            updateSucceeded = true
+          } catch (stripeErr) {
+            const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+            console.error('[actions/account] Stripe billing-email removal failed', { stripeCustomerId, error: msg })
+          }
+
+          // Only mark the company as missing a billing address — and only
+          // mail its admins about it — once the Stripe side is confirmed
+          // gone. A failed `customers.update` above means Stripe still has
+          // the old email on file; setting the flag anyway would tell admins
+          // to fix a problem that doesn't exist yet, and mail them a link to
+          // a portal where nothing looks wrong.
+          if (updateSucceeded) {
+            const iso = new Date().toISOString()
+            await addOp(companyRef, { 'billing.emailMissingSince': iso, 'billing.lastReminderAt': iso })
+
+            const adminsSnap = await adminDb
+              .collection(`companies/${companyId}/members`)
+              .where('role', '==', 'admin')
+              .get()
+            const appUrlBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at').replace(/\/$/, '')
+            const settingsUrl = `${appUrlBase}/settings/subscription`
+            const normalizedDeletingEmail = normalizeEmail(session.email)
+
+            for (const adminDoc of adminsSnap.docs) {
+              const email = adminDoc.data().email as string | undefined
+              // The deleting user's own company-side member doc is already
+              // gone (step 2, above) by the time this loop runs, so this
+              // exclusion is defensive rather than load-bearing — but worth
+              // keeping explicit: nobody should ever get a "your billing
+              // email is missing" mail about the account they just deleted.
+              if (!email || normalizeEmail(email) === normalizedDeletingEmail) continue
+              await addSet(adminDb.collection('mail').doc(), {
+                to: email,
+                template: 'billingEmailMissing',
+                data: { companyName: companyName ?? '', settingsUrl, isReminder: false },
+                status: 'queued',
+                companyId,
+                priority: 'normal',
+                createdAt: iso,
+              })
+            }
+          }
+        }
+
+        // Clear the Stripe link from the company doc only once the
+        // subscription is fully cancelled — it no longer serves a purpose.
+        // A bare `!subStatus` used to trigger this too, which cleared a
+        // perfectly live billing-portal link the moment `subscription.status`
+        // was merely absent/unset, rather than actually cancelled.
         const subStatus = companySnap.data()?.subscription?.status as string | undefined
-        if (!subStatus || subStatus === 'canceled') {
+        if (subStatus === 'canceled') {
           await addOp(companyRef, { stripeCustomerId: '' } as Record<string, null | string>)
         }
       }
