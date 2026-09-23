@@ -288,6 +288,17 @@ export async function updateUserProfile(data: {
  * (`acquireAccountDeletionLock`/`releaseAccountDeletionLock` above) for the
  * duration of the run, so at most one deletion can be in flight per uid at a
  * time.
+ *
+ * Known, accepted overlap with `functions/src/company/strandedAccountSweep.ts`:
+ * that sweep independently deletes a stranded member's account once
+ * `pendingDeletion.scheduledFor` passes. If she calls this function herself
+ * around the same time the sweep is processing her uid, both sides can end
+ * up racing to delete the same `users/{uid}` doc and Auth record. This is
+ * safe, not just tolerated — both `runAccountDeletion` and the sweep's own
+ * delete path treat a missing `users/{uid}` doc and a missing Auth user as
+ * expected outcomes of a retry/race, not errors, so the worst case is two
+ * `deletionAuditLog` rows for one account rather than a thrown error or a
+ * partially-deleted state. Not something to fix here.
  */
 export async function deleteAccount(): Promise<{ error?: string }> {
   const session = await verifyAuthenticatedSession()

@@ -154,6 +154,11 @@ export default function NoCompanyView({
       setDeleting(false)
       deletingRef.current = false
     } else {
+      // Best-effort, same as handleSignOut below — deleteAccount already
+      // cleared the server-side session and Auth record, but the client
+      // SDK's own in-memory state survives until signOut() clears it. Never
+      // let a failure here block the redirect.
+      await signOut(auth).catch(() => {})
       router.push('/login')
     }
   }
@@ -262,7 +267,9 @@ export default function NoCompanyView({
           )}
           {deleteOpen && (
             <div className={styles.deleteConfirm}>
-              <span className={styles.deleteText}>Type DELETE to permanently remove your account.</span>
+              <span className={styles.deleteText} id="noCompanyDeleteConfirmHelp">
+                Type DELETE to permanently remove your account.
+              </span>
               <div className={styles.deleteInputRow}>
                 <Input
                   value={confirmInput}
@@ -273,6 +280,8 @@ export default function NoCompanyView({
                   placeholder="DELETE"
                   className={styles.deleteInput}
                   disabled={deleting}
+                  aria-label="Type DELETE to confirm account deletion"
+                  aria-describedby="noCompanyDeleteConfirmHelp"
                 />
                 <Button
                   variant="danger-solid"
