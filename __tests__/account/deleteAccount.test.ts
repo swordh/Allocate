@@ -1653,6 +1653,11 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
     expect(
       wired.batch.set.mock.calls.some(([, data]) => (data as Record<string, unknown> | undefined)?.outcome === 'failed'),
     ).toBe(false)
+    // The batch is never re-committed to smuggle the failure row in after
+    // the fact — commit() is called exactly once (the one that failed).
+    // Catches a mutant that reacts to the commit failure by retrying commit
+    // with the failure row appended to the same batch.
+    expect(wired.batch.commit).toHaveBeenCalledTimes(1)
   })
 
   it('adminAuth.deleteUser throws (step 4): writes a failure row with failedStep "auth_delete"', async () => {
@@ -1682,6 +1687,28 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
       totalCompanies: 1,
       outcome: 'failed',
     })
+  })
+
+  it('adminAuth.deleteUser throws auth/user-not-found: treated as success — no failure row', async () => {
+    // The stranded-account sweep (functions/src/company/strandedAccountSweep.ts)
+    // can delete the same uid's Auth record concurrently, for a stranded
+    // user past pendingDeletion.scheduledFor. Finding it already gone here
+    // is an expected race outcome, not a failure of this run: the goal (no
+    // Auth record left) is already reached.
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('There is no user record corresponding to this identifier'), { code: 'auth/user-not-found' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(auditChain.add).not.toHaveBeenCalled()
   })
 
   it('the failure-row write itself throwing does not mask the original error', async () => {
@@ -1716,5 +1743,41 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
     // own try/catch) and never re-thrown or substituted for a different one.
     expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
     expect(auditChain.add).toHaveBeenCalledOnce()
+  })
+
+  it('errorCode falls back to "unknown" when the thrown error\'s `code` is not a string or number', async () => {
+    // A non-primitive `code` (an object, here) is exactly the shape
+    // `errorCodeOf` must reject rather than pass through `String()` — the
+    // whole point of restricting it to string/number is that an arbitrary
+    // object could carry anything, including PII, and `String({...})`
+    // would happily stringify it into `errorCode`.
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = stubAuditLogCollection(wired)
+
+    vi.mocked(adminDb.runTransaction).mockImplementation(async () => {
+      throw Object.assign(new Error('weird error'), {
+        code: { nested: 'object', email: 'someone@example.com' },
+      })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row.errorCode).toBe('unknown')
+    expect(JSON.stringify(row)).not.toContain('someone@example.com')
   })
 })

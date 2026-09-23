@@ -312,15 +312,35 @@ export async function deleteAccount(): Promise<{ error?: string }> {
  *  failure happened in. */
 type DeletionFailureStep = 'membership_removal' | 'anonymisation' | 'auth_delete'
 
+/** Hard cap on a persisted `errorCode`'s length — a defence-in-depth
+ *  backstop, not an expected case: every `code` this codebase's
+ *  Firestore/Auth errors actually carry is a short enum-like string (e.g.
+ *  'permission-denied', 'auth/user-not-found') or a small gRPC status
+ *  number, far under 64 chars. */
+const ERROR_CODE_MAX_LENGTH = 64
+
 /**
- * The Firestore/Auth error's `code` field, stringified, or `'unknown'` when
- * the thrown value doesn't carry one. Deliberately NEVER `error.message` —
- * see `writeDeletionFailureAudit`'s docblock for why a message is unsafe to
- * persist here.
+ * The Firestore/Auth error's `code` field, or `'unknown'` when the thrown
+ * value doesn't carry one THIS FUNCTION CAN TRUST. Deliberately NEVER
+ * `error.message` — see `writeDeletionFailureAudit`'s docblock for why a
+ * message is unsafe to persist here.
+ *
+ * Only a `string` or `number` `code` is accepted — anything else (an
+ * object, an array, a nested error) is rejected outright rather than run
+ * through `String()`, which would happily stringify arbitrary structured
+ * data. `code` is meant to be a short, closed-vocabulary value; the moment
+ * it isn't a primitive, treating it as trustworthy reopens the exact hole
+ * this function otherwise exists to close by NOT persisting `error.message`
+ * — a permissive extractor here would just leak the same class of data
+ * through a different field. The length cap is a second, independent
+ * backstop against the same risk, for a `code` that is a primitive but
+ * unexpectedly long.
  */
 function errorCodeOf(err: unknown): string {
   const code = (err as { code?: unknown } | undefined)?.code
-  return code === undefined || code === null ? 'unknown' : String(code)
+  if (typeof code !== 'string' && typeof code !== 'number') return 'unknown'
+  const str = String(code)
+  return str.length > ERROR_CODE_MAX_LENGTH ? str.slice(0, ERROR_CODE_MAX_LENGTH) : str
 }
 
 /**
@@ -1042,6 +1062,24 @@ async function runAccountDeletion(
     await adminAuth.deleteUser(uid)
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'account_deleted' })
   } catch (err) {
+    const code = (err as { code?: unknown } | undefined)?.code
+
+    // 'auth/user-not-found' is not a failure of THIS deletion — it means the
+    // goal (no Auth record left) is already reached. The stranded-account
+    // sweep (functions/src/company/strandedAccountSweep.ts) can delete the
+    // same uid's Auth record concurrently, for a user whose
+    // pendingDeletion.scheduledFor has already passed by the time she also
+    // runs deleteAccount herself. Whichever of the two calls `deleteUser`
+    // second lands here, and finding nothing left to delete is success, not
+    // an error worth a failure-audit row (there was nothing this run could
+    // have done differently, and nothing was left in a bad state — the
+    // record is gone either way). Logged at info level, not console.error,
+    // for the same reason: this is an expected race outcome, not a fault.
+    if (code === 'auth/user-not-found') {
+      console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_auth_user_already_gone' })
+      return {}
+    }
+
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_auth_user_failed' })
     // issue #358: the SUCCESS audit row was already committed in step 3, above
