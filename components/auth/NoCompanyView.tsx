@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { setupNewCompany, createSession, deleteSession } from '@/actions/auth'
-import { exportUserData } from '@/actions/account'
+import { exportUserData, deleteAccount } from '@/actions/account'
 import { pendingDeletionCountdown } from '@/lib/pendingDeletionCountdown'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -46,10 +46,15 @@ interface NoCompanyViewProps {
  *     before `setupNewCompany` ran). `pendingDeletion` is null — same page,
  *     same two ways forward, no countdown to show.
  *
- * Both get exactly the two paths the brief names: export her data, or
- * create a new company (which cancels the schedule — see the
- * `pendingDeletion: FieldValue.delete()` write inside `setupNewCompany`,
- * actions/auth.ts).
+ * Both get the two paths the brief names — export her data, or create a new
+ * company (which cancels the schedule — see the `pendingDeletion:
+ * FieldValue.delete()` write inside `setupNewCompany`, actions/auth.ts) —
+ * plus a third: delete the account outright (GDPR Art. 17, issue #362). A
+ * companyless user previously had no way to exercise her right to erasure at
+ * all: `deleteAccount` (actions/account.ts) used to require an
+ * `activeCompanyId`, and this very page is where a companyless session is
+ * redirected. It now uses `verifyAuthenticatedSession` instead, the same
+ * fix already made for `exportUserData` — see that function's docblock.
  */
 export default function NoCompanyView({
   name,
@@ -74,6 +79,17 @@ export default function NoCompanyView({
   const [exportError, setExportError] = useState<string | null>(null)
 
   const [signingOut, setSigningOut] = useState(false)
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [confirmInput, setConfirmInput] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  // issue #349: `setDeleting(true)` isn't synchronous, so a fast double click
+  // can fire handleDeleteAccount twice before `disabled` re-renders. This ref
+  // is set synchronously, before any `await`, closing that window on the
+  // client — same pattern as AccountSettingsForm.tsx. The server-side lock
+  // (actions/account.ts) is the real guard.
+  const deletingRef = useRef(false)
 
   async function handleCreateCompany(e: React.FormEvent) {
     e.preventDefault()
@@ -123,6 +139,23 @@ export default function NoCompanyView({
     a.download = 'allocate-my-data.json'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function handleDeleteAccount() {
+    if (confirmInput !== 'DELETE' || deletingRef.current) return
+    deletingRef.current = true
+    setDeleting(true)
+    setDeleteError(null)
+
+    const result = await deleteAccount()
+
+    if (result.error) {
+      setDeleteError(result.error)
+      setDeleting(false)
+      deletingRef.current = false
+    } else {
+      router.push('/login')
+    }
   }
 
   async function handleSignOut() {
@@ -214,6 +247,45 @@ export default function NoCompanyView({
           <Button variant="secondary" size="lg" fullWidth loading={exporting} onClick={handleExportData}>
             {exporting ? 'Preparing…' : 'Export my data'}
           </Button>
+        </div>
+
+        <div className={styles.card}>
+          <h2 className={styles.cardTitle}>Delete your account</h2>
+          <p className={styles.cardBody}>
+            Permanently erases your profile and booking history. This happens immediately and cannot be
+            undone — export your data first if you want to keep a copy.
+          </p>
+          {!deleteOpen && (
+            <Button variant="danger" size="lg" fullWidth onClick={() => setDeleteOpen(true)}>
+              Delete my account
+            </Button>
+          )}
+          {deleteOpen && (
+            <div className={styles.deleteConfirm}>
+              <span className={styles.deleteText}>Type DELETE to permanently remove your account.</span>
+              <div className={styles.deleteInputRow}>
+                <Input
+                  value={confirmInput}
+                  onChange={(e) => {
+                    setConfirmInput(e.target.value)
+                    setDeleteError(null)
+                  }}
+                  placeholder="DELETE"
+                  className={styles.deleteInput}
+                  disabled={deleting}
+                />
+                <Button
+                  variant="danger-solid"
+                  size="sm"
+                  onClick={handleDeleteAccount}
+                  disabled={confirmInput !== 'DELETE' || deleting}
+                >
+                  {deleting ? 'Deleting…' : 'Confirm'}
+                </Button>
+              </div>
+              {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
+            </div>
+          )}
         </div>
       </div>
 

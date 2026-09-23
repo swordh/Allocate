@@ -362,16 +362,25 @@ function stubLockCollection(wired: ReturnType<typeof wireScenario>['wired'], loc
 }
 
 /**
- * Stub getVerifiedSession by controlling what verifySessionCookie returns.
+ * Stub getVerifiedSession/verifyAuthenticatedSession by controlling what
+ * verifySessionCookie returns.
+ *
+ * `activeCompanyId: null` (as opposed to simply omitting the key) means "no
+ * claim at all", mirroring a real companyless session — issue #362's test
+ * below needs to distinguish that from the default 'company-A', which `??`
+ * can't do if the field is merely left undefined.
  */
-function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string; email: string }>) {
+function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string | null; email: string }>) {
   mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+  const activeCompanyId = overrides && 'activeCompanyId' in overrides
+    ? overrides.activeCompanyId
+    : 'company-A'
   mockVerifySessionCookie.mockResolvedValue({
-    uid:             overrides?.uid             ?? UID,
-    email:           overrides?.email           ?? 'user@example.com',
-    activeCompanyId: overrides?.activeCompanyId ?? 'company-A',
-    role:            'admin',
-    email_verified:  true,
+    uid:            overrides?.uid ?? UID,
+    email:          overrides?.email ?? 'user@example.com',
+    ...(activeCompanyId !== null ? { activeCompanyId } : {}),
+    role:           'admin',
+    email_verified: true,
   })
 }
 
@@ -386,6 +395,49 @@ beforeEach(() => {
 describe('deleteAccount — multi-company sole-admin guard (#90, transactional as of #252)', () => {
   it('allows deletion when the user is admin of one company and another admin exists', async () => {
     stubSession()
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+  })
+
+  // issue #362 (GDPR Art. 17): a companyless user — no `activeCompanyId`
+  // claim at all — previously had no way to delete her own account, because
+  // `deleteAccount` used `getVerifiedSession()`, which redirects to
+  // /no-company the moment the claim is missing. `deleteAccount` now uses
+  // `verifyAuthenticatedSession()` instead (same fix `exportUserData`
+  // already had), which never looks at `activeCompanyId` at all. This test
+  // would fail with a thrown REDIRECT error under the old guard.
+  it('allows deletion for a session with no activeCompanyId claim at all (issue #362)', async () => {
+    stubSession({ activeCompanyId: null })
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+  })
+
+  // issue #362: exercises verifyAuthenticatedSession's tolerance vs
+  // getVerifiedSession's strictness. The session's OWN activeCompanyId
+  // ('company-ghost') points at a company that doesn't exist in Firestore at
+  // all — under the old `getVerifiedSession()` guard this would redirect to
+  // /no-company before any deletion logic ran. `verifyAuthenticatedSession`
+  // never checks whether the claimed company exists, so deletion proceeds
+  // normally, driven entirely by the user's real `users/{uid}/memberships`
+  // (company-A here), which is unrelated to the stale claim.
+  it('allows deletion when activeCompanyId points at a company that no longer exists (issue #362)', async () => {
+    stubSession({ activeCompanyId: 'company-ghost' })
     wireScenario({
       memberships: [{ companyId: 'company-A', role: 'admin' }],
       companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
