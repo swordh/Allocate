@@ -41,12 +41,16 @@ const {
   mockCookieDelete,
   mockDeleteUser,
   mockDeleteSession,
+  mockStripeRetrieve,
+  mockStripeUpdate,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie: vi.fn(),
   mockCookieGet: vi.fn(),
   mockCookieDelete: vi.fn(),
   mockDeleteUser: vi.fn(),
   mockDeleteSession: vi.fn(),
+  mockStripeRetrieve: vi.fn(),
+  mockStripeUpdate: vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -75,6 +79,14 @@ vi.mock('firebase-admin/firestore', () => ({
       toMillis: () => ms,
       toDate: () => new Date(ms),
     }),
+  },
+}))
+
+// Stripe billing-contact anonymisation (fix/stripe-anonymise-billing-contact)
+// — pattern copied from __tests__/subscription/billingPortalDeletionGuard.test.ts.
+vi.mock('@/lib/stripe', () => ({
+  stripe: {
+    customers: { retrieve: mockStripeRetrieve, update: mockStripeUpdate },
   },
 }))
 
@@ -198,6 +210,10 @@ interface CompanyFixture {
    * index on `companyId` ever existed.
    */
   equipment?: Array<{ id: string; units?: QueryDocInput[] }>
+  /** companies/{cid}.stripeCustomerId, for the Stripe billing-contact block. */
+  stripeCustomerId?: string
+  /** companies/{cid}.subscription — only `status` matters to that block. */
+  subscription?: { status?: string }
 }
 
 interface Scenario {
@@ -207,10 +223,20 @@ interface Scenario {
   invitations?: QueryResolver
   /** Simulates the initial `users/{uid}/memberships` read itself failing. */
   membershipsFetchError?: Error
+  /**
+   * `users/${UID}.name` — the deleting user's display name, read once by
+   * step 3's Stripe block for the name-only-match check. Omit to simulate no
+   * `users/{uid}` doc at all (or no `name` field on it).
+   */
+  userName?: string
 }
 
 function wireScenario(scenario: Scenario) {
   const docs: DocMap = {}
+
+  if (scenario.userName !== undefined) {
+    docs[`users/${UID}`] = { name: scenario.userName }
+  }
 
   // getVerifiedSession (lib/dal.ts, issue #252 step 5, PR F) now verifies
   // the SESSION's own activeCompanyId company exists before deleteAccount
@@ -225,7 +251,12 @@ function wireScenario(scenario: Scenario) {
   for (const [companyId, fixture] of Object.entries(scenario.companies ?? {})) {
     const exists = fixture.exists ?? true
     docs[`companies/${companyId}`] = exists
-      ? { name: companyId, createdBy: fixture.createdBy ?? null }
+      ? {
+          name: companyId,
+          createdBy: fixture.createdBy ?? null,
+          ...(fixture.stripeCustomerId ? { stripeCustomerId: fixture.stripeCustomerId } : {}),
+          ...(fixture.subscription ? { subscription: fixture.subscription } : {}),
+        }
       : null
     if (fixture.memberRole !== undefined) {
       docs[`companies/${companyId}/members/${UID}`] = { role: fixture.memberRole }
@@ -388,6 +419,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockDeleteSession.mockResolvedValue(undefined)
   mockDeleteUser.mockResolvedValue(undefined)
+  // Default: no Stripe customer to retrieve/update. Individual Stripe tests
+  // override this per case.
+  mockStripeRetrieve.mockResolvedValue({ deleted: true })
+  mockStripeUpdate.mockResolvedValue({})
 })
 
 // ── Guard: pre-flight + commit-loop ────────────────────────────────────────────
@@ -1831,5 +1866,415 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
     const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
     expect(row.errorCode).toBe('unknown')
     expect(JSON.stringify(row)).not.toContain('someone@example.com')
+  })
+})
+
+// ── Stripe billing-contact anonymisation (fix/stripe-anonymise-billing-contact) ─
+//
+// Step 3's Stripe block used to overwrite the company's Stripe customer with
+// 'Deleted User' / 'deleted@allocate.invalid' for EVERY surviving company the
+// deleting user belonged to — including a crew member who was never the
+// billing contact. It now only touches the customer when the customer's OWN
+// email matches the deleting user's (case-insensitively), and on a match it
+// sets the company name (never a placeholder) and mails the remaining admins.
+//
+// `mockStripeRetrieve` defaults to `{ deleted: true }` in the top-level
+// `beforeEach` — every test below that wants a live, matching (or
+// non-matching) customer overrides it explicitly.
+
+function stripeMailCalls(wired: ReturnType<typeof wireScenario>['wired']) {
+  return wired.batch.set.mock.calls.filter(
+    ([, data]) => (data as { template?: string } | undefined)?.template === 'billingEmailMissing',
+  )
+}
+
+function billingUpdateCalls(wired: ReturnType<typeof wireScenario>['wired'], companyId: string) {
+  return wired.batch.update.mock.calls.filter(
+    ([ref, data]) =>
+      (ref as DocRefStub).path === `companies/${companyId}` &&
+      Object.keys(data as Record<string, unknown>).some((k) => k.startsWith('billing.')),
+  )
+}
+
+describe('deleteAccount — Stripe billing-contact anonymisation', () => {
+  it('does NOT touch the Stripe customer when its email belongs to someone else (a crew member leaving)', async () => {
+    stubSession() // uid=user-1, email=user@example.com, role irrelevant to session
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'someone-else@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          stripeCustomerId: 'cus_other_owner',
+          subscription: { status: 'active' },
+          members: [{ id: 'admin-1', data: { role: 'admin', email: 'admin@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+  })
+
+  it('anonymises the Stripe customer on an email match: company name + cleared email, billing flag set, one mail per OTHER admin', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'user@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_matching',
+          subscription: { status: 'active' },
+          members: [
+            { id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } },
+            { id: 'm-other', data: { role: 'admin', email: 'other-admin@example.com' } },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_matching', {
+      email: '',
+      name: 'company-A',
+      metadata: { billingEmailRemovedAt: expect.any(String) },
+    })
+
+    const billingCalls = billingUpdateCalls(wired, 'company-A')
+    expect(billingCalls).toHaveLength(1)
+    expect(billingCalls[0]![1]).toMatchObject({
+      'billing.emailMissingSince': expect.any(String),
+      'billing.lastReminderAt': expect.any(String),
+    })
+
+    const mailCalls = stripeMailCalls(wired)
+    expect(mailCalls).toHaveLength(1)
+    expect(mailCalls[0]![1]).toMatchObject({
+      to: 'other-admin@example.com',
+      template: 'billingEmailMissing',
+      companyId: 'company-A',
+      status: 'queued',
+      priority: 'normal',
+      data: { companyName: 'company-A', isReminder: false, settingsUrl: expect.stringContaining('/settings/subscription') },
+    })
+    // Nobody mails the deleting user about the account she just deleted.
+    expect(mailCalls.some(([, data]) => (data as { to?: string }).to === 'user@example.com')).toBe(false)
+  })
+
+  it('a failed customers.update on an email match writes no billing flag and sends no mail, but deletion still succeeds', async () => {
+    // The `updateSucceeded` gate in actions/account.ts: setting the flag or
+    // mailing admins on a failed Stripe write would tell them to fix a
+    // problem Stripe doesn't actually have yet (the old email is still on
+    // file), and point them at a portal where nothing looks wrong.
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'user@example.com' })
+    mockStripeUpdate.mockRejectedValue(new Error('Stripe write failed'))
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_matching',
+          subscription: { status: 'active' },
+          members: [
+            { id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } },
+            { id: 'm-other', data: { role: 'admin', email: 'other-admin@example.com' } },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_matching', expect.objectContaining({ email: '' }))
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  it('matches case-insensitively', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'User@Example.com' })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_case',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_case', expect.objectContaining({ email: '' }))
+  })
+
+  it('leaves a shared address (e.g. finance@) untouched', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_finance',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  // ── Name-only match (GDPR finding) ─────────────────────────────────────────
+  //
+  // Checkout writes `customer_update: { name: 'auto' }` (actions/subscription.ts),
+  // so a Stripe customer's `name` can carry the payer's own personal name
+  // even when her email was never the billing contact. A name-only match
+  // corrects JUST the name — no email clear, no `billing` flag, no mail —
+  // because it says nothing about whether she was actually the billing
+  // contact.
+
+  it('name matches but email does not: only the Stripe customer NAME is corrected, nothing else', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Jane Doe' })
+
+    const { wired } = wireScenario({
+      userName: 'Jane Doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_name_only',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledTimes(1)
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_name_only', { name: 'company-A' })
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  it('name matches case/whitespace-insensitively (" Jane Doe " vs "jane doe")', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: ' Jane Doe ' })
+
+    wireScenario({
+      userName: 'jane doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_name_ws',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_name_ws', { name: 'company-A' })
+  })
+
+  it('neither name nor email matches: no Stripe write at all', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Someone Else' })
+
+    wireScenario({
+      userName: 'Jane Doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_neither',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('name matches but the company has no name to fall back to: writes nothing (never a placeholder)', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Jane Doe' })
+
+    const docs: DocMap = {
+      'companies/company-A': { name: '', stripeCustomerId: 'cus_no_company_name', subscription: { status: 'active' } },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 2, admins: 2 },
+      [`users/${UID}`]: { name: 'Jane Doe' },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+        : []
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('skips a deleted Stripe customer ({ deleted: true }) — no update, deletion still succeeds', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: true })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_deleted',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('a Stripe retrieve failure never blocks account deletion', async () => {
+    stubSession()
+    mockStripeRetrieve.mockRejectedValue(new Error('Stripe unavailable'))
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_unreachable',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('makes no Stripe calls at all when the company has no stripeCustomerId', async () => {
+    stubSession()
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': { memberRole: 'admin', metaCounts: { members: 2, admins: 2 } },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeRetrieve).not.toHaveBeenCalled()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('clears stripeCustomerId only when the subscription is canceled — kept for missing/trialing/active', async () => {
+    async function run(subscription: { status?: string } | undefined) {
+      stubSession()
+      mockStripeRetrieve.mockResolvedValue({ deleted: true }) // irrelevant to this assertion; no match either way
+      const { wired } = wireScenario({
+        memberships: [{ companyId: 'company-A', role: 'admin' }],
+        companies: {
+          'company-A': {
+            memberRole: 'admin',
+            metaCounts: { members: 2, admins: 2 },
+            stripeCustomerId: 'cus_x',
+            ...(subscription ? { subscription } : {}),
+          },
+        },
+      })
+      const result = await deleteAccount()
+      expect(result.error).toBeUndefined()
+      return wired.batch.update.mock.calls.some(
+        ([ref, data]) =>
+          (ref as DocRefStub).path === 'companies/company-A' &&
+          (data as Record<string, unknown>)['stripeCustomerId'] === '',
+      )
+    }
+
+    expect(await run({ status: 'canceled' })).toBe(true)
+    // The bug this fix closes: `!subStatus` used to also clear it.
+    expect(await run(undefined)).toBe(false)
+    expect(await run({ status: 'trialing' })).toBe(false)
+    expect(await run({ status: 'active' })).toBe(false)
+  })
+
+  it('makes no Stripe calls in step 3 for a sole-member company (handled by the immediate-deletion purge instead)', async () => {
+    stubSession({ activeCompanyId: 'company-A' })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          stripeCustomerId: 'cus_solo',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeRetrieve).not.toHaveBeenCalled()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
   })
 })

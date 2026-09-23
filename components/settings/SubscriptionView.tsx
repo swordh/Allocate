@@ -10,7 +10,7 @@ import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 import Button from '@/components/ui/Button'
 import Chip from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
-import type { Subscription, BillingInterval, CompanyDeletion } from '@/types'
+import type { Subscription, BillingInterval, CompanyDeletion, CompanyBilling } from '@/types'
 import styles from './SubscriptionView.module.css'
 
 interface SubscriptionViewProps {
@@ -20,6 +20,14 @@ interface SubscriptionViewProps {
   memberCount: number
   /** Present when the caller's company has a deletion scheduled (issue #252 step 6). */
   deletion?: CompanyDeletion | null
+  /**
+   * Present when the company's Stripe customer has no billing email set —
+   * see `CompanyBilling` in types/company.ts. This page is already
+   * admin-only (`app/(app)/settings/subscription/page.tsx` redirects any
+   * other role before rendering it), so no extra role check is needed here
+   * for the notice below.
+   */
+  billing?: CompanyBilling | null
 }
 
 function formatShortDate(iso: string | null | undefined): string {
@@ -50,6 +58,7 @@ export default function SubscriptionView({
   equipmentCount,
   memberCount,
   deletion = null,
+  billing = null,
 }: SubscriptionViewProps) {
   const router = useRouter()
   const [cycle, setCycle] = useState<BillingInterval>(subscription?.interval ?? 'month')
@@ -162,6 +171,12 @@ export default function SubscriptionView({
           {deletionNoLongerCancelable
             ? `The deletion of ${companyName} has already started and can no longer be stopped here. Contact support.`
             : display.notice}
+        </ErrorBanner>
+      )}
+
+      {billing?.emailMissingSince && (
+        <ErrorBanner tone="info">
+          Billing email missing — invoices and receipts can&apos;t be sent. Add a billing email in Manage billing.
         </ErrorBanner>
       )}
 

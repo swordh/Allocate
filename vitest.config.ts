@@ -50,9 +50,20 @@ export default defineConfig({
       'next/cache': path.resolve(__dirname, '__tests__/__mocks__/next-cache.ts'),
       'next/headers': path.resolve(__dirname, '__tests__/__mocks__/next-headers.ts'),
       'next/navigation': path.resolve(__dirname, '__tests__/__mocks__/next-navigation.ts'),
-      // functions/src modules import this, but 'firebase-functions' is only
+      // functions/src modules import these, but 'firebase-functions' is only
       // installed under functions/node_modules — a root-only `npm ci` would
-      // fail to resolve it. See the stub's own docblock.
+      // fail to resolve it. See each stub's own docblock.
+      //
+      // ORDER MATTERS: Vite's string-key alias matching treats a key as a
+      // path PREFIX (it matches `id === find || id.startsWith(find + '/')`),
+      // and takes the FIRST entry that matches — so the more specific
+      // 'firebase-functions/v2/scheduler' key MUST come before the shorter
+      // 'firebase-functions/v2', or the shorter one wins first and rewrites
+      // 'firebase-functions/v2/scheduler' into `<v2-stub-path>/scheduler`,
+      // a path that doesn't exist. Confirmed the hard way — see this
+      // branch's own PR notes.
+      'firebase-functions/v2/scheduler': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2-scheduler.ts'),
+      'firebase-functions/params': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-params.ts'),
       'firebase-functions/v2': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2.ts'),
     },
   },
