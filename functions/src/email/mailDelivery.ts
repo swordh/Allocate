@@ -12,6 +12,7 @@ import { companyDeletionReminderEmail } from './templates/companyDeletionReminde
 import { companyDeletionCancelledEmail } from './templates/companyDeletionCancelled';
 import { companyDeletedEmail } from './templates/companyDeleted';
 import { leftCompanyEmail } from './templates/leftCompany';
+import { billingEmailMissingEmail } from './templates/billingEmailMissing';
 
 /**
  * Renders a queued `mail/{id}` doc into subject/html/text using its
@@ -39,6 +40,8 @@ export function renderMail(mail: FirebaseFirestore.DocumentData): RenderedEmail 
       return companyDeletedEmail(mail['data']);
     case 'leftCompany':
       return leftCompanyEmail(mail['data']);
+    case 'billingEmailMissing':
+      return billingEmailMissingEmail(mail['data']);
     case undefined:
     case null:
     case '': {

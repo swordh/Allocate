@@ -4,7 +4,7 @@ import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
-import { getVerifiedSession, verifyAuthenticatedSession } from '@/lib/dal'
+import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import {
@@ -31,6 +31,19 @@ const IDENTITY_RETENTION_MS = 730 * 24 * 60 * 60 * 1000
 async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   await batch.commit()
   return adminDb.batch()
+}
+
+/**
+ * Trim + case-insensitive comparison for the Stripe customer `name` /
+ * deleting-user display-name match (step 3's Stripe block, below) — deliberately
+ * NOT `normalizeEmail` (lib/invite-recipients), which is email-specific
+ * (lowercases the whole string, no trimming semantics of its own beyond
+ * that). Display names carry incidental leading/trailing whitespace far more
+ * often than emails do (a stray space typed into a Checkout card-name field),
+ * so trimming here is load-bearing, not decorative.
+ */
+function normalizeDisplayName(name: string): string {
+  return name.trim().toLowerCase()
 }
 
 // issue #349: the CONFIRM button can fire 2-3 near-simultaneous invocations
@@ -269,14 +282,39 @@ export async function updateUserProfile(data: {
  * PII across every company they belong to, then deletes their Firebase Auth
  * record.
  *
+ * Uses `verifyAuthenticatedSession` (auth-only), not `getVerifiedSession`:
+ * this must keep working for a signed-in user with NO active company — the
+ * "delete my account" path /no-company offers a stranded member (issue #362,
+ * GDPR Art. 17 — a companyless user previously had no way to exercise her
+ * right to erasure at all, since `getVerifiedSession` would redirect her to
+ * /no-company before this function ever ran, and /no-company is exactly the
+ * page she's redirected to). The checks that still apply are the ones
+ * `verifyAuthenticatedSession` itself performs: a valid, non-revoked session
+ * cookie and a verified email. Every sole-admin/company-membership guard
+ * below still runs in full — `runAccountDeletion` reads the user's
+ * memberships directly from Firestore (`users/{uid}/memberships`), not from
+ * the session's `activeCompanyId` claim, so a companyless session skips
+ * nothing it shouldn't.
+ *
  * A thin wrapper around `runAccountDeletion` (see that function's docblock
  * for the three phases) that holds the issue #349 per-uid lock
  * (`acquireAccountDeletionLock`/`releaseAccountDeletionLock` above) for the
  * duration of the run, so at most one deletion can be in flight per uid at a
  * time.
+ *
+ * Known, accepted overlap with `functions/src/company/strandedAccountSweep.ts`:
+ * that sweep independently deletes a stranded member's account once
+ * `pendingDeletion.scheduledFor` passes. If she calls this function herself
+ * around the same time the sweep is processing her uid, both sides can end
+ * up racing to delete the same `users/{uid}` doc and Auth record. This is
+ * safe, not just tolerated — both `runAccountDeletion` and the sweep's own
+ * delete path treat a missing `users/{uid}` doc and a missing Auth user as
+ * expected outcomes of a retry/race, not errors, so the worst case is two
+ * `deletionAuditLog` rows for one account rather than a thrown error or a
+ * partially-deleted state. Not something to fix here.
  */
 export async function deleteAccount(): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
+  const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
   // issue #349: acquire the per-uid lock before any of the work below — see
@@ -307,6 +345,107 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   }
 }
 
+/** `failedStep` values for `writeDeletionFailureAudit` below — which of
+ *  `runAccountDeletion`'s phases (see that function's own docblock) the
+ *  failure happened in. */
+type DeletionFailureStep = 'membership_removal' | 'anonymisation' | 'auth_delete'
+
+/** Hard cap on a persisted `errorCode`'s length — a defence-in-depth
+ *  backstop, not an expected case: every `code` this codebase's
+ *  Firestore/Auth errors actually carry is a short enum-like string (e.g.
+ *  'permission-denied', 'auth/user-not-found') or a small gRPC status
+ *  number, far under 64 chars. */
+const ERROR_CODE_MAX_LENGTH = 64
+
+/**
+ * The Firestore/Auth error's `code` field, or `'unknown'` when the thrown
+ * value doesn't carry one THIS FUNCTION CAN TRUST. Deliberately NEVER
+ * `error.message` — see `writeDeletionFailureAudit`'s docblock for why a
+ * message is unsafe to persist here.
+ *
+ * Only a `string` or `number` `code` is accepted — anything else (an
+ * object, an array, a nested error) is rejected outright rather than run
+ * through `String()`, which would happily stringify arbitrary structured
+ * data. `code` is meant to be a short, closed-vocabulary value; the moment
+ * it isn't a primitive, treating it as trustworthy reopens the exact hole
+ * this function otherwise exists to close by NOT persisting `error.message`
+ * — a permissive extractor here would just leak the same class of data
+ * through a different field. The length cap is a second, independent
+ * backstop against the same risk, for a `code` that is a primitive but
+ * unexpectedly long.
+ */
+function errorCodeOf(err: unknown): string {
+  const code = (err as { code?: unknown } | undefined)?.code
+  if (typeof code !== 'string' && typeof code !== 'number') return 'unknown'
+  const str = String(code)
+  return str.length > ERROR_CODE_MAX_LENGTH ? str.slice(0, ERROR_CODE_MAX_LENGTH) : str
+}
+
+/**
+ * Durable, standalone audit-log row for a FAILED `runAccountDeletion`
+ * attempt — issue #358. Before this, `deletionAuditLog` had exactly one
+ * write path: the success row at the end of phase 3's WriteBatch (`batch.set`
+ * below, `triggeredBy: 'user_self'`, no `outcome`/`failedStep`/`errorCode` —
+ * a successful deletion needs none of those). A deletion that failed left
+ * nothing behind but a `console.error` line carrying a truncated uid, living
+ * in App Hosting's 30-day log retention rather than in Allocate's own data.
+ * GDPR Art. 5(2)/Art. 30 require being able to SHOW that a deletion request
+ * was received and what happened to it, even — especially — when it failed;
+ * issue #347 is the concrete case this closes: every user in the system had
+ * their deletion silently rejected for a stretch of time, with zero durable
+ * trace of any of it.
+ *
+ * MUST NEVER go through the WriteBatch that just failed — a batch that never
+ * committed writes nothing, including its own failure record, so folding
+ * this into it would just inherit the exact problem it exists to fix. This
+ * is a standalone `collection().add()` call, deliberately outside any batch
+ * or transaction, called from each `catch` block below only after that
+ * block's own batch/transaction has already been given up on.
+ *
+ * Own try/catch: if THIS write also fails, that must never mask the
+ * caller's original error — the reason `runAccountDeletion` is already
+ * returning an error to the user — and must never throw out of a Server
+ * Action. Logged the same way every other swallowed failure in this file is
+ * (truncated uid, a dedicated `action` tag) and then dropped.
+ *
+ * No name, no email, ever. `errorCode` is `errorCodeOf(err)` above — never
+ * `err.message`, which can and does embed arbitrary values (a document path,
+ * a validation detail, occasionally user-supplied text) that may themselves
+ * be or contain PII. `completedCompanies`/`totalCompanies` are what make a
+ * partially-completed, now-stranded user identifiable without the live-PII
+ * inventory query issue #357 needed before this row existed.
+ */
+async function writeDeletionFailureAudit(
+  uid: string,
+  params: {
+    failedStep: DeletionFailureStep
+    errorCode: string
+    completedCompanies: number
+    totalCompanies: number
+  },
+): Promise<void> {
+  try {
+    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    await adminDb.collection('deletionAuditLog').add({
+      userIdHash,
+      failedAt: FieldValue.serverTimestamp(),
+      triggeredBy: 'user_self',
+      outcome: 'failed',
+      failedStep: params.failedStep,
+      errorCode: params.errorCode,
+      completedCompanies: params.completedCompanies,
+      totalCompanies: params.totalCompanies,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      error: message,
+      action: 'delete_account_failure_audit_failed',
+    })
+  }
+}
+
 /**
  * Three phases:
  *   1. Pre-flight sole-admin guard — read-only, best-effort, exists only to
@@ -334,7 +473,7 @@ export async function deleteAccount(): Promise<{ error?: string }> {
  * about a concurrent invocation for the same uid.
  */
 async function runAccountDeletion(
-  session: Awaited<ReturnType<typeof getVerifiedSession>>,
+  session: AuthenticatedSession,
   uid: string,
 ): Promise<{ error?: string }> {
   // ── 1. Pre-flight sole-admin guard (read-only, best-effort) ────────────────
@@ -679,6 +818,20 @@ async function runAccountDeletion(
         total: companyIds.length,
       })
 
+      // A 'sole-admin' throw is a valid, expected REFUSAL — the guard doing
+      // exactly its job — not a failure to record. Every other code here is
+      // an actual failure (a transient Firestore error, a permissions
+      // problem) that left the caller in an unknown, possibly-partial state,
+      // which is exactly what issue #358 needs a durable trace of.
+      if (code !== 'sole-admin') {
+        await writeDeletionFailureAudit(uid, {
+          failedStep: 'membership_removal',
+          errorCode: errorCodeOf(err),
+          completedCompanies,
+          totalCompanies: companyIds.length,
+        })
+      }
+
       // `message` here is `guardError`'s own message for 'sole-admin' —
       // already the fully-built, company-named string, not a fixed constant
       // (see the throw site above) — so it's used directly rather than
@@ -709,6 +862,36 @@ async function runAccountDeletion(
         opCount = 0
       }
     }
+
+    // Same rotation as addOp/addDelete above, but for a `.set()` — needed for
+    // the `mail/{id}` docs the Stripe-billing-contact block below queues:
+    // `addOp` calls `batch.update()`, which throws NOT_FOUND against a mail
+    // doc id that doesn't exist yet (it's freshly minted via `.doc()`, never
+    // read back), so those writes need `.set()` instead while still sharing
+    // the same `batch`/`opCount` closure and BATCH_LIMIT rotation as every
+    // other write in this loop.
+    async function addSet(ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) {
+      batch.set(ref, data)
+      opCount++
+      if (opCount >= BATCH_LIMIT) {
+        batch = await commitAndReset(batch)
+        opCount = 0
+      }
+    }
+
+    // Deleting user's display name, for the Stripe name-match check below
+    // (GDPR finding: Checkout's `customer_update: { name: 'auto' }`,
+    // actions/subscription.ts, can leave a Stripe customer's `name` holding
+    // the payer's own personal name rather than the company's). No earlier
+    // read in this function carries it for the general case — step 2's
+    // per-company transaction reads `companies/{cid}/members/{uid}.name`
+    // only inside the sole-member/immediate branch, and that member doc is
+    // already deleted by the time this loop runs for every OTHER company
+    // (see the "Company member doc" comment below). `users/{uid}` is read
+    // fresh here instead: one read, not per-company, and the doc still
+    // exists — it isn't deleted until the very end of this same batch.
+    const deletingUserSnap = await adminDb.doc(`users/${uid}`).get()
+    const deletingUserName = deletingUserSnap.data()?.name as string | undefined
 
     for (const companyId of companyIds) {
       // A company scheduled for IMMEDIATE deletion in step 2 is skipped here
@@ -853,25 +1036,129 @@ async function runAccountDeletion(
 
       // Stripe customer anonymisation — must run before Auth deletion while
       // stripeCustomerId is still readable. Anonymise rather than delete so
-      // invoices are preserved (Bokföringslagen 7 years).
+      // invoices are preserved (Bokföringslagen 7 years) — BUT only when the
+      // Stripe customer's own email OR name is the deleting user's own. A
+      // company's Stripe customer is shared billing infrastructure, not any
+      // one member's personal record: this used to overwrite it with
+      // 'Deleted User' / 'deleted@allocate.invalid' for EVERY surviving
+      // company the deleting user belonged to, including a crew member who
+      // was never the billing contact — breaking a live subscription's
+      // invoices/receipts for everyone else in that company. (Already hit in
+      // alpha: cus_VIpkpdx4xNrLof, QA Switch Second AB.) Matching on email is
+      // what confines the FULL anonymisation to the one case it's meant for:
+      // the deleting user WAS the billing contact, and now nobody is.
+      //
+      // The name check is a narrower, separate GDPR fix: Checkout creates the
+      // Stripe customer with `customer_update: { name: 'auto' }`
+      // (actions/subscription.ts), which lets Stripe fill `name` with
+      // whatever the payer typed on the card form — routinely her own
+      // personal name, not the company's, even when her email was never the
+      // billing email at all (e.g. she paid once from a personal address
+      // that was never wired into Allocate as the contact). A name-only
+      // match therefore does NOT imply she was the billing contact — it only
+      // means her personal name is sitting on a company's Stripe customer,
+      // which is corrected on its own: replace `name` with the COMPANY's
+      // name (never a placeholder), and touch NOTHING else. No email clear,
+      // no `billing` flag, no admin mail — none of those follow from a name
+      // coincidence the way they follow from an actual missing billing
+      // contact.
       const stripeCustomerId = companySnap.data()?.stripeCustomerId as string | undefined
       if (stripeCustomerId) {
+        let customerEmailMatches = false
+        let customerNameMatches = false
         try {
-          await stripe.customers.update(stripeCustomerId, {
-            email: 'deleted@allocate.invalid',
-            name: 'Deleted User',
-            metadata: { deletedAt: new Date().toISOString() },
-          })
+          const customer = await stripe.customers.retrieve(stripeCustomerId)
+          if (!customer.deleted) {
+            if (customer.email) {
+              customerEmailMatches = normalizeEmail(customer.email) === normalizeEmail(session.email)
+            }
+            if (customer.name && deletingUserName) {
+              customerNameMatches = normalizeDisplayName(customer.name) === normalizeDisplayName(deletingUserName)
+            }
+          }
         } catch (stripeErr) {
           const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
-          console.error('[actions/account] Stripe anonymisation failed', { stripeCustomerId, error: msg })
+          console.error('[actions/account] Stripe customer retrieve failed', { stripeCustomerId, error: msg })
         }
 
-        // Clear the Stripe link from the company doc if the subscription is
-        // already cancelled — it no longer serves a purpose. Keep it for
-        // active/trialing subscriptions so the billing portal still works.
+        if (!customerEmailMatches && customerNameMatches) {
+          // Name-only match — see the docblock above for why this branch
+          // touches only `name`. Skipped entirely (not even attempted) when
+          // the company has no name to fall back to: writing nothing is
+          // always safer than writing a placeholder that looks like a person
+          // just got renamed to it.
+          const companyName = companySnap.data()?.name as string | undefined
+          if (companyName) {
+            try {
+              await stripe.customers.update(stripeCustomerId, { name: companyName })
+            } catch (stripeErr) {
+              const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+              console.error('[actions/account] Stripe customer name correction failed', { stripeCustomerId, error: msg })
+            }
+          }
+        }
+
+        if (customerEmailMatches) {
+          const companyName = companySnap.data()?.name as string | undefined
+          let updateSucceeded = false
+          try {
+            await stripe.customers.update(stripeCustomerId, {
+              email: '',
+              ...(companyName ? { name: companyName } : {}),
+              metadata: { billingEmailRemovedAt: new Date().toISOString() },
+            })
+            updateSucceeded = true
+          } catch (stripeErr) {
+            const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+            console.error('[actions/account] Stripe billing-email removal failed', { stripeCustomerId, error: msg })
+          }
+
+          // Only mark the company as missing a billing address — and only
+          // mail its admins about it — once the Stripe side is confirmed
+          // gone. A failed `customers.update` above means Stripe still has
+          // the old email on file; setting the flag anyway would tell admins
+          // to fix a problem that doesn't exist yet, and mail them a link to
+          // a portal where nothing looks wrong.
+          if (updateSucceeded) {
+            const iso = new Date().toISOString()
+            await addOp(companyRef, { 'billing.emailMissingSince': iso, 'billing.lastReminderAt': iso })
+
+            const adminsSnap = await adminDb
+              .collection(`companies/${companyId}/members`)
+              .where('role', '==', 'admin')
+              .get()
+            const appUrlBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at').replace(/\/$/, '')
+            const settingsUrl = `${appUrlBase}/settings/subscription`
+            const normalizedDeletingEmail = normalizeEmail(session.email)
+
+            for (const adminDoc of adminsSnap.docs) {
+              const email = adminDoc.data().email as string | undefined
+              // The deleting user's own company-side member doc is already
+              // gone (step 2, above) by the time this loop runs, so this
+              // exclusion is defensive rather than load-bearing — but worth
+              // keeping explicit: nobody should ever get a "your billing
+              // email is missing" mail about the account they just deleted.
+              if (!email || normalizeEmail(email) === normalizedDeletingEmail) continue
+              await addSet(adminDb.collection('mail').doc(), {
+                to: email,
+                template: 'billingEmailMissing',
+                data: { companyName: companyName ?? '', settingsUrl, isReminder: false },
+                status: 'queued',
+                companyId,
+                priority: 'normal',
+                createdAt: iso,
+              })
+            }
+          }
+        }
+
+        // Clear the Stripe link from the company doc only once the
+        // subscription is fully cancelled — it no longer serves a purpose.
+        // A bare `!subStatus` used to trigger this too, which cleared a
+        // perfectly live billing-portal link the moment `subscription.status`
+        // was merely absent/unset, rather than actually cancelled.
         const subStatus = companySnap.data()?.subscription?.status as string | undefined
-        if (!subStatus || subStatus === 'canceled') {
+        if (subStatus === 'canceled') {
           await addOp(companyRef, { stripeCustomerId: '' } as Record<string, null | string>)
         }
       }
@@ -902,7 +1189,11 @@ async function runAccountDeletion(
     batch.delete(adminDb.doc(`users/${uid}`))
     opCount++
 
-    // Deletion audit log (sha256 hash only — no PII stored)
+    // Deletion audit log (sha256 hash only — no PII stored). The SUCCESS
+    // shape: `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only
+    // ever appear on a `writeDeletionFailureAudit` row (issue #358), which is
+    // written outside this batch, from each phase's own `catch` block, never
+    // here.
     const userIdHash = createHash('sha256').update(uid).digest('hex')
     batch.set(adminDb.collection('deletionAuditLog').doc(), {
       userIdHash,
@@ -914,6 +1205,19 @@ async function runAccountDeletion(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_anonymise_failed' })
+    // issue #358: this is the failure `deletionAuditLog` used to have zero
+    // record of — every company's membership was already removed (step 2
+    // fully succeeded, or this catch wouldn't be reachable), yet the batch
+    // above never committed, so the user doc, membership docs, and the
+    // SUCCESS audit row a few lines up all failed to write together. Written
+    // as its own standalone call, never folded into the batch that just
+    // failed — see writeDeletionFailureAudit's docblock.
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
     return { error: 'Failed to delete account' }
   }
 
@@ -930,8 +1234,39 @@ async function runAccountDeletion(
     await adminAuth.deleteUser(uid)
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'account_deleted' })
   } catch (err) {
+    const code = (err as { code?: unknown } | undefined)?.code
+
+    // 'auth/user-not-found' is not a failure of THIS deletion — it means the
+    // goal (no Auth record left) is already reached. The stranded-account
+    // sweep (functions/src/company/strandedAccountSweep.ts) can delete the
+    // same uid's Auth record concurrently, for a user whose
+    // pendingDeletion.scheduledFor has already passed by the time she also
+    // runs deleteAccount herself. Whichever of the two calls `deleteUser`
+    // second lands here, and finding nothing left to delete is success, not
+    // an error worth a failure-audit row (there was nothing this run could
+    // have done differently, and nothing was left in a bad state — the
+    // record is gone either way). Logged at info level, not console.error,
+    // for the same reason: this is an expected race outcome, not a fault.
+    if (code === 'auth/user-not-found') {
+      console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_auth_user_already_gone' })
+      return {}
+    }
+
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_auth_user_failed' })
+    // issue #358: the SUCCESS audit row was already committed in step 3, above
+    // — Firestore's side of this deletion is done and durable. This failure
+    // row makes the gap it leaves behind visible: the user doc is gone but
+    // the Firebase Auth record is still alive, so she could still sign in to
+    // an account with none of her data left. `completedCompanies` is every
+    // company by construction here — reaching this line means step 2's loop
+    // ran to completion (a mid-loop failure returns before this point).
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'auth_delete',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
   }
 
   return {}

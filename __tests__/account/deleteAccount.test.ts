@@ -41,12 +41,16 @@ const {
   mockCookieDelete,
   mockDeleteUser,
   mockDeleteSession,
+  mockStripeRetrieve,
+  mockStripeUpdate,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie: vi.fn(),
   mockCookieGet: vi.fn(),
   mockCookieDelete: vi.fn(),
   mockDeleteUser: vi.fn(),
   mockDeleteSession: vi.fn(),
+  mockStripeRetrieve: vi.fn(),
+  mockStripeUpdate: vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -75,6 +79,14 @@ vi.mock('firebase-admin/firestore', () => ({
       toMillis: () => ms,
       toDate: () => new Date(ms),
     }),
+  },
+}))
+
+// Stripe billing-contact anonymisation (fix/stripe-anonymise-billing-contact)
+// — pattern copied from __tests__/subscription/billingPortalDeletionGuard.test.ts.
+vi.mock('@/lib/stripe', () => ({
+  stripe: {
+    customers: { retrieve: mockStripeRetrieve, update: mockStripeUpdate },
   },
 }))
 
@@ -198,6 +210,10 @@ interface CompanyFixture {
    * index on `companyId` ever existed.
    */
   equipment?: Array<{ id: string; units?: QueryDocInput[] }>
+  /** companies/{cid}.stripeCustomerId, for the Stripe billing-contact block. */
+  stripeCustomerId?: string
+  /** companies/{cid}.subscription — only `status` matters to that block. */
+  subscription?: { status?: string }
 }
 
 interface Scenario {
@@ -207,10 +223,20 @@ interface Scenario {
   invitations?: QueryResolver
   /** Simulates the initial `users/{uid}/memberships` read itself failing. */
   membershipsFetchError?: Error
+  /**
+   * `users/${UID}.name` — the deleting user's display name, read once by
+   * step 3's Stripe block for the name-only-match check. Omit to simulate no
+   * `users/{uid}` doc at all (or no `name` field on it).
+   */
+  userName?: string
 }
 
 function wireScenario(scenario: Scenario) {
   const docs: DocMap = {}
+
+  if (scenario.userName !== undefined) {
+    docs[`users/${UID}`] = { name: scenario.userName }
+  }
 
   // getVerifiedSession (lib/dal.ts, issue #252 step 5, PR F) now verifies
   // the SESSION's own activeCompanyId company exists before deleteAccount
@@ -225,7 +251,12 @@ function wireScenario(scenario: Scenario) {
   for (const [companyId, fixture] of Object.entries(scenario.companies ?? {})) {
     const exists = fixture.exists ?? true
     docs[`companies/${companyId}`] = exists
-      ? { name: companyId, createdBy: fixture.createdBy ?? null }
+      ? {
+          name: companyId,
+          createdBy: fixture.createdBy ?? null,
+          ...(fixture.stripeCustomerId ? { stripeCustomerId: fixture.stripeCustomerId } : {}),
+          ...(fixture.subscription ? { subscription: fixture.subscription } : {}),
+        }
       : null
     if (fixture.memberRole !== undefined) {
       docs[`companies/${companyId}/members/${UID}`] = { role: fixture.memberRole }
@@ -362,16 +393,25 @@ function stubLockCollection(wired: ReturnType<typeof wireScenario>['wired'], loc
 }
 
 /**
- * Stub getVerifiedSession by controlling what verifySessionCookie returns.
+ * Stub getVerifiedSession/verifyAuthenticatedSession by controlling what
+ * verifySessionCookie returns.
+ *
+ * `activeCompanyId: null` (as opposed to simply omitting the key) means "no
+ * claim at all", mirroring a real companyless session — issue #362's test
+ * below needs to distinguish that from the default 'company-A', which `??`
+ * can't do if the field is merely left undefined.
  */
-function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string; email: string }>) {
+function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string | null; email: string }>) {
   mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+  const activeCompanyId = overrides && 'activeCompanyId' in overrides
+    ? overrides.activeCompanyId
+    : 'company-A'
   mockVerifySessionCookie.mockResolvedValue({
-    uid:             overrides?.uid             ?? UID,
-    email:           overrides?.email           ?? 'user@example.com',
-    activeCompanyId: overrides?.activeCompanyId ?? 'company-A',
-    role:            'admin',
-    email_verified:  true,
+    uid:            overrides?.uid ?? UID,
+    email:          overrides?.email ?? 'user@example.com',
+    ...(activeCompanyId !== null ? { activeCompanyId } : {}),
+    role:           'admin',
+    email_verified: true,
   })
 }
 
@@ -379,6 +419,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockDeleteSession.mockResolvedValue(undefined)
   mockDeleteUser.mockResolvedValue(undefined)
+  // Default: no Stripe customer to retrieve/update. Individual Stripe tests
+  // override this per case.
+  mockStripeRetrieve.mockResolvedValue({ deleted: true })
+  mockStripeUpdate.mockResolvedValue({})
 })
 
 // ── Guard: pre-flight + commit-loop ────────────────────────────────────────────
@@ -386,6 +430,49 @@ beforeEach(() => {
 describe('deleteAccount — multi-company sole-admin guard (#90, transactional as of #252)', () => {
   it('allows deletion when the user is admin of one company and another admin exists', async () => {
     stubSession()
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+  })
+
+  // issue #362 (GDPR Art. 17): a companyless user — no `activeCompanyId`
+  // claim at all — previously had no way to delete her own account, because
+  // `deleteAccount` used `getVerifiedSession()`, which redirects to
+  // /no-company the moment the claim is missing. `deleteAccount` now uses
+  // `verifyAuthenticatedSession()` instead (same fix `exportUserData`
+  // already had), which never looks at `activeCompanyId` at all. This test
+  // would fail with a thrown REDIRECT error under the old guard.
+  it('allows deletion for a session with no activeCompanyId claim at all (issue #362)', async () => {
+    stubSession({ activeCompanyId: null })
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteSession).toHaveBeenCalledOnce()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+  })
+
+  // issue #362: exercises verifyAuthenticatedSession's tolerance vs
+  // getVerifiedSession's strictness. The session's OWN activeCompanyId
+  // ('company-ghost') points at a company that doesn't exist in Firestore at
+  // all — under the old `getVerifiedSession()` guard this would redirect to
+  // /no-company before any deletion logic ran. `verifyAuthenticatedSession`
+  // never checks whether the claimed company exists, so deletion proceeds
+  // normally, driven entirely by the user's real `users/{uid}/memberships`
+  // (company-A here), which is unrelated to the stale claim.
+  it('allows deletion when activeCompanyId points at a company that no longer exists (issue #362)', async () => {
+    stubSession({ activeCompanyId: 'company-ghost' })
     wireScenario({
       memberships: [{ companyId: 'company-A', role: 'admin' }],
       companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
@@ -1502,5 +1589,692 @@ describe('deleteAccount — companies scheduled for immediate deletion', () => {
       .find((c) => c.path === `companies/company-A/members/${UID}`)!.order
 
     expect(safeDeleteOrder).toBeLessThan(ledgerOrder)
+  })
+})
+
+// ── issue #358: durable audit trail for a FAILED deletion ──────────────────
+//
+// Before this, a failed `runAccountDeletion` left nothing in Firestore at
+// all — only a `console.error` line living in App Hosting's 30-day log
+// retention, not in Allocate's own data (#347 is the concrete case: every
+// user's deletion was silently rejected for a stretch of time with zero
+// durable trace of it). These tests pin `writeDeletionFailureAudit`
+// (actions/account.ts): a standalone `collection('deletionAuditLog').add()`
+// call from each phase's own `catch` block, never the batch/transaction that
+// just failed.
+
+/**
+ * Routes `adminDb.collection('deletionAuditLog')` to a fixed chain — so its
+ * `add` spy is assertable — while leaving every other collection on
+ * `wired`'s own wiring untouched. Same "capture the normal implementation,
+ * override one path" pattern as `stubLockCollection` above.
+ */
+function stubAuditLogCollection(wired: ReturnType<typeof wireDb>) {
+  const auditChain = { add: vi.fn().mockResolvedValue(undefined), doc: vi.fn(() => ({})) }
+  const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+  vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+    if (path === 'deletionAuditLog') return auditChain
+    return resolveCollectionNormally(path)
+  }) as unknown as typeof adminDb.collection)
+  return auditChain
+}
+
+describe('deleteAccount — issue #358 durable audit trail on failure', () => {
+  it('step 2 fails for a non sole-admin reason: writes a failure row via collection().add(), never the batch, with no PII', async () => {
+    // Same shape as the "aborts with the partial-removal message" test above
+    // (company-A succeeds, company-B fails indeterminately) — reused here
+    // specifically to assert on the NEW failure-audit write that test itself
+    // doesn't check.
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [
+            { id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } },
+            { id: 'm1', path: `users/${UID}/memberships/m1`, data: { companyId: 'company-B', role: 'crew' } },
+          ]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = stubAuditLogCollection(wired)
+
+    let call = 0
+    vi.mocked(adminDb.runTransaction).mockImplementation(async (cb: unknown) => {
+      call += 1
+      if (call === 1) {
+        const tx = makeTransaction(docsA)
+        return (cb as (tx: unknown) => Promise<unknown>)(tx)
+      }
+      throw Object.assign(new Error('Simulated transient Firestore failure for company-B — includes a path some@email.example'), { code: 'unavailable' })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'membership_removal',
+      errorCode: 'unavailable',
+      completedCompanies: 1,
+      totalCompanies: 2,
+      outcome: 'failed',
+      triggeredBy: 'user_self',
+    })
+    expect(row.userIdHash).toEqual(expect.any(String))
+    expect(row.userIdHash).not.toContain(UID)
+    // No PII: no name/email fields, and the thrown error's own MESSAGE text
+    // (which could contain anything, as simulated above) never makes it into
+    // the row — only its `code`.
+    expect(Object.keys(row)).not.toContain('name')
+    expect(Object.keys(row)).not.toContain('email')
+    expect(JSON.stringify(row)).not.toContain('some@email.example')
+    expect(JSON.stringify(row)).not.toContain('Simulated transient Firestore failure')
+  })
+
+  it('step 2 sole-admin refusal: writes NO failure row — a valid refusal, not a failure', async () => {
+    // Exact setup as "rejects for real inside the commit loop when the
+    // pre-flight read was stale (race)" above — the authoritative,
+    // in-transaction sole-admin guard firing for real.
+    stubSession()
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query })
+    const auditChain = stubAuditLogCollection(wired)
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('Acme', 3))
+    expect(auditChain.add).not.toHaveBeenCalled()
+  })
+
+  it('step 3 anonymisation batch.commit throws: writes a failure row via collection().add(), never through the failed batch', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    wired.batch.commit.mockRejectedValueOnce(
+      Object.assign(new Error('commit failed'), { code: 'aborted' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'anonymisation',
+      errorCode: 'aborted',
+      completedCompanies: 1,
+      totalCompanies: 1,
+      outcome: 'failed',
+    })
+    // Never written via the batch that just failed to commit — only via
+    // collection().add() above.
+    expect(
+      wired.batch.set.mock.calls.some(([, data]) => (data as Record<string, unknown> | undefined)?.outcome === 'failed'),
+    ).toBe(false)
+    // The batch is never re-committed to smuggle the failure row in after
+    // the fact — commit() is called exactly once (the one that failed).
+    // Catches a mutant that reacts to the commit failure by retrying commit
+    // with the failure row appended to the same batch.
+    expect(wired.batch.commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('adminAuth.deleteUser throws (step 4): writes a failure row with failedStep "auth_delete"', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('auth delete failed'), { code: 'auth/internal-error' }),
+    )
+
+    const result = await deleteAccount()
+
+    // Step 4's own catch never surfaces an error to the caller (it only
+    // console.errors) — the account deletion still reports success. The
+    // failure row is the only durable trace of the gap this leaves: the
+    // user doc is gone, the Firebase Auth record is not.
+    expect(result.error).toBeUndefined()
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'auth_delete',
+      errorCode: 'auth/internal-error',
+      completedCompanies: 1,
+      totalCompanies: 1,
+      outcome: 'failed',
+    })
+  })
+
+  it('adminAuth.deleteUser throws auth/user-not-found: treated as success — no failure row', async () => {
+    // The stranded-account sweep (functions/src/company/strandedAccountSweep.ts)
+    // can delete the same uid's Auth record concurrently, for a stranded
+    // user past pendingDeletion.scheduledFor. Finding it already gone here
+    // is an expected race outcome, not a failure of this run: the goal (no
+    // Auth record left) is already reached.
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('There is no user record corresponding to this identifier'), { code: 'auth/user-not-found' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(auditChain.add).not.toHaveBeenCalled()
+  })
+
+  it('the failure-row write itself throwing does not mask the original error', async () => {
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = { add: vi.fn().mockRejectedValue(new Error('deletionAuditLog write also failed')), doc: vi.fn(() => ({})) }
+    const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+    vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+      if (path === 'deletionAuditLog') return auditChain
+      return resolveCollectionNormally(path)
+    }) as unknown as typeof adminDb.collection)
+
+    vi.mocked(adminDb.runTransaction).mockImplementation(async () => {
+      throw Object.assign(new Error('Simulated transient Firestore failure'), { code: 'unavailable' })
+    })
+
+    const result = await deleteAccount()
+
+    // The ORIGINAL error still reaches the caller — the audit write's own
+    // failure is swallowed (console.error only, per writeDeletionFailureAudit's
+    // own try/catch) and never re-thrown or substituted for a different one.
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+  })
+
+  it('errorCode falls back to "unknown" when the thrown error\'s `code` is not a string or number', async () => {
+    // A non-primitive `code` (an object, here) is exactly the shape
+    // `errorCodeOf` must reject rather than pass through `String()` — the
+    // whole point of restricting it to string/number is that an arbitrary
+    // object could carry anything, including PII, and `String({...})`
+    // would happily stringify it into `errorCode`.
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = stubAuditLogCollection(wired)
+
+    vi.mocked(adminDb.runTransaction).mockImplementation(async () => {
+      throw Object.assign(new Error('weird error'), {
+        code: { nested: 'object', email: 'someone@example.com' },
+      })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row.errorCode).toBe('unknown')
+    expect(JSON.stringify(row)).not.toContain('someone@example.com')
+  })
+})
+
+// ── Stripe billing-contact anonymisation (fix/stripe-anonymise-billing-contact) ─
+//
+// Step 3's Stripe block used to overwrite the company's Stripe customer with
+// 'Deleted User' / 'deleted@allocate.invalid' for EVERY surviving company the
+// deleting user belonged to — including a crew member who was never the
+// billing contact. It now only touches the customer when the customer's OWN
+// email matches the deleting user's (case-insensitively), and on a match it
+// sets the company name (never a placeholder) and mails the remaining admins.
+//
+// `mockStripeRetrieve` defaults to `{ deleted: true }` in the top-level
+// `beforeEach` — every test below that wants a live, matching (or
+// non-matching) customer overrides it explicitly.
+
+function stripeMailCalls(wired: ReturnType<typeof wireScenario>['wired']) {
+  return wired.batch.set.mock.calls.filter(
+    ([, data]) => (data as { template?: string } | undefined)?.template === 'billingEmailMissing',
+  )
+}
+
+function billingUpdateCalls(wired: ReturnType<typeof wireScenario>['wired'], companyId: string) {
+  return wired.batch.update.mock.calls.filter(
+    ([ref, data]) =>
+      (ref as DocRefStub).path === `companies/${companyId}` &&
+      Object.keys(data as Record<string, unknown>).some((k) => k.startsWith('billing.')),
+  )
+}
+
+describe('deleteAccount — Stripe billing-contact anonymisation', () => {
+  it('does NOT touch the Stripe customer when its email belongs to someone else (a crew member leaving)', async () => {
+    stubSession() // uid=user-1, email=user@example.com, role irrelevant to session
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'someone-else@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: {
+        'company-A': {
+          memberRole: 'crew',
+          metaCounts: { members: 3, admins: 1 },
+          stripeCustomerId: 'cus_other_owner',
+          subscription: { status: 'active' },
+          members: [{ id: 'admin-1', data: { role: 'admin', email: 'admin@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+  })
+
+  it('anonymises the Stripe customer on an email match: company name + cleared email, billing flag set, one mail per OTHER admin', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'user@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_matching',
+          subscription: { status: 'active' },
+          members: [
+            { id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } },
+            { id: 'm-other', data: { role: 'admin', email: 'other-admin@example.com' } },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_matching', {
+      email: '',
+      name: 'company-A',
+      metadata: { billingEmailRemovedAt: expect.any(String) },
+    })
+
+    const billingCalls = billingUpdateCalls(wired, 'company-A')
+    expect(billingCalls).toHaveLength(1)
+    expect(billingCalls[0]![1]).toMatchObject({
+      'billing.emailMissingSince': expect.any(String),
+      'billing.lastReminderAt': expect.any(String),
+    })
+
+    const mailCalls = stripeMailCalls(wired)
+    expect(mailCalls).toHaveLength(1)
+    expect(mailCalls[0]![1]).toMatchObject({
+      to: 'other-admin@example.com',
+      template: 'billingEmailMissing',
+      companyId: 'company-A',
+      status: 'queued',
+      priority: 'normal',
+      data: { companyName: 'company-A', isReminder: false, settingsUrl: expect.stringContaining('/settings/subscription') },
+    })
+    // Nobody mails the deleting user about the account she just deleted.
+    expect(mailCalls.some(([, data]) => (data as { to?: string }).to === 'user@example.com')).toBe(false)
+  })
+
+  it('a failed customers.update on an email match writes no billing flag and sends no mail, but deletion still succeeds', async () => {
+    // The `updateSucceeded` gate in actions/account.ts: setting the flag or
+    // mailing admins on a failed Stripe write would tell them to fix a
+    // problem Stripe doesn't actually have yet (the old email is still on
+    // file), and point them at a portal where nothing looks wrong.
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'user@example.com' })
+    mockStripeUpdate.mockRejectedValue(new Error('Stripe write failed'))
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_matching',
+          subscription: { status: 'active' },
+          members: [
+            { id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } },
+            { id: 'm-other', data: { role: 'admin', email: 'other-admin@example.com' } },
+          ],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_matching', expect.objectContaining({ email: '' }))
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  it('matches case-insensitively', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'User@Example.com' })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_case',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_case', expect.objectContaining({ email: '' }))
+  })
+
+  it('leaves a shared address (e.g. finance@) untouched', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com' })
+
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_finance',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  // ── Name-only match (GDPR finding) ─────────────────────────────────────────
+  //
+  // Checkout writes `customer_update: { name: 'auto' }` (actions/subscription.ts),
+  // so a Stripe customer's `name` can carry the payer's own personal name
+  // even when her email was never the billing contact. A name-only match
+  // corrects JUST the name — no email clear, no `billing` flag, no mail —
+  // because it says nothing about whether she was actually the billing
+  // contact.
+
+  it('name matches but email does not: only the Stripe customer NAME is corrected, nothing else', async () => {
+    stubSession() // email=user@example.com
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Jane Doe' })
+
+    const { wired } = wireScenario({
+      userName: 'Jane Doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_name_only',
+          subscription: { status: 'active' },
+          members: [{ id: 'm-uid', data: { role: 'admin', email: 'user@example.com' } }],
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledTimes(1)
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_name_only', { name: 'company-A' })
+    expect(billingUpdateCalls(wired, 'company-A')).toHaveLength(0)
+    expect(stripeMailCalls(wired)).toHaveLength(0)
+  })
+
+  it('name matches case/whitespace-insensitively (" Jane Doe " vs "jane doe")', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: ' Jane Doe ' })
+
+    wireScenario({
+      userName: 'jane doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_name_ws',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).toHaveBeenCalledWith('cus_name_ws', { name: 'company-A' })
+  })
+
+  it('neither name nor email matches: no Stripe write at all', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Someone Else' })
+
+    wireScenario({
+      userName: 'Jane Doe',
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_neither',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('name matches but the company has no name to fall back to: writes nothing (never a placeholder)', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: false, email: 'finance@example.com', name: 'Jane Doe' })
+
+    const docs: DocMap = {
+      'companies/company-A': { name: '', stripeCustomerId: 'cus_no_company_name', subscription: { status: 'active' } },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 2, admins: 2 },
+      [`users/${UID}`]: { name: 'Jane Doe' },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+        : []
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('skips a deleted Stripe customer ({ deleted: true }) — no update, deletion still succeeds', async () => {
+    stubSession()
+    mockStripeRetrieve.mockResolvedValue({ deleted: true })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_deleted',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('a Stripe retrieve failure never blocks account deletion', async () => {
+    stubSession()
+    mockStripeRetrieve.mockRejectedValue(new Error('Stripe unavailable'))
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 2, admins: 2 },
+          stripeCustomerId: 'cus_unreachable',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledOnce()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('makes no Stripe calls at all when the company has no stripeCustomerId', async () => {
+    stubSession()
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': { memberRole: 'admin', metaCounts: { members: 2, admins: 2 } },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeRetrieve).not.toHaveBeenCalled()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+
+  it('clears stripeCustomerId only when the subscription is canceled — kept for missing/trialing/active', async () => {
+    async function run(subscription: { status?: string } | undefined) {
+      stubSession()
+      mockStripeRetrieve.mockResolvedValue({ deleted: true }) // irrelevant to this assertion; no match either way
+      const { wired } = wireScenario({
+        memberships: [{ companyId: 'company-A', role: 'admin' }],
+        companies: {
+          'company-A': {
+            memberRole: 'admin',
+            metaCounts: { members: 2, admins: 2 },
+            stripeCustomerId: 'cus_x',
+            ...(subscription ? { subscription } : {}),
+          },
+        },
+      })
+      const result = await deleteAccount()
+      expect(result.error).toBeUndefined()
+      return wired.batch.update.mock.calls.some(
+        ([ref, data]) =>
+          (ref as DocRefStub).path === 'companies/company-A' &&
+          (data as Record<string, unknown>)['stripeCustomerId'] === '',
+      )
+    }
+
+    expect(await run({ status: 'canceled' })).toBe(true)
+    // The bug this fix closes: `!subStatus` used to also clear it.
+    expect(await run(undefined)).toBe(false)
+    expect(await run({ status: 'trialing' })).toBe(false)
+    expect(await run({ status: 'active' })).toBe(false)
+  })
+
+  it('makes no Stripe calls in step 3 for a sole-member company (handled by the immediate-deletion purge instead)', async () => {
+    stubSession({ activeCompanyId: 'company-A' })
+
+    wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          stripeCustomerId: 'cus_solo',
+          subscription: { status: 'active' },
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockStripeRetrieve).not.toHaveBeenCalled()
+    expect(mockStripeUpdate).not.toHaveBeenCalled()
   })
 })

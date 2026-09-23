@@ -24,3 +24,6 @@ export { purgeCompanyDeletionLogs } from './company/purgeLogs';
 
 // ─── Stranded account enforcement (issue #252, step 6) ────────────────────────
 export { strandedAccountSweep } from './company/strandedAccountSweep';
+
+// ─── Billing email reminder (fix/stripe-anonymise-billing-contact) ────────────
+export { billingEmailReminder } from './company/billingEmailReminder';

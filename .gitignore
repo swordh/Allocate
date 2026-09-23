@@ -50,3 +50,6 @@ ui-debug.log
 functions/lib/
 functions/node_modules/
 functions/tools/__previews__/
+
+# Scratch output from one-off tools/ scripts (issue #357 inventory, etc.)
+/.tmp/

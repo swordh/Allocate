@@ -94,7 +94,7 @@ service cloud.firestore {
     }
 
     // ── GDPR deletion audit log ───────────────────────────────────────────────
-    // Never readable by clients — only ever written by the Admin SDK. Three
+    // Never readable by clients — only ever written by the Admin SDK. Four
     // row shapes, all governed by the same 12-month retention rule
     // (functions/src/admin/purgeAuditLogs.ts), from three writers:
     //   - `actions/account.ts` (deleteAccount) — self-service deletion, `deletedAt`.
@@ -103,6 +103,14 @@ service cloud.firestore {
     //   - `functions/src/company/strandedAccountSweep.ts` — that schedule's
     //     enforcement sweep, either fulfilling it (`deletedAt`) or clearing it
     //     because a live membership was found (`clearedAt`, issue #252 step 6).
+    //   - `actions/account.ts`'s `writeDeletionFailureAudit` — a FAILED
+    //     self-service deletion attempt, `failedAt` (issue #358). Written
+    //     standalone from each phase's `catch` block, never as part of the
+    //     WriteBatch that just failed. Carries `outcome: 'failed'`,
+    //     `failedStep` ('membership_removal' | 'anonymisation' |
+    //     'auth_delete'), `errorCode` (never the error message — may contain
+    //     PII), and `completedCompanies`/`totalCompanies`. No name, no email,
+    //     same as every other shape here.
     match /deletionAuditLog/{logId} {
       allow read, write: if false;
     }

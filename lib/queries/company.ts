@@ -82,6 +82,19 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
       }
     : undefined
 
+  // `billing` (fix/stripe-anonymise-billing-contact) mirrors
+  // companies/{cid}.billing — see CompanyBilling in types/company.ts. Mapped
+  // explicitly for the exact reason the comment above `deletion` warns
+  // about: adding a field to the `Company` interface does not make it reach
+  // `getCompany` callers on its own.
+  const billingData = data.billing
+  const billing = billingData
+    ? {
+        emailMissingSince: billingData.emailMissingSince ?? '',
+        lastReminderAt:    billingData.lastReminderAt    ?? '',
+      }
+    : undefined
+
   return {
     id:               doc.id,
     name:             data.name             ?? '',
@@ -92,6 +105,7 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
     preferences,
     stats:            mappedStats,
     deletion,
+    billing,
   }
 }
 

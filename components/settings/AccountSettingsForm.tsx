@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { signOut } from 'firebase/auth'
 import {
   updateUserProfile,
   deleteAccount,
@@ -244,6 +245,18 @@ export default function AccountSettingsForm({
       setDeleting(false)
       deletingRef.current = false
     } else {
+      // Best-effort: the server-side session cookie is already gone
+      // (deleteAccount clears it) and the Auth user record no longer exists
+      // either, but the client SDK's own in-memory user/token state
+      // survives until signOut() clears it — without this, a stale
+      // `auth.currentUser` can linger past the redirect. Never let a
+      // failure here block the redirect; there's nothing left to sign out
+      // of that matters once the account itself is deleted.
+      try {
+        await signOut(auth)
+      } catch (err) {
+        console.error('Post-deletion sign out failed:', err)
+      }
       router.push('/login')
     }
   }
@@ -522,7 +535,7 @@ export default function AccountSettingsForm({
           )}
 
           <div className={styles.deleteConfirm}>
-            <span className={styles.deleteText}>
+            <span className={styles.deleteText} id="deleteConfirmHelp">
               Type DELETE to permanently remove your account.
               {closingCompanies.length > 0 && (
                 <>
@@ -559,6 +572,8 @@ export default function AccountSettingsForm({
                 }}
                 placeholder="DELETE"
                 className={styles.deleteInput}
+                aria-label="Type DELETE to confirm account deletion"
+                aria-describedby="deleteConfirmHelp"
               />
               <Button
                 variant="danger-solid"

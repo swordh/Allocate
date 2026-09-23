@@ -130,6 +130,25 @@ export interface CompanyDeletion {
   claimedAt?: string               // ISO string
 }
 
+/**
+ * Set when `runAccountDeletion`'s Stripe billing-contact anonymisation
+ * (actions/account.ts, step 3) clears the Stripe customer's email because it
+ * matched the deleting user's own — i.e. she was this company's billing
+ * contact and now nobody is. `functions/src/company/billingEmailReminder.ts`
+ * is the only writer that ever removes this field again (a weekly sweep:
+ * clears it once an admin sets a new billing email in the portal, once the
+ * subscription is no longer active/trialing/past_due, or once the company
+ * itself is gone) and the only sender of the weekly reminder mail after the
+ * first one this same anonymisation queues. Absence means the company either
+ * never lost its billing contact this way, or already has a new one.
+ */
+export interface CompanyBilling {
+  /** ISO string — when the billing email was first found missing. */
+  emailMissingSince: string
+  /** ISO string — last time an admin was mailed about it (the initial mail counts as the first one). */
+  lastReminderAt: string
+}
+
 export interface Company {
   id: string
   name: string
@@ -140,6 +159,7 @@ export interface Company {
   preferences?: CompanyPreferences
   stats?: CompanyStats
   deletion?: CompanyDeletion
+  billing?: CompanyBilling
 }
 
 // ─── Company deletion ledger (companyDeletions/{requestId}) ──────────────────

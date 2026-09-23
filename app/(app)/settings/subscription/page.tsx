@@ -24,6 +24,7 @@ export default async function SubscriptionSettingsPage() {
       equipmentCount={equipmentCount}
       memberCount={members.length}
       deletion={company?.deletion ?? null}
+      billing={company?.billing ?? null}
     />
   )
 }
