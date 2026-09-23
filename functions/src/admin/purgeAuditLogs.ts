@@ -5,8 +5,8 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 const BATCH_LIMIT = 490;
 
 /**
- * `deletionAuditLog` carries three shapes, all governed by the same
- * 12-month GDPR Art. 5(1)(e) storage-limitation rule, on three different
+ * `deletionAuditLog` carries four shapes, all governed by the same
+ * 12-month GDPR Art. 5(1)(e) storage-limitation rule, on four different
  * field names. The `triggeredBy` values named below (all but `'user_self'`)
  * are exported as constants from `functions/src/deletionAuditLogTriggers.ts`
  * — quoted here as literals only for readability of this comment, not
@@ -31,14 +31,23 @@ const BATCH_LIMIT = 490;
  *     carries `clearedAt` instead of either — the schedule was cancelled,
  *     not fulfilled and not freshly created, and neither existing field name
  *     would honestly describe that.
+ *   - a FAILED self-service deletion attempt (`actions/account.ts`'s
+ *     `writeDeletionFailureAudit`, `triggeredBy: 'user_self'`, issue #358)
+ *     carries `failedAt` instead of `deletedAt` — nothing was deleted (or
+ *     only partially was) when this row was written, so reusing `deletedAt`
+ *     would claim a success that didn't happen. It also carries
+ *     `outcome: 'failed'`, `failedStep`, `errorCode`, `completedCompanies`
+ *     and `totalCompanies`, none of which any other shape has — this is the
+ *     only shape that records a FAILURE rather than an action taken.
  *
  * Querying only `deletedAt` (as this function used to, before `scheduledAt`
  * was added) means every scheduling row is invisible to this purge
  * forever — no error, no empty result, just permanently un-matched — which
  * is retention with no legal basis for exactly the rows meant to be covered
  * by it. The same failure mode applies to any field this function doesn't
- * query, which is why `clearedAt` joins the other two here rather than
- * living as a fourth, silently-immortal row shape. Query all three fields.
+ * query, which is why `clearedAt` and now `failedAt` join the others here
+ * rather than living as a silently-immortal row shape. Query all four
+ * fields.
  *
  * Exported as a plain function of `(db)` for the same reason every other
  * function in this file's neighborhood is — see `runCompanyPurge`'s
@@ -48,20 +57,22 @@ export async function purgeOldAuditLogsSweep(db: Firestore): Promise<{ purged: n
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
 
-  const [byDeletedAt, byScheduledAt, byClearedAt] = await Promise.all([
+  const [byDeletedAt, byScheduledAt, byClearedAt, byFailedAt] = await Promise.all([
     db.collection('deletionAuditLog').where('deletedAt', '<', cutoff).get(),
     db.collection('deletionAuditLog').where('scheduledAt', '<', cutoff).get(),
     db.collection('deletionAuditLog').where('clearedAt', '<', cutoff).get(),
+    db.collection('deletionAuditLog').where('failedAt', '<', cutoff).get(),
   ]);
 
-  // De-duplicated by doc id — the three queries are mutually exclusive by
-  // construction (a row carries exactly one of the three fields, never more
+  // De-duplicated by doc id — the four queries are mutually exclusive by
+  // construction (a row carries exactly one of the four fields, never more
   // than one), but a Map keyed by id costs nothing and removes any need to
   // trust that stays true forever.
   const refs = new Map<string, FirebaseFirestore.DocumentReference>();
   for (const doc of byDeletedAt.docs) refs.set(doc.id, doc.ref);
   for (const doc of byScheduledAt.docs) refs.set(doc.id, doc.ref);
   for (const doc of byClearedAt.docs) refs.set(doc.id, doc.ref);
+  for (const doc of byFailedAt.docs) refs.set(doc.id, doc.ref);
 
   if (refs.size === 0) return { purged: 0 };
 

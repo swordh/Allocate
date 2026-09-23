@@ -307,6 +307,87 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   }
 }
 
+/** `failedStep` values for `writeDeletionFailureAudit` below — which of
+ *  `runAccountDeletion`'s phases (see that function's own docblock) the
+ *  failure happened in. */
+type DeletionFailureStep = 'membership_removal' | 'anonymisation' | 'auth_delete'
+
+/**
+ * The Firestore/Auth error's `code` field, stringified, or `'unknown'` when
+ * the thrown value doesn't carry one. Deliberately NEVER `error.message` —
+ * see `writeDeletionFailureAudit`'s docblock for why a message is unsafe to
+ * persist here.
+ */
+function errorCodeOf(err: unknown): string {
+  const code = (err as { code?: unknown } | undefined)?.code
+  return code === undefined || code === null ? 'unknown' : String(code)
+}
+
+/**
+ * Durable, standalone audit-log row for a FAILED `runAccountDeletion`
+ * attempt — issue #358. Before this, `deletionAuditLog` had exactly one
+ * write path: the success row at the end of phase 3's WriteBatch (`batch.set`
+ * below, `triggeredBy: 'user_self'`, no `outcome`/`failedStep`/`errorCode` —
+ * a successful deletion needs none of those). A deletion that failed left
+ * nothing behind but a `console.error` line carrying a truncated uid, living
+ * in App Hosting's 30-day log retention rather than in Allocate's own data.
+ * GDPR Art. 5(2)/Art. 30 require being able to SHOW that a deletion request
+ * was received and what happened to it, even — especially — when it failed;
+ * issue #347 is the concrete case this closes: every user in the system had
+ * their deletion silently rejected for a stretch of time, with zero durable
+ * trace of any of it.
+ *
+ * MUST NEVER go through the WriteBatch that just failed — a batch that never
+ * committed writes nothing, including its own failure record, so folding
+ * this into it would just inherit the exact problem it exists to fix. This
+ * is a standalone `collection().add()` call, deliberately outside any batch
+ * or transaction, called from each `catch` block below only after that
+ * block's own batch/transaction has already been given up on.
+ *
+ * Own try/catch: if THIS write also fails, that must never mask the
+ * caller's original error — the reason `runAccountDeletion` is already
+ * returning an error to the user — and must never throw out of a Server
+ * Action. Logged the same way every other swallowed failure in this file is
+ * (truncated uid, a dedicated `action` tag) and then dropped.
+ *
+ * No name, no email, ever. `errorCode` is `errorCodeOf(err)` above — never
+ * `err.message`, which can and does embed arbitrary values (a document path,
+ * a validation detail, occasionally user-supplied text) that may themselves
+ * be or contain PII. `completedCompanies`/`totalCompanies` are what make a
+ * partially-completed, now-stranded user identifiable without the live-PII
+ * inventory query issue #357 needed before this row existed.
+ */
+async function writeDeletionFailureAudit(
+  uid: string,
+  params: {
+    failedStep: DeletionFailureStep
+    errorCode: string
+    completedCompanies: number
+    totalCompanies: number
+  },
+): Promise<void> {
+  try {
+    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    await adminDb.collection('deletionAuditLog').add({
+      userIdHash,
+      failedAt: FieldValue.serverTimestamp(),
+      triggeredBy: 'user_self',
+      outcome: 'failed',
+      failedStep: params.failedStep,
+      errorCode: params.errorCode,
+      completedCompanies: params.completedCompanies,
+      totalCompanies: params.totalCompanies,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      error: message,
+      action: 'delete_account_failure_audit_failed',
+    })
+  }
+}
+
 /**
  * Three phases:
  *   1. Pre-flight sole-admin guard — read-only, best-effort, exists only to
@@ -679,6 +760,20 @@ async function runAccountDeletion(
         total: companyIds.length,
       })
 
+      // A 'sole-admin' throw is a valid, expected REFUSAL — the guard doing
+      // exactly its job — not a failure to record. Every other code here is
+      // an actual failure (a transient Firestore error, a permissions
+      // problem) that left the caller in an unknown, possibly-partial state,
+      // which is exactly what issue #358 needs a durable trace of.
+      if (code !== 'sole-admin') {
+        await writeDeletionFailureAudit(uid, {
+          failedStep: 'membership_removal',
+          errorCode: errorCodeOf(err),
+          completedCompanies,
+          totalCompanies: companyIds.length,
+        })
+      }
+
       // `message` here is `guardError`'s own message for 'sole-admin' —
       // already the fully-built, company-named string, not a fixed constant
       // (see the throw site above) — so it's used directly rather than
@@ -902,7 +997,11 @@ async function runAccountDeletion(
     batch.delete(adminDb.doc(`users/${uid}`))
     opCount++
 
-    // Deletion audit log (sha256 hash only — no PII stored)
+    // Deletion audit log (sha256 hash only — no PII stored). The SUCCESS
+    // shape: `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only
+    // ever appear on a `writeDeletionFailureAudit` row (issue #358), which is
+    // written outside this batch, from each phase's own `catch` block, never
+    // here.
     const userIdHash = createHash('sha256').update(uid).digest('hex')
     batch.set(adminDb.collection('deletionAuditLog').doc(), {
       userIdHash,
@@ -914,6 +1013,19 @@ async function runAccountDeletion(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_anonymise_failed' })
+    // issue #358: this is the failure `deletionAuditLog` used to have zero
+    // record of — every company's membership was already removed (step 2
+    // fully succeeded, or this catch wouldn't be reachable), yet the batch
+    // above never committed, so the user doc, membership docs, and the
+    // SUCCESS audit row a few lines up all failed to write together. Written
+    // as its own standalone call, never folded into the batch that just
+    // failed — see writeDeletionFailureAudit's docblock.
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
     return { error: 'Failed to delete account' }
   }
 
@@ -932,6 +1044,19 @@ async function runAccountDeletion(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_auth_user_failed' })
+    // issue #358: the SUCCESS audit row was already committed in step 3, above
+    // — Firestore's side of this deletion is done and durable. This failure
+    // row makes the gap it leaves behind visible: the user doc is gone but
+    // the Firebase Auth record is still alive, so she could still sign in to
+    // an account with none of her data left. `completedCompanies` is every
+    // company by construction here — reaching this line means step 2's loop
+    // ran to completion (a mid-loop failure returns before this point).
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'auth_delete',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
   }
 
   return {}

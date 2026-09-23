@@ -1504,3 +1504,217 @@ describe('deleteAccount — companies scheduled for immediate deletion', () => {
     expect(safeDeleteOrder).toBeLessThan(ledgerOrder)
   })
 })
+
+// ── issue #358: durable audit trail for a FAILED deletion ──────────────────
+//
+// Before this, a failed `runAccountDeletion` left nothing in Firestore at
+// all — only a `console.error` line living in App Hosting's 30-day log
+// retention, not in Allocate's own data (#347 is the concrete case: every
+// user's deletion was silently rejected for a stretch of time with zero
+// durable trace of it). These tests pin `writeDeletionFailureAudit`
+// (actions/account.ts): a standalone `collection('deletionAuditLog').add()`
+// call from each phase's own `catch` block, never the batch/transaction that
+// just failed.
+
+/**
+ * Routes `adminDb.collection('deletionAuditLog')` to a fixed chain — so its
+ * `add` spy is assertable — while leaving every other collection on
+ * `wired`'s own wiring untouched. Same "capture the normal implementation,
+ * override one path" pattern as `stubLockCollection` above.
+ */
+function stubAuditLogCollection(wired: ReturnType<typeof wireDb>) {
+  const auditChain = { add: vi.fn().mockResolvedValue(undefined), doc: vi.fn(() => ({})) }
+  const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+  vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+    if (path === 'deletionAuditLog') return auditChain
+    return resolveCollectionNormally(path)
+  }) as unknown as typeof adminDb.collection)
+  return auditChain
+}
+
+describe('deleteAccount — issue #358 durable audit trail on failure', () => {
+  it('step 2 fails for a non sole-admin reason: writes a failure row via collection().add(), never the batch, with no PII', async () => {
+    // Same shape as the "aborts with the partial-removal message" test above
+    // (company-A succeeds, company-B fails indeterminately) — reused here
+    // specifically to assert on the NEW failure-audit write that test itself
+    // doesn't check.
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [
+            { id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } },
+            { id: 'm1', path: `users/${UID}/memberships/m1`, data: { companyId: 'company-B', role: 'crew' } },
+          ]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = stubAuditLogCollection(wired)
+
+    let call = 0
+    vi.mocked(adminDb.runTransaction).mockImplementation(async (cb: unknown) => {
+      call += 1
+      if (call === 1) {
+        const tx = makeTransaction(docsA)
+        return (cb as (tx: unknown) => Promise<unknown>)(tx)
+      }
+      throw Object.assign(new Error('Simulated transient Firestore failure for company-B — includes a path some@email.example'), { code: 'unavailable' })
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'membership_removal',
+      errorCode: 'unavailable',
+      completedCompanies: 1,
+      totalCompanies: 2,
+      outcome: 'failed',
+      triggeredBy: 'user_self',
+    })
+    expect(row.userIdHash).toEqual(expect.any(String))
+    expect(row.userIdHash).not.toContain(UID)
+    // No PII: no name/email fields, and the thrown error's own MESSAGE text
+    // (which could contain anything, as simulated above) never makes it into
+    // the row — only its `code`.
+    expect(Object.keys(row)).not.toContain('name')
+    expect(Object.keys(row)).not.toContain('email')
+    expect(JSON.stringify(row)).not.toContain('some@email.example')
+    expect(JSON.stringify(row)).not.toContain('Simulated transient Firestore failure')
+  })
+
+  it('step 2 sole-admin refusal: writes NO failure row — a valid refusal, not a failure', async () => {
+    // Exact setup as "rejects for real inside the commit loop when the
+    // pre-flight read was stale (race)" above — the authoritative,
+    // in-transaction sole-admin guard firing for real.
+    stubSession()
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query })
+    const auditChain = stubAuditLogCollection(wired)
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(soleAdminBlocked('Acme', 3))
+    expect(auditChain.add).not.toHaveBeenCalled()
+  })
+
+  it('step 3 anonymisation batch.commit throws: writes a failure row via collection().add(), never through the failed batch', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    wired.batch.commit.mockRejectedValueOnce(
+      Object.assign(new Error('commit failed'), { code: 'aborted' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'anonymisation',
+      errorCode: 'aborted',
+      completedCompanies: 1,
+      totalCompanies: 1,
+      outcome: 'failed',
+    })
+    // Never written via the batch that just failed to commit — only via
+    // collection().add() above.
+    expect(
+      wired.batch.set.mock.calls.some(([, data]) => (data as Record<string, unknown> | undefined)?.outcome === 'failed'),
+    ).toBe(false)
+  })
+
+  it('adminAuth.deleteUser throws (step 4): writes a failure row with failedStep "auth_delete"', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('auth delete failed'), { code: 'auth/internal-error' }),
+    )
+
+    const result = await deleteAccount()
+
+    // Step 4's own catch never surfaces an error to the caller (it only
+    // console.errors) — the account deletion still reports success. The
+    // failure row is the only durable trace of the gap this leaves: the
+    // user doc is gone, the Firebase Auth record is not.
+    expect(result.error).toBeUndefined()
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({
+      failedStep: 'auth_delete',
+      errorCode: 'auth/internal-error',
+      completedCompanies: 1,
+      totalCompanies: 1,
+      outcome: 'failed',
+    })
+  })
+
+  it('the failure-row write itself throwing does not mask the original error', async () => {
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+    const auditChain = { add: vi.fn().mockRejectedValue(new Error('deletionAuditLog write also failed')), doc: vi.fn(() => ({})) }
+    const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+    vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+      if (path === 'deletionAuditLog') return auditChain
+      return resolveCollectionNormally(path)
+    }) as unknown as typeof adminDb.collection)
+
+    vi.mocked(adminDb.runTransaction).mockImplementation(async () => {
+      throw Object.assign(new Error('Simulated transient Firestore failure'), { code: 'unavailable' })
+    })
+
+    const result = await deleteAccount()
+
+    // The ORIGINAL error still reaches the caller — the audit write's own
+    // failure is swallowed (console.error only, per writeDeletionFailureAudit's
+    // own try/catch) and never re-thrown or substituted for a different one.
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(auditChain.add).toHaveBeenCalledOnce()
+  })
+})
