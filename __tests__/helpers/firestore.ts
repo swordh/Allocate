@@ -250,6 +250,14 @@ function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap, fil
     count: () => ({
       get: async () => ({ data: () => ({ count: run().docs.length }) }),
     }),
+    // `CollectionReference.add()` — a standalone, non-batched, non-
+    // transactional write, distinct from `.doc().set()`. Added for
+    // `writeDeletionFailureAudit` (actions/account.ts, issue #358), which
+    // deliberately writes this way so a failure-audit row never rides along
+    // in the WriteBatch that just failed. A spy, like `DocRefStub`'s
+    // `update`/`set`/`delete`, so a test can assert what was written without
+    // it going through the shared `docs` map.
+    add: vi.fn().mockResolvedValue(undefined),
   }
 
   return chain
