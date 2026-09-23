@@ -4,7 +4,7 @@ import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
-import { getVerifiedSession, verifyAuthenticatedSession } from '@/lib/dal'
+import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import {
@@ -269,14 +269,39 @@ export async function updateUserProfile(data: {
  * PII across every company they belong to, then deletes their Firebase Auth
  * record.
  *
+ * Uses `verifyAuthenticatedSession` (auth-only), not `getVerifiedSession`:
+ * this must keep working for a signed-in user with NO active company — the
+ * "delete my account" path /no-company offers a stranded member (issue #362,
+ * GDPR Art. 17 — a companyless user previously had no way to exercise her
+ * right to erasure at all, since `getVerifiedSession` would redirect her to
+ * /no-company before this function ever ran, and /no-company is exactly the
+ * page she's redirected to). The checks that still apply are the ones
+ * `verifyAuthenticatedSession` itself performs: a valid, non-revoked session
+ * cookie and a verified email. Every sole-admin/company-membership guard
+ * below still runs in full — `runAccountDeletion` reads the user's
+ * memberships directly from Firestore (`users/{uid}/memberships`), not from
+ * the session's `activeCompanyId` claim, so a companyless session skips
+ * nothing it shouldn't.
+ *
  * A thin wrapper around `runAccountDeletion` (see that function's docblock
  * for the three phases) that holds the issue #349 per-uid lock
  * (`acquireAccountDeletionLock`/`releaseAccountDeletionLock` above) for the
  * duration of the run, so at most one deletion can be in flight per uid at a
  * time.
+ *
+ * Known, accepted overlap with `functions/src/company/strandedAccountSweep.ts`:
+ * that sweep independently deletes a stranded member's account once
+ * `pendingDeletion.scheduledFor` passes. If she calls this function herself
+ * around the same time the sweep is processing her uid, both sides can end
+ * up racing to delete the same `users/{uid}` doc and Auth record. This is
+ * safe, not just tolerated — both `runAccountDeletion` and the sweep's own
+ * delete path treat a missing `users/{uid}` doc and a missing Auth user as
+ * expected outcomes of a retry/race, not errors, so the worst case is two
+ * `deletionAuditLog` rows for one account rather than a thrown error or a
+ * partially-deleted state. Not something to fix here.
  */
 export async function deleteAccount(): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
+  const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
   // issue #349: acquire the per-uid lock before any of the work below — see
@@ -435,7 +460,7 @@ async function writeDeletionFailureAudit(
  * about a concurrent invocation for the same uid.
  */
 async function runAccountDeletion(
-  session: Awaited<ReturnType<typeof getVerifiedSession>>,
+  session: AuthenticatedSession,
   uid: string,
 ): Promise<{ error?: string }> {
   // ── 1. Pre-flight sole-admin guard (read-only, best-effort) ────────────────

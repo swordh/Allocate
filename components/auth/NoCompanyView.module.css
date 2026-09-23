@@ -79,10 +79,13 @@
 
 .cardGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* auto-fit rather than a fixed column count: three cards now share this
+     grid (issue #362), and auto-fit naturally steps 3 → 2 → 1 columns as
+     width shrinks instead of needing a manual breakpoint per card count. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
 }
 
 .card {
@@ -108,6 +111,33 @@
   font-weight: var(--fw-medium);
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+/* ── Delete account card (issue #362) ────────────────────────────────── */
+
+.deleteConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--danger-border);
+  padding: 14px;
+}
+
+.deleteText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: var(--lh-body);
+}
+
+.deleteInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.deleteInput {
+  flex: 1;
 }
 
 .signOutLink {
