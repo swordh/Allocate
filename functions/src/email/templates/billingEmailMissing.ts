@@ -37,10 +37,6 @@ export function billingEmailMissingEmail(data: BillingEmailMissingData): Rendere
     companyName,
   )}</span>'s billing email was removed, and Stripe currently has no address to send invoices or receipts to. Add one from Settings → Subscription → Manage billing to keep them arriving.`;
 
-  const switchNoteHtml = `If you administer more than one company, switch to <span style="color:#ffffff;">${escapeHtml(
-    companyName,
-  )}</span> first — Manage billing always opens the currently active company's Stripe portal.`;
-
   // Tells the recipient this repeats weekly, worded for whichever mail this
   // actually is: the first one warns that more are coming, a repeat
   // confirms it's still the same standing weekly notice, not a new problem.
@@ -55,8 +51,6 @@ export function billingEmailMissingEmail(data: BillingEmailMissingData): Rendere
     '',
     `${companyName}'s billing email was removed, and Stripe currently has no address to send invoices or receipts to. Add one from Settings → Subscription → Manage billing to keep them arriving.`,
     '',
-    `If you administer more than one company, switch to ${companyName} first — Manage billing always opens the currently active company's Stripe portal.`,
-    '',
     repeatNote,
     '',
     `Open Settings → Subscription: ${settingsUrl}`,
@@ -70,7 +64,7 @@ export function billingEmailMissingEmail(data: BillingEmailMissingData): Rendere
       : `${companyName} has no billing email — invoices and receipts can't be sent.`,
     eyebrow: isReminder ? 'BILLING EMAIL — REMINDER' : 'BILLING EMAIL MISSING',
     hero: ['No billing', 'email'],
-    bodyHtml: `${introHtml}<br><br>${switchNoteHtml}`,
+    bodyHtml: introHtml,
     buttonLabel: 'OPEN SUBSCRIPTION SETTINGS',
     buttonUrl: settingsUrl,
     noteHtml: escapeHtml(repeatNote),
