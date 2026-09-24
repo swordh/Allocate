@@ -91,6 +91,14 @@ function mapDeletionDoc(doc: FirebaseFirestore.QueryDocumentSnapshot): CompanyDe
     attempts: typeof d.attempts === 'number' ? d.attempts : 0,
     lastHeartbeatAt: isoOrNull(d.lastHeartbeatAt) ?? undefined,
     lastError: d.lastError,
+
+    // ─── Failure + no-progress detection (issue #331/#335) ──────────────────
+    failureReason: d.failureReason,
+    failedAt: isoOrNull(d.failedAt) ?? undefined,
+    failedNotifiedAt: isoOrNull(d.failedNotifiedAt) ?? undefined,
+    failedNotifiedCount: typeof d.failedNotifiedCount === 'number' ? d.failedNotifiedCount : undefined,
+    noProgressResumes: typeof d.noProgressResumes === 'number' ? d.noProgressResumes : undefined,
+    progressUnits: typeof d.progressUnits === 'number' ? d.progressUnits : undefined,
   }
 }
 

@@ -87,3 +87,38 @@ describe('mapDeletionDoc — operatorActions byUid/byName', () => {
     expect(identityDisplay(entry.byName)).toEqual({ kind: 'never' })
   })
 })
+
+describe('mapDeletionDoc — issue #331/#335 failure + no-progress fields', () => {
+  it('maps failureReason, failedAt, failedNotifiedAt, failedNotifiedCount, noProgressResumes, progressUnits', async () => {
+    wireCompanyDeletions([
+      {
+        ...BASE,
+        state: 'failed',
+        failureReason: 'no_progress',
+        failedAt: '2026-02-01T00:00:00.000Z',
+        failedNotifiedAt: '2026-02-01T00:05:00.000Z',
+        failedNotifiedCount: 2,
+        noProgressResumes: 3,
+        progressUnits: 41,
+      },
+    ])
+    const [row] = await queryDeletionsByCompany('company-A')
+    expect(row.failureReason).toBe('no_progress')
+    expect(row.failedAt).toBe('2026-02-01T00:00:00.000Z')
+    expect(row.failedNotifiedAt).toBe('2026-02-01T00:05:00.000Z')
+    expect(row.failedNotifiedCount).toBe(2)
+    expect(row.noProgressResumes).toBe(3)
+    expect(row.progressUnits).toBe(41)
+  })
+
+  it('leaves them undefined on a row that never failed', async () => {
+    wireCompanyDeletions([{ ...BASE }])
+    const [row] = await queryDeletionsByCompany('company-A')
+    expect(row.failureReason).toBeUndefined()
+    expect(row.failedAt).toBeUndefined()
+    expect(row.failedNotifiedAt).toBeUndefined()
+    expect(row.failedNotifiedCount).toBeUndefined()
+    expect(row.noProgressResumes).toBeUndefined()
+    expect(row.progressUnits).toBeUndefined()
+  })
+})

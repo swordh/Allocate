@@ -206,6 +206,21 @@ export type CompanyDeletionPhase =
  */
 export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link' | 'operator'
 
+/**
+ * Why a ledger reached `state: 'failed'` — issue #331/#335.
+ *
+ * `attempts_exhausted` — a phase threw five times (`MAX_ATTEMPTS` in
+ *   purge.ts) and the catch block itself made the transition.
+ * `no_progress` — nothing THREW, but the same lease kept getting reclaimed
+ *   as stale with no forward movement (`leaseProgressUnits`/`leaseAttempts`
+ *   unchanged across `NO_PROGRESS_LIMIT` consecutive stale-lease claims,
+ *   lease.ts) — the case a 540s SIGKILL that never reaches purge.ts's catch
+ *   block used to leave stuck in `executing` forever (issue #335).
+ * `operator` — reserved for a future explicit "mark as failed" operator
+ *   action; no writer in this PR sets it yet.
+ */
+export type CompanyDeletionFailureReason = 'attempts_exhausted' | 'no_progress' | 'operator'
+
 /** One Stripe side effect of the reversible half of a deletion — see `stripePause`/`stripeResume` below. */
 export interface CompanyDeletionStripeOutcome {
   at: string                       // ISO string
@@ -221,12 +236,14 @@ export interface CompanyDeletionStripeOutcome {
 }
 
 /**
- * One entry per operator intervention on this deletion (issue #252 step 6).
- * AUTHORED by `actions/operatorCompanyDeletion.ts` (PR 5) — its three
- * exports (`cancelCompanyDeletionAsOperator`, `requestCompanyDeletionAsOperator`,
- * `requeueFailedCompanyDeletion`) are the only writers of NEW entries; the
- * purge itself never appends here, it only reads/writes the phase/progress
- * and lease fields below. One other writer exists and only ever subtracts:
+ * One entry per operator intervention on this deletion (issue #252 step 6;
+ * issue #331/#335 added the fourth writer). AUTHORED by
+ * `actions/operatorCompanyDeletion.ts` — its four exports
+ * (`cancelCompanyDeletionAsOperator`, `requestCompanyDeletionAsOperator`,
+ * `requeueFailedCompanyDeletion`, `markStuckCompanyDeletionFailed`) are the
+ * only writers of NEW entries; the purge itself never appends here, it only
+ * reads/writes the phase/progress and lease fields below. One other writer
+ * exists and only ever subtracts:
  * the 24-month retention job (functions/src/company/purgeLogs.ts) rewrites
  * the array keeping `action` and `at` and blanking the rest.
  *
@@ -400,17 +417,6 @@ export interface CompanyDeletionRecord {
    */
   finalizeMailQueuedUids?: string[]
 
-  /**
-   * Diagnostic only — the `completedPhases.length` this ledger had at the
-   * START of the most recent `runCompanyPurge` invocation. NOT part of the
-   * attempts/failed budget: a 540s function timeout kills the process
-   * before the attempts-incrementing catch block ever runs, so this is the
-   * only signal that a resumed purge is repeatedly timing out on the same
-   * phase without ever burning an attempt. See purge.ts for where it's
-   * read and written.
-   */
-  lastResumePhaseCount?: number
-
   /** Purge attempts so far; `failed` is set once this hits five (see the plan). */
   attempts: number
   /** Written roughly every 15s while a purge is running; the sweep's stuck-lease signal. */
@@ -422,6 +428,49 @@ export interface CompanyDeletionRecord {
    * nulled by the 24-month retention job; `null` = redacted, as above.
    */
   lastError?: string | null
+
+  // ─── Failure (issue #331/#335) ────────────────────────────────────────────
+  //
+  // `applyFailedTransition` (functions/src/company/failDeletion.ts) is the
+  // ONE writer of `state: 'failed'` plus these four fields, whether it's
+  // called from purge.ts's catch block (`attempts_exhausted`) or from
+  // lease.ts's `claimStaleLease` (`no_progress`). Its Next-side twin,
+  // `lib/companyDeletionFailWrites.ts`, mirrors the same writes for the
+  // operator's own "mark as failed" action — see that file and the parity
+  // test guarding the two from drifting apart.
+
+  /** Why this row is `failed` — see `CompanyDeletionFailureReason` above. */
+  failureReason?: CompanyDeletionFailureReason
+  /** When the failure transition ran. Distinct from `lastHeartbeatAt`, which is ALSO bumped by that same write — see the comment on `applyFailedTransition`'s own docblock for why both matter. */
+  failedAt?: string                // ISO string
+  /** Set once `companyDeletionFailed` mail has gone out to this row's admins — makes the send idempotent across a requeue-then-fail-again cycle or a retried transaction. */
+  failedNotifiedAt?: string        // ISO string
+  /** How many recipients that one mail send actually reached (admins, or the `requestedByEmail` fallback) — purely informational for the operator view. */
+  failedNotifiedCount?: number
+
+  // ─── No-progress detection (issue #335) ───────────────────────────────────
+  //
+  // A phase that times out on every invocation is SIGKILLed before purge.ts's
+  // own catch block ever runs, so `attempts` never grows and the row can sit
+  // in `executing` forever with no operator-visible signal (issue #335's
+  // whole premise). These four fields let `claimStaleLease` (lease.ts) detect
+  // that pattern from the OUTSIDE, across resumes, without needing the dying
+  // process to cooperate.
+
+  /**
+   * Monotonic counter, bumped with `FieldValue.increment` at every unit of
+   * work the purge completes (a batch, a member, a chunk, a phase, every
+   * 500 subtree deletes) — see purge.ts. Never reset, never decremented; the
+   * only thing that matters is whether it MOVED between two stale-lease
+   * checks, not its absolute value.
+   */
+  progressUnits?: number
+  /** Snapshot of `progressUnits` taken by the stale-lease claim that most recently "won" — the baseline the NEXT stale claim compares against. */
+  leaseProgressUnits?: number
+  /** Snapshot of `attempts` taken alongside `leaseProgressUnits` — a change here (a phase threw and was caught normally between two stale claims) also resets the no-progress counter, since that IS forward movement of a kind `progressUnits` alone wouldn't see. */
+  leaseAttempts?: number
+  /** Consecutive stale-lease claims that found neither `progressUnits` nor `attempts` changed since the last one. Reaching `NO_PROGRESS_LIMIT` (lease.ts) triggers `applyFailedTransition('no_progress')`. */
+  noProgressResumes?: number
 
   /**
    * Cancel tokens minted for this request (by `onCompanyDeletionCreated`).

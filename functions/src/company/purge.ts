@@ -1,10 +1,11 @@
-import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, GrpcStatus, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionPhase } from '../types';
 import { cleanupOneMember } from './memberCleanup';
 import { getStripeClient } from './stripeClient';
 import { formatDateFull } from './format';
 import { appUrl } from '../appUrl';
+import { applyFailedTransition } from './failDeletion';
 
 /** Matches actions/account.ts and actions/team.ts's chunked-WriteBatch convention. */
 const BATCH_LIMIT = 490;
@@ -67,6 +68,49 @@ async function commitAndReset(db: Firestore, batch: FirebaseFirestore.WriteBatch
   return db.batch();
 }
 
+/**
+ * Thrown by `markPhaseComplete` when the ledger it just re-read is no longer
+ * `executing` — an operator marked it `failed` (or requeued it, or something
+ * else changed its state) WHILE this phase was running. `runCompanyPurge`'s
+ * catch block special-cases this: an aborted run is not a failure of the
+ * phase itself, so it must never burn an `attempts` slot or overwrite
+ * whatever the concurrent writer just set. See markPhaseComplete's own
+ * docblock and the "Liveness guard" section of the #331/#335 plan.
+ */
+export class PurgeAbortedError extends Error {
+  constructor(requestId: string, state: string) {
+    super(`purge aborted: companyDeletions/${requestId} is '${state}', not 'executing'`);
+    this.name = 'PurgeAbortedError';
+  }
+}
+
+/**
+ * How many BulkWriter results the subtree phase lets go by between
+ * heartbeats. `recursiveDelete` can produce thousands of individual deletes
+ * for a company with a large `bookings` collection with no natural
+ * per-collection checkpoint in between (unlike every other phase, which
+ * heartbeats per batch/uid/chunk already) — this is what makes THAT
+ * collection, specifically, look dead to the sweep's stale-lease detection
+ * despite being mid-flight. 500 matches this file's own `BATCH_LIMIT` — not
+ * load-bearing, just a familiar-sized cadence.
+ */
+const SUBTREE_HEARTBEAT_INTERVAL = 500;
+
+/**
+ * Review fix: a count-only threshold can starve on SLOW deletes — 499
+ * documents whose individual deletes each take a few seconds (large
+ * documents, a throttled BulkWriter backing off after transient errors) can
+ * sit well past the 60-minute stale-lease window without ever reaching the
+ * 500th write, producing a FALSE `no_progress` failure on a purge that is
+ * genuinely still working. Whichever bound is hit FIRST wins: 500 writes, or
+ * 30 seconds elapsed since the last heartbeat with at least one write
+ * completed in that window (a genuinely stalled BulkWriter — zero writes
+ * completing at all — still can't heartbeat on its own; nothing can bump a
+ * value from inside a callback that never fires. That residual case is what
+ * `claimStaleLease`'s no-progress detection exists for in the first place).
+ */
+const SUBTREE_HEARTBEAT_MAX_INTERVAL_MS = 30_000;
+
 // ── Phase 1: Stripe ───────────────────────────────────────────────────────────
 
 /**
@@ -123,7 +167,11 @@ async function runStripePhase(db: Firestore, companyId: string): Promise<void> {
  * the `token` field this reads. Outside the company tree, found via a plain
  * subcollection read, so this uses the chunked-`WriteBatch` house pattern.
  */
-async function runInvitationsPhase(db: Firestore, companyId: string): Promise<void> {
+async function runInvitationsPhase(
+  db: Firestore,
+  companyId: string,
+  ledgerRef: FirebaseFirestore.DocumentReference,
+): Promise<void> {
   const invitationsSnap = await db.collection(`companies/${companyId}/invitations`).get();
 
   let batch = db.batch();
@@ -134,11 +182,27 @@ async function runInvitationsPhase(db: Firestore, companyId: string): Promise<vo
     batch.delete(db.doc(`invitations/${token}`));
     opCount++;
     if (opCount >= BATCH_LIMIT) {
+      // Progress bump lands in the SAME batch as the deletes it describes —
+      // see the docblock on `CompanyDeletionDocument.progressUnits` in
+      // types.ts: a batch that commits at all means real work happened, so
+      // there is no crash window where the bump could land without the
+      // deletes, or vice versa. `lastHeartbeatAt` rides along in the SAME
+      // write for the same reason (review fix, issue #331/#335 follow-up):
+      // `progressUnits` alone only resets `claimStaleLease`'s no-progress
+      // COUNTER at the next stale-lease check, it does not by itself stop
+      // the row from being *found* stale in the first place — a phase with
+      // enough invitations to need >1 batch, each batch slower than the
+      // 60-minute stale-lease window, would otherwise look dead to
+      // `resumeStuck` between batches even though `progressUnits` is moving.
+      batch.update(ledgerRef, { progressUnits: FieldValue.increment(1), lastHeartbeatAt: Timestamp.now() });
       batch = await commitAndReset(db, batch);
       opCount = 0;
     }
   }
-  if (opCount > 0) await batch.commit();
+  if (opCount > 0) {
+    batch.update(ledgerRef, { progressUnits: FieldValue.increment(1), lastHeartbeatAt: Timestamp.now() });
+    await batch.commit();
+  }
 }
 
 // ── Phase 3: members ────────────────────────────────────────────────────────────
@@ -208,7 +272,11 @@ async function runMembersPhase(
     });
     done.add(uid);
 
-    await ledgerRef.update({ formerMemberContacts: contacts, lastHeartbeatAt: Timestamp.now() });
+    await ledgerRef.update({
+      formerMemberContacts: contacts,
+      lastHeartbeatAt: Timestamp.now(),
+      progressUnits: FieldValue.increment(1),
+    });
   }
 
   if (hadClaimsFailure) {
@@ -240,14 +308,76 @@ async function runSubtreePhase(
   companyId: string,
   ledgerRef: FirebaseFirestore.DocumentReference,
 ): Promise<void> {
+  // One BulkWriter shared across every collection in this phase (not a fresh
+  // one per collection) so the 500-write heartbeat cadence below counts
+  // across the whole phase, not per collection — a company with 400 pieces
+  // of equipment and 400 bookings should heartbeat around 800 deletes in,
+  // not never (200 into each collection separately would never hit 500).
+  const bulkWriter = db.bulkWriter();
+  let sinceLastHeartbeat = 0;
+  let lastHeartbeatWallClockMs = Date.now();
+  // Firestore's own read-then-write ordering doesn't apply here — this is a
+  // bare `.update()` call, not a transaction — but the writes still have to
+  // be SERIALIZED among themselves, or two `onWriteResult` callbacks firing
+  // close together could both read a stale `progressUnits` and race each
+  // other. `FieldValue.increment` sidesteps the read entirely (the server
+  // does the arithmetic), so this chain exists only to keep calls in order
+  // and to give the phase something to `await` before it returns —
+  // `onWriteResult` itself is synchronous and cannot be awaited directly.
+  let heartbeatChain: Promise<unknown> = Promise.resolve();
+
+  bulkWriter.onWriteResult(() => {
+    sinceLastHeartbeat++;
+    // Whichever bound is hit first — see SUBTREE_HEARTBEAT_MAX_INTERVAL_MS's
+    // own docblock for why the wall-clock bound exists alongside the count.
+    const elapsedMs = Date.now() - lastHeartbeatWallClockMs;
+    if (sinceLastHeartbeat < SUBTREE_HEARTBEAT_INTERVAL && elapsedMs < SUBTREE_HEARTBEAT_MAX_INTERVAL_MS) return;
+    sinceLastHeartbeat = 0;
+    lastHeartbeatWallClockMs = Date.now();
+    heartbeatChain = heartbeatChain.then(() =>
+      ledgerRef.update({ progressUnits: FieldValue.increment(1), lastHeartbeatAt: Timestamp.now() }),
+    );
+  });
+
+  // Logs which document failed and how many times, without any of its
+  // DATA — a document path under `companies/{cid}/...` carries no PII by
+  // itself (uids and Stripe ids are never part of a path in this schema),
+  // unlike the field values a delete's error could otherwise be tempted to
+  // include. Returns exactly the PUBLICLY DOCUMENTED default retry policy
+  // (`BulkWriter.onWriteError`'s own doc comment: "retries UNAVAILABLE and
+  // ABORTED errors up to a maximum of 10 failed attempts") — setting a
+  // handler at all REPLACES BulkWriter's internal default outright, so
+  // logging here would otherwise silently also change what gets retried.
+  const MAX_DELETE_RETRY_ATTEMPTS = 10;
+  bulkWriter.onWriteError((error) => {
+    const shouldRetry =
+      (error.code === GrpcStatus.UNAVAILABLE || error.code === GrpcStatus.ABORTED) &&
+      error.failedAttempts < MAX_DELETE_RETRY_ATTEMPTS;
+    logger.warn('runCompanyPurge: subtree delete failed', {
+      companyId,
+      path: error.documentRef.path,
+      code: error.code,
+      failedAttempts: error.failedAttempts,
+      willRetry: shouldRetry,
+    });
+    return shouldRetry;
+  });
+
   for (const name of SUBTREE_COLLECTIONS) {
     const ref = db.collection(`companies/${companyId}/${name}`);
-    await db.recursiveDelete(ref);
+    await db.recursiveDelete(ref, bulkWriter);
     await ledgerRef.update({
       [`phaseCounts.subtree_${name}`]: 1,
       lastHeartbeatAt: Timestamp.now(),
+      progressUnits: FieldValue.increment(1),
     });
   }
+
+  // `recursiveDelete` never closes a BulkWriter we hand it — that's on us,
+  // and it must happen before we await the heartbeat chain, since a queued
+  // write only ever settles once the writer is closed (or flushed).
+  await bulkWriter.close();
+  await heartbeatChain;
 }
 
 // ── Phase 5: orphans ─────────────────────────────────────────────────────────────
@@ -258,7 +388,11 @@ async function runSubtreePhase(
  * `recursiveDelete` never reaches them. Found by query, deleted with the
  * chunked-`WriteBatch` house pattern.
  */
-async function runOrphansPhase(db: Firestore, companyId: string): Promise<void> {
+async function runOrphansPhase(
+  db: Firestore,
+  companyId: string,
+  ledgerRef: FirebaseFirestore.DocumentReference,
+): Promise<void> {
   for (const name of ORPHAN_COLLECTIONS) {
     const snap = await db.collection(name).where('companyId', '==', companyId).get();
     let batch = db.batch();
@@ -267,11 +401,18 @@ async function runOrphansPhase(db: Firestore, companyId: string): Promise<void> 
       batch.delete(doc.ref);
       opCount++;
       if (opCount >= BATCH_LIMIT) {
+        // lastHeartbeatAt alongside progressUnits — same review fix as
+        // runInvitationsPhase above, same reason: a batch commit is real
+        // work, and the heartbeat must say so in the same write.
+        batch.update(ledgerRef, { progressUnits: FieldValue.increment(1), lastHeartbeatAt: Timestamp.now() });
         batch = await commitAndReset(db, batch);
         opCount = 0;
       }
     }
-    if (opCount > 0) await batch.commit();
+    if (opCount > 0) {
+      batch.update(ledgerRef, { progressUnits: FieldValue.increment(1), lastHeartbeatAt: Timestamp.now() });
+      await batch.commit();
+    }
   }
 }
 
@@ -328,7 +469,19 @@ async function runFinalizePhase(
   async function commitChunk(): Promise<void> {
     if (opCount === 0) return;
     const updated = Array.from(new Set([...mailedUids, ...mailedThisChunk]));
-    batch.update(ledgerRef, { finalizeMailQueuedUids: updated });
+    // lastHeartbeatAt alongside progressUnits — review fix (issue #331/#335
+    // follow-up). A company with enough former members to need several mail
+    // chunks can legitimately take over an hour to finalize; without this,
+    // `progressUnits` moving would only reset `claimStaleLease`'s counter at
+    // its NEXT check, but the row could already have been found "stale" and
+    // resumed a second time in the meantime — the exact duplicate-purge risk
+    // finalize's in-memory `mailedUids` tracking cannot defend against on
+    // its own (it is not transactional across two concurrent invocations).
+    batch.update(ledgerRef, {
+      finalizeMailQueuedUids: updated,
+      progressUnits: FieldValue.increment(1),
+      lastHeartbeatAt: Timestamp.now(),
+    });
     await batch.commit();
     mailedUids = new Set(updated);
     batch = db.batch();
@@ -420,16 +573,46 @@ async function runFinalizePhase(
 
 // ── Orchestrator ─────────────────────────────────────────────────────────────────
 
+/**
+ * Marks one phase complete AND is the liveness guard for the whole purge
+ * (issue #331/#335's "Liveness guard" section): a transaction, not a plain
+ * `.update()`, because it re-reads the ledger's CURRENT state immediately
+ * before writing and refuses to proceed if something else has moved it away
+ * from `executing` since this invocation of `runCompanyPurge` started —
+ * most concretely, an operator's "mark as failed" action (the Next-side
+ * twin of `applyFailedTransition`) landing WHILE this phase was still
+ * running. Without this check, the phase that was in flight when the
+ * operator acted would finish moments later and cheerfully mark itself
+ * complete on a row the operator just told the system to stop touching,
+ * potentially racing that operator write's own effects (Stripe already
+ * cancelled, contacts already partly redacted).
+ *
+ * Throws `PurgeAbortedError` rather than returning a sentinel — this needs
+ * to unwind out of whichever phase function called it, exactly the way an
+ * ordinary phase failure does, and `runCompanyPurge`'s catch block already
+ * has to special-case `PurgeAbortedError` regardless (see there for why:
+ * an aborted run must never burn an `attempts` slot).
+ */
 async function markPhaseComplete(
+  db: Firestore,
   ledgerRef: FirebaseFirestore.DocumentReference,
+  requestId: string,
   phase: CompanyDeletionPhase,
   completed: Set<CompanyDeletionPhase>,
 ): Promise<void> {
   completed.add(phase);
-  await ledgerRef.update({
-    phase,
-    completedPhases: Array.from(completed),
-    lastHeartbeatAt: Timestamp.now(),
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ledgerRef);
+    const state = snap.exists ? (snap.data() as CompanyDeletionDocument).state : undefined;
+    if (state !== 'executing') {
+      throw new PurgeAbortedError(requestId, state ?? 'missing');
+    }
+    tx.update(ledgerRef, {
+      phase,
+      completedPhases: Array.from(completed),
+      progressUnits: FieldValue.increment(1),
+      lastHeartbeatAt: Timestamp.now(),
+    });
   });
 }
 
@@ -468,6 +651,20 @@ async function markPhaseComplete(
  * members phase's own resume marker — 90 days after its last heartbeat,
  * which is only safe because no code path can resume it. Adding failed-retry
  * to the sweep means dealing with that rule in the same change.
+ *
+ * LIVENESS GUARD (issue #331/#335): before running anything, this function
+ * now refuses to act on a ledger that isn't `state: 'executing'` — a plain
+ * early return, no error. Two production paths can reach this in a
+ * non-`executing` state that used to be silently tolerated: `resumeStuck`
+ * (sweep.ts) calling this after `claimStaleLease` already declared the row
+ * `'failed'` inside the SAME check (defensively redundant with the
+ * `outcome === 'failed'` skip added there, but this function must be safe to
+ * call directly too, since it's exported and used that way by every emulator
+ * test in this file), and an operator's "mark as failed" action landing
+ * between a caller's lease claim and its call to `runCompanyPurge`. Every
+ * phase boundary ALSO re-checks this via `markPhaseComplete`'s own
+ * transaction, which is what catches the state changing mid-phase rather
+ * than only at the very start.
  */
 export async function runCompanyPurge(db: Firestore, requestId: string): Promise<void> {
   const ledgerRef = db.collection('companyDeletions').doc(requestId);
@@ -479,56 +676,43 @@ export async function runCompanyPurge(db: Firestore, requestId: string): Promise
 
   const ledger = ledgerSnap.data() as CompanyDeletionDocument;
   const companyId = ledger.companyId;
-  const completed = new Set<CompanyDeletionPhase>(ledger.completedPhases ?? []);
 
-  // Diagnostic only — NOT part of the attempts/failed budget. A 540s
-  // function timeout SIGKILLs this process mid-phase with no chance to run
-  // the catch block below, so `attempts` never increments for that death —
-  // the sweep's resumeStuck pass just calls this again from wherever
-  // completedPhases last got checkpointed to. That can repeat forever with
-  // no operator-visible signal if the SAME phase keeps timing out. This
-  // compares this invocation's starting phase count against the previous
-  // invocation's (persisted on the ledger, so it survives a SIGKILL) and
-  // logs — nothing else — when they match, i.e. this resume made zero
-  // progress last time. Left as a log line deliberately: folding this into
-  // the attempts counter is a real design decision (does a timeout count
-  // the same as a thrown error?) that shouldn't be made as a side effect of
-  // adding visibility.
-  const lastResumePhaseCount = ledger.lastResumePhaseCount;
-  if (lastResumePhaseCount !== undefined && lastResumePhaseCount === completed.size) {
-    logger.warn('runCompanyPurge: resumed with the same completedPhases count as last time — possible timed-out attempt making no progress', {
+  if (ledger.state !== 'executing') {
+    logger.info('runCompanyPurge: ledger is not executing, nothing to do', {
       requestId,
       companyId,
-      phaseCount: completed.size,
+      state: ledger.state,
     });
+    return;
   }
-  await ledgerRef.update({ lastResumePhaseCount: completed.size });
+
+  const completed = new Set<CompanyDeletionPhase>(ledger.completedPhases ?? []);
 
   try {
     if (!completed.has('stripe')) {
       await runStripePhase(db, companyId);
-      await markPhaseComplete(ledgerRef, 'stripe', completed);
+      await markPhaseComplete(db, ledgerRef, requestId, 'stripe', completed);
     }
 
     if (!completed.has('invitations')) {
-      await runInvitationsPhase(db, companyId);
-      await markPhaseComplete(ledgerRef, 'invitations', completed);
+      await runInvitationsPhase(db, companyId, ledgerRef);
+      await markPhaseComplete(db, ledgerRef, requestId, 'invitations', completed);
     }
 
     let contacts = ledger.formerMemberContacts ?? [];
     if (!completed.has('members')) {
       contacts = await runMembersPhase(db, companyId, requestId, ledgerRef, contacts);
-      await markPhaseComplete(ledgerRef, 'members', completed);
+      await markPhaseComplete(db, ledgerRef, requestId, 'members', completed);
     }
 
     if (!completed.has('subtree')) {
       await runSubtreePhase(db, companyId, ledgerRef);
-      await markPhaseComplete(ledgerRef, 'subtree', completed);
+      await markPhaseComplete(db, ledgerRef, requestId, 'subtree', completed);
     }
 
     if (!completed.has('orphans')) {
-      await runOrphansPhase(db, companyId);
-      await markPhaseComplete(ledgerRef, 'orphans', completed);
+      await runOrphansPhase(db, companyId, ledgerRef);
+      await markPhaseComplete(db, ledgerRef, requestId, 'orphans', completed);
     }
 
     if (!completed.has('finalize')) {
@@ -542,17 +726,77 @@ export async function runCompanyPurge(db: Firestore, requestId: string): Promise
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const attempts = (ledger.attempts ?? 0) + 1;
-    logger.error('runCompanyPurge: phase failed', { requestId, companyId, attempts, error: message });
 
-    const update: Record<string, unknown> = {
-      attempts,
-      lastError: message,
-      lastHeartbeatAt: Timestamp.now(),
-    };
-    if (attempts >= MAX_ATTEMPTS) {
-      update['state'] = 'failed';
-    }
-    await ledgerRef.update(update);
+    // A TRANSACTION, not a plain `.update()` — issue #331/#335's liveness
+    // guard means a phase can fail for a reason that has NOTHING to do with
+    // this purge's own attempts budget: `PurgeAbortedError` (or the ledger
+    // simply no longer being `executing` by the time this runs, which is
+    // the same situation observed a different way). Re-reading here, inside
+    // the transaction, rather than trusting the `ledger`/`companyId`
+    // variables captured at the top of this function is what makes this
+    // correct even when the abort happened AFTER those were read.
+    await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(ledgerRef);
+      if (!currentSnap.exists) {
+        logger.error('runCompanyPurge: ledger disappeared before the failure could be recorded', {
+          requestId,
+          companyId,
+          error: message,
+        });
+        return;
+      }
+      const current = currentSnap.data() as CompanyDeletionDocument;
+
+      if (err instanceof PurgeAbortedError || current.state !== 'executing') {
+        // Not this run's failure to record — something else already moved
+        // the row on. Leaving `attempts`/`lastError` untouched is the whole
+        // point: an operator's "mark as failed" (or a requeue, or a second
+        // concurrent invocation somehow reaching 'completed' first) must
+        // never be clobbered by a stale error from a run that lost the
+        // race.
+        logger.warn('runCompanyPurge: aborted — ledger state changed away from executing during this run, leaving attempts untouched', {
+          requestId,
+          companyId,
+          state: current.state,
+          error: message,
+        });
+        return;
+      }
+
+      const attempts = (current.attempts ?? 0) + 1;
+      const willExhaustBudget = attempts >= MAX_ATTEMPTS;
+
+      // Reads before writes, Firestore transaction rule: everything
+      // `applyFailedTransition` needs is fetched here, BEFORE the
+      // `tx.update` below, even though it's only used if the budget is
+      // exhausted.
+      let companySnap: FirebaseFirestore.DocumentSnapshot | null = null;
+      let adminsSnap: FirebaseFirestore.QuerySnapshot | null = null;
+      if (willExhaustBudget) {
+        companySnap = await tx.get(db.doc(`companies/${companyId}`));
+        adminsSnap = await tx.get(db.collection(`companies/${companyId}/members`).where('role', '==', 'admin'));
+      }
+
+      logger.error('runCompanyPurge: phase failed', { requestId, companyId, attempts, error: message });
+
+      const now = Timestamp.now();
+      tx.update(ledgerRef, {
+        attempts,
+        lastError: message,
+        lastHeartbeatAt: now,
+      });
+
+      if (willExhaustBudget) {
+        applyFailedTransition(tx, {
+          db,
+          ledgerRef,
+          ledger: { ...current, attempts },
+          companySnap,
+          adminsSnap,
+          reason: 'attempts_exhausted',
+          now,
+        });
+      }
+    });
   }
 }

@@ -26,6 +26,8 @@ export interface SweepResult {
   executed: number;
   reminded: number;
   resumed: number;
+  /** Rows `claimStaleLease` declared `'failed'` this sweep (issue #335's no-progress detection) — never resumed, so never counted in `resumed`. */
+  failedNoProgress: number;
 }
 
 /**
@@ -170,8 +172,17 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
  * concurrently for the same `requestId`: duplicate `companyDeleted` mail,
  * lost updates on `formerMemberContacts` (a read-modify-write `.update()`
  * with no compare-and-swap), duplicate `deletionAuditLog` rows.
+ *
+ * ISSUE #335: `claimStaleLease` now returns one of THREE outcomes, not a
+ * boolean. `runCompanyPurge` is only ever called on `'claimed'` — a
+ * `'failed'` result means the transaction already declared this row failed
+ * (no-progress detection tripped `NO_PROGRESS_LIMIT`) and there is nothing
+ * left to resume; calling `runCompanyPurge` on it anyway would just have it
+ * read a ledger no longer `executing` and return immediately (see that
+ * function's own early-return guard), but skipping the call here says so
+ * more directly and saves the read.
  */
-async function resumeStuck(db: Firestore, now: Timestamp): Promise<number> {
+async function resumeStuck(db: Firestore, now: Timestamp): Promise<{ resumed: number; failedNoProgress: number }> {
   const staleCutoff = Timestamp.fromMillis(now.toMillis() - STALE_LEASE_MS);
   const stuckSnap = await db
     .collection('companyDeletions')
@@ -179,14 +190,22 @@ async function resumeStuck(db: Firestore, now: Timestamp): Promise<number> {
     .where('lastHeartbeatAt', '<=', staleCutoff)
     .get();
 
-  let count = 0;
+  let resumed = 0;
+  let failedNoProgress = 0;
   for (const doc of stuckSnap.docs) {
-    const claimed = await claimStaleLease(db, doc.id, staleCutoff, now);
-    if (!claimed) continue;
+    const outcome = await claimStaleLease(db, doc.id, staleCutoff, now);
+    if (outcome === 'not_claimed') continue;
+    if (outcome === 'failed') {
+      failedNoProgress++;
+      logger.warn('runCompanyDeletionSweep: purge declared failed — no progress across repeated stale-lease resumes', {
+        requestId: doc.id,
+      });
+      continue;
+    }
     await runCompanyPurge(db, doc.id);
-    count++;
+    resumed++;
   }
-  return count;
+  return { resumed, failedNoProgress };
 }
 
 /**
@@ -200,10 +219,10 @@ export async function runCompanyDeletionSweep(db: Firestore): Promise<SweepResul
 
   const executed = await executeOverdue(db, now);
   const reminded = await sendReminders(db, now);
-  const resumed = await resumeStuck(db, now);
+  const { resumed, failedNoProgress } = await resumeStuck(db, now);
 
-  logger.info('runCompanyDeletionSweep: sweep complete', { executed, reminded, resumed });
-  return { executed, reminded, resumed };
+  logger.info('runCompanyDeletionSweep: sweep complete', { executed, reminded, resumed, failedNoProgress });
+  return { executed, reminded, resumed, failedNoProgress };
 }
 
 export const companyDeletionSweep = onSchedule(

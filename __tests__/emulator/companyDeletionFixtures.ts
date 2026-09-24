@@ -33,11 +33,22 @@ export async function seedRequestedDeletion(
     completedPhases?: string[]
     phase?: string
     stripeCustomerId?: string
+    /**
+     * Defaults to `'requested'` — the state the sweep's lease-claiming tests
+     * (companyDeletionLease.emulator.ts) actually want to find. Every OTHER
+     * test in this suite that calls `runCompanyPurge` directly, bypassing
+     * the lease dance entirely, needs `'executing'` instead — issue #331/
+     * #335's liveness guard (`runCompanyPurge`'s own early return, and
+     * `markPhaseComplete`'s transaction) now refuses to act on anything
+     * else, where it used to run regardless of state.
+     */
+    state?: 'requested' | 'executing'
   },
 ): Promise<void> {
   const now = Timestamp.now()
   const scheduledFor = opts.scheduledFor ?? Timestamp.fromMillis(now.toMillis() - 60_000)
   const companyName = opts.companyName ?? 'Acme Film AB'
+  const state = opts.state ?? 'requested'
 
   await db.doc(`companies/${opts.companyId}`).set({
     name: companyName,
@@ -46,7 +57,7 @@ export async function seedRequestedDeletion(
     stripeCustomerId: opts.stripeCustomerId ?? '',
     subscription: { status: 'active', plan: 'starter', currentPeriodEnd: now, limits: { equipment: 25, users: 10 } },
     deletion: {
-      state: 'requested',
+      state,
       requestId: opts.requestId,
       requestedAt: now,
       requestedByName: 'Requester Name',
@@ -60,13 +71,14 @@ export async function seedRequestedDeletion(
     companyId: opts.companyId,
     companyName,
     mode: 'window',
-    state: 'requested',
+    state,
     requestedAt: now,
     requestedByUid: 'requester-uid',
     requestedByName: 'Requester Name',
     requestedByEmail: 'requester@example.com',
     scheduledFor,
     attempts: opts.attempts ?? 0,
+    lastHeartbeatAt: now,
     ...(opts.phase ? { phase: opts.phase } : {}),
     ...(opts.completedPhases ? { completedPhases: opts.completedPhases } : {}),
     purgeAfter: Timestamp.fromMillis(now.toMillis() + 1000 * 60 * 60 * 24 * 30),

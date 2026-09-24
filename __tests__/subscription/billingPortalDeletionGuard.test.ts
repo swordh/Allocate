@@ -115,6 +115,11 @@ function wire({ deletion }: { deletion?: Record<string, unknown> } = {}) {
 const GUARD_MESSAGE =
   'Billing cannot be changed while this company is scheduled for deletion. Stop the deletion first, and billing resumes on the same plan.'
 
+// Issue #331/#335: 'executing'/'failed' get a DIFFERENT message — there is
+// no "stop the deletion first" any more, because there is nothing left to
+// stop from the product.
+const IN_PROGRESS_GUARD_MESSAGE = "Billing can't be changed while this company is being deleted. Contact support if you need a receipt."
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockPortalCreate.mockResolvedValue({ url: 'https://portal.example' })
@@ -144,6 +149,28 @@ describe('Billing Portal guard while a deletion is pending', () => {
     expect(mockCheckoutCreate).not.toHaveBeenCalled()
     // Guarded before a Stripe customer would have been created.
     expect(mockCustomersCreate).not.toHaveBeenCalled()
+  })
+})
+
+describe('Billing Portal guard once the deletion has left "requested"', () => {
+  it('refuses the portal for an executing deletion with the "being deleted" message, not "stop it first"', async () => {
+    wire({ deletion: { ...PENDING_DELETION, state: 'executing' } })
+    const result = await createPortalSession()
+    expect(result).toEqual({ error: IN_PROGRESS_GUARD_MESSAGE })
+    expect(mockPortalCreate).not.toHaveBeenCalled()
+  })
+
+  it('refuses the portal for a failed deletion the same way', async () => {
+    wire({ deletion: { ...PENDING_DELETION, state: 'failed' } })
+    const result = await createPortalSession()
+    expect(result).toEqual({ error: IN_PROGRESS_GUARD_MESSAGE })
+    expect(mockPortalCreate).not.toHaveBeenCalled()
+  })
+
+  it('applies the same message to the plan-change deep link', async () => {
+    wire({ deletion: { ...PENDING_DELETION, state: 'executing' } })
+    const result = await createPlanChangeSession('starter', 'month')
+    expect(result).toEqual({ error: IN_PROGRESS_GUARD_MESSAGE })
   })
 })
 
