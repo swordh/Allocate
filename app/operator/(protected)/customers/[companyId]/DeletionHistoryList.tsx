@@ -3,7 +3,9 @@ import Chip from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { formatDateFullInZone } from '@/lib/dates'
 import {
+  FAILURE_REASON_LABELS,
   LEDGER_STATE_LABELS,
+  OPERATOR_ACTION_LABELS,
   PHASE_LABELS,
   MAX_PURGE_ATTEMPTS,
   STRIPE_EFFECT_LABELS,
@@ -174,6 +176,15 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
             <span className={styles.metaLine}>
               {row.attempts} of {MAX_PURGE_ATTEMPTS} attempts
             </span>
+            {row.state === 'failed' && row.failedAt && (
+              <span className={styles.metaLine}>
+                Failed {formatDateFullInZone(row.failedAt, ZONE)}
+                {row.failureReason ? ` — ${FAILURE_REASON_LABELS[row.failureReason]}` : ''}
+              </span>
+            )}
+            {row.state === 'executing' && typeof row.noProgressResumes === 'number' && row.noProgressResumes > 0 && (
+              <span className={styles.metaLine}>{row.noProgressResumes} of 3 resumes made no progress</span>
+            )}
             {row.completedPhases && row.completedPhases.length > 0 && (
               <span className={styles.metaLine}>
                 Finished: {row.completedPhases.map((p) => PHASE_LABELS[p as keyof typeof PHASE_LABELS] ?? p).join(', ')}
@@ -199,7 +210,9 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
             <span className={styles.sectionLabelSmall}>OPERATOR ACTIONS</span>
             {row.operatorActions.map((a, i) => (
               <div key={i} className={styles.operatorActionRow}>
-                <span className={styles.metaLine}>{a.action} — {formatDateFullInZone(a.at, ZONE)}</span>
+                <span className={styles.metaLine}>
+                  {OPERATOR_ACTION_LABELS[a.action] ?? a.action} — {formatDateFullInZone(a.at, ZONE)}
+                </span>
                 <IdentityLine label="by" value={a.byName} />
                 {a.note && <span className={styles.metaLine}>{a.note}</span>}
               </div>

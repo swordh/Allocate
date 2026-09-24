@@ -11,6 +11,7 @@
  */
 
 import type {
+  CompanyDeletionFailureReason,
   CompanyDeletionLedgerState,
   CompanyDeletionPhase,
 } from '@/types'
@@ -84,6 +85,29 @@ export function isStuckDeletion(row: StuckCheckInput, nowMs: number): boolean {
 }
 
 // ── Ledger state labels ─────────────────────────────────────────────────────
+
+/** See `CompanyDeletionFailureReason` in types/company.ts. Rendered by
+ *  `DeletionHistoryList.tsx` next to a `failed` row's `failedAt` timestamp. */
+export const FAILURE_REASON_LABELS: Record<CompanyDeletionFailureReason, string> = {
+  attempts_exhausted: 'exhausted its retry budget',
+  no_progress: 'made no progress across repeated resumes',
+  operator: 'marked failed by an operator',
+}
+
+/**
+ * Labels for `CompanyDeletionOperatorAction.action` — the four values
+ * `actions/operatorCompanyDeletion.ts` ever writes ('cancel', 'request',
+ * 'requeue', 'mark_failed'). Rendered by `DeletionHistoryList.tsx`'s
+ * "OPERATOR ACTIONS" block. Falls back to the raw string for anything else
+ * (there is no fifth value today, but a malformed/legacy doc should render
+ * something rather than throw).
+ */
+export const OPERATOR_ACTION_LABELS: Record<string, string> = {
+  cancel: 'Cancelled',
+  request: 'Deletion requested',
+  requeue: 'Requeued',
+  mark_failed: 'Marked as failed',
+}
 
 export const LEDGER_STATE_LABELS: Record<CompanyDeletionLedgerState, string> = {
   requested: 'Requested',

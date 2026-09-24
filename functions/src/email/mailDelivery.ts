@@ -11,6 +11,7 @@ import { companyDeletionRequestedEmail } from './templates/companyDeletionReques
 import { companyDeletionReminderEmail } from './templates/companyDeletionReminder';
 import { companyDeletionCancelledEmail } from './templates/companyDeletionCancelled';
 import { companyDeletedEmail } from './templates/companyDeleted';
+import { companyDeletionFailedEmail } from './templates/companyDeletionFailed';
 import { leftCompanyEmail } from './templates/leftCompany';
 import { billingEmailMissingEmail } from './templates/billingEmailMissing';
 
@@ -38,6 +39,8 @@ export function renderMail(mail: FirebaseFirestore.DocumentData): RenderedEmail 
       return companyDeletionCancelledEmail(mail['data']);
     case 'companyDeleted':
       return companyDeletedEmail(mail['data']);
+    case 'companyDeletionFailed':
+      return companyDeletionFailedEmail(mail['data']);
     case 'leftCompany':
       return leftCompanyEmail(mail['data']);
     case 'billingEmailMissing':

@@ -27,6 +27,7 @@ describe('runCompanyPurge — resume', () => {
       requestId,
       completedPhases: ['stripe', 'invitations', 'members'],
       phase: 'members',
+      state: 'executing',
     })
     await seedMember(adminDb, companyId, 'resume-member-1', { email: 'resumemember@example.com' })
     // formerMemberContacts as the already-completed members phase would have
@@ -74,7 +75,7 @@ describe('runCompanyPurge — resume', () => {
     const companyId = 'resume-fail-co'
     const requestId = 'resume-fail-req'
 
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
     await seedMember(adminDb, companyId, 'resume-fail-member-1', { email: 'resumefail@example.com' })
     await adminDb.doc(`companies/${companyId}/bookings/b1`).set({ title: 'Booking' })
 
@@ -141,6 +142,7 @@ describe('runCompanyPurge — resume', () => {
       companyId,
       requestId,
       completedPhases: ['stripe', 'invitations'], // members NOT yet marked complete
+      state: 'executing',
     })
     // Two members — uid-1 already appears in formerMemberContacts (as if a
     // prior attempt crashed partway through the members loop, right after
@@ -201,7 +203,7 @@ describe('runCompanyPurge — resume', () => {
     const companyId = 'resume-budget-co'
     const requestId = 'resume-budget-req'
 
-    await seedRequestedDeletion(adminDb, { companyId, requestId, attempts: 4 })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, attempts: 4, state: 'executing' })
 
     const db = getTestFunctionsDb()
     const spy = vi.spyOn(db, 'recursiveDelete').mockImplementation(() => {
@@ -230,6 +232,7 @@ describe('runCompanyPurge — resume', () => {
       companyId,
       requestId,
       completedPhases: ['stripe', 'invitations', 'members', 'subtree', 'orphans'],
+      state: 'executing',
     })
     await adminDb.doc(`companyDeletions/${requestId}`).update({
       formerMemberContacts: [

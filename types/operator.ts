@@ -203,10 +203,10 @@ export const PLAN_FILTER_LABELS: Record<PlanFilter, string> = {
 // Read-only shapes for the two site-wide deletion list entries and the
 // per-company history. Sourced from `companyDeletions/{requestId}` — the
 // ledger, never `companies/{cid}.deletion` — per the plan's "läs ledgern,
-// inte spegeln": the mirror on the company document can never carry
-// `'failed'` (see types/company.ts's `CompanyDeletionState` docblock) and
-// does not survive a completed purge, so a view built on it would be blind
-// to exactly the two things this screen exists to surface.
+// inte spegeln": the mirror does not survive a completed purge, so a view
+// built on it would be blind to that outcome even now that (issue #331)
+// `applyFailedTransition` also mirrors `'failed'` onto `companies/{cid}
+// .deletion.state` — a completed row still has no mirror to read at all.
 
 /**
  * One row of `companyDeletions/{requestId}`, projected down to what the
@@ -269,6 +269,16 @@ export interface CompanyDeletionRow {
   attempts: number
   lastHeartbeatAt?: string            // ISO string
   lastError?: string | null
+
+  /** See `CompanyDeletionFailureReason` in types/company.ts. Absent unless `state === 'failed'`. */
+  failureReason?: 'attempts_exhausted' | 'no_progress' | 'operator'
+  failedAt?: string                   // ISO string
+  failedNotifiedAt?: string           // ISO string
+  failedNotifiedCount?: number
+
+  /** Consecutive no-progress stale-lease resumes at the moment this row was read — "n of 3 resumes made no progress" in the history view. See lease.ts. */
+  noProgressResumes?: number
+  progressUnits?: number
 }
 
 export const DELETION_SEGMENTS = ['active', 'stuck', 'all'] as const

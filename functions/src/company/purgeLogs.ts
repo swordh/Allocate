@@ -309,22 +309,41 @@ function buildContactsRedaction(data: FirebaseFirestore.DocumentData): Record<st
  *     `lastHeartbeatAt` IS an existing index and `lastHeartbeatAt` on its
  *     own matches every ledger row that ever ran.
  *
- * A PRECONDITION, not an implementation detail: `failed` is TERMINAL. No
- * sweep pass resumes a failed row — `resumeStuck` queries `state ==
- * 'executing'` and `claimStaleLease` refuses everything else — which is the
+ * A PRECONDITION, not an implementation detail: `failed` is terminal to
+ * every SWEEP pass — `resumeStuck` only ever resumes a `claimStaleLease`
+ * result of `'claimed'`, never `'failed'`, and `claimStaleLease` itself
+ * refuses anything that isn't `state: 'executing'` (lease.ts) — which is the
  * only reason `contacts_failed` is allowed to touch a resume marker at all.
- * If someone ever makes the sweep retry failed rows, this rule stops being
- * safe on the same day, and its 90-day window becomes a race against a purge
- * that can restart. Read that as a cost of adding failed-retry, not as a
- * reason to weaken this.
  *
- * KNOWN GAP, written down rather than papered over: a purge that keeps
- * timing out never increments `attempts` (a 540s SIGKILL skips the catch
- * block), so it can stay `executing` indefinitely and neither rule will ever
- * reach it. That is the correct trade — breaking a live purge is worse than
- * keeping contacts too long — and the existing signal for it is the
- * `lastResumePhaseCount` warning in purge.ts, which step 6's "stuck" view is
- * meant to surface. Fixing it means fixing stuck purges, not loosening this.
+ * UPDATE (issue #331/#335): "terminal" is no longer absolute. An operator
+ * CAN now requeue a failed row (`requeueFailedCompanyDeletion`,
+ * actions/operatorCompanyDeletion.ts) back to `executing`, which is a real
+ * restart path, not a hypothetical one anymore. This is bounded, not
+ * unbounded, exposure: `contacts_failed` only fires 90 days after
+ * `lastHeartbeatAt`, and `applyFailedTransition` (failDeletion.ts) freshens
+ * `lastHeartbeatAt` at the moment of failure — so an operator has 90 days
+ * to requeue a row BEFORE its resume marker is touched, same as today. What
+ * changes the calculus is `noProgressResumes`/`leaseProgressUnits` (also
+ * failDeletion.ts/lease.ts): a requeue that resumes a row whose contacts
+ * were already redacted would re-run the members phase against a resume
+ * marker this rule already blanked, exactly the corruption this whole guard
+ * exists to prevent — the Next-side requeue action is responsible for
+ * refusing that case outright (see its own guard on `contactsRedactedAt`)
+ * rather than this file trying to detect it after the fact.
+ *
+ * KNOWN GAP — LARGELY CLOSED, kept written down rather than deleted: a purge
+ * that keeps timing out used to never increment `attempts` (a 540s SIGKILL
+ * skips the catch block), so it could stay `executing` indefinitely and
+ * neither rule would ever reach it. `claimStaleLease`'s no-progress
+ * detection (lease.ts, `NO_PROGRESS_LIMIT`) now catches exactly this case
+ * from OUTSIDE the dying process and transitions the row to `failed` after
+ * three consecutive stale-lease resumes with zero measured progress — at
+ * which point `contacts_failed`'s ordinary 90-day clock applies like any
+ * other failed row. What remains open: a purge that keeps making JUST
+ * enough progress to reset `noProgressResumes` every cycle without ever
+ * reaching `finalize` would still never go `failed` — genuinely pathological
+ * rather than the SIGKILL-every-time case this was written for, and not
+ * something either rule can distinguish from a legitimately huge company.
  */
 const CONTACTS_COMPLETED_RULE: LedgerRedactionRule = {
   name: 'contacts_completed',

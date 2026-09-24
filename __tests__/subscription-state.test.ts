@@ -202,6 +202,64 @@ describe('getSubStateDisplay — DELETION_PENDING', () => {
     expect(getSubStateDisplay(sub({}), 'X', deletion({ state: 'failed' })).key).toBe('DELETION_PENDING')
   })
 
+  // Issue #331/#335: 'executing'/'failed' must not reuse the 'requested'
+  // copy — that copy claims a scheduled date and "any administrator can
+  // stop it", neither of which is true once the purge has actually started
+  // or stalled.
+  describe('executing overrides label/cycle/notice — no date, no "can stop it" claim', () => {
+    it('labels it DELETION IN PROGRESS', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.label).toBe('DELETION IN PROGRESS')
+      expect(d.cycle).toBe('Deletion in progress')
+    })
+
+    it('the notice makes no promise about when it finishes and quotes no date', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.notice).not.toContain('September')
+      expect(d.notice).not.toMatch(/\bcan stop it\b/i)
+    })
+
+    // Review fix: this used to unconditionally claim "billing paused" /
+    // "no charges are made" — `pauseSubscriptionForDeletion` is best-effort
+    // and its outcome lives on the ledger, not the mirror this function
+    // reads, so this surface cannot actually promise that. Softened to a
+    // "should be" + "contact support" posture instead of a flat guarantee.
+    it('NEGATIVE: does not unconditionally guarantee billing was paused', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.cycle).not.toContain('billing paused')
+      expect(d.notice).not.toMatch(/no charges are made/i)
+      expect(d.notice?.toLowerCase()).toContain('contact support')
+    })
+  })
+
+  describe('failed overrides label/cycle/notice — no date, points at support', () => {
+    it('labels it DELETION STUCK', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.label).toBe('DELETION STUCK')
+      expect(d.cycle).toBe("Deletion hasn't finished")
+    })
+
+    it('the notice mentions support and quotes no date', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.notice?.toLowerCase()).toContain('support')
+      expect(d.notice).not.toContain('September')
+    })
+
+    // Review fix — same reasoning as the executing case above.
+    it('NEGATIVE: does not unconditionally guarantee billing remains paused', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.cycle).not.toContain('billing paused')
+      expect(d.notice).not.toMatch(/billing remains paused/i)
+    })
+  })
+
+  it('a requested deletion is completely unaffected by the executing/failed overrides', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'requested' }))
+    expect(d.label).toBe('DELETION REQUESTED')
+    expect(d.cycle).toContain('billing paused')
+    expect(d.notice).toContain('Everything keeps working until then')
+  })
+
   it('applies even with no subscription at all', () => {
     const d = getSubStateDisplay(null, 'Nordfilm AB', deletion())
     expect(d.key).toBe('DELETION_PENDING')

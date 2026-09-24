@@ -307,7 +307,7 @@ describe('runBillingEmailReminder', () => {
     expect(stripe.customers.retrieve).not.toHaveBeenCalled();
   });
 
-  it("does NOT clear the flag (and keeps reminding) when the company's deletion is state 'failed' — the purge stalled, the company is still here", async () => {
+  it("clears the flag when the company's deletion is state 'failed' (issue #331/#335) — the purge's Stripe phase always runs FIRST, so by the time a row is failed the subscription is already cancelled and the portal already locked; chasing a billing email for it has nothing left to fix", async () => {
     const db = new FakeFirestore();
     db.companies.set('company-A', {
       name: 'Nordfilm AB',
@@ -317,13 +317,14 @@ describe('runBillingEmailReminder', () => {
       billing: { emailMissingSince: '2026-09-01T00:00:00.000Z', lastReminderAt: SIX_DAYS_AGO },
     });
     db.members.set('company-A', [{ id: 'm1', data: { role: 'admin', email: 'admin@example.com' } }]);
-    const stripe = makeStripe({ retrieve: vi.fn().mockResolvedValue({ deleted: false, email: null }) });
+    const stripe = makeStripe({ retrieve: vi.fn() });
 
     const result = await runBillingEmailReminder(db as never, stripe, NOW);
 
-    expect(result).toEqual({ sent: 1, cleared: 0, skipped: 0, failed: 0 });
-    expect(db.companies.get('company-A')!['billing']).toBeDefined();
-    expect(db.mailDocs).toHaveLength(1);
+    expect(result).toEqual({ sent: 0, cleared: 1, skipped: 0, failed: 0 });
+    expect(db.companies.get('company-A')!['billing']).toBeUndefined();
+    expect(db.mailDocs).toHaveLength(0);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
   });
 
   it('does not send mail (and does not clear the flag) when no admin has an email', async () => {

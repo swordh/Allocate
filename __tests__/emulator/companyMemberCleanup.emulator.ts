@@ -30,7 +30,7 @@ describe('company purge — member cleanup and account scheduling', () => {
     const uid = 'kept-member-uid'
 
     await adminAuth.createUser({ uid, email: 'kept@example.com' })
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
     await seedMember(adminDb, companyId, uid, { email: 'kept@example.com', otherCompanyId })
 
     const db = getTestFunctionsDb()
@@ -57,7 +57,7 @@ describe('company purge — member cleanup and account scheduling', () => {
     const uid = 'stranded-member-uid'
 
     await adminAuth.createUser({ uid, email: 'stranded@example.com' })
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
     await seedMember(adminDb, companyId, uid, { email: 'stranded@example.com' })
 
     const beforePurge = Date.now()
@@ -96,7 +96,7 @@ describe('company purge — member cleanup and account scheduling', () => {
     const uid = 'stranded-setup-uid'
 
     await adminAuth.createUser({ uid, email: 'strandedsetup@example.com' })
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
     await seedMember(adminDb, companyId, uid, { email: 'strandedsetup@example.com' })
 
     const db = getTestFunctionsDb()

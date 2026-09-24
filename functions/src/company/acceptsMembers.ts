@@ -46,12 +46,20 @@ export function blockMemberWrite(companySnap: DocumentSnapshot): MemberWriteBloc
   if (!companySnap.exists) {
     return { code: 'not-found', message: 'That company no longer exists.' };
   }
-  if (companySnap.data()?.['deletion']) {
-    return {
-      code: 'deleting',
-      message:
-        'This company is scheduled for deletion and is not accepting new members. Ask an administrator to stop the deletion first.',
-    };
+  const deletion = companySnap.data()?.['deletion'] as { state?: string } | undefined;
+  if (deletion) {
+    // 'requested' is the only state a "stop the deletion first" message is
+    // TRUE for — only then does an admin have anything left to stop.
+    // 'executing' and 'failed' (issue #331: the mirror can now carry
+    // 'failed', not just 'requested'/'executing') both describe a purge
+    // that has already started running, cancelling nothing is possible from
+    // here, and telling someone to "stop" it would send them looking for a
+    // button that doesn't exist.
+    const message =
+      deletion.state === 'requested'
+        ? 'This company is scheduled for deletion and is not accepting new members. Ask an administrator to stop the deletion first.'
+        : 'This company is being deleted and is not accepting new members.';
+    return { code: 'deleting', message };
   }
   return null;
 }

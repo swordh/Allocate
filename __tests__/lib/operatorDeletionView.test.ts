@@ -6,8 +6,11 @@ import {
   phaseProgressLabel,
   STRIPE_EFFECT_LABELS,
   STALE_LEASE_MS,
+  FAILURE_REASON_LABELS,
+  OPERATOR_ACTION_LABELS,
 } from '@/lib/operatorDeletionView'
 import type { StripeDeletionEffect } from '@/lib/companyDeletionStripe'
+import type { CompanyDeletionFailureReason } from '@/types'
 
 const NOW = new Date('2026-09-15T12:00:00.000Z').getTime()
 
@@ -134,5 +137,29 @@ describe('STRIPE_EFFECT_LABELS', () => {
         expect(STRIPE_EFFECT_LABELS[effect].tone).not.toBe('accent')
       }
     }
+  })
+})
+
+describe('FAILURE_REASON_LABELS', () => {
+  const allReasons: CompanyDeletionFailureReason[] = ['attempts_exhausted', 'no_progress', 'operator']
+
+  it('has a non-empty label for every CompanyDeletionFailureReason value', () => {
+    for (const reason of allReasons) {
+      expect(FAILURE_REASON_LABELS[reason]).toBeDefined()
+      expect(FAILURE_REASON_LABELS[reason].length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('OPERATOR_ACTION_LABELS', () => {
+  it('has a readable label for every action actions/operatorCompanyDeletion.ts writes', () => {
+    for (const action of ['cancel', 'request', 'requeue', 'mark_failed']) {
+      expect(OPERATOR_ACTION_LABELS[action]).toBeDefined()
+      expect(OPERATOR_ACTION_LABELS[action].length).toBeGreaterThan(0)
+    }
+  })
+
+  it('falls back to undefined for an unknown action — callers must handle it with ?? action', () => {
+    expect(OPERATOR_ACTION_LABELS['some_future_action']).toBeUndefined()
   })
 })
