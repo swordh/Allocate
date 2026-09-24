@@ -28,6 +28,13 @@ interface SubscriptionViewProps {
    * for the notice below.
    */
   billing?: CompanyBilling | null
+  /**
+   * Whether Stripe already has a payment method on file for a trialing
+   * subscription — see `lib/trialPaymentMethod.ts`. Passed straight through
+   * to `getSubStateDisplay`, which swaps the TRIAL notice/CTA when true.
+   * Ignored for every other subscription state.
+   */
+  hasPaymentMethod?: boolean
 }
 
 function formatShortDate(iso: string | null | undefined): string {
@@ -59,6 +66,7 @@ export default function SubscriptionView({
   memberCount,
   deletion = null,
   billing = null,
+  hasPaymentMethod = false,
 }: SubscriptionViewProps) {
   const router = useRouter()
   const [cycle, setCycle] = useState<BillingInterval>(subscription?.interval ?? 'month')
@@ -66,7 +74,7 @@ export default function SubscriptionView({
   const [cancelling, setCancelling] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const display = getSubStateDisplay(subscription, companyName, deletion)
+  const display = getSubStateDisplay(subscription, companyName, deletion, { hasPaymentMethod })
 
   // Whether `cancelCompanyDeletion()` would actually succeed right now — see
   // `canCancelCompanyDeletionInProduct`. `DELETION_PENDING`'s shared notice
@@ -156,7 +164,7 @@ export default function SubscriptionView({
         <ErrorBanner
           tone={display.tone}
           action={
-            deletionNoLongerCancelable ? undefined : (
+            deletionNoLongerCancelable || display.cta === '' ? undefined : (
               <Button
                 variant="primary"
                 size="sm"

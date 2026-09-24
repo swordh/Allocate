@@ -124,6 +124,10 @@ const SUB_STATES: Record<SubStateKey, SubStateDef> = {
     label: 'TRIAL',
     accent: 'accent',
     cycle: (sub) => `Trial · ${daysLeft(sub?.trialEnd)} days left`,
+    // `hasPaymentMethod` (below, in getSubStateDisplay) swaps this notice for
+    // one that doesn't ask for a card Checkout already collected. Kept here
+    // as the definition's own default, not read from `opts` directly — this
+    // table has no access to `opts`, see the override in getSubStateDisplay.
     notice: (sub) =>
       `Your trial ends ${formatDate(sub?.trialEnd)}. Add a payment method before then to keep your bookings and equipment.`,
     cta: 'ADD PAYMENT METHOD',
@@ -232,17 +236,34 @@ export function getSubStateDisplay(
   sub: Subscription | null,
   companyName: string,
   deletion?: CompanyDeletion | null,
+  /**
+   * `hasPaymentMethod` (fix/trial-notice-card-on-file) — whether Stripe
+   * already has a payment method on file for this trialing subscription
+   * (`lib/trialPaymentMethod.ts`, checked live, never stored). Checkout
+   * collects a card at signup, so every trialing company already has one;
+   * without this, TRIAL's default notice wrongly asks the admin to "add a
+   * payment method" she already added. Only consulted for the TRIAL state —
+   * every other state ignores it.
+   */
+  opts?: { hasPaymentMethod?: boolean },
 ): SubStateDisplay {
   const key: SubStateKey = deletion ? 'DELETION_PENDING' : toSubState(sub)
   const def = SUB_STATES[key]
+
+  const trialCardOnFile = key === 'TRIAL' && opts?.hasPaymentMethod === true
+
   return {
     key,
     hasSub: key === 'DELETION_PENDING' ? sub !== null : key !== 'NONE',
     label: def.label,
     accent: def.accent,
     cycle: def.cycle(sub, deletion),
-    notice: def.notice ? def.notice(sub, companyName, deletion) : null,
-    cta: def.cta,
+    notice: trialCardOnFile
+      ? `Your trial ends ${formatDate(sub?.trialEnd)}. Your card will be charged then.`
+      : def.notice
+        ? def.notice(sub, companyName, deletion)
+        : null,
+    cta: trialCardOnFile ? '' : def.cta,
     tone: def.tone,
   }
 }
