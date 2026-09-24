@@ -76,7 +76,7 @@ function copyFor(state: CancelTokenState, companyName: string, scheduledFor: str
       return {
         eyebrow: 'ALREADY UNDER WAY',
         heading: 'This deletion has already started',
-        body: `The deletion of ${named} is being carried out and can no longer be stopped from this link. Contact support straight away if this is wrong.`,
+        body: `The deletion of ${named} has already started and can no longer be stopped from this link. Contact support straight away if this is wrong.`,
         tone: 'danger',
       }
     case 'company_gone':

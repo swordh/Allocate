@@ -252,17 +252,54 @@ export function getSubStateDisplay(
 
   const trialCardOnFile = key === 'TRIAL' && opts?.hasPaymentMethod === true
 
+  let label = def.label
+  let cycle = def.cycle(sub, deletion)
+  let notice = def.notice ? def.notice(sub, companyName, deletion) : null
+
+  // Issue #331/#335: `DELETION_PENDING`'s table entry above is written for
+  // the 'requested' case only — "any administrator can stop it", a scheduled
+  // date, all the language of a countdown that is still cancellable. Once
+  // the sweep has claimed the purge ('executing') or it has stalled
+  // ('failed'), none of that is true any more, and neither state has a
+  // meaningful date to quote — 'executing' because the deletion is happening
+  // NOW, not "scheduled"; 'failed' because the scheduled date already came
+  // and went without finishing. Overridden here, once, rather than in
+  // SUB_STATES' own table, so the 'requested' definition above stays the
+  // single source of truth for the common case and this stays the one place
+  // that departs from it.
+  //
+  // REVIEW FIX: this used to say "billing paused" / "billing remains
+  // paused" unconditionally. `pauseSubscriptionForDeletion`
+  // (lib/companyDeletionStripe.ts) runs once, at REQUEST time, and is
+  // best-effort/non-fatal by design — its outcome (`stripePause.effect`,
+  // which can be `'failed'`) is recorded on the `companyDeletions` LEDGER,
+  // never on the `companies/{cid}.deletion` MIRROR this function actually
+  // receives. There is no way for this admin-facing surface to know whether
+  // the pause actually took, so it can no longer promise that it did —
+  // softened to match the same "contact support if you notice a charge"
+  // posture the `companyDeletionFailed` mail takes for the same reason (see
+  // that template's `billingStopped` field).
+  if (key === 'DELETION_PENDING' && deletion && deletion.state !== 'requested') {
+    if (deletion.state === 'executing') {
+      label = 'DELETION IN PROGRESS'
+      cycle = 'Deletion in progress'
+      notice =
+        "This company's deletion has started and can no longer be stopped from here. Billing should already be paused — contact support if you notice a charge."
+    } else if (deletion.state === 'failed') {
+      label = 'DELETION STUCK'
+      cycle = "Deletion hasn't finished"
+      notice =
+        "This company's deletion ran into a problem and hasn't finished. Our support team can see this and will follow up. If you notice any further charges, contact support."
+    }
+  }
+
   return {
     key,
     hasSub: key === 'DELETION_PENDING' ? sub !== null : key !== 'NONE',
-    label: def.label,
+    label,
     accent: def.accent,
-    cycle: def.cycle(sub, deletion),
-    notice: trialCardOnFile
-      ? `Your trial ends ${formatDate(sub?.trialEnd)}. Your card will be charged then.`
-      : def.notice
-        ? def.notice(sub, companyName, deletion)
-        : null,
+    cycle,
+    notice: trialCardOnFile ? `Your trial ends ${formatDate(sub?.trialEnd)}. Your card will be charged then.` : notice,
     cta: trialCardOnFile ? '' : def.cta,
     tone: def.tone,
   }

@@ -35,7 +35,7 @@ describe('runCompanyPurge — chunking', () => {
     const BOOKINGS = 1100
     const EVENTS = 620
 
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
 
     await seedMany(
       BOOKINGS,

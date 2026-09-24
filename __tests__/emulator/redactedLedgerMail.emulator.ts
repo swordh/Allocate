@@ -71,7 +71,7 @@ describe('mail built from a redacted ledger', () => {
     const companyId = 'redacted-purge-co'
     const requestId = 'redacted-purge-req'
 
-    await seedRequestedDeletion(adminDb, { companyId, requestId })
+    await seedRequestedDeletion(adminDb, { companyId, requestId, state: 'executing' })
     await seedMember(adminDb, companyId, 'redacted-member-1', { email: 'redactedmember@example.com' })
     await adminDb.doc(`companyDeletions/${requestId}`).update({
       requestedByUid: null,

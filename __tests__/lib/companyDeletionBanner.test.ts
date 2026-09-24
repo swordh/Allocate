@@ -114,30 +114,22 @@ describe('getCompanyDeletionBannerDisplay', () => {
       expect(d!.message).not.toContain('September')
     })
 
-    // Coordinator-caught bug: 'executing' is ALSO the state a member sees
-    // when the purge has exhausted its retry budget without that ever
-    // reaching the company document's mirror (see the 'failed' describe
-    // block below — the ledger goes to 'failed', the mirror never does). In
-    // that situation access does not end "shortly", or at all without an
-    // operator. The message must not promise a timeframe that only holds in
-    // the non-stuck case, since a member reading it cannot tell which case
-    // she is in.
-    it('makes no promise about WHEN access ends — the stuck-purge case makes that untrue', () => {
+    // 'executing' still covers a purge that is progressing normally — a row
+    // that has actually stalled now mirrors 'failed' instead (issue #331),
+    // which is its own describe block below. This message must still avoid
+    // promising a timeframe for the ordinary in-progress case, since it says
+    // nothing about exactly when the purge will finish.
+    it('makes no promise about WHEN access ends', () => {
       const d = getCompanyDeletionBannerDisplay(deletion({ state: 'executing' }), 'admin', TIMEZONE)
       expect(d!.message.toLowerCase()).not.toContain('shortly')
       expect(d!.message.toLowerCase()).not.toMatch(/\bwill end\b/)
     })
   })
 
-  // NOTE: 'failed' is a real value of `CompanyDeletionState` and the
-  // `companyDeletions` ledger does reach it (functions/src/company/
-  // purge.ts:552), but nothing today writes it onto the COMPANY document's
-  // `deletion` mirror this banner is actually built from — see the long
-  // comment on the 'failed' case in lib/companyDeletionBanner.ts for the
-  // full trace. These tests exercise a branch that is currently UNREACHABLE
-  // from app/(app)/layout.tsx in production; they lock its behaviour for the
-  // day the mirror gets fixed to carry 'failed' too, not for anything a
-  // member can see right now.
+  // Issue #331 fixed `applyFailedTransition` to mirror 'failed' onto
+  // `companies/{cid}.deletion.state`, not just the `companyDeletions`
+  // ledger — this branch is now reachable from app/(app)/layout.tsx in
+  // production, not merely a locked-for-later case.
   describe('state: failed', () => {
     it('does not claim a deletion date — the brief forbids it explicitly', () => {
       const d = getCompanyDeletionBannerDisplay(deletion({ state: 'failed' }), 'admin', TIMEZONE)
@@ -145,14 +137,16 @@ describe('getCompanyDeletionBannerDisplay', () => {
       expect(d!.cancelHref).toBeUndefined()
     })
 
-    it('points an admin at support directly', () => {
+    it("tells an admin support can see it and will follow up — no action asked of her", () => {
       const d = getCompanyDeletionBannerDisplay(deletion({ state: 'failed' }), 'admin', TIMEZONE)
-      expect(d!.message.toLowerCase()).toContain('contact support')
+      expect(d!.message.toLowerCase()).toContain('support')
+      expect(d!.message.toLowerCase()).toContain('follow up')
     })
 
-    it('tells a non-admin an administrator needs to contact support, not to do it herself', () => {
+    it('tells a non-admin support is already aware, without asking her to do anything', () => {
       const d = getCompanyDeletionBannerDisplay(deletion({ state: 'failed' }), 'crew', TIMEZONE)
-      expect(d!.message).toContain('An administrator will need to contact support')
+      expect(d!.message.toLowerCase()).toContain('support')
+      expect(d!.message.toLowerCase()).not.toContain('contact')
     })
   })
 

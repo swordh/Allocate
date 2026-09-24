@@ -124,6 +124,9 @@ export interface CompanyDocument {
 //   `formerMemberSummary`, which the same job writes on a 30/90-day clock.
 
 export type CompanyDeletionState = 'requested' | 'executing' | 'failed';
+
+/** Mirror of `CompanyDeletionFailureReason` in types/company.ts — read the doc comment there. */
+export type CompanyDeletionFailureReason = 'attempts_exhausted' | 'no_progress' | 'operator';
 /**
  * `mode` is chosen by which action triggered the deletion, never by member
  * count — see the doc comment on `CompanyDeletionMode` in types/company.ts
@@ -200,13 +203,24 @@ export interface CompanyDeletionDocument {
   /** See the doc comment on this field in types/company.ts — finalize's own per-uid resume marker. */
   finalizeMailQueuedUids?: string[];
 
-  /** Diagnostic only — see the comment where runCompanyPurge writes and reads this in purge.ts. Not part of the attempts/failed budget. */
-  lastResumePhaseCount?: number;
-
   attempts: number;
   lastHeartbeatAt?: Timestamp;
   /** `null` = redacted (or cleared on success). See types/company.ts. */
   lastError?: string | null;
+
+  // ─── Failure + no-progress detection (issue #331/#335) ────────────────────
+  // Mirrors the block of the same name in types/company.ts — read the doc
+  // comments there. `applyFailedTransition` (failDeletion.ts) is the one
+  // writer of the first four; `claimStaleLease` (lease.ts) and purge.ts's
+  // per-unit-of-work heartbeats are the writers of the last four.
+  failureReason?: CompanyDeletionFailureReason;
+  failedAt?: Timestamp;
+  failedNotifiedAt?: Timestamp;
+  failedNotifiedCount?: number;
+  progressUnits?: number;
+  leaseProgressUnits?: number;
+  leaseAttempts?: number;
+  noProgressResumes?: number;
 
   cancelTokenIds?: string[];
 

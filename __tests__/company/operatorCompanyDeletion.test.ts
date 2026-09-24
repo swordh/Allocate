@@ -1,15 +1,19 @@
 /**
- * `actions/operatorCompanyDeletion.ts` — issue #252 step 6, PR 5. The
- * operator view's three destructive/corrective moves on a company deletion:
- * cancel, request-on-behalf, requeue-a-failed-purge.
+ * `actions/operatorCompanyDeletion.ts` — issue #252 step 6, PR 5, plus issue
+ * #331/#335's fourth move. The operator view's four destructive/corrective
+ * moves on a company deletion: cancel, request-on-behalf,
+ * requeue-a-failed-purge, mark-a-stuck-purge-failed.
  *
  * Every test here is written to FAIL if a specific guard is removed, not
- * merely to describe the happy path — the three that matter most:
+ * merely to describe the happy path — the ones that matter most:
  *
  *   - cancel must work with ZERO admins present (the entire reason this
  *     view exists — see the design brief's "ingen admin kvar" case).
  *   - requeue must NOT reset `completedPhases` (that would redo already-
  *     finished, possibly destructive work).
+ *   - requeue must refuse a row whose contacts have already been redacted.
+ *   - mark-failed must refuse anything not `executing`, and anything whose
+ *     heartbeat isn't actually stale yet.
  *   - every `operatorActions` entry must carry `byUid`/`byName` EXPLICITLY,
  *     never omitted — an omitted field reads back as `null`, i.e.
  *     "redacted by the 24-month retention job" (lib/operatorDeletionQueries.ts).
@@ -18,7 +22,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { wireDb, makeTransaction, type DocMap, type DocRefStub } from '../helpers/firestore'
+import { wireDb, makeTransaction, queryFor, filterValue, type DocMap, type DocRefStub, type QueryResolver } from '../helpers/firestore'
 
 const { mockGetOperatorSession, mockSubscriptionsUpdate, mockSubscriptionsRetrieve } = vi.hoisted(() => ({
   mockGetOperatorSession: vi.fn(),
@@ -67,6 +71,7 @@ import {
   cancelCompanyDeletionAsOperator,
   requestCompanyDeletionAsOperator,
   requeueFailedCompanyDeletion,
+  markStuckCompanyDeletionFailed,
 } from '@/actions/operatorCompanyDeletion'
 import { adminDb } from '@/lib/firebase-admin'
 
@@ -75,8 +80,8 @@ const OPERATOR_EMAIL = 'jocke@allocate.at'
 const COMPANY_ID = 'company-A'
 const COMPANY_NAME = 'Rigg & Rep AB'
 
-function wireTx(docs: DocMap) {
-  const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs })
+function wireTx(docs: DocMap, query?: QueryResolver) {
+  const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
   const tx = makeTransaction(docs)
   vi.mocked(adminDb.runTransaction).mockImplementation(
     (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
@@ -369,5 +374,288 @@ describe('requeueFailedCompanyDeletion', () => {
     wireLedger(null)
     const result = await requeueFailedCompanyDeletion('req-1', '')
     expect(result.error).toContain('could not be found')
+  })
+
+  it('refuses to requeue a row whose contacts have already been redacted', async () => {
+    const { tx } = wireLedger({ ...FAILED_LEDGER, contactsRedactedAt: '2026-01-01T00:00:00.000Z' })
+    const result = await requeueFailedCompanyDeletion('req-1', '')
+    expect(result.error).toContain('redacted')
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('flips the mirror back to executing when the company still exists and requestId matches', async () => {
+    const docs: DocMap = {
+      'companyDeletions/req-1': FAILED_LEDGER,
+      [`companies/${COMPANY_ID}`]: { name: COMPANY_NAME, deletion: { state: 'failed', requestId: 'req-1' } },
+    }
+    const { tx } = wireTx(docs)
+    await requeueFailedCompanyDeletion('req-1', '')
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    expect(companyUpdate![1]).toEqual({ 'deletion.state': 'executing' })
+  })
+
+  it('does NOT touch the mirror when the company no longer exists', async () => {
+    const { tx } = wireLedger(FAILED_LEDGER)
+    await requeueFailedCompanyDeletion('req-1', '')
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    expect(companyUpdate).toBeUndefined()
+  })
+
+  it('does NOT touch the mirror when a newer request has overwritten it', async () => {
+    const docs: DocMap = {
+      'companyDeletions/req-1': FAILED_LEDGER,
+      [`companies/${COMPANY_ID}`]: { name: COMPANY_NAME, deletion: { state: 'requested', requestId: 'req-newer' } },
+    }
+    const { tx } = wireTx(docs)
+    await requeueFailedCompanyDeletion('req-1', '')
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    expect(companyUpdate).toBeUndefined()
+  })
+
+  it('resets the no-progress baselines and clears failureReason/failedAt, keeping failedNotifiedAt', async () => {
+    const { tx } = wireLedger({
+      ...FAILED_LEDGER,
+      progressUnits: 42,
+      leaseProgressUnits: 40,
+      leaseAttempts: 4,
+      noProgressResumes: 3,
+      failureReason: 'attempts_exhausted',
+      failedAt: '2026-01-01T00:00:00.000Z',
+      failedNotifiedAt: '2026-01-01T00:00:00.000Z',
+    })
+    await requeueFailedCompanyDeletion('req-1', '')
+    const update = ledgerUpdate(tx, 'companyDeletions/req-1')
+    expect(update![1]).toMatchObject({
+      noProgressResumes: 0,
+      leaseAttempts: 0,
+      leaseProgressUnits: 42,
+      failureReason: '__delete__',
+      failedAt: '__delete__',
+    })
+    expect(update![1]).not.toHaveProperty('failedNotifiedAt')
+  })
+})
+
+describe('markStuckCompanyDeletionFailed', () => {
+  const STALE_HEARTBEAT_ISO = new Date(NOW_MS - 90 * 60 * 1000).toISOString() // 90 min ago > 60 min bar
+  const FRESH_HEARTBEAT_ISO = new Date(NOW_MS - 5 * 60 * 1000).toISOString() // 5 min ago
+
+  const EXECUTING_LEDGER = {
+    requestId: 'req-1',
+    companyId: COMPANY_ID,
+    companyName: COMPANY_NAME,
+    state: 'executing',
+    mode: 'window',
+    attempts: 0,
+    lastHeartbeatAt: STALE_HEARTBEAT_ISO,
+  }
+
+  function noAdmins(): QueryResolver {
+    return () => []
+  }
+
+  function oneAdmin(email: string): QueryResolver {
+    return queryFor(
+      (ctx) => ctx.path === `companies/${COMPANY_ID}/members` && filterValue(ctx, 'role') === 'admin',
+      [{ id: 'member-1', data: { email, role: 'admin' } }],
+    )
+  }
+
+  function wire(ledger: Record<string, unknown> | null, opts: { company?: Record<string, unknown>; query?: QueryResolver } = {}) {
+    const docs: DocMap = {}
+    if (ledger) docs['companyDeletions/req-1'] = ledger
+    if (opts.company) docs[`companies/${COMPANY_ID}`] = opts.company
+    return wireTx(docs, opts.query ?? noAdmins())
+  }
+
+  it('marks an executing, stuck deletion as failed — ledger, mirror and mail all written like the automatic path', async () => {
+    const { tx } = wire(EXECUTING_LEDGER, {
+      company: { name: COMPANY_NAME, deletion: { state: 'executing', requestId: 'req-1' } },
+      query: oneAdmin('admin@rigg.se'),
+    })
+
+    const result = await markStuckCompanyDeletionFailed('req-1', 'confirmed stuck via support ticket #7')
+
+    expect(result.error).toBeUndefined()
+    expect(result.ok).toBe(true)
+
+    const ledgerUpdates = tx.update.mock.calls.filter(([ref]) => (ref as DocRefStub).path === 'companyDeletions/req-1')
+    // Two separate tx.update calls land on the ledger: this action's own
+    // operatorActions write, and applyFailedTransitionNext's failure write —
+    // exactly the same "two updates, same doc, same transaction" pattern
+    // purge.ts's catch block uses when it calls applyFailedTransition itself.
+    expect(ledgerUpdates.length).toBeGreaterThanOrEqual(2)
+    const failureWrite = ledgerUpdates.find(([, data]) => (data as Record<string, unknown>).state === 'failed')
+    expect(failureWrite![1]).toMatchObject({ state: 'failed', failureReason: 'operator' })
+
+    const actionsWrite = ledgerUpdates.find(([, data]) => 'operatorActions' in (data as Record<string, unknown>))
+    const actions = (actionsWrite![1] as { operatorActions: Array<Record<string, unknown>> }).operatorActions
+    expect(actions[0]).toMatchObject({ action: 'mark_failed', byUid: OPERATOR_UID, byName: OPERATOR_EMAIL })
+
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    expect(companyUpdate![1]).toEqual({ 'deletion.state': 'failed' })
+
+    const mailSet = tx.set.mock.calls.find(([ref]) => (ref as DocRefStub).path.startsWith('mail/'))
+    expect(mailSet![1]).toMatchObject({ to: 'admin@rigg.se', template: 'companyDeletionFailed' })
+  })
+
+  it('does NOT touch attempts — this is not a failed purge attempt', async () => {
+    const { tx } = wire({ ...EXECUTING_LEDGER, attempts: 2 })
+    await markStuckCompanyDeletionFailed('req-1', '')
+    const ledgerUpdates = tx.update.mock.calls.filter(([ref]) => (ref as DocRefStub).path === 'companyDeletions/req-1')
+    for (const [, data] of ledgerUpdates) {
+      expect(data as Record<string, unknown>).not.toHaveProperty('attempts')
+    }
+  })
+
+  it('refuses a deletion that is not executing', async () => {
+    const { tx } = wire({ ...EXECUTING_LEDGER, state: 'requested' })
+    const result = await markStuckCompanyDeletionFailed('req-1', '')
+    expect(result.error).toContain('currently executing')
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses a deletion whose heartbeat is not actually stale yet', async () => {
+    const { tx } = wire({ ...EXECUTING_LEDGER, lastHeartbeatAt: FRESH_HEARTBEAT_ISO })
+    const result = await markStuckCompanyDeletionFailed('req-1', '')
+    expect(result.error).toContain('minute')
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses a deletion that has never heartbeated at all', async () => {
+    const { tx } = wire({ ...EXECUTING_LEDGER, lastHeartbeatAt: undefined })
+    const result = await markStuckCompanyDeletionFailed('req-1', '')
+    expect(result.error).toContain('no heartbeat')
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses a requestId that does not exist', async () => {
+    wire(null)
+    const result = await markStuckCompanyDeletionFailed('req-1', '')
+    expect(result.error).toContain('could not be found')
+  })
+})
+
+// ── Review fix: id validation + note length cap ─────────────────────────────
+//
+// Every action below builds a Firestore document path directly from a
+// client-supplied `companyId`/`requestId` argument (a server action is its
+// own public endpoint — see this file's own "Security, shared by all three"
+// docblock, and `proxy.ts` never validates these). A value containing a `/`
+// would otherwise let the path resolve somewhere outside the single
+// company/ledger document this action is supposed to be confined to. These
+// tests assert the REJECTION happens before any transaction is even
+// attempted (no wasted read, no information about why it failed beyond the
+// ordinary "not found" a caller already gets for a genuinely missing id) —
+// not just that SOME error comes back.
+describe('operator action input validation (review fix)', () => {
+  const MALFORMED_IDS = [
+    'a/b', // path traversal into an unrelated collection
+    '../mail/x',
+    '', // empty
+    'x'.repeat(129), // over the 128-char cap
+  ]
+
+  describe('companyId', () => {
+    for (const badId of MALFORMED_IDS) {
+      it(`cancelCompanyDeletionAsOperator refuses companyId ${JSON.stringify(badId)} without touching Firestore`, async () => {
+        const result = await cancelCompanyDeletionAsOperator(badId, '')
+        expect(result.error).toContain('no longer exists')
+        expect(adminDb.runTransaction).not.toHaveBeenCalled()
+      })
+
+      it(`requestCompanyDeletionAsOperator refuses companyId ${JSON.stringify(badId)} without touching Firestore`, async () => {
+        const result = await requestCompanyDeletionAsOperator(badId, COMPANY_NAME, '')
+        expect(result.error).toContain('no longer exists')
+        expect(adminDb.runTransaction).not.toHaveBeenCalled()
+      })
+    }
+
+    it('accepts an ordinary Firestore auto-id shaped companyId (does not false-positive)', async () => {
+      const docs: DocMap = {
+        [`companies/valid-Company_id-123`]: {
+          name: COMPANY_NAME,
+          deletion: {
+            state: 'requested',
+            requestId: 'req-1',
+            scheduledFor: { toDate: () => new Date(NOW_MS + 1000) },
+          },
+        },
+        'companyDeletions/req-1': {
+          requestId: 'req-1',
+          companyId: 'valid-Company_id-123',
+          companyName: COMPANY_NAME,
+          state: 'requested',
+          scheduledFor: { toDate: () => new Date(NOW_MS + 1000) },
+        },
+      }
+      wireTx(docs)
+      const result = await cancelCompanyDeletionAsOperator('valid-Company_id-123', '')
+      expect(result.error).toBeUndefined()
+      expect(adminDb.runTransaction).toHaveBeenCalled()
+    })
+  })
+
+  describe('requestId', () => {
+    for (const badId of MALFORMED_IDS) {
+      it(`requeueFailedCompanyDeletion refuses requestId ${JSON.stringify(badId)} without touching Firestore`, async () => {
+        const result = await requeueFailedCompanyDeletion(badId, '')
+        expect(result.error).toContain('could not be found')
+        expect(adminDb.runTransaction).not.toHaveBeenCalled()
+      })
+
+      it(`markStuckCompanyDeletionFailed refuses requestId ${JSON.stringify(badId)} without touching Firestore`, async () => {
+        const result = await markStuckCompanyDeletionFailed(badId, '')
+        expect(result.error).toContain('could not be found')
+        expect(adminDb.runTransaction).not.toHaveBeenCalled()
+      })
+    }
+  })
+
+  describe('note length cap', () => {
+    const PENDING = {
+      state: 'requested',
+      requestId: 'req-1',
+      mode: 'window',
+      scheduledFor: { toDate: () => new Date(NOW_MS + 1000) },
+    }
+    const LEDGER = {
+      requestId: 'req-1',
+      companyId: COMPANY_ID,
+      companyName: COMPANY_NAME,
+      state: 'requested',
+      scheduledFor: { toDate: () => new Date(NOW_MS + 1000) },
+    }
+
+    it('caps an operator note at 500 characters rather than storing it in full', async () => {
+      const docs: DocMap = {
+        [`companies/${COMPANY_ID}`]: { name: COMPANY_NAME, deletion: PENDING },
+        'companyDeletions/req-1': LEDGER,
+      }
+      const { tx } = wireTx(docs)
+      const hugeNote = 'x'.repeat(5000)
+
+      await cancelCompanyDeletionAsOperator(COMPANY_ID, hugeNote)
+
+      const update = ledgerUpdate(tx, 'companyDeletions/req-1')
+      const actions = (update![1] as { operatorActions: Array<{ note?: string }> }).operatorActions
+      expect(actions[0].note).toHaveLength(500)
+      expect(actions[0].note).toBe('x'.repeat(500))
+    })
+
+    it('a note under the cap is stored in full, untruncated', async () => {
+      const docs: DocMap = {
+        [`companies/${COMPANY_ID}`]: { name: COMPANY_NAME, deletion: PENDING },
+        'companyDeletions/req-1': LEDGER,
+      }
+      const { tx } = wireTx(docs)
+      const shortNote = 'ticket #123'
+
+      await cancelCompanyDeletionAsOperator(COMPANY_ID, shortNote)
+
+      const update = ledgerUpdate(tx, 'companyDeletions/req-1')
+      const actions = (update![1] as { operatorActions: Array<{ note?: string }> }).operatorActions
+      expect(actions[0].note).toBe(shortNote)
+    })
   })
 })

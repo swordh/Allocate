@@ -171,12 +171,21 @@ export interface TransactionStub {
 /**
  * A `Transaction` stub for code under `adminDb.runTransaction(async (tx) => ...)`.
  *
- * `tx.get(ref)` handles two distinct kinds of `ref`, both of which
- * `lib/companyStats.ts`'s `readMemberCounts` passes it in the same call:
+ * `tx.get(ref)` handles three distinct kinds of `ref`:
  *
- *   - A plain doc ref (has a `.path`) — resolved against the SAME `docs` map
- *     `wireDb` uses, so a test can wire one `DocMap` and have it answer both
- *     transactional and non-transactional reads.
+ *   - A plain doc ref (has both `.path` AND `.id`) — resolved against the
+ *     SAME `docs` map `wireDb` uses, so a test can wire one `DocMap` and have
+ *     it answer both transactional and non-transactional reads. Used by
+ *     `lib/companyStats.ts`'s `readMemberCounts`, among others.
+ *   - A filtered `Query` chain from `makeQueryChain` (HAS a `.path` — it's a
+ *     collection path — but no `.id`, unlike a real doc ref) — e.g.
+ *     `tx.get(db.collection('companies/{cid}/members').where('role','==','admin'))`
+ *     in `functions/src/company/purge.ts`'s catch block and this file's own
+ *     `markStuckCompanyDeletionFailed` (actions/operatorCompanyDeletion.ts).
+ *     The `.id` check is what disambiguates this from the doc-ref case above
+ *     despite both having a `.path` string — routed into the `.get()` branch
+ *     below, which resolves it through whatever `query` resolver `wireDb`
+ *     was given, same as a non-transactional `.get()` would.
  *   - An `AggregateQuery`-shaped stub (no `.path`, but has its own `.get()`) —
  *     exactly what `makeQueryChain`'s `.count()` already returns for
  *     `adminDb.collection(path).count()` / `.where(...).count()`. Real
@@ -197,8 +206,8 @@ export interface TransactionStub {
  */
 export function makeTransaction(docs: DocMap = {}): TransactionStub {
   return {
-    get: vi.fn(async (ref: { path?: string; get?: () => unknown }) => {
-      if (ref && typeof ref.path === 'string') {
+    get: vi.fn(async (ref: { id?: string; path?: string; get?: () => unknown }) => {
+      if (ref && typeof ref.path === 'string' && typeof ref.id === 'string') {
         return makeDocSnap(ref.path, docs)
       }
       if (ref && typeof ref.get === 'function') {

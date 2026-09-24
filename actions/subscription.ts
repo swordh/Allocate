@@ -69,8 +69,21 @@ const PRICE_ENV_BY_PLAN: Record<Plan, { month?: string; year?: string }> = {
  *    it on the table rather than rediscovering it from a support ticket.
  */
 function billingPortalDeletionGuard(companyData: FirebaseFirestore.DocumentData | undefined): string | null {
-  if (!companyData?.deletion) return null
-  return 'Billing cannot be changed while this company is scheduled for deletion. Stop the deletion first, and billing resumes on the same plan.'
+  const deletion = companyData?.deletion as { state?: string } | undefined
+  if (!deletion) return null
+  // 'requested' is the only state a "stop the deletion first" message is
+  // TRUE for — only then does an admin have anything left to stop, and
+  // stopping it is what reopens the portal (see this function's own
+  // docblock, "presence of the field is the whole check"). 'executing' and
+  // 'failed' (issue #331/#335: the mirror can now carry 'failed', not just
+  // 'requested'/'executing') both describe a purge that has already started
+  // or already stalled — nothing in the product can stop it from here any
+  // more, so telling the reader to "stop the deletion first" would send her
+  // looking for a control that doesn't exist.
+  if (deletion.state === 'requested') {
+    return 'Billing cannot be changed while this company is scheduled for deletion. Stop the deletion first, and billing resumes on the same plan.'
+  }
+  return "Billing can't be changed while this company is being deleted. Contact support if you need a receipt."
 }
 
 export async function createCheckoutSession(

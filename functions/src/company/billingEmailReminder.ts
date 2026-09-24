@@ -75,23 +75,34 @@ async function processCompany(
   };
 
   // A company actually on its way out — `state: 'requested'` (window or
-  // immediate, still counting down) or `'executing'` (the purge has claimed
-  // it and is working through it) — is not worth chasing: the purge's own
-  // Stripe phase (purge.ts's runStripePhase) handles the Stripe side, and
-  // there will be no admins left to mail shortly regardless.
+  // immediate, still counting down), `'executing'` (the purge has claimed it
+  // and is working through it), or `'failed'` (issue #331/#335: the purge
+  // exhausted its retry budget, or made no provable progress across
+  // repeated stale-lease resumes, and is sitting there needing operator
+  // attention) — is not worth chasing.
   //
-  // `'failed'` is deliberately NOT included here. It means the purge
-  // exhausted its retry budget and is sitting there needing operator
-  // attention (see `CompanyDeletionState` in types/company.ts) — the company
-  // document, its subscription and its admins are all still very much
-  // present, so there is no reason to stop chasing a real billing-email gap
-  // just because an unrelated deletion attempt stalled. (A cancelled
-  // deletion doesn't need handling here at all: per that same type's doc
-  // comment, cancelling removes the whole `deletion` field rather than
-  // writing a 'cancelled' state, so it already falls through to the ordinary
-  // subscription-status check below.)
+  // `'failed'` USED TO be deliberately excluded here, on the reasoning that
+  // the company, its subscription and its admins were all still present, so
+  // an unrelated stalled deletion was no reason to stop chasing a real
+  // billing-email gap. That reasoning no longer holds now that a failed
+  // purge's Stripe phase (purge.ts's `runStripePhase`) has already run
+  // BEFORE the purge can reach `failed` at all — Stripe is always the FIRST
+  // phase, so by the time a row is `failed` the subscription has already
+  // been cancelled and the billing portal is locked (see
+  // `billingPortalDeletionGuard` in actions/subscription.ts) regardless of
+  // how the rest of the purge went. Chasing a billing email for a
+  // subscription that's already gone would be reminding an admin to fix
+  // something there is nothing left to fix.
+  //
+  // A cancelled deletion doesn't need handling here at all: per
+  // `CompanyDeletionState`'s doc comment in types/company.ts, cancelling
+  // removes the whole `deletion` field rather than writing a 'cancelled'
+  // state, so it already falls through to the ordinary subscription-status
+  // check below.
   const deletionState = (data['deletion'] as { state?: string } | undefined)?.state;
-  if (deletionState === 'requested' || deletionState === 'executing') return clearBilling();
+  if (deletionState === 'requested' || deletionState === 'executing' || deletionState === 'failed') {
+    return clearBilling();
+  }
 
   const subStatus = data['subscription']?.['status'] as string | undefined;
   if (!subStatus || !ACTIVE_SUBSCRIPTION_STATUSES.has(subStatus)) return clearBilling();

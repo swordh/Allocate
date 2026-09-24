@@ -80,54 +80,34 @@ export function getCompanyDeletionBannerDisplay(
       // The sweep has claimed the purge — `canCancelCompanyDeletionInProduct`
       // is false here for every role, so no cancel path is offered to
       // anyone, admin included. Deliberately no date: the deletion is
-      // happening now, not "scheduled" any more.
-      //
-      // Deliberately no claim about WHEN access ends, either. `executing` is
-      // also the state a member sees if the purge has exhausted its retry
-      // budget on the ledger (`companyDeletions/{requestId}.state ===
-      // 'failed'`) without that ever reaching the company document's own
-      // mirror — see the `'failed'` case below for why. In that situation
-      // nothing is progressing and access will NOT end "shortly"; it won't
-      // end at all until an operator intervenes. The only thing this state
-      // can honestly promise, in both the normal and the stuck case, is that
-      // the deletion has started and cannot be stopped from here — so that
-      // is all this message says.
+      // happening now, not "scheduled" any more, and deliberately no claim
+      // about WHEN access ends either — the only thing this state can
+      // honestly promise is that the deletion has started and cannot be
+      // stopped from here, so that is all this message says.
       return {
         tone: 'danger',
         message: "This company's deletion has started and can no longer be stopped from here.",
       }
 
     case 'failed':
-      // NOTE ON REACHABILITY (current state of the code, not a permanent
-      // warning — safe to delete this note without changing anything else
-      // once it stops being true): `CompanyDeletionState` declares `'failed'`
-      // and the `companyDeletions/{requestId}` ledger does use it —
-      // `runCompanyPurge` sets it there once the retry budget is exhausted
-      // (functions/src/company/purge.ts:552). But nothing writes `'failed'`
-      // onto the COMPANY document's `deletion` mirror that this banner
-      // actually reads: `claimRequestedLease`/`claimStaleLease`
-      // (functions/src/company/lease.ts) only ever flip the mirror
-      // `requested` -> `executing`, and the purge's failure path updates the
-      // ledger alone. So today, this branch cannot be reached from
-      // `app/(app)/layout.tsx` — a stuck purge is seen by this banner as
-      // `executing` forever (see that case's comment). The branch is kept
-      // rather than deleted because it becomes reachable, correctly, the day
-      // the mirror gets fixed to carry `'failed'` too — removing it now
-      // would just mean rebuilding the same thing then.
-      //
-      // A failed purge has exhausted its retry budget and is terminal until
-      // an operator intervenes (see functions/src/company/purge.ts) — it will
-      // NOT resume on its own. The scheduled date is no longer a true
-      // statement about what will happen, so it is deliberately omitted here
-      // (see the design brief: "säg inte 'raderas den 22:a' om raderingen har
-      // misslyckats"). Nothing in the product can fix this, for any role, so
-      // the message points at support rather than at a control that does
-      // not exist.
+      // Issue #331 fixed `applyFailedTransition` to mirror `'failed'` onto
+      // `companies/{cid}.deletion.state`, not just the `companyDeletions`
+      // ledger — so this branch is now reachable from `app/(app)/layout.tsx`.
+      // A failed purge has exhausted its retry budget (or been marked failed
+      // by an operator — issue #335) and is terminal until an operator
+      // intervenes; it will NOT resume on its own. The scheduled date is no
+      // longer a true statement about what will happen, so it is
+      // deliberately omitted here (see the design brief: "säg inte 'raderas
+      // den 22:a' om raderingen har misslyckats"). Nothing in the product can
+      // fix this, for any role — support is already aware (the
+      // `companyDeletionFailed` mail went to admins the moment this
+      // happened) and will follow up, so the message says that rather than
+      // asking the reader to act.
       return {
         tone: 'danger',
         message: isAdmin
-          ? "This company's deletion ran into a problem and is stuck. Contact support to resolve it."
-          : "This company's deletion ran into a problem and is stuck. An administrator will need to contact support.",
+          ? "This company's deletion ran into a problem and hasn't finished. Our support team can see this and will follow up."
+          : "This company's deletion ran into a problem and hasn't finished. Our support team is already aware.",
       }
 
     default:
