@@ -41,8 +41,16 @@ export interface CompanyDeletionOutcome {
    *  of them can be the caller anyway. */
   otherAdminCount: number
   outcome: DeletionOutcome
-  /** Mirrors `companies/{cid}.deletion` when present — issue #383's refusal guard reads this. */
-  pendingDeletion?: { state: CompanyDeletionState | undefined; scheduledFor: string }
+  /**
+   * Mirrors `companies/{cid}.deletion` when present — issue #383's refusal
+   * guard reads this. `timezone` (issue #361) is the company's own
+   * `preferences.timezone`, 'UTC' fallback — read alongside `state`/
+   * `scheduledFor` here so `buildPendingDeletionMessage` (actions/account.ts)
+   * can quote the scheduled date in the same zone every other deletion
+   * surface for this company uses, rather than the account-deleter's own
+   * browser zone.
+   */
+  pendingDeletion?: { state: CompanyDeletionState | undefined; scheduledFor: string; timezone: string }
 }
 
 /**
@@ -221,8 +229,13 @@ export async function getDeletionOutcomes(uid: string): Promise<CompanyDeletionO
       // cheap read off data already in hand — only `deleteAccount`'s `close`
       // branch ever acts on it.
       const rawDeletion = companySnap.data()?.deletion as { state?: CompanyDeletionState; scheduledFor?: unknown } | undefined
+      const rawPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
       const pendingDeletion = rawDeletion
-        ? { state: rawDeletion.state, scheduledFor: toIso(rawDeletion.scheduledFor) }
+        ? {
+            state: rawDeletion.state,
+            scheduledFor: toIso(rawDeletion.scheduledFor),
+            timezone: typeof rawPreferences?.timezone === 'string' ? rawPreferences.timezone : 'UTC',
+          }
         : undefined
 
       try {

@@ -2304,7 +2304,7 @@ function pendingDeletionMessage(
   const name = companyName || 'Your company'
   switch (state) {
     case 'requested':
-      return `${name} is already scheduled for deletion on ${formatDateFull(scheduledForIso)}. Cancel it in company settings, or wait until it completes, then delete your account.`
+      return `${name} is already scheduled for deletion on ${formatDateFull(scheduledForIso, 'UTC')}. Cancel it in company settings, or wait until it completes, then delete your account.`
     case 'executing':
       return `${name} is being deleted right now. Try again in a few minutes.`
     case 'failed':
@@ -2351,7 +2351,7 @@ describe('deleteAccount — issue #383 refuses when a close company already has 
 
       expect(result.error).toBe(pendingDeletionMessage('company-A', state, SCHEDULED_FOR))
       expect(result.error).toContain('company-A')
-      if (state === 'requested') expect(result.error).toContain(formatDateFull(SCHEDULED_FOR))
+      if (state === 'requested') expect(result.error).toContain(formatDateFull(SCHEDULED_FOR, 'UTC'))
 
       // The pre-flight refuses before the commit loop even starts.
       expect(adminDb.runTransaction).not.toHaveBeenCalled()

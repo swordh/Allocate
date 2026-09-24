@@ -3,7 +3,7 @@ import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionPhase } from '../types';
 import { cleanupOneMember } from './memberCleanup';
 import { getStripeClient } from './stripeClient';
-import { formatDateFull } from './format';
+import { formatDateFull, formatRequesterDisplay } from './format';
 import { appUrl } from '../appUrl';
 import { applyFailedTransition } from './failDeletion';
 
@@ -457,8 +457,17 @@ async function runFinalizePhase(
   const ledgerRef = db.collection('companyDeletions').doc(requestId);
   const contacts = ledger.formerMemberContacts ?? [];
   let mailedUids = new Set(ledger.finalizeMailQueuedUids ?? []);
-  const deletedAtFormatted = formatDateFull(Timestamp.now());
-  const requestedAtFormatted = formatDateFull(ledger.requestedAt);
+  // Snapshot taken at request time (issue #361) — see the doc comment on
+  // `CompanyDeletionDocument.timezone` in functions/src/types.ts. This is
+  // the ONE phase that must not re-read the company document for it: by the
+  // time finalize runs, the company doc a few lines below is about to be
+  // deleted, and a resumed finalize can run again after that delete already
+  // committed — there is nothing left to read a live preference from.
+  const timezone = ledger.timezone ?? 'UTC';
+  const deletedAtFormatted = formatDateFull(Timestamp.now(), timezone);
+  const requestedAtFormatted = formatDateFull(ledger.requestedAt, timezone);
+  // Issue #334 — same display rule as every other deletion-lifecycle mail.
+  const requestedByDisplay = formatRequesterDisplay(ledger.requestSource, ledger.requestedByName);
 
   const pending = contacts.filter((c) => c.email && !mailedUids.has(c.uid));
 
@@ -512,15 +521,7 @@ async function runFinalizePhase(
       companyId,
       data: {
         companyName: ledger.companyName,
-        // `requestedByName` is `string | null` — null once the 24-month
-        // retention job has redacted the row (purgeLogs.ts). Unreachable
-        // here in practice (redaction happens two years after the request,
-        // on a row that reached a terminal state within days), but the
-        // failure mode if it ever were reached is an email that literally
-        // says "null asked for ... to be deleted", so it takes a stance
-        // rather than a cast. Same fallback wording as
-        // lib/subscription-state.ts and CancelDeletionView.
-        requestedByName: ledger.requestedByName ?? 'An administrator',
+        requestedByName: requestedByDisplay,
         requestedAtFormatted,
         deletedAtFormatted,
         mode: ledger.mode,
@@ -532,8 +533,10 @@ async function runFinalizePhase(
         // Omitted entirely rather than `undefined` — Firestore's Admin SDK
         // rejects `undefined` field values by default (no
         // ignoreUndefinedProperties configured anywhere in this codebase).
+        // Formatted in the SAME company-zone snapshot as every other date on
+        // this mail (issue #361) — never the runtime's own zone.
         ...(contact.pendingDeletionScheduledFor
-          ? { pendingDeletionScheduledForFormatted: formatDateFull(contact.pendingDeletionScheduledFor) }
+          ? { pendingDeletionScheduledForFormatted: formatDateFull(contact.pendingDeletionScheduledFor, timezone) }
           : {}),
         ctaUrl,
       },

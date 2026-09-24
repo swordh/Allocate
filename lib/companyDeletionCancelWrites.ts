@@ -5,12 +5,26 @@ import { adminDb } from '@/lib/firebase-admin'
 import { recordStripeOutcome, resumeSubscriptionAfterCancel } from '@/lib/companyDeletionStripe'
 import type { CompanyDeletionCancelSource, CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/types'
 
-/** e.g. "12 September 2026" — matches functions/src/company/format.ts's `formatDateFull`,
- *  duplicated because functions/ compiles as its own project with no alias back here. */
-export function formatDateFull(iso: string): string {
+/**
+ * e.g. "12 September 2026" — matches functions/src/company/format.ts's
+ * `formatDateFull`, duplicated because functions/ compiles as its own
+ * project with no alias back here.
+ *
+ * `timeZone` is REQUIRED, deliberately — issue #361. This used to render in
+ * whichever zone the App Hosting server process happens to run in, silently
+ * — every caller must now pass the company's own zone explicitly
+ * (`ledger.timezone`, snapshotted at request time — see types/company.ts).
+ * Same UTC fallback as `formatDateFullInZone` (lib/dates.ts) for an
+ * invalid/unknown zone or an unparseable `iso`.
+ */
+export function formatDateFull(iso: string, timeZone: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'long', year: 'numeric' }).format(d)
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }).format(d)
+  }
 }
 
 /** Firestore `Timestamp` (or an already-ISO string, or neither) -> ISO string. */
@@ -97,6 +111,18 @@ export function applyCancelWrites(
  * thing worse than a missing confirmation email is an admin who believes
  * her cancellation did not take and goes looking for another way to stop a
  * deletion that is already stopped.
+ *
+ * `cancelledByName` is CUSTOMER-FACING — it goes straight into the
+ * `companyDeletionCancelled` mail's "STOPPED BY" row, which every admin on
+ * the company reads (issue #334 follow-up review fix). It must already be a
+ * DISPLAY string, never a raw identity a customer shouldn't see: the
+ * operator cancel path (`cancelCompanyDeletionAsOperator`,
+ * actions/operatorCompanyDeletion.ts) passes
+ * `ALLOCATE_SUPPORT_DISPLAY` (lib/companyDeletionUi.ts) here, NOT
+ * `session.email` — the operator's own address stays on the LEDGER's
+ * `canceledByName`/`canceledByEmail` (written separately, by
+ * `applyCancelWrites` above, for the audit trail and the operator-only
+ * `DeletionHistoryList.tsx`) but must never reach this parameter.
  */
 export async function finishCancellation(
   companyId: string,
@@ -122,8 +148,13 @@ export async function finishCancellation(
       .get()
 
     const openUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at'}/bookings`
-    const scheduledForFormatted = formatDateFull(toIso(ledger.scheduledFor))
-    const cancelledAtFormatted = formatDateFull(cancelledAtIso)
+    // Snapshot taken at request time (issue #361) — see the doc comment on
+    // `CompanyDeletionRecord.timezone` in types/company.ts. Absent on a
+    // legacy row; UTC was its accidental behavior before this fix, so that
+    // stays its fallback now too.
+    const timezone = ledger.timezone ?? 'UTC'
+    const scheduledForFormatted = formatDateFull(toIso(ledger.scheduledFor), timezone)
+    const cancelledAtFormatted = formatDateFull(cancelledAtIso, timezone)
 
     const batch = adminDb.batch()
     let queued = 0

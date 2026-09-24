@@ -3,6 +3,7 @@ import { renderLayout, escapeHtml } from './_shared';
 
 export interface CompanyDeletionReminderData {
   companyName: string;
+  /** Already resolved to a display string — see the same field's docblock on `CompanyDeletionRequestedData` (issue #334). */
   requestedByName: string;
   requestedAtFormatted: string;
   scheduledForFormatted: string;

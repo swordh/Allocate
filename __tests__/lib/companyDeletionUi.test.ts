@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { confirmationMatchesCompanyName, canCancelCompanyDeletionInProduct } from '@/lib/companyDeletionUi'
+import { confirmationMatchesCompanyName, canCancelCompanyDeletionInProduct, formatDeletionRequester } from '@/lib/companyDeletionUi'
 import type { CompanyDeletion } from '@/types'
 
 describe('confirmationMatchesCompanyName', () => {
@@ -76,5 +76,36 @@ describe('canCancelCompanyDeletionInProduct', () => {
   it('is NOT cancelable when there is no deletion at all', () => {
     expect(canCancelCompanyDeletionInProduct(null)).toBe(false)
     expect(canCancelCompanyDeletionInProduct(undefined)).toBe(false)
+  })
+})
+
+// ── formatDeletionRequester — issue #334 ────────────────────────────────────
+//
+// Never let an operator-initiated request show the operator's own email to
+// a customer. Mirrored, on purpose, by `formatRequesterDisplay` in
+// functions/src/company/format.ts — same cases, tested independently there.
+describe('formatDeletionRequester', () => {
+  it('renders the fixed support string for an operator-sourced request, regardless of requestedByName', () => {
+    expect(formatDeletionRequester('operator', 'jocke@allocate.at')).toBe('Allocate support (support@allocate.at)')
+  })
+
+  it('never leaks the operator email — the support string does not contain it', () => {
+    const result = formatDeletionRequester('operator', 'ops-internal@allocate.at')
+    expect(result).not.toContain('ops-internal@allocate.at')
+  })
+
+  it('renders requestedByName for an admin-sourced request', () => {
+    expect(formatDeletionRequester('admin', 'Anna Admin')).toBe('Anna Admin')
+  })
+
+  it('renders requestedByName for a legacy row with no requestSource at all', () => {
+    expect(formatDeletionRequester(undefined, 'Anna Admin')).toBe('Anna Admin')
+    expect(formatDeletionRequester(null, 'Anna Admin')).toBe('Anna Admin')
+  })
+
+  it('falls back to "An administrator" for a null/redacted requestedByName on a non-operator row', () => {
+    expect(formatDeletionRequester('admin', null)).toBe('An administrator')
+    expect(formatDeletionRequester(undefined, null)).toBe('An administrator')
+    expect(formatDeletionRequester(undefined, '')).toBe('An administrator')
   })
 })

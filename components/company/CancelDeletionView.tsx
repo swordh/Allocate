@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import { cancelCompanyDeletionByToken } from '@/actions/companyDeletion'
+import { formatDateFullInZone } from '@/lib/dates'
 import type { CancelTokenState } from '@/lib/queries/companyDeletionCancel'
 import styles from './CancelDeletionView.module.css'
 
@@ -14,6 +15,17 @@ interface CancelDeletionViewProps {
   /** ISO string, or '' when unknown. Only meaningful while a deletion is still pending. */
   scheduledFor: string
   requestedByName: string
+  /**
+   * The company's own `preferences.timezone` (issue #361) — the SAME zone
+   * the mail that linked here already formatted `scheduledFor` in. This
+   * page used to run `toLocaleDateString` with no zone, which renders in
+   * the VISITOR's own browser zone, not the company's — the exact bug that
+   * could show "27 September" in the mail and "28 September" here for the
+   * same instant near a day boundary. Always passed by the server page;
+   * `lookupCancelToken` falls back to 'UTC' itself when the company has no
+   * preference, matching `formatDateFullInZone`'s own fallback.
+   */
+  timezone: string
 }
 
 interface Copy {
@@ -23,11 +35,10 @@ interface Copy {
   tone: 'accent' | 'danger' | 'neutral'
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, timezone: string): string {
   if (!iso) return 'the scheduled date'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return 'the scheduled date'
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const formatted = formatDateFullInZone(iso, timezone)
+  return formatted === '—' ? 'the scheduled date' : formatted
 }
 
 /**
@@ -41,14 +52,25 @@ function formatDate(iso: string): string {
  * design brief calls out for the two error states it names ("Kunde inte
  * avgöras" vs "Blockerad").
  */
-function copyFor(state: CancelTokenState, companyName: string, scheduledFor: string, requestedByName: string): Copy {
+function copyFor(
+  state: CancelTokenState,
+  companyName: string,
+  scheduledFor: string,
+  requestedByName: string,
+  timezone: string,
+): Copy {
   const named = companyName || 'this company'
   switch (state) {
     case 'valid':
       return {
         eyebrow: 'DELETION SCHEDULED',
         heading: `Stop the deletion of ${named}?`,
-        body: `${requestedByName || 'An administrator'} asked for ${named} to be deleted on ${formatDate(scheduledFor)}. Stopping it keeps the company, its bookings and its equipment exactly as they are, and resumes billing on the same plan. Nobody loses anything.`,
+        // `requestedByName` arrives ALREADY resolved to a display string —
+        // "Allocate support (support@allocate.at)" for an operator-
+        // initiated request, never the operator's own email (issue #334) —
+        // so the `|| 'An administrator'` fallback here only ever covers a
+        // genuinely empty value, not an operator address.
+        body: `${requestedByName || 'An administrator'} asked for ${named} to be deleted on ${formatDate(scheduledFor, timezone)}. Stopping it keeps the company, its bookings and its equipment exactly as they are, and resumes billing on the same plan. Nobody loses anything.`,
         tone: 'danger',
       }
     case 'already_canceled':
@@ -112,12 +134,13 @@ export default function CancelDeletionView({
   companyName,
   scheduledFor,
   requestedByName,
+  timezone,
 }: CancelDeletionViewProps) {
   const [state, setState] = useState<CancelTokenState>(initialState)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const copy = copyFor(state, companyName, scheduledFor, requestedByName)
+  const copy = copyFor(state, companyName, scheduledFor, requestedByName, timezone)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

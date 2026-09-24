@@ -7,7 +7,7 @@ import { getOperatorSession, rethrowRedirect, type OperatorSession } from '@/lib
 import { applyCancelWrites, finishCancellation } from '@/lib/companyDeletionCancelWrites'
 import { applyFailedTransitionNext } from '@/lib/companyDeletionFailWrites'
 import { pauseSubscriptionForDeletion, recordStripeOutcome } from '@/lib/companyDeletionStripe'
-import { confirmationMatchesCompanyName } from '@/lib/companyDeletionUi'
+import { confirmationMatchesCompanyName, ALLOCATE_SUPPORT_DISPLAY } from '@/lib/companyDeletionUi'
 import { STALE_LEASE_MS } from '@/lib/operatorDeletionView'
 import type { CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/types'
 
@@ -293,7 +293,18 @@ export async function cancelCompanyDeletionAsOperator(
   // to mail), but an operator can just as well cancel for a company that
   // STILL has administrators, and they deserve the same "it's stopped" mail
   // any other cancellation gives them.
-  await finishCancellation(companyId, done.requestId, done.ledger, session.email, now.toDate().toISOString())
+  //
+  // `ALLOCATE_SUPPORT_DISPLAY`, NOT `session.email` (issue #334 follow-up
+  // review fix): `cancelledByName` here goes straight into the
+  // `companyDeletionCancelled` mail's "STOPPED BY" row, which every admin on
+  // the company reads — the operator's own email must never appear there,
+  // same product decision as everywhere else a requester/canceller is shown
+  // to a customer. The LEDGER's own `canceledByName`/`canceledByEmail`
+  // (written a few lines up, inside `applyCancelWrites`, with
+  // `cancelSource: 'operator'`) are UNAFFECTED by this — those stay the
+  // operator's real identity, for the audit trail and for
+  // `DeletionHistoryList.tsx`'s operator-only view.
+  await finishCancellation(companyId, done.requestId, done.ledger, ALLOCATE_SUPPORT_DISPLAY, now.toDate().toISOString())
 
   revalidatePath(`/operator/customers/${companyId}`)
   revalidatePath('/operator/deletions')
@@ -376,6 +387,10 @@ export async function requestCompanyDeletionAsOperator(
 
       const companyData = companySnap.data() ?? {}
       const companyName = (companyData.name as string | undefined) ?? ''
+      // Snapshotted at request time (issue #361) — same convention as
+      // requestCompanyDeletion's own read in actions/companyDeletion.ts.
+      const companyPreferences = companyData.preferences as { timezone?: unknown } | undefined
+      const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
 
       if (!confirmationMatchesCompanyName(confirmationText, companyName)) {
         throw guardError('confirmation', `To delete this company, type its name exactly: ${companyName}`)
@@ -410,6 +425,7 @@ export async function requestCompanyDeletionAsOperator(
         companyName,
         mode: 'window',
         state: 'requested',
+        timezone,
         requestedAt: now,
         // The requester is the OPERATOR — they are the one who actually
         // called this action. This is not a fabrication of "the customer
@@ -421,6 +437,14 @@ export async function requestCompanyDeletionAsOperator(
         requestedByUid: session.uid,
         requestedByName: session.email,
         requestedByEmail: session.email,
+        // `requestSource: 'operator'` (issue #334) is what lets every
+        // CUSTOMER-facing surface — the mail, the settings banner, the
+        // subscription notice, the cancel page — render "Allocate support
+        // (support@allocate.at)" instead of `requestedByName` above (the
+        // operator's own email, kept as-is on the ledger for the honest
+        // audit trail). See `CompanyDeletionRequestSource` in
+        // types/company.ts.
+        requestSource: 'operator',
         scheduledFor,
         attempts: 0,
         purgeAfter,
@@ -433,9 +457,33 @@ export async function requestCompanyDeletionAsOperator(
           state: 'requested',
           requestId,
           requestedAt: now,
-          requestedByName: session.email,
+          // `ALLOCATE_SUPPORT_DISPLAY`, NOT `session.email` (issue #334
+          // follow-up review fix). `companies/{cid}.deletion` is the
+          // MEMBER-READABLE mirror — firestore.rules lets every member of
+          // the company read `companies/{cid}` directly over the client
+          // SDK (see the rule's own comment block), so anything written
+          // here is exposed to every member REGARDLESS of which UI
+          // component reads it or which display helper that component
+          // calls. Writing the operator's raw email here would leak it to
+          // the client no matter how carefully `CompanySettingsForm`/
+          // `lib/subscription-state.ts` format it on the way out — the
+          // ONLY safe fix is to never write it to a client-readable
+          // document in the first place. The LEDGER's `requestedByName`
+          // (set above, a few lines up) stays the operator's real email —
+          // `companyDeletions/{requestId}` has no client read rule at all
+          // (default deny; see firestore.rules), so it is safe there, and
+          // it is the copy the operator's own views read (see
+          // lib/operatorDeletionQueries.ts's "läs ledgern, inte spegeln").
+          requestedByName: ALLOCATE_SUPPORT_DISPLAY,
           scheduledFor,
           mode: 'window',
+          // `requestSource: 'operator'` kept on the mirror too, even though
+          // `requestedByName` above is now already the display string —
+          // symmetry with the ledger, and `formatDeletionRequester`
+          // (CompanySettingsForm, lib/subscription-state.ts) still branches
+          // on it, so it must stay true regardless of what `requestedByName`
+          // itself now says.
+          requestSource: 'operator',
         },
       })
 

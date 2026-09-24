@@ -13,6 +13,8 @@
 
 import type { CompanyDeletion, Subscription } from '@/types'
 import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
+import { formatDeletionRequester } from '@/lib/companyDeletionUi'
+import { formatDateFullInZone } from '@/lib/dates'
 
 /**
  * `DELETION_PENDING` (issue #252 step 5) is the one state in this union that
@@ -28,10 +30,18 @@ export type NoticeTone = 'info' | 'danger' | 'neutral'
 interface SubStateDef {
   label: string
   accent: StateAccent
-  cycle: (sub: Subscription | null, deletion?: CompanyDeletion | null) => string
+  /**
+   * `timezone` (issue #361) is ONLY meaningful to `DELETION_PENDING`'s own
+   * definition below, which is the one entry that formats
+   * `deletion.scheduledFor` — every other state's `cycle`/`notice` ignores
+   * the parameter, same as `deletion` itself. Threaded through as a plain
+   * positional argument rather than folded into `deletion` so a future
+   * caller can't accidentally read a timezone off an unrelated billing date.
+   */
+  cycle: (sub: Subscription | null, deletion?: CompanyDeletion | null, timezone?: string) => string
   /** null on ACTIVE — the only state that renders no notice banner. */
   notice:
-    | ((sub: Subscription | null, companyName: string, deletion?: CompanyDeletion | null) => string)
+    | ((sub: Subscription | null, companyName: string, deletion?: CompanyDeletion | null, timezone?: string) => string)
     | null
   cta: string
   tone: NoticeTone
@@ -48,11 +58,34 @@ export interface SubStateDisplay {
   tone: NoticeTone
 }
 
+/**
+ * Renders in the VIEWER's own browser zone — deliberately, and out of scope
+ * for issue #361. This formats Stripe's own billing-cycle dates
+ * (`trialEnd`, `currentPeriodEnd`), which are not civil dates a company's
+ * bookings are dated in the way a deletion's `scheduledFor` is; #361's fix
+ * only covers the COMPANY-zoned deletion date below
+ * (`formatDeletionDate`/`DELETION_PENDING`). Do not reuse this for
+ * `deletion.scheduledFor` — that is exactly the bug #361 fixed.
+ */
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/**
+ * `deletion.scheduledFor`, in the COMPANY's own zone (issue #361) — never
+ * the viewer's browser zone `formatDate` above uses for billing dates. Same
+ * shape as `formatDate` (a `'—'` sentinel for a missing/unparseable value),
+ * built over `formatDateFullInZone` (lib/dates.ts) so this state's date and
+ * every other deletion-lifecycle surface (the mails, the in-product banner,
+ * the cancel page) can never render a different calendar day for the same
+ * instant near a day boundary.
+ */
+function formatDeletionDate(iso: string | null | undefined, timezone: string): string {
+  if (!iso) return '—'
+  return formatDateFullInZone(iso, timezone)
 }
 
 function daysLeft(iso: string | null | undefined): number {
@@ -171,10 +204,23 @@ const SUB_STATES: Record<SubStateKey, SubStateDef> = {
   DELETION_PENDING: {
     label: 'DELETION REQUESTED',
     accent: 'danger',
-    cycle: (_sub, deletion) => `Company deleted ${formatDate(deletion?.scheduledFor)} · billing paused`,
-    notice: (_sub, companyName, deletion) =>
-      `${deletion?.requestedByName || 'An administrator'} asked for ${companyName} to be deleted on ${formatDate(
+    // `timezone` (issue #361) — the company's own zone, not the viewer's
+    // browser zone. Before this fix, `formatDate` ran `toLocaleDateString`
+    // with no zone in a 'use client' component (SubscriptionView.tsx),
+    // rendering wherever the admin's OWN browser sits — the same class of
+    // bug that made the requested-deletion mail and the cancel page disagree
+    // near a day boundary (see lib/dates.ts's `formatDateFullInZone`).
+    cycle: (_sub, deletion, timezone) =>
+      `Company deleted ${formatDeletionDate(deletion?.scheduledFor, timezone ?? 'UTC')} · billing paused`,
+    // Issue #334 — never render `deletion.requestedByName` directly: for an
+    // operator-initiated request that is the operator's own email, and
+    // this notice is shown to the company's own administrators.
+    // `formatDeletionRequester` maps it to "Allocate support
+    // (support@allocate.at)" instead.
+    notice: (_sub, companyName, deletion, timezone) =>
+      `${formatDeletionRequester(deletion?.requestSource, deletion?.requestedByName)} asked for ${companyName} to be deleted on ${formatDeletionDate(
         deletion?.scheduledFor,
+        timezone ?? 'UTC',
       )}. Everything keeps working until then, and any administrator can stop it. No charges are made while a deletion is scheduled, and time already paid for is not refunded.`,
     cta: 'STOP DELETION',
     tone: 'danger',
@@ -246,15 +292,29 @@ export function getSubStateDisplay(
    * every other state ignores it.
    */
   opts?: { hasPaymentMethod?: boolean },
+  /**
+   * The company's own `preferences.timezone` (issue #361) — see
+   * `CompanySettingsForm`'s own `initialTimezone` prop for the identical
+   * pattern this mirrors (`app/(app)/settings/company/page.tsx` reads
+   * `company.preferences?.timezone`; the subscription page does the same).
+   * Only consulted for `DELETION_PENDING`'s `scheduledFor` date; every other
+   * state's dates are Stripe's own billing-cycle dates and stay rendered in
+   * the viewer's browser zone (see `formatDate`'s own docblock). Optional,
+   * defaulting to `'UTC'`, so every EXISTING caller (this file's own tests
+   * included) that has not been updated to pass it keeps its old behavior —
+   * UTC was the accidental zone before this fix too.
+   */
+  timezone?: string,
 ): SubStateDisplay {
   const key: SubStateKey = deletion ? 'DELETION_PENDING' : toSubState(sub)
   const def = SUB_STATES[key]
 
   const trialCardOnFile = key === 'TRIAL' && opts?.hasPaymentMethod === true
+  const deletionTimezone = timezone ?? 'UTC'
 
   let label = def.label
-  let cycle = def.cycle(sub, deletion)
-  let notice = def.notice ? def.notice(sub, companyName, deletion) : null
+  let cycle = def.cycle(sub, deletion, deletionTimezone)
+  let notice = def.notice ? def.notice(sub, companyName, deletion, deletionTimezone) : null
 
   // Issue #331/#335: `DELETION_PENDING`'s table entry above is written for
   // the 'requested' case only — "any administrator can stop it", a scheduled

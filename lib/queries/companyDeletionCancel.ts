@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { adminDb } from '@/lib/firebase-admin'
+import { formatDeletionRequester } from '@/lib/companyDeletionUi'
 import type { CompanyDeletionCancelToken, CompanyDeletionRecord } from '@/types'
 
 /**
@@ -46,8 +47,25 @@ export interface CancelTokenLookup {
   companyName?: string
   /** ISO string; present for `valid` and `already_canceled`. */
   scheduledFor?: string
-  /** Who asked for the deletion; present for `valid`. */
+  /**
+   * Who asked for the deletion, ALREADY resolved to the display string this
+   * unauthenticated visitor should see — never the raw ledger value. An
+   * operator-initiated request renders "Allocate support
+   * (support@allocate.at)" here, not the operator's own email (issue #334
+   * — see `formatDeletionRequester` in lib/companyDeletionUi.ts). Present
+   * for `valid`.
+   */
   requestedByName?: string
+  /**
+   * The company's own `preferences.timezone` (issue #361), for rendering
+   * `scheduledFor` in the same zone the mail that linked here already used
+   * — never the visitor's browser zone. Present for `valid`. The only new
+   * thing this lookup hands an unauthenticated token holder beyond what it
+   * already exposed (the company's name and its scheduled deletion date);
+   * a timezone identifier carries no information about who requested the
+   * deletion or anything else sensitive.
+   */
+  timezone?: string
 }
 
 function toIso(value: unknown): string | undefined {
@@ -116,10 +134,23 @@ export async function lookupCancelToken(token: string): Promise<CancelTokenLooku
   const companySnap = await adminDb.doc(`companies/${ledger.companyId}`).get()
   if (!companySnap.exists) return { state: 'company_gone', companyName }
 
+  // Live company preference, same as the in-product banner
+  // (app/(app)/layout.tsx) and CompanySettingsForm read — the company
+  // document is right here, so there is no reason to fall back to the
+  // ledger's own request-time snapshot the way purge.ts's late phases must.
+  // 'UTC' fallback matches lib/queries/company.ts's own preferences.timezone
+  // mapping (issue #361).
+  const companyPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+  const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
+
   return {
     state: 'valid',
     companyName: (companySnap.data()?.name as string | undefined) ?? companyName,
     scheduledFor,
-    requestedByName: ledger.requestedByName ?? '',
+    // Issue #334 — never hand an unauthenticated link holder the raw
+    // `requestedByName`, which is the operator's own email when this was
+    // requested on the customer's behalf.
+    requestedByName: formatDeletionRequester(ledger.requestSource, ledger.requestedByName),
+    timezone,
   }
 }

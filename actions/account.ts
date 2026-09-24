@@ -230,7 +230,7 @@ function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
 /** `state` is untyped input off a Firestore doc, not a value this code minted — malformed data must fall through to the generic branch, not throw or return undefined. */
 function buildPendingDeletionMessage(
   companyName: string,
-  deletion: { state: CompanyDeletionState | string | undefined; scheduledFor: string },
+  deletion: { state: CompanyDeletionState | string | undefined; scheduledFor: string; timezone: string },
 ): string {
   const name = companyName || 'Your company'
   const genericMessage = `${name} already has a deletion in progress. Contact support via Help & feedback before deleting your account.`
@@ -239,7 +239,10 @@ function buildPendingDeletionMessage(
     case 'requested': {
       const scheduledDate = new Date(deletion.scheduledFor)
       if (!deletion.scheduledFor || Number.isNaN(scheduledDate.getTime())) return genericMessage
-      return `${name} is already scheduled for deletion on ${formatDateFull(deletion.scheduledFor)}. Cancel it in company settings, or wait until it completes, then delete your account.`
+      // Issue #361 — the company's own zone (lib/queries/deletionOutcomes.ts
+      // reads it alongside `state`/`scheduledFor`), not this account
+      // deleter's browser zone.
+      return `${name} is already scheduled for deletion on ${formatDateFull(deletion.scheduledFor, deletion.timezone)}. Cancel it in company settings, or wait until it completes, then delete your account.`
     }
     case 'executing':
       return `${name} is being deleted right now. Try again in a few minutes.`
@@ -748,11 +751,13 @@ async function runAccountDeletion(
             | { state?: CompanyDeletionState; scheduledFor?: unknown }
             | undefined
           if (existingDeletion) {
+            const existingPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
             throw guardError(
               'deletion-pending',
               buildPendingDeletionMessage(companyName, {
                 state: existingDeletion.state,
                 scheduledFor: toIso(existingDeletion.scheduledFor),
+                timezone: typeof existingPreferences?.timezone === 'string' ? existingPreferences.timezone : 'UTC',
               }),
             )
           }
@@ -760,6 +765,14 @@ async function runAccountDeletion(
           const memberData = memberSnap.data() ?? {}
           const requesterName = (memberData.name as string | undefined) || session.email || 'Account holder'
           const requesterEmail = (memberData.email as string | undefined) || session.email || ''
+          // Snapshotted at request time (issue #361) — same convention as
+          // requestCompanyDeletion's own read in actions/companyDeletion.ts.
+          // Matters here even though `mode: 'immediate'` never sends the
+          // requested/reminder mail: `companyDeleted` still reads this
+          // ledger's `timezone` from purge.ts's finalize phase, and by then
+          // the company document (and its `preferences`) is long gone.
+          const companyPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+          const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
 
           counts.applyHeal()
 
@@ -769,6 +782,7 @@ async function runAccountDeletion(
             companyName,
             mode: 'immediate',
             state: 'requested',
+            timezone,
             requestedAt: requestNow,
             requestedByUid: uid,
             requestedByName: requesterName,
