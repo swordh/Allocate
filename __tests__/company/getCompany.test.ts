@@ -139,3 +139,38 @@ describe('getCompany — pauseCollection / pauseResumesAt mapping', () => {
     expect(company?.subscription.pauseResumesAt).toBeNull()
   })
 })
+
+// ── stripeSubscriptionId mapping ─────────────────────────────────────────────
+//
+// Regression for fix/trial-notice-card-on-file: `stripeSubscriptionId` was
+// added to the `Subscription` type but never mapped here, so
+// `trialHasPaymentMethod` (lib/trialPaymentMethod.ts) always saw `undefined`
+// and short-circuited to `false` in production, no matter what Stripe had on
+// file — the exact "field exists only in the type" bug shape this file's own
+// docblock warns about.
+
+describe('getCompany — stripeSubscriptionId mapping', () => {
+  it('maps stripeSubscriptionId through from the Firestore mirror', async () => {
+    wireCompanyDoc('co-sub-1', {
+      name: 'Trialing AB',
+      stripeCustomerId: 'cus_6',
+      subscription: { status: 'trialing', plan: 'starter', stripeSubscriptionId: 'sub_abc123' },
+    })
+
+    const company = await getCompany('co-sub-1')
+
+    expect(company?.subscription.stripeSubscriptionId).toBe('sub_abc123')
+  })
+
+  it('is undefined when the subscription has no Stripe subscription id', async () => {
+    wireCompanyDoc('co-sub-2', {
+      name: 'No Sub AB',
+      stripeCustomerId: 'cus_7',
+      subscription: { status: 'active', plan: 'basic' },
+    })
+
+    const company = await getCompany('co-sub-2')
+
+    expect(company?.subscription.stripeSubscriptionId).toBeUndefined()
+  })
+})

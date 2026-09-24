@@ -9,8 +9,9 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
 
   const subscription = data.subscription ?? {}
   const mappedSubscription = {
-    status:             subscription.status             ?? 'trialing',
-    plan:               subscription.plan               ?? 'starter',
+    status:               subscription.status             ?? 'trialing',
+    plan:                 subscription.plan               ?? 'starter',
+    stripeSubscriptionId: subscription.stripeSubscriptionId ?? undefined,
     currentPeriodEnd:   subscription.currentPeriodEnd?.toDate?.()?.toISOString()
                           ?? subscription.currentPeriodEnd
                           ?? '',
