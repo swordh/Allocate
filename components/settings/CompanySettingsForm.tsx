@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateCompanySettings, addCategory, removeCategory } from '@/actions/company'
 import { requestCompanyDeletion, cancelCompanyDeletion } from '@/actions/companyDeletion'
-import { confirmationMatchesCompanyName, canCancelCompanyDeletionInProduct } from '@/lib/companyDeletionUi'
+import { confirmationMatchesCompanyName, canCancelCompanyDeletionInProduct, formatDeletionRequester } from '@/lib/companyDeletionUi'
+import { formatDateFullInZone } from '@/lib/dates'
 import { TIMEZONE_OPTIONS } from '@/constants/company'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -18,11 +19,18 @@ function pluralize(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? '' : 'S'}`
 }
 
-function formatDateFull(iso: string | undefined): string {
+/**
+ * Issue #361 — this used to be `new Date(iso).toLocaleDateString(...)` with
+ * no zone, which renders in the ADMIN's own browser zone rather than the
+ * company's, the same bug that made the mailed deletion date disagree with
+ * the stop-page date near a day boundary. Deletion dates on this page must
+ * read in the company's zone, same as `formatDateFullInZone` (lib/dates.ts,
+ * already used by the in-product banner) and the mails that quote the exact
+ * same `requestedAt`/`scheduledFor` instants.
+ */
+function formatDateFull(iso: string | undefined, timezone: string): string {
   if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  return formatDateFullInZone(iso, timezone)
 }
 
 interface CompanySettingsFormProps {
@@ -313,10 +321,11 @@ export default function CompanySettingsForm({
             {deletion ? (
               deletionCancelable ? (
                 <>
-                  {deletion.requestedByName || 'An administrator'} requested this on{' '}
-                  {formatDateFull(deletion.requestedAt)}. {initialName} works as usual until it is deleted
-                  on {formatDateFull(deletion.scheduledFor)} — every member is affected, and any
-                  administrator can cancel before then. Remaining paid time is not refunded.
+                  {formatDeletionRequester(deletion.requestSource, deletion.requestedByName)} requested this on{' '}
+                  {formatDateFull(deletion.requestedAt, initialTimezone ?? 'UTC')}. {initialName} works as usual
+                  until it is deleted on {formatDateFull(deletion.scheduledFor, initialTimezone ?? 'UTC')} — every
+                  member is affected, and any administrator can cancel before then. Remaining paid time is not
+                  refunded.
                 </>
               ) : (
                 <>

@@ -32,6 +32,13 @@ import type { CompanyDeletionFailureReason, CompanyDeletionRecord } from '@/type
  *      gated on `!ledger.failedNotifiedAt` so a retried transaction can
  *      never send it twice.
  *
+ *      NOTE (issue #334): this mail's data carries no requester identity —
+ *      no `requestedByName`, nothing derived from `ledger.requestSource` —
+ *      so `formatDeletionRequester` (lib/companyDeletionUi.ts) does not
+ *      apply here, unlike the requested/reminder/cancelled/deleted mails.
+ *      "The deletion ran into a problem" is true regardless of who
+ *      requested it.
+ *
  * Does NOT touch `attempts`/`lastError`/`operatorActions` — those are each
  * caller's own responsibility, exactly as on the functions side. The ONE
  * caller today is `markStuckCompanyDeletionFailed`, which appends its own
@@ -98,8 +105,11 @@ export function applyFailedTransitionNext(
     }
 
     if (recipients.length > 0) {
-      const requestedAtFormatted = formatDateFull(toIso(ledger.requestedAt))
-      const failedAtFormatted = formatDateFull(now.toDate().toISOString())
+      // Snapshot taken at request time (issue #361) — see the doc comment
+      // on `CompanyDeletionRecord.timezone` in types/company.ts.
+      const timezone = ledger.timezone ?? 'UTC'
+      const requestedAtFormatted = formatDateFull(toIso(ledger.requestedAt), timezone)
+      const failedAtFormatted = formatDateFull(now.toDate().toISOString(), timezone)
       const openUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at'}/`
       // Same computation as the functions-side original — see its comment.
       const billingStopped = (ledger.completedPhases ?? []).includes('stripe')

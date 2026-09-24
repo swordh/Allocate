@@ -80,6 +80,7 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
         mode:             deletionData.mode,
         remindedAt:       deletionData.remindedAt?.toDate?.()?.toISOString() ?? deletionData.remindedAt ?? undefined,
         claimedAt:        deletionData.claimedAt?.toDate?.()?.toISOString() ?? deletionData.claimedAt ?? undefined,
+        requestSource:    deletionData.requestSource ?? undefined,
       }
     : undefined
 

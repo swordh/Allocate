@@ -1,4 +1,4 @@
-import type { CompanyDeletion } from '@/types'
+import type { CompanyDeletion, CompanyDeletionRequestSource } from '@/types'
 
 /**
  * Whether a typed confirmation counts as "the admin confirmed deleting this
@@ -60,4 +60,52 @@ export function canCancelCompanyDeletionInProduct(
   deletion: Pick<CompanyDeletion, 'state'> | null | undefined,
 ): boolean {
   return deletion?.state === 'requested'
+}
+
+/**
+ * The one fixed string EVERY customer-facing surface shows in place of an
+ * operator's own identity (issue #334) — requester AND canceller alike, same
+ * wording everywhere per the product decision. Exported so a caller that
+ * only needs the constant (e.g. `cancelCompanyDeletionAsOperator`, which
+ * decides "was this an operator?" itself rather than through
+ * `formatDeletionRequester`'s `requestSource` mapping) reuses this instead of
+ * a second copy of the literal. Mirrored by `ALLOCATE_SUPPORT_DISPLAY` in
+ * functions/src/company/format.ts — same duplication reason as everything
+ * else shared between that file and this one.
+ */
+export const ALLOCATE_SUPPORT_DISPLAY = 'Allocate support (support@allocate.at)'
+
+/**
+ * Maps `(requestSource, requestedByName)` to what a CUSTOMER should see as
+ * "who asked for this" (issue #334) — the root-side twin of
+ * `formatRequesterDisplay` in functions/src/company/format.ts. Deliberately
+ * duplicated rather than shared — see that function's own docblock for why
+ * (the functions/ project has no path alias back to lib/).
+ *
+ * Every customer-facing surface that used to render `requestedByName`
+ * directly — `CompanySettingsForm`'s danger-zone banner,
+ * `lib/subscription-state.ts`'s `DELETION_PENDING` notice, and
+ * `lookupCancelToken`/`CancelDeletionView` behind the mailed cancel link —
+ * calls this instead, so an operator-initiated request never shows the
+ * operator's own email to the customer it was requested for. `'operator'`
+ * renders `ALLOCATE_SUPPORT_DISPLAY`; anything else (including a legacy row
+ * with no `requestSource` at all) renders `requestedByName`, falling back to
+ * "An administrator" for a `null`/empty value — the SAME fallback every one
+ * of those surfaces already used inline before this helper existed.
+ *
+ * `cancelCompanyDeletionAsOperator` (actions/operatorCompanyDeletion.ts)
+ * does NOT call this — a cancellation has no `requestSource`-shaped field to
+ * branch on, it already knows unconditionally that IT is the operator actor,
+ * so it passes `ALLOCATE_SUPPORT_DISPLAY` straight into
+ * `finishCancellation`'s `cancelledByName` param instead. The ledger's own
+ * `canceledByName`/`canceledByEmail` (written by `applyCancelWrites`, same
+ * function) are untouched by this — those stay the operator's real identity,
+ * for the audit trail and for the operator-only `DeletionHistoryList.tsx`.
+ */
+export function formatDeletionRequester(
+  requestSource: CompanyDeletionRequestSource | null | undefined,
+  requestedByName: string | null | undefined,
+): string {
+  if (requestSource === 'operator') return ALLOCATE_SUPPORT_DISPLAY
+  return requestedByName || 'An administrator'
 }

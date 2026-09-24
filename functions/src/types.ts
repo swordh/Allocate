@@ -134,6 +134,18 @@ export type CompanyDeletionFailureReason = 'attempts_exhausted' | 'no_progress' 
  * canonical explanation, read it there, not here).
  */
 export type CompanyDeletionMode = 'immediate' | 'window';
+
+/**
+ * Mirror of `CompanyDeletionRequestSource` in types/company.ts — read the
+ * doc comment there. Mirrored (unlike the cancel-only fields the block
+ * comment above this section says are deliberately NOT mirrored) because
+ * `onDeletionCreated.ts`, `sweep.ts` and `purge.ts` all need it to pick the
+ * right display string for `requestedByName` (see `formatRequesterDisplay`
+ * in company/format.ts) when they queue mail — that decision cannot be made
+ * root-side, since the mail is queued from here.
+ */
+export type CompanyDeletionRequestSource = 'admin' | 'operator';
+
 export type CompanyDeletionPhase =
   | 'stripe'
   | 'invitations'
@@ -152,6 +164,8 @@ export interface CompanyDeletionMirror {
   mode: CompanyDeletionMode;
   remindedAt?: Timestamp;
   claimedAt?: Timestamp;
+  /** See `CompanyDeletionRequestSource` above. Absent = 'admin'. */
+  requestSource?: CompanyDeletionRequestSource;
 }
 
 /**
@@ -176,7 +190,12 @@ export interface CompanyDeletionDocument {
   requestedByUid: string | null;
   requestedByName: string | null;
   requestedByEmail: string | null;
+  /** See `CompanyDeletionRequestSource` above. Absent = 'admin'. */
+  requestSource?: CompanyDeletionRequestSource;
   scheduledFor: Timestamp;
+
+  /** See the doc comment on this field in types/company.ts — issue #361. Absent on legacy rows; every reader falls back to 'UTC'. */
+  timezone?: string;
 
   completedAt?: Timestamp;
 

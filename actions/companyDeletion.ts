@@ -154,6 +154,13 @@ export async function requestCompanyDeletion(
       const requestedByName =
         (memberSnap.data()?.name as string | undefined) || session.email || 'An administrator'
       const requestedByEmail = (memberSnap.data()?.email as string | undefined) || session.email || ''
+      // Snapshotted at request time (issue #361) — see the doc comment on
+      // `CompanyDeletionRecord.timezone` in types/company.ts for why a
+      // snapshot, not a live read, is what every later mail/formatter must
+      // use. Same 'UTC' fallback `lib/queries/company.ts` already uses for
+      // a company with no timezone preference set.
+      const companyPreferences = companyData.preferences as { timezone?: unknown } | undefined
+      const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
 
       const ledger: Omit<CompanyDeletionRecord, 'requestedAt' | 'scheduledFor' | 'purgeAfter'> & {
         requestedAt: Timestamp
@@ -165,10 +172,14 @@ export async function requestCompanyDeletion(
         companyName,
         mode: 'window',
         state: 'requested',
+        timezone,
         requestedAt: now,
         requestedByUid: uid,
         requestedByName,
         requestedByEmail,
+        // No `requestSource` here — absent means 'admin', the customer's own
+        // request (issue #334). Only `requestCompanyDeletionAsOperator`
+        // (actions/operatorCompanyDeletion.ts) ever writes 'operator'.
         scheduledFor,
         attempts: 0,
         purgeAfter,

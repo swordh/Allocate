@@ -5,7 +5,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionCancelTokenDocument } from '../types';
 import { runCompanyPurge } from './purge';
-import { formatDateFull, formatDateShort, buildCancelUrl } from './format';
+import { formatDateFull, formatDateShort, buildCancelUrl, formatRequesterDisplay } from './format';
 import { claimRequestedLease } from './lease';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
@@ -73,6 +73,15 @@ async function queueRequestedMail(
     .where('role', '==', 'admin')
     .get();
 
+  // Snapshot taken at request time (issue #361) — see the doc comment on
+  // `CompanyDeletionRecord.timezone` in types/company.ts. Absent on a
+  // legacy row; UTC was its accidental behavior before this fix, so that
+  // stays its fallback now too.
+  const timezone = ledger.timezone ?? 'UTC';
+  // Issue #334 — an operator-initiated request must never show the
+  // operator's own email to the customer it was requested for.
+  const requestedByDisplay = formatRequesterDisplay(ledger.requestSource, ledger.requestedByName);
+
   for (const adminDoc of adminsSnap.docs) {
     const admin = adminDoc.data();
     const email = admin['email'] as string | undefined;
@@ -84,18 +93,10 @@ async function queueRequestedMail(
       companyId: ledger.companyId,
       data: {
         companyName: ledger.companyName,
-        // `requestedByName` is `string | null` — null once the 24-month
-        // retention job has redacted the row (purgeLogs.ts). Unreachable
-        // here in practice (redaction happens two years after the request,
-        // on a row that reached a terminal state within days), but the
-        // failure mode if it ever were reached is an email that literally
-        // says "null asked for ... to be deleted", so it takes a stance
-        // rather than a cast. Same fallback wording as
-        // lib/subscription-state.ts and CancelDeletionView.
-        requestedByName: ledger.requestedByName ?? 'An administrator',
-        requestedAtFormatted: formatDateFull(ledger.requestedAt),
-        scheduledForFormatted: formatDateFull(ledger.scheduledFor),
-        scheduledForShort: formatDateShort(ledger.scheduledFor),
+        requestedByName: requestedByDisplay,
+        requestedAtFormatted: formatDateFull(ledger.requestedAt, timezone),
+        scheduledForFormatted: formatDateFull(ledger.scheduledFor, timezone),
+        scheduledForShort: formatDateShort(ledger.scheduledFor, timezone),
         stopUrl,
         whatGoesSummary,
       },

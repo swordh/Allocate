@@ -128,6 +128,18 @@ export interface CompanyDeletion {
   remindedAt?: string              // ISO string
   /** Set when the sweep's lease transaction claims the purge (state -> 'executing'). */
   claimedAt?: string               // ISO string
+  /**
+   * Who actually triggered this request — see `CompanyDeletionRequestSource`
+   * below (issue #334). Absent = `'admin'` (every row written before this
+   * field existed, and every ordinary customer-initiated request today).
+   * Mirrored here — not just on the ledger — because
+   * `CompanySettingsForm`'s danger-zone banner and `lib/subscription-state.ts`'s
+   * `DELETION_PENDING` notice both read THIS document, never the ledger
+   * directly, and both need to know whether to render "Allocate support" in
+   * place of `requestedByName` (`lib/companyDeletionUi.ts`'s
+   * `formatDeletionRequester`).
+   */
+  requestSource?: CompanyDeletionRequestSource
 }
 
 /**
@@ -205,6 +217,39 @@ export type CompanyDeletionPhase =
  * made.
  */
 export type CompanyDeletionCancelSource = 'admin_ui' | 'cancel_link' | 'operator'
+
+/**
+ * Who actually triggered a deletion REQUEST (issue #334) — distinct from
+ * `CompanyDeletionCancelSource` above, which is about cancelling one.
+ *
+ * `admin` — a company's own admin, through `requestCompanyDeletion`
+ *   (actions/companyDeletion.ts). This is also the value implied by
+ *   ABSENCE — every ledger row written before this field existed was an
+ *   admin request (the operator's own request action, #2 below, did not
+ *   exist as a *mail-sending* trigger until this same fix — see that
+ *   action's own history), so no backfill/migration is needed.
+ * `operator` — support acting on the customer's behalf, through
+ *   `requestCompanyDeletionAsOperator` (actions/operatorCompanyDeletion.ts).
+ *   `requestedByName`/`requestedByEmail` on the ledger are still the
+ *   OPERATOR's own identity — that stays true and stays the ledger's
+ *   honest audit trail (see the doc comment on `requestedByUid` below).
+ *   This field exists so nothing CUSTOMER-FACING has to show that email:
+ *   `lib/companyDeletionUi.ts`'s `formatDeletionRequester` (and its
+ *   functions-side twin, `formatRequesterDisplay` in
+ *   functions/src/company/format.ts) map `('operator', anything)` to the
+ *   fixed string "Allocate support (support@allocate.at)" instead.
+ *
+ * Every writer of a NEW `requested` ledger row/mirror is responsible for
+ * setting this explicitly (or, for the admin path, deliberately leaving it
+ * absent — see `admin` above). Firestore's rules make this safe from a
+ * client's own hand regardless: `companies/{companyId}` has `allow write:
+ * if false` and `companyDeletions/{requestId}` has no rule at all (default
+ * deny) — see firestore.rules — so nothing but Admin-SDK code (Cloud
+ * Functions, or a `'use server'` action) can ever set this field on either
+ * document, and an admin can never write `'operator'` here to impersonate
+ * support.
+ */
+export type CompanyDeletionRequestSource = 'admin' | 'operator'
 
 /**
  * Why a ledger reached `state: 'failed'` — issue #331/#335.
@@ -325,6 +370,39 @@ export interface CompanyDeletionRecord {
   mode: CompanyDeletionMode
   state: CompanyDeletionLedgerState
 
+  /**
+   * `preferences.timezone` of the company being deleted, SNAPSHOT at the
+   * moment this row is created (issue #361). Every place that formats
+   * `requestedAt`/`scheduledFor`/`completedAt`/a member's
+   * `pendingDeletionScheduledFor` for a human — the requested/reminder/
+   * cancelled/failed/deleted mails, and the ledger-driven parts of the
+   * finalize phase — reads THIS field, never the company document's live
+   * preference and never the runtime's own zone. Three reasons it is a
+   * snapshot rather than a live read:
+   *
+   *   1. `runFinalizePhase` (purge.ts) formats dates AFTER the company
+   *      document has already been deleted — there is nothing left to read
+   *      the preference from by then.
+   *   2. An admin could change the company's timezone mid-window; the
+   *      mail already sent and the mail sent later should agree with each
+   *      other, not with whatever the preference happens to be at each
+   *      send time — this is exactly the "three tidszoner för samma
+   *      timestamp" bug #361 fixed, and a live re-read would reopen a
+   *      narrower version of it (drift between the requested mail and the
+   *      reminder/cancelled/failed mails that follow, instead of between
+   *      the mail and the cancel page).
+   *   3. It keeps every caller's read pattern identical: `ledger.timezone`,
+   *      no extra Firestore read, no special-casing purge's late phases.
+   *
+   * Absent on any row written before this field existed. Every formatter
+   * that reads it falls back to `'UTC'` when it's missing — the same
+   * fallback `todayInTimezone`/`formatDateFullInZone` (lib/dates.ts) and
+   * `lib/queries/company.ts`'s own `preferences.timezone` mapping already
+   * use, so a legacy row renders exactly as it always did (UTC was the
+   * accidental behavior before this fix). No migration needed.
+   */
+  timezone?: string
+
   requestedAt: string              // ISO string
   /**
    * `null` means REDACTED, and it is deliberately observable as its own
@@ -340,6 +418,13 @@ export interface CompanyDeletionRecord {
   requestedByUid: string | null
   requestedByName: string | null
   requestedByEmail: string | null
+  /**
+   * See `CompanyDeletionRequestSource` above (issue #334). Absent = `admin`
+   * — deliberately not migrated/backfilled onto existing rows, same
+   * convention as `cancelSource` above being absent on any row written
+   * before IT existed.
+   */
+  requestSource?: CompanyDeletionRequestSource
   scheduledFor: string             // ISO string ("deleteAt")
 
   canceledAt?: string              // ISO string
