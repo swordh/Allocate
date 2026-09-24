@@ -78,6 +78,7 @@ interface WireOptions {
   stripeSubscriptionId?: string
   admins?: Array<{ id: string; email?: string }>
   ledger?: Record<string, unknown> | null
+  timezone?: string
 }
 
 function wire(opts: WireOptions = {}) {
@@ -88,6 +89,7 @@ function wire(opts: WireOptions = {}) {
       ...(opts.stripeSubscriptionId
         ? { subscription: { stripeSubscriptionId: opts.stripeSubscriptionId } }
         : {}),
+      ...(opts.timezone ? { preferences: { timezone: opts.timezone } } : {}),
     },
   }
 
@@ -196,6 +198,33 @@ describe('requestCompanyDeletion — mode', () => {
     const { tx } = wire({ companyName: 'Solo AB' })
     await requestCompanyDeletion('Solo AB')
     expect(ledgerWrite(tx)![1]).not.toMatchObject({ mode: 'immediate' })
+  })
+})
+
+// ── issue #334 — requestSource ──────────────────────────────────────────────
+describe('requestCompanyDeletion — requestSource (issue #334)', () => {
+  it('never writes requestSource at all — absent means "admin", the customer-initiated path', async () => {
+    const { tx } = wire()
+    await requestCompanyDeletion(COMPANY_NAME)
+    const write = ledgerWrite(tx)
+    expect(write![1]).not.toHaveProperty('requestSource')
+  })
+})
+
+// ── issue #361 — timezone snapshot ──────────────────────────────────────────
+describe('requestCompanyDeletion — timezone snapshot (issue #361)', () => {
+  it('snapshots preferences.timezone onto the ledger at request time', async () => {
+    const { tx } = wire({ timezone: 'Europe/Stockholm' })
+    await requestCompanyDeletion(COMPANY_NAME)
+    const write = ledgerWrite(tx)
+    expect(write![1]).toMatchObject({ timezone: 'Europe/Stockholm' })
+  })
+
+  it('falls back to UTC when the company has no timezone preference set', async () => {
+    const { tx } = wire()
+    await requestCompanyDeletion(COMPANY_NAME)
+    const write = ledgerWrite(tx)
+    expect(write![1]).toMatchObject({ timezone: 'UTC' })
   })
 })
 

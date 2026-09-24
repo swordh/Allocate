@@ -35,6 +35,11 @@ export default async function SubscriptionSettingsPage() {
       deletion={company?.deletion ?? null}
       billing={billing}
       hasPaymentMethod={hasPaymentMethod}
+      // Issue #361 — same pattern as CompanySettingsForm's `initialTimezone`
+      // prop (app/(app)/settings/company/page.tsx): the company's own zone,
+      // for rendering `deletion.scheduledFor` in `getSubStateDisplay`'s
+      // DELETION_PENDING notice, not the admin's browser zone.
+      timezone={company?.preferences?.timezone}
     />
   )
 }

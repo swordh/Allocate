@@ -129,6 +129,7 @@ vi.mock('@/actions/auth', () => ({
 
 import { deleteAccount } from '@/actions/account'
 import { adminDb } from '@/lib/firebase-admin'
+import { formatDateFull } from '@/lib/companyDeletionCancelWrites'
 
 const UID = 'user-1'
 
@@ -214,6 +215,8 @@ interface CompanyFixture {
   stripeCustomerId?: string
   /** companies/{cid}.subscription — only `status` matters to that block. */
   subscription?: { status?: string }
+  /** companies/{cid}.deletion — issue #383's refusal guard. */
+  deletion?: Record<string, unknown>
 }
 
 interface Scenario {
@@ -256,6 +259,7 @@ function wireScenario(scenario: Scenario) {
           createdBy: fixture.createdBy ?? null,
           ...(fixture.stripeCustomerId ? { stripeCustomerId: fixture.stripeCustomerId } : {}),
           ...(fixture.subscription ? { subscription: fixture.subscription } : {}),
+          ...(fixture.deletion ? { deletion: fixture.deletion } : {}),
         }
       : null
     if (fixture.memberRole !== undefined) {
@@ -2276,5 +2280,292 @@ describe('deleteAccount — Stripe billing-contact anonymisation', () => {
     expect(result.error).toBeUndefined()
     expect(mockStripeRetrieve).not.toHaveBeenCalled()
     expect(mockStripeUpdate).not.toHaveBeenCalled()
+  })
+})
+
+// ── issue #383: refuse rather than orphan an existing company deletion ─────
+//
+// A `close` company (the caller is its only member) can already carry a
+// `companies/{cid}.deletion` — a `mode: 'window'` request made earlier, while
+// she was still one of several members (`requestCompanyDeletion` or the
+// operator action). Before this fix, `deleteAccount`'s sole-member branch
+// wrote a SECOND `companyDeletions` ledger row with `mode: 'immediate'` and
+// overwrote the mirror on the company doc, orphaning the original ledger row
+// and starting a second, competing purge. All three `CompanyDeletionState`
+// values ('requested' | 'executing' | 'failed') must refuse — no ledger row,
+// no mirror write, no member-doc delete, no counts delta.
+
+/** Mirrors `buildPendingDeletionMessage` in actions/account.ts. */
+function pendingDeletionMessage(
+  companyName: string,
+  state: 'requested' | 'executing' | 'failed',
+  scheduledForIso: string,
+): string {
+  const name = companyName || 'Your company'
+  switch (state) {
+    case 'requested':
+      return `${name} is already scheduled for deletion on ${formatDateFull(scheduledForIso, 'UTC')}. Cancel it in company settings, or wait until it completes, then delete your account.`
+    case 'executing':
+      return `${name} is being deleted right now. Try again in a few minutes.`
+    case 'failed':
+      return `Deleting ${name} did not finish. Contact support via Help & feedback before deleting your account.`
+  }
+}
+
+/** Mirrors `buildPendingDeletionMessage`'s generic/default branch — malformed or missing `state`. */
+function genericPendingDeletionMessage(companyName: string): string {
+  const name = companyName || 'Your company'
+  return `${name} already has a deletion in progress. Contact support via Help & feedback before deleting your account.`
+}
+
+describe('deleteAccount — issue #383 refuses when a close company already has a pending deletion', () => {
+  const SCHEDULED_FOR = '2026-10-01T00:00:00.000Z'
+
+  function pendingDeletionFixture(state: 'requested' | 'executing' | 'failed') {
+    return {
+      state,
+      requestId: 'req-existing',
+      requestedAt: SCHEDULED_FOR,
+      requestedByName: 'Someone',
+      scheduledFor: SCHEDULED_FOR,
+      mode: 'window',
+    }
+  }
+
+  it.each(['requested', 'executing', 'failed'] as const)(
+    'pre-flight: refuses a sole-member company whose deletion state is %s, before any write',
+    async (state) => {
+      stubSession({ activeCompanyId: 'company-A' })
+      const { tx } = wireScenario({
+        memberships: [{ companyId: 'company-A', role: 'admin' }],
+        companies: {
+          'company-A': {
+            memberRole: 'admin',
+            metaCounts: { members: 1, admins: 1 },
+            deletion: pendingDeletionFixture(state),
+          },
+        },
+      })
+
+      const result = await deleteAccount()
+
+      expect(result.error).toBe(pendingDeletionMessage('company-A', state, SCHEDULED_FOR))
+      expect(result.error).toContain('company-A')
+      if (state === 'requested') expect(result.error).toContain(formatDateFull(SCHEDULED_FOR, 'UTC'))
+
+      // The pre-flight refuses before the commit loop even starts.
+      expect(adminDb.runTransaction).not.toHaveBeenCalled()
+      expect(tx.set).not.toHaveBeenCalled()
+      expect(tx.update).not.toHaveBeenCalled()
+      expect(tx.delete).not.toHaveBeenCalled()
+      expect(mockDeleteUser).not.toHaveBeenCalled()
+      expect(mockDeleteSession).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refuses with the generic message when the deletion field has no state (malformed/unknown), never returning a bare undefined error', async () => {
+    // The field EXISTING is what means "a deletion is in progress" (mirrors
+    // the sibling guards' `if (existing)` in actions/companyDeletion.ts and
+    // actions/operatorCompanyDeletion.ts) — `state` itself may be missing or
+    // an unrecognised value on the raw doc, and that must fall through to a
+    // safe generic refusal rather than `buildPendingDeletionMessage`
+    // returning `undefined` (which would make `runAccountDeletion` return
+    // `{ error: undefined }`, indistinguishable from success).
+    stubSession({ activeCompanyId: 'company-A' })
+    const { tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          deletion: { requestId: 'req-existing', mode: 'window' }, // no `state` at all
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeDefined()
+    expect(result.error).toBe(genericPendingDeletionMessage('company-A'))
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(tx.set).not.toHaveBeenCalled()
+    expect(tx.update).not.toHaveBeenCalled()
+    expect(tx.delete).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+  })
+
+  it('multi-company: refuses before the loop, so a safe company alongside it never loses its membership either', async () => {
+    // company-A: 'leave' — a regular crew member, unaffected either way.
+    // company-B: 'close' with a pending window deletion — the one that must
+    // refuse. Because the pre-flight check runs before the commit loop, NO
+    // membership is deleted in EITHER company, proving the guard fires
+    // ahead of the loop rather than only on company-B's own turn (which,
+    // per the `close`-last ordering, would come after company-A's removal).
+    stubSession()
+    const { tx } = wireScenario({
+      memberships: [
+        { companyId: 'company-A', role: 'crew' },
+        { companyId: 'company-B', role: 'admin' },
+      ],
+      companies: {
+        'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 2 } },
+        'company-B': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          deletion: pendingDeletionFixture('requested'),
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(pendingDeletionMessage('company-B', 'requested', SCHEDULED_FOR))
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(tx.delete).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
+  it('multi-company: names EVERY pending-close company, not just the first, mirroring buildSoleAdminMessage', async () => {
+    // Two sole-member companies, each mid-deletion in a different state — a
+    // user refused on company-A must not retry, pass company-A, and then be
+    // refused again by company-B with no warning it existed too. No
+    // transaction runs: the pre-flight refuses before the commit loop.
+    stubSession()
+    wireScenario({
+      memberships: [
+        { companyId: 'company-A', role: 'admin' },
+        { companyId: 'company-B', role: 'admin' },
+      ],
+      companies: {
+        'company-A': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          deletion: pendingDeletionFixture('requested'),
+        },
+        'company-B': {
+          memberRole: 'admin',
+          metaCounts: { members: 1, admins: 1 },
+          deletion: pendingDeletionFixture('executing'),
+        },
+      },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(
+      `${pendingDeletionMessage('company-A', 'requested', SCHEDULED_FOR)} ${pendingDeletionMessage('company-B', 'executing', SCHEDULED_FOR)}`,
+    )
+    expect(result.error).toContain('company-A')
+    expect(result.error).toContain('company-B')
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+  })
+
+  it('authoritative: refuses with the generic message when the pre-flight missed a malformed deletion (no state), writing no ledger, mirror, member delete, or audit row', async () => {
+    // Same split-snapshot technique as the test below — pre-flight's read
+    // has no `deletion` field at all, and only the transaction's own read
+    // carries it, this time with no `state` on it (malformed data). Proves
+    // the authoritative guard's `if (existingDeletion)` (field presence, not
+    // `.state`) actually fires on the transaction's own read, not just on
+    // the pre-flight's typed `pendingDeletion`.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'company-A', deletion: { requestId: 'req-existing', mode: 'window' } },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/members') {
+        return [{ id: UID, path: `companies/company-A/members/${UID}`, data: { role: 'admin' } }]
+      }
+      return []
+    }
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const auditChain = stubAuditLogCollection(wired)
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(genericPendingDeletionMessage('company-A'))
+    expect(
+      tx.set.mock.calls.filter(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/')),
+    ).toHaveLength(0)
+    expect(
+      tx.update.mock.calls.filter(
+        ([ref, data]) =>
+          (ref as DocRefStub).path === 'companies/company-A' && (data as { deletion?: unknown }).deletion !== undefined,
+      ),
+    ).toHaveLength(0)
+    expect(tx.delete).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(auditChain.add).not.toHaveBeenCalled()
+  })
+
+  it('authoritative: refuses even when the pre-flight read missed the deletion (race), writing no ledger, mirror, or failure-audit row', async () => {
+    // Same "pre-flight sees one snapshot, the transaction's own read sees a
+    // different one" technique as the MUTATION GUARD tests above — here the
+    // pre-flight's company read has no `deletion` field at all (as if the
+    // window request landed in the gap between the pre-flight read and the
+    // commit loop's own read), and only the transaction's read carries it.
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'company-A' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'company-A', deletion: pendingDeletionFixture('requested') },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/members') {
+        return [{ id: UID, path: `companies/company-A/members/${UID}`, data: { role: 'admin' } }]
+      }
+      return []
+    }
+
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const auditChain = stubAuditLogCollection(wired)
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(pendingDeletionMessage('company-A', 'requested', SCHEDULED_FOR))
+    expect(
+      tx.set.mock.calls.filter(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/')),
+    ).toHaveLength(0)
+    expect(
+      tx.update.mock.calls.filter(
+        ([ref, data]) =>
+          (ref as DocRefStub).path === 'companies/company-A' && (data as { deletion?: unknown }).deletion !== undefined,
+      ),
+    ).toHaveLength(0)
+    expect(tx.delete).not.toHaveBeenCalled()
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    // A refusal, not a failure — same reasoning as the 'sole-admin' refusal
+    // test in the issue #358 block above.
+    expect(auditChain.add).not.toHaveBeenCalled()
   })
 })

@@ -5,7 +5,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionMirror } from '../types';
 import { runCompanyPurge } from './purge';
-import { formatDateFull, buildCancelUrl } from './format';
+import { formatDateFull, buildCancelUrl, formatRequesterDisplay } from './format';
 import { appUrl } from '../appUrl';
 import { claimRequestedLease, claimStaleLease } from './lease';
 
@@ -131,6 +131,13 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
       1,
       Math.ceil((scheduledFor.toMillis() - now.toMillis()) / (24 * 60 * 60 * 1000)),
     );
+    // Same snapshot the requested-deletion mail read (issue #361) — the
+    // ledger's own `timezone`, not the company document's live preference.
+    // See the doc comment on `CompanyDeletionRecord.timezone` in
+    // types/company.ts for why this must be the snapshot, not a live read.
+    const timezone = ledger.timezone ?? 'UTC';
+    // Issue #334 — same display rule as the requested-deletion mail.
+    const requestedByDisplay = formatRequesterDisplay(ledger.requestSource, ledger.requestedByName);
 
     tx.update(companyRef, { 'deletion.remindedAt': now });
 
@@ -146,9 +153,9 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
         companyId,
         data: {
           companyName: companyData['name'] ?? '',
-          requestedByName: deletion.requestedByName,
-          requestedAtFormatted: formatDateFull(deletion.requestedAt),
-          scheduledForFormatted: formatDateFull(scheduledFor),
+          requestedByName: requestedByDisplay,
+          requestedAtFormatted: formatDateFull(deletion.requestedAt, timezone),
+          scheduledForFormatted: formatDateFull(scheduledFor, timezone),
           daysRemaining,
           stopUrl,
         },

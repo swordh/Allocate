@@ -1,7 +1,8 @@
 import 'server-only'
 
 import { adminDb } from '@/lib/firebase-admin'
-import type { Role } from '@/types'
+import { toIso } from '@/lib/companyDeletionCancelWrites'
+import type { CompanyDeletionState, Role } from '@/types'
 
 /**
  * What deleting the caller's account would do to ONE company they belong to.
@@ -40,6 +41,16 @@ export interface CompanyDeletionOutcome {
    *  of them can be the caller anyway. */
   otherAdminCount: number
   outcome: DeletionOutcome
+  /**
+   * Mirrors `companies/{cid}.deletion` when present — issue #383's refusal
+   * guard reads this. `timezone` (issue #361) is the company's own
+   * `preferences.timezone`, 'UTC' fallback — read alongside `state`/
+   * `scheduledFor` here so `buildPendingDeletionMessage` (actions/account.ts)
+   * can quote the scheduled date in the same zone every other deletion
+   * surface for this company uses, rather than the account-deleter's own
+   * browser zone.
+   */
+  pendingDeletion?: { state: CompanyDeletionState | undefined; scheduledFor: string; timezone: string }
 }
 
 /**
@@ -207,6 +218,25 @@ export async function getDeletionOutcomes(uid: string): Promise<CompanyDeletionO
       if (!companySnap.exists) return null
 
       const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+      // Presence of the field, not `.state`, is what "has a deletion in
+      // progress" means — mirrors the `if (existing)` check the sibling
+      // guards use (actions/companyDeletion.ts, actions/operatorCompanyDeletion.ts).
+      // `state` may still be missing/malformed on the raw doc; that's handed
+      // to `buildPendingDeletionMessage`'s default branch rather than hidden
+      // here by requiring it.
+      //
+      // Computed for every outcome (leave/blocked/close alike) since it's a
+      // cheap read off data already in hand — only `deleteAccount`'s `close`
+      // branch ever acts on it.
+      const rawDeletion = companySnap.data()?.deletion as { state?: CompanyDeletionState; scheduledFor?: unknown } | undefined
+      const rawPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+      const pendingDeletion = rawDeletion
+        ? {
+            state: rawDeletion.state,
+            scheduledFor: toIso(rawDeletion.scheduledFor),
+            timezone: typeof rawPreferences?.timezone === 'string' ? rawPreferences.timezone : 'UTC',
+          }
+        : undefined
 
       try {
         const counts = await readCompanyCounts(companyId)
@@ -234,7 +264,7 @@ export async function getDeletionOutcomes(uid: string): Promise<CompanyDeletionO
           outcome = 'leave'
         }
 
-        return { companyId, companyName, role, memberCount: members, otherAdminCount, outcome }
+        return { companyId, companyName, role, memberCount: members, otherAdminCount, outcome, ...(pendingDeletion ? { pendingDeletion } : {}) }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         console.error('[lib/queries/deletionOutcomes]', { companyId, error: message, action: 'counts_read_failed' })

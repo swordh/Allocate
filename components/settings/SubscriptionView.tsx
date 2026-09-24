@@ -35,6 +35,14 @@ interface SubscriptionViewProps {
    * Ignored for every other subscription state.
    */
   hasPaymentMethod?: boolean
+  /**
+   * The company's own `preferences.timezone` (issue #361) — threaded
+   * straight through to `getSubStateDisplay`, which uses it ONLY for
+   * `deletion.scheduledFor` in the `DELETION_PENDING` notice/cycle text.
+   * `formatShortDate` below (Stripe's own billing-cycle dates) is
+   * deliberately unaffected — see `getSubStateDisplay`'s own docblock.
+   */
+  timezone?: string
 }
 
 function formatShortDate(iso: string | null | undefined): string {
@@ -67,6 +75,7 @@ export default function SubscriptionView({
   deletion = null,
   billing = null,
   hasPaymentMethod = false,
+  timezone,
 }: SubscriptionViewProps) {
   const router = useRouter()
   const [cycle, setCycle] = useState<BillingInterval>(subscription?.interval ?? 'month')
@@ -74,7 +83,7 @@ export default function SubscriptionView({
   const [cancelling, setCancelling] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const display = getSubStateDisplay(subscription, companyName, deletion, { hasPaymentMethod })
+  const display = getSubStateDisplay(subscription, companyName, deletion, { hasPaymentMethod }, timezone)
 
   // Whether `cancelCompanyDeletion()` would actually succeed right now — see
   // `canCancelCompanyDeletionInProduct`. `DELETION_PENDING`'s shared notice

@@ -228,14 +228,63 @@ describe('cancelCompanyDeletionAsOperator', () => {
     await cancelCompanyDeletionAsOperator(COMPANY_ID, '')
     expect(mockSubscriptionsUpdate).toHaveBeenCalledWith('sub_123', { pause_collection: null })
   })
+
+  // ── issue #334 follow-up review fix ───────────────────────────────────────
+  //
+  // `cancelCompanyDeletionAsOperator` shares `finishCancellation`
+  // (lib/companyDeletionCancelWrites.ts) with the two customer-facing cancel
+  // paths, and that function queues the `companyDeletionCancelled` mail
+  // straight from its `cancelledByName` PARAMETER — not from the ledger's
+  // `canceledByName` this action just wrote. Before this fix, the call site
+  // passed `session.email` (the operator's own address) into that parameter,
+  // so every admin on the company would see the operator's raw email in the
+  // "STOPPED BY" row. The LEDGER write (`canceledByName`/`canceledByEmail`,
+  // asserted separately above) must stay the real identity; only the MAIL
+  // must not.
+  it('queues companyDeletionCancelled mail with the support display string, never the operator email', async () => {
+    const oneAdmin = queryFor(
+      (ctx) => ctx.path === `companies/${COMPANY_ID}/members` && filterValue(ctx, 'role') === 'admin',
+      [{ id: 'member-1', data: { email: 'admin@rigg.se', role: 'admin' } }],
+    )
+    const docs: DocMap = {
+      [`companies/${COMPANY_ID}`]: { name: COMPANY_NAME, deletion: PENDING },
+      'companyDeletions/req-1': LEDGER,
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: oneAdmin })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation((cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx))
+
+    const result = await cancelCompanyDeletionAsOperator(COMPANY_ID, '')
+    expect(result.error).toBeUndefined()
+
+    // `finishCancellation` queues its mail through `adminDb.batch()`, not
+    // through the transaction — a plain `WriteBatch`, separate from `tx`.
+    expect(wired.batch.set).toHaveBeenCalled()
+    const mailCall = wired.batch.set.mock.calls[0]
+    expect(mailCall).toBeDefined()
+    const mailData = mailCall![1] as { template: string; to: string; data: Record<string, unknown> }
+    expect(mailData.template).toBe('companyDeletionCancelled')
+    expect(mailData.to).toBe('admin@rigg.se')
+    expect(mailData.data.cancelledByName).toBe('Allocate support (support@allocate.at)')
+    expect(mailData.data.cancelledByName).not.toBe(OPERATOR_EMAIL)
+    expect(JSON.stringify(mailData)).not.toContain(OPERATOR_EMAIL)
+
+    // The ledger write itself is unaffected — still the operator's real
+    // identity, for the audit trail.
+    const ledgerWrite = ledgerUpdate(tx, 'companyDeletions/req-1')
+    expect(ledgerWrite![1]).toMatchObject({ canceledByName: OPERATOR_EMAIL, canceledByEmail: OPERATOR_EMAIL })
+  })
 })
 
 describe('requestCompanyDeletionAsOperator', () => {
-  function wireCompany(opts: { name?: string; deletion?: Record<string, unknown> } = {}) {
+  function wireCompany(
+    opts: { name?: string; deletion?: Record<string, unknown>; timezone?: string } = {},
+  ) {
     const docs: DocMap = {
       [`companies/${COMPANY_ID}`]: {
         name: opts.name ?? COMPANY_NAME,
         ...(opts.deletion ? { deletion: opts.deletion } : {}),
+        ...(opts.timezone ? { preferences: { timezone: opts.timezone } } : {}),
       },
     }
     return wireTx(docs)
@@ -303,6 +352,60 @@ describe('requestCompanyDeletionAsOperator', () => {
     wireTx(docs)
     await requestCompanyDeletionAsOperator(COMPANY_ID, COMPANY_NAME, '')
     expect(mockSubscriptionsUpdate).toHaveBeenCalledWith('sub_1', { pause_collection: { behavior: 'void' } })
+  })
+
+  // ── issue #334 — requestSource ────────────────────────────────────────────
+  it('writes requestSource "operator" on BOTH the ledger and the company mirror', async () => {
+    const { tx } = wireCompany()
+    await requestCompanyDeletionAsOperator(COMPANY_ID, COMPANY_NAME, '')
+
+    const write = ledgerSet(tx)
+    expect(write![1]).toMatchObject({ requestSource: 'operator' })
+
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    const deletionMirror = (companyUpdate![1] as { deletion: Record<string, unknown> }).deletion
+    expect(deletionMirror).toMatchObject({ requestSource: 'operator' })
+  })
+
+  // ── issue #334 follow-up review fix ───────────────────────────────────────
+  //
+  // `companies/{cid}.deletion` is the MEMBER-READABLE mirror —
+  // firestore.rules lets every member of the company read `companies/{cid}`
+  // directly over the client SDK, regardless of which UI component (or
+  // display helper) later reads that field. Writing the operator's raw
+  // email into `requestedByName` here would leak it to every member no
+  // matter how `CompanySettingsForm`/`lib/subscription-state.ts` format it
+  // on the way out — the LEDGER's own `requestedByName` (asserted as
+  // `OPERATOR_EMAIL` two tests up) is where the real identity belongs,
+  // because `companyDeletions/{requestId}` has no client read rule at all.
+  it('writes the support display string into the MIRROR\'s requestedByName — never the operator email, which a client can read directly', async () => {
+    const { tx } = wireCompany()
+    await requestCompanyDeletionAsOperator(COMPANY_ID, COMPANY_NAME, '')
+
+    const companyUpdate = tx.update.mock.calls.find(([ref]) => (ref as DocRefStub).path === `companies/${COMPANY_ID}`)
+    const deletionMirror = (companyUpdate![1] as { deletion: Record<string, unknown> }).deletion
+    expect(deletionMirror.requestedByName).toBe('Allocate support (support@allocate.at)')
+    expect(deletionMirror.requestedByName).not.toBe(OPERATOR_EMAIL)
+    expect(JSON.stringify(deletionMirror)).not.toContain(OPERATOR_EMAIL)
+
+    // The ledger write is UNAFFECTED — still the operator's real identity.
+    const ledgerWrite = ledgerSet(tx)
+    expect(ledgerWrite![1]).toMatchObject({ requestedByName: OPERATOR_EMAIL, requestedByEmail: OPERATOR_EMAIL })
+  })
+
+  // ── issue #361 — timezone snapshot ────────────────────────────────────────
+  it('snapshots the company preferences.timezone onto the ledger at request time', async () => {
+    const { tx } = wireCompany({ timezone: 'Europe/Stockholm' })
+    await requestCompanyDeletionAsOperator(COMPANY_ID, COMPANY_NAME, '')
+    const write = ledgerSet(tx)
+    expect(write![1]).toMatchObject({ timezone: 'Europe/Stockholm' })
+  })
+
+  it('falls back to UTC when the company has no timezone preference set', async () => {
+    const { tx } = wireCompany()
+    await requestCompanyDeletionAsOperator(COMPANY_ID, COMPANY_NAME, '')
+    const write = ledgerSet(tx)
+    expect(write![1]).toMatchObject({ timezone: 'UTC' })
   })
 })
 

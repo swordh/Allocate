@@ -31,6 +31,7 @@ export type MemberAccountStatus = 'kept' | 'scheduled' | 'already_gone';
 
 export interface CompanyDeletedData {
   companyName: string;
+  /** Already resolved to a display string — see the same field's docblock on `CompanyDeletionRequestedData` (issue #334). */
   requestedByName: string;
   requestedAtFormatted: string;
   deletedAtFormatted: string;

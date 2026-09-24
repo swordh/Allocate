@@ -49,6 +49,7 @@ export default async function CancelCompanyDeletionPage({
       companyName={lookup.companyName ?? ''}
       scheduledFor={lookup.scheduledFor ?? ''}
       requestedByName={lookup.requestedByName ?? ''}
+      timezone={lookup.timezone ?? 'UTC'}
     />
   )
 }

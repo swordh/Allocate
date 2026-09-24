@@ -193,6 +193,22 @@ describe('getSubStateDisplay — DELETION_PENDING', () => {
     expect(d.notice).toContain('not refunded')
   })
 
+  // ── issue #334 — never show the operator's own email to a customer ────────
+  it('renders "Allocate support (support@allocate.at)" for an operator-initiated request, never the operator email', () => {
+    const d = getSubStateDisplay(
+      sub({}),
+      'Nordfilm AB',
+      deletion({ requestedByName: 'jocke@allocate.at', requestSource: 'operator' }),
+    )
+    expect(d.notice).toContain('Allocate support (support@allocate.at)')
+    expect(d.notice).not.toContain('jocke@allocate.at')
+  })
+
+  it('still renders the requester name for an admin-initiated request', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ requestedByName: 'Anna Admin' }))
+    expect(d.notice).toContain('Anna Admin')
+  })
+
   it('applies to an executing deletion too — presence of the field is the check', () => {
     // There is no "cancelled" value in this data model; a cancelled deletion
     // removes the field. So no state comparison belongs here, and a future
@@ -282,5 +298,79 @@ describe('getSubStateDisplay — DELETION_PENDING', () => {
     expect(getSubStateDisplay(sub({ status: 'past_due' }), 'X').key).toBe('PAST_DUE')
     expect(getSubStateDisplay(null, 'X').key).toBe('NONE')
     expect(getSubStateDisplay(sub({ status: 'active' }), 'X', null).key).toBe('ACTIVE')
+  })
+
+  // ── issue #361 — company-zoned deletion date ──────────────────────────────
+  //
+  // Before this fix, `getSubStateDisplay`'s DELETION_PENDING `cycle`/`notice`
+  // formatted `deletion.scheduledFor` with `formatDate`, which runs
+  // `toLocaleDateString` with no zone in the CLIENT component that renders
+  // this (SubscriptionView.tsx) — the visitor's own browser zone. These
+  // tests pin an instant just before local midnight in Europe/Stockholm
+  // (22:20 UTC, summer time — already the next calendar day there) and
+  // assert the actual date STRING, which the pre-existing DELETION_PENDING
+  // tests above never did.
+  describe('getSubStateDisplay — DELETION_PENDING timezone (issue #361)', () => {
+    const NEAR_MIDNIGHT_ISO = '2026-09-21T22:20:00.000Z'
+
+    it('renders the deletion date in the COMPANY zone, one day ahead of UTC, when a timezone is passed', () => {
+      const d = getSubStateDisplay(
+        sub({}),
+        'Nordfilm AB',
+        deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }),
+        undefined,
+        'Europe/Stockholm',
+      )
+      expect(d.cycle).toContain('22 September 2026')
+      expect(d.notice).toContain('22 September 2026')
+    })
+
+    it('renders the UTC date when the timezone is explicitly UTC', () => {
+      const d = getSubStateDisplay(
+        sub({}),
+        'Nordfilm AB',
+        deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }),
+        undefined,
+        'UTC',
+      )
+      expect(d.cycle).toContain('21 September 2026')
+      expect(d.notice).toContain('21 September 2026')
+    })
+
+    it('falls back to UTC when no timezone is passed at all (existing callers, pre-#361 behavior)', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }))
+      expect(d.cycle).toContain('21 September 2026')
+      expect(d.notice).toContain('21 September 2026')
+    })
+
+    it('does NOT zone the billing-cycle dates (trialEnd/currentPeriodEnd) — those stay viewer-local by design', () => {
+      // ACTIVE's `cycle` reads `currentPeriodEnd`, formatted by `formatDate`
+      // (en-US, no timeZone) — passing a company timezone must not change
+      // that. Computed via the SAME un-zoned `toLocaleDateString` call
+      // `formatDate` itself makes, rather than a hardcoded day-of-month —
+      // this test must pass on any machine's own local clock, not just one
+      // that happens to sit in UTC.
+      const unzoned = new Date(NEAR_MIDNIGHT_ISO).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      const withCompanyZone = getSubStateDisplay(
+        sub({ status: 'active', currentPeriodEnd: NEAR_MIDNIGHT_ISO }),
+        'Nordfilm AB',
+        null,
+        undefined,
+        'Europe/Stockholm',
+      )
+      const withoutTimezoneArg = getSubStateDisplay(
+        sub({ status: 'active', currentPeriodEnd: NEAR_MIDNIGHT_ISO }),
+        'Nordfilm AB',
+      )
+      expect(withCompanyZone.key).toBe('ACTIVE')
+      expect(withCompanyZone.cycle).toContain(unzoned)
+      // Passing (or omitting) a company timezone must not change this
+      // billing date at all — same render either way.
+      expect(withCompanyZone.cycle).toBe(withoutTimezoneArg.cycle)
+    })
   })
 })

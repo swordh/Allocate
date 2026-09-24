@@ -3,7 +3,19 @@ import { renderLayout, escapeHtml } from './_shared';
 
 export interface CompanyDeletionRequestedData {
   companyName: string;
-  /** Who asked for the deletion — always an admin (see PR F's role guard). */
+  /**
+   * Who asked for the deletion, ALREADY resolved to a display string the
+   * customer should see — never the raw ledger value directly. An
+   * admin-initiated request renders her name (or "An administrator" — see
+   * the null-redaction fallback in `formatRequesterDisplay`,
+   * functions/src/company/format.ts); an operator-initiated one (issue
+   * #334; `requestCompanyDeletionAsOperator`,
+   * actions/operatorCompanyDeletion.ts) renders "Allocate support
+   * (support@allocate.at)" instead of the operator's own email. This
+   * template never makes that decision itself — the caller always calls
+   * `formatRequesterDisplay` (or its lib-side twin,
+   * `formatDeletionRequester`) before setting this field.
+   */
   requestedByName: string;
   /** Formatted for display, e.g. "12 September 2026". Caller formats the date. */
   requestedAtFormatted: string;

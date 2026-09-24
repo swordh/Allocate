@@ -72,6 +72,10 @@ export async function seedRequestedDeletion(
     companyName,
     mode: 'window',
     state,
+    // Explicit, matching the company doc's own default (no `preferences` set
+    // above) — issue #361's snapshot-at-request-time field. Every real
+    // writer sets this from `preferences.timezone ?? 'UTC'`.
+    timezone: 'UTC',
     requestedAt: now,
     requestedByUid: 'requester-uid',
     requestedByName: 'Requester Name',

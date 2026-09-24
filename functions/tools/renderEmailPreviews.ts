@@ -55,9 +55,31 @@ const renders: Record<string, string> = {
     stopUrl: 'https://allocate.at/company/nordfilm/deletion/stop?token=REPLACE_ME',
     whatGoesSummary: '23 bookings, 14 pieces of equipment, access for all 6 members',
   }).html,
+  // Issue #334 — operator-initiated request. `requestedByName` here is
+  // ALREADY the resolved display string a caller would get from
+  // `formatRequesterDisplay('operator', <anything>)` — never the raw
+  // operator email `requestCompanyDeletionAsOperator` writes to the ledger.
+  'companyDeletionRequested-operator.html': companyDeletionRequestedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Allocate support (support@allocate.at)',
+    requestedAtFormatted: '12 September 2026',
+    scheduledForFormatted: '19 September 2026',
+    scheduledForShort: '19 Sep',
+    stopUrl: 'https://allocate.at/company/nordfilm/deletion/stop?token=REPLACE_ME',
+    whatGoesSummary: '23 bookings, 14 pieces of equipment, access for all 6 members',
+  }).html,
   'companyDeletionReminder.html': companyDeletionReminderEmail({
     companyName: 'Nordfilm AB',
     requestedByName: 'Erik Lundqvist',
+    requestedAtFormatted: '12 September 2026',
+    scheduledForFormatted: '19 September 2026',
+    daysRemaining: 2,
+    stopUrl: 'https://allocate.at/company/nordfilm/deletion/stop?token=REPLACE_ME',
+  }).html,
+  // Issue #334 — operator-initiated reminder, same substitution as above.
+  'companyDeletionReminder-operator.html': companyDeletionReminderEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Allocate support (support@allocate.at)',
     requestedAtFormatted: '12 September 2026',
     scheduledForFormatted: '19 September 2026',
     daysRemaining: 2,
@@ -110,6 +132,17 @@ const renders: Record<string, string> = {
     mode: 'immediate',
     accountStatus: 'already_gone',
     ctaUrl: 'https://allocate.at/signup',
+  }).html,
+  // Issue #334 — operator-initiated request that ran its full window,
+  // same substitution as the requested/reminder previews above.
+  'companyDeleted-window-kept-operator.html': companyDeletedEmail({
+    companyName: 'Nordfilm AB',
+    requestedByName: 'Allocate support (support@allocate.at)',
+    requestedAtFormatted: '12 September 2026',
+    deletedAtFormatted: '19 September 2026',
+    mode: 'window',
+    accountStatus: 'kept',
+    ctaUrl: 'https://allocate.at/company/new',
   }).html,
 };
 

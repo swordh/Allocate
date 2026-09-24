@@ -103,6 +103,17 @@ export interface ApplyFailedTransitionArgs {
  *      'stripe' yet) so the mail never claims billing stopped when the
  *      purge never got that far.
  *
+ *      NOTE (issue #334): `companyDeletionFailed`'s mail data carries no
+ *      requester identity at all — no `requestedByName`, nothing derived
+ *      from `ledger.requestSource` — so `formatRequesterDisplay`
+ *      (company/format.ts) does not apply here. Unlike the requested/
+ *      reminder/deleted mails, this one is never "X asked for this
+ *      company to be deleted"; it is "the deletion ran into a problem",
+ *      which is true regardless of who requested it. Do not add a
+ *      requester field to this template without also deciding whether it
+ *      needs the same operator-email substitution the other three mails
+ *      apply.
+ *
  * Does NOT touch `attempts`, `lastError`, or anything phase/progress
  * related — those stay each caller's own responsibility (purge.ts's catch
  * block writes `attempts`/`lastError` in the SAME transaction, in its own
@@ -155,8 +166,11 @@ export function applyFailedTransition(
     }
 
     if (recipients.length > 0) {
-      const requestedAtFormatted = formatDateFull(ledger.requestedAt);
-      const failedAtFormatted = formatDateFull(now);
+      // Snapshot taken at request time (issue #361) — see the doc comment
+      // on `CompanyDeletionDocument.timezone` in functions/src/types.ts.
+      const timezone = ledger.timezone ?? 'UTC';
+      const requestedAtFormatted = formatDateFull(ledger.requestedAt, timezone);
+      const failedAtFormatted = formatDateFull(now, timezone);
       const openUrl = appUrl('/');
       // True only once the purge has actually run its stripe phase — an
       // operator's "mark as failed" (or `no_progress` tripping while still

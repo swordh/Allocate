@@ -12,7 +12,9 @@ import {
   getDeletionOutcomes,
   type CompanyDeletionOutcome,
 } from '@/lib/queries/deletionOutcomes'
+import { formatDateFull, toIso } from '@/lib/companyDeletionCancelWrites'
 import { stripe } from '@/lib/stripe'
+import type { CompanyDeletionState } from '@/types'
 import { deleteSession } from './auth'
 
 const BATCH_LIMIT = 490
@@ -105,11 +107,14 @@ async function releaseAccountDeletionLock(uid: string): Promise<void> {
  * mapped to a user-facing string in the catch block — same pattern as
  * `actions/equipment.ts`'s `createEquipment` and `actions/team.ts`'s
  * `updateMemberRole`/`removeMember`. */
-type DeleteAccountGuardError = Error & { code: 'sole-admin' }
+type DeleteAccountGuardError = Error & { code: 'sole-admin' | 'deletion-pending' }
 
 function guardError(code: DeleteAccountGuardError['code'], message: string): DeleteAccountGuardError {
   return Object.assign(new Error(message), { code })
 }
+
+/** Every guard code that means "refused on purpose", not "something broke" — see the catch block below. */
+const REFUSAL_CODES: ReadonlySet<string> = new Set(['sole-admin', 'deletion-pending'])
 
 // Distinct from the sole-admin message below: this is what the user sees
 // when the guard itself couldn't be evaluated (a read failed, a transaction
@@ -212,6 +217,40 @@ function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
   if (blockedCompanies.length === 0) return COULD_NOT_VERIFY_ERROR
 
   return `Cannot delete account: ${buildBlockedClause(blockedCompanies)}`
+}
+
+/**
+ * Issue #383: a `close` company (the caller is its only member) already
+ * carrying a `companies/{cid}.deletion` — a `mode: 'window'` deletion
+ * requested earlier while she was still a member — must refuse rather than
+ * write a second, competing `companyDeletions` ledger row over the existing
+ * one. All three `CompanyDeletionState` values refuse, each with its own
+ * actionable wording.
+ */
+/** `state` is untyped input off a Firestore doc, not a value this code minted — malformed data must fall through to the generic branch, not throw or return undefined. */
+function buildPendingDeletionMessage(
+  companyName: string,
+  deletion: { state: CompanyDeletionState | string | undefined; scheduledFor: string; timezone: string },
+): string {
+  const name = companyName || 'Your company'
+  const genericMessage = `${name} already has a deletion in progress. Contact support via Help & feedback before deleting your account.`
+
+  switch (deletion.state) {
+    case 'requested': {
+      const scheduledDate = new Date(deletion.scheduledFor)
+      if (!deletion.scheduledFor || Number.isNaN(scheduledDate.getTime())) return genericMessage
+      // Issue #361 — the company's own zone (lib/queries/deletionOutcomes.ts
+      // reads it alongside `state`/`scheduledFor`), not this account
+      // deleter's browser zone.
+      return `${name} is already scheduled for deletion on ${formatDateFull(deletion.scheduledFor, deletion.timezone)}. Cancel it in company settings, or wait until it completes, then delete your account.`
+    }
+    case 'executing':
+      return `${name} is being deleted right now. Try again in a few minutes.`
+    case 'failed':
+      return `Deleting ${name} did not finish. Contact support via Help & feedback before deleting your account.`
+    default:
+      return genericMessage
+  }
 }
 
 /**
@@ -531,6 +570,28 @@ async function runAccountDeletion(
     return { error: buildSoleAdminMessage(blocking) }
   }
 
+  // issue #383: a `close` company already mid-deletion (a `mode: 'window'`
+  // request from before she became its sole member, e.g. via
+  // requestCompanyDeletion) must refuse here rather than reach the commit
+  // loop below — `close` companies are processed LAST there, so a
+  // loop-only guard would refuse only after every other membership had
+  // already been irreversibly removed.
+  const pendingCloseCompanies = outcomes.filter((o) => o.outcome === 'close' && o.pendingDeletion)
+  if (pendingCloseCompanies.length > 0) {
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      companyIds: pendingCloseCompanies.map((o) => o.companyId),
+      action: 'delete_account_blocked_pending_deletion',
+    })
+    // Every pending-close company, not just the first — same reasoning as
+    // buildSoleAdminMessage above: a user refused on one company must not
+    // retry and get refused again by a second one nobody told her about.
+    const message = pendingCloseCompanies
+      .map((o) => buildPendingDeletionMessage(o.companyName, o.pendingDeletion!))
+      .join(' ')
+    return { error: message }
+  }
+
   // ── 2. Commit loop: one transaction per company ────────────────────────────
   // Deletes companies/{cid}/members/{uid} and applies the memberCounts delta
   // for each company the user belongs to, one transaction per company,
@@ -682,9 +743,36 @@ async function runAccountDeletion(
           // process, which is deliberate — a Next.js request must never be
           // the thing holding a whole company's destruction open.
           const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+
+          // issue #383, authoritative: an executing purge must not get writes
+          // here — memberCountsDelta's set+merge below could recreate
+          // `_meta/memberCounts` on a company that is being torn down.
+          const existingDeletion = companySnap.data()?.deletion as
+            | { state?: CompanyDeletionState; scheduledFor?: unknown }
+            | undefined
+          if (existingDeletion) {
+            const existingPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+            throw guardError(
+              'deletion-pending',
+              buildPendingDeletionMessage(companyName, {
+                state: existingDeletion.state,
+                scheduledFor: toIso(existingDeletion.scheduledFor),
+                timezone: typeof existingPreferences?.timezone === 'string' ? existingPreferences.timezone : 'UTC',
+              }),
+            )
+          }
+
           const memberData = memberSnap.data() ?? {}
           const requesterName = (memberData.name as string | undefined) || session.email || 'Account holder'
           const requesterEmail = (memberData.email as string | undefined) || session.email || ''
+          // Snapshotted at request time (issue #361) — same convention as
+          // requestCompanyDeletion's own read in actions/companyDeletion.ts.
+          // Matters here even though `mode: 'immediate'` never sends the
+          // requested/reminder mail: `companyDeleted` still reads this
+          // ledger's `timezone` from purge.ts's finalize phase, and by then
+          // the company document (and its `preferences`) is long gone.
+          const companyPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+          const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
 
           counts.applyHeal()
 
@@ -694,6 +782,7 @@ async function runAccountDeletion(
             companyName,
             mode: 'immediate',
             state: 'requested',
+            timezone,
             requestedAt: requestNow,
             requestedByUid: uid,
             requestedByName: requesterName,
@@ -818,12 +907,14 @@ async function runAccountDeletion(
         total: companyIds.length,
       })
 
-      // A 'sole-admin' throw is a valid, expected REFUSAL — the guard doing
-      // exactly its job — not a failure to record. Every other code here is
-      // an actual failure (a transient Firestore error, a permissions
-      // problem) that left the caller in an unknown, possibly-partial state,
-      // which is exactly what issue #358 needs a durable trace of.
-      if (code !== 'sole-admin') {
+      // A REFUSAL_CODES throw ('sole-admin', 'deletion-pending') is a valid,
+      // expected refusal — the guard doing exactly its job — not a failure to
+      // record. Every other code here is an actual failure (a transient
+      // Firestore error, a permissions problem) that left the caller in an
+      // unknown, possibly-partial state, which is exactly what issue #358
+      // needs a durable trace of.
+      const isRefusal = code !== undefined && REFUSAL_CODES.has(code)
+      if (!isRefusal) {
         await writeDeletionFailureAudit(uid, {
           failedStep: 'membership_removal',
           errorCode: errorCodeOf(err),
@@ -832,11 +923,10 @@ async function runAccountDeletion(
         })
       }
 
-      // `message` here is `guardError`'s own message for 'sole-admin' —
-      // already the fully-built, company-named string, not a fixed constant
-      // (see the throw site above) — so it's used directly rather than
-      // mapped to one.
-      return { error: code === 'sole-admin' ? message : COULD_NOT_VERIFY_ERROR }
+      // `message` here is `guardError`'s own message — already the
+      // fully-built, company-named string, not a fixed constant (see the
+      // throw sites above) — so it's used directly rather than mapped to one.
+      return { error: isRefusal ? message : COULD_NOT_VERIFY_ERROR }
     }
   }
 
