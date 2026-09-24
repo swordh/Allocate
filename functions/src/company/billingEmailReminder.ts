@@ -60,8 +60,13 @@ async function processCompany(
 
   const data = companySnap.data() ?? {};
   const billing = data['billing'] as CompanyBilling | undefined;
-  // Already cleared by a concurrent run, or by the portal picking up a new
-  // email between the outer query and this read.
+  // Already cleared by a concurrent run, by the portal picking up a new
+  // email between the outer query and this read, or — since
+  // fix/billing-flag-clear-on-return — by lib/billingEmailFlag.ts clearing it
+  // on the read path the next time an admin loads /settings/subscription.
+  // That page-load path only handles the "email present" case; this sweep
+  // remains the only writer for the subscription-status and deletion-state
+  // clears below, and the only sender of the reminder mail.
   if (!billing?.emailMissingSince) return 'skipped';
 
   const clearBilling = async (): Promise<'cleared'> => {

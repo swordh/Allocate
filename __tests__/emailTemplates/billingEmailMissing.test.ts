@@ -76,11 +76,12 @@ describe('billingEmailMissingEmail', () => {
     expect(result.text).toMatch(/settings.*subscription.*manage billing/i)
   })
 
-  it('mentions switching companies first for an admin of more than one', () => {
-    const result = billingEmailMissingEmail({ ...BASE, isReminder: false })
-
-    expect(result.text).toMatch(/more than one company/i)
-    expect(result.text).toMatch(/switch to/i)
+  it('does not carry the multi-company "switch first" note', () => {
+    for (const isReminder of [false, true]) {
+      const result = billingEmailMissingEmail({ ...BASE, isReminder })
+      expect(result.text).not.toMatch(/more than one company|switch to/i)
+      expect(result.html).not.toMatch(/more than one company|switch to/i)
+    }
   })
 
   it('tells the recipient this repeats weekly until a billing email is added, in both html and text', () => {

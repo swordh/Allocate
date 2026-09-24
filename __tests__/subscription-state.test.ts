@@ -77,6 +77,41 @@ describe('getSubStateDisplay', () => {
     expect(d.notice).toContain('Aug 20, 2026')
   })
 
+  it('TRIAL without hasPaymentMethod opt: same as no opts at all', () => {
+    const d = getSubStateDisplay(
+      sub({ status: 'trialing', trialEnd: '2026-08-20T00:00:00.000Z' }),
+      'Nordfilm AB',
+      null,
+      { hasPaymentMethod: false },
+    )
+    expect(d.cta).toBe('ADD PAYMENT METHOD')
+    expect(d.notice).toContain('Add a payment method')
+  })
+
+  it('TRIAL with hasPaymentMethod: notice says the card will be charged, no CTA', () => {
+    const d = getSubStateDisplay(
+      sub({ status: 'trialing', trialEnd: '2026-08-20T00:00:00.000Z' }),
+      'Nordfilm AB',
+      null,
+      { hasPaymentMethod: true },
+    )
+    expect(d.tone).toBe('info')
+    expect(d.cta).toBe('')
+    expect(d.notice).toBe('Your trial ends Aug 20, 2026. Your card will be charged then.')
+  })
+
+  it('hasPaymentMethod is ignored outside TRIAL — ACTIVE still has no notice', () => {
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', null, { hasPaymentMethod: true })
+    expect(d.notice).toBeNull()
+    expect(d.cta).toBe('')
+  })
+
+  it('hasPaymentMethod is ignored outside TRIAL — PAST_DUE keeps its own notice/CTA', () => {
+    const d = getSubStateDisplay(sub({ status: 'past_due' }), 'Nordfilm AB', null, { hasPaymentMethod: true })
+    expect(d.cta).toBe('UPDATE CARD')
+    expect(d.notice).not.toContain('Your card will be charged then.')
+  })
+
   it('PAST_DUE: danger tone, references currentPeriodEnd', () => {
     const d = getSubStateDisplay(sub({ status: 'past_due' }), 'Nordfilm AB')
     expect(d.tone).toBe('danger')
