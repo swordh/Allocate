@@ -4,6 +4,7 @@ import { getCompany } from '@/lib/queries/company'
 import { getEquipmentCategoryCounts } from '@/lib/queries/equipment'
 import { listMembers } from '@/lib/queries/members'
 import { trialHasPaymentMethod } from '@/lib/trialPaymentMethod'
+import { resolveBillingEmailFlag } from '@/lib/billingEmailFlag'
 import SubscriptionView from '@/components/settings/SubscriptionView'
 
 export default async function SubscriptionSettingsPage() {
@@ -12,10 +13,15 @@ export default async function SubscriptionSettingsPage() {
 
   const company = await getCompany(session.activeCompanyId)
 
-  const [categoryCounts, members, hasPaymentMethod] = await Promise.all([
+  // resolveBillingEmailFlag clears the "billing email missing" flag on the
+  // read path — see lib/billingEmailFlag.ts for why the weekly sweep alone
+  // isn't enough. Both Stripe lookups only depend on `company`, so they run
+  // alongside the other reads.
+  const [categoryCounts, members, hasPaymentMethod, billing] = await Promise.all([
     getEquipmentCategoryCounts(session.activeCompanyId),
     listMembers(session.activeCompanyId),
     trialHasPaymentMethod(company?.subscription ?? null),
+    resolveBillingEmailFlag(session.activeCompanyId, company?.stripeCustomerId, company?.billing ?? null),
   ])
 
   const equipmentCount = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0)
@@ -27,7 +33,7 @@ export default async function SubscriptionSettingsPage() {
       equipmentCount={equipmentCount}
       memberCount={members.length}
       deletion={company?.deletion ?? null}
-      billing={company?.billing ?? null}
+      billing={billing}
       hasPaymentMethod={hasPaymentMethod}
     />
   )
