@@ -3,6 +3,7 @@ import { getVerifiedSession } from '@/lib/dal'
 import { getCompany } from '@/lib/queries/company'
 import { getEquipmentCategoryCounts } from '@/lib/queries/equipment'
 import { listMembers } from '@/lib/queries/members'
+import { resolveBillingEmailFlag } from '@/lib/billingEmailFlag'
 import SubscriptionView from '@/components/settings/SubscriptionView'
 
 export default async function SubscriptionSettingsPage() {
@@ -17,6 +18,14 @@ export default async function SubscriptionSettingsPage() {
 
   const equipmentCount = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0)
 
+  // Clears the "billing email missing" flag on the read path — see
+  // lib/billingEmailFlag.ts for why the weekly sweep alone isn't enough.
+  const billing = await resolveBillingEmailFlag(
+    session.activeCompanyId,
+    company?.stripeCustomerId,
+    company?.billing ?? null,
+  )
+
   return (
     <SubscriptionView
       subscription={company?.subscription ?? null}
@@ -24,7 +33,7 @@ export default async function SubscriptionSettingsPage() {
       equipmentCount={equipmentCount}
       memberCount={members.length}
       deletion={company?.deletion ?? null}
-      billing={company?.billing ?? null}
+      billing={billing}
     />
   )
 }
