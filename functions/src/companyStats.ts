@@ -32,8 +32,8 @@ type MemberCountsDelta = { members: -1 | 0 | 1; admins: -1 | 0 | 1 };
  *
  * Uses a merge-set, not `.update()`, on both documents — `.update()` throws
  * when the target document doesn't exist, and neither `_meta/memberCounts`
- * nor the `stats.memberCount` mirror may be the reason `acceptInvitation` or
- * `onUserCreate` fails. A missing company doc here would be a genuine
+ * nor the `stats.memberCount` mirror may be the reason `acceptInvitation`
+ * fails. A missing company doc here would be a genuine
  * anomaly rather than the stale-membership-pointer case that motivates this
  * in lib/companyStats.ts, but the safer behaviour is the same either way: an
  * invitation acceptance should not fail because a stats mirror could not be
@@ -45,8 +45,9 @@ type MemberCountsDelta = { members: -1 | 0 | 1; admins: -1 | 0 | 1 };
  *
  * `readMemberCounts` (lib/companyStats.ts) is deliberately NOT mirrored here.
  * Nothing under functions/src reads `_meta/memberCounts` today — Cloud
- * Functions only ever increment it, via this function, when `onUserCreate`
- * or `acceptInvitation` adds a member. The rule this module follows (see
+ * Functions only ever increment it, via this function, when
+ * `acceptInvitation` adds a member (`onUserCreate` is a no-op as of issue
+ * #396 and no longer calls this). The rule this module follows (see
  * "Only this one function is mirrored" below) is to mirror what's actually
  * called, not what might be — a mirrored `readMemberCounts` with no caller
  * would be dead code and an extra lockstep surface for no benefit. Add it

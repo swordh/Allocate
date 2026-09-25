@@ -486,12 +486,11 @@ async function recordAccountDeletionFailure(
       return nextAttempts
     })
 
-    // Single-line, template-string log, deliberately NOT the structured
-    // `console.error('[tag]', {obj})` shape every other log line in this file
-    // uses — on Cloud Run/App Hosting that shape is split into one log entry
-    // PER LINE (e.g. a lone `"[actions/account] {"` entry with none of the
-    // actual fields), which a log-based alert filter can't match against.
-    // This line only fires once the transaction above has actually
+    // Plain-string log, deliberately NOT the `console.error('[tag]', {obj})`
+    // shape every other log line in this file uses: the alert policies match
+    // `textPayload:"ACCOUNT_DELETION_STUCK"`, and Cloud Logging only stores a
+    // structured entry as `textPayload` when `message` is its only field —
+    // see lib/accountDeletionAlert.ts. This line only fires once the transaction above has actually
     // committed — a trace write that itself failed is covered by the
     // existing `account_deletion_failure_trace_failed` log in the catch
     // block below, not this one; logging "stuck" for a trace we never

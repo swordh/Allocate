@@ -5,6 +5,7 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
 import { blockMemberWrite } from '../company/acceptsMembers';
+import { toRole } from './role';
 
 /**
  * Callable function for already-authenticated users accepting an invite via link.
@@ -94,7 +95,10 @@ export const acceptInvitationByToken = onCall(
     }
 
     const inviteData = inviteSnap.data()!;
-    const role: MembershipDocument['role'] = inviteData['role'] ?? 'crew';
+    const role: MembershipDocument['role'] = toRole(inviteData['role'], {
+      fn: 'acceptInvitation',
+      path: inviteRef.path,
+    });
     const displayName = explicitName ?? request.auth.token.name ?? callerEmail;
 
     // ── Transaction ───────────────────────────────────────────────────────────
@@ -133,11 +137,15 @@ export const acceptInvitationByToken = onCall(
         // 1b. Apply the member-counts delta: companies/{companyId}/_meta/memberCounts
         // (members + admins) and its companies/{companyId}.stats.memberCount
         // mirror. Deliberately inside this transaction, not after it: the
-        // outer catch below swallows HttpsError('already-exists') when
-        // onUserCreate wins the race, and because these increments live in
-        // the same transaction as the tx.set above, that whole transaction
-        // (including these increments) is discarded on that path rather than
-        // committed — so the race can never double-count either counter.
+        // outer catch below swallows HttpsError('already-exists') when a
+        // concurrent call to this same function (e.g. the invite link
+        // double-clicked, or opened in two tabs) wins the race, and because
+        // these increments live in the same transaction as the tx.set above,
+        // that whole transaction (including these increments) is discarded
+        // on that path rather than committed — so the race can never
+        // double-count either counter. (onUserCreate is a no-op as of issue
+        // #396 and is not a party to this race any more — see its doc
+        // comment.)
         // Fragile: if this call is ever moved outside the transaction (e.g.
         // to a best-effort write after commit), that guarantee breaks and the
         // race becomes double-countable.
@@ -176,9 +184,14 @@ export const acceptInvitationByToken = onCall(
       txSucceeded = true;
     } catch (err) {
       if (err instanceof HttpsError && err.code === 'already-exists') {
-        // onUserCreate beat us to creating the member doc — that is fine.
-        // We still need to write users/{uid} name+email below.
-        logger.info('acceptInvitationByToken: onUserCreate already created member doc', {
+        // A concurrent call to this same function beat us to creating the
+        // member doc — the classic double-click / two-tabs case, not
+        // onUserCreate (a no-op as of issue #396: it no longer creates
+        // members, so it can't be the other side of this race any more).
+        // That's fine either way — the invite is idempotent from the
+        // caller's point of view. We still need to write users/{uid}
+        // name+email below.
+        logger.info('acceptInvitationByToken: member doc already exists (concurrent accept)', {
           uid: uid.slice(0, 8) + '...',
           companyId,
         });
@@ -188,16 +201,15 @@ export const acceptInvitationByToken = onCall(
     }
 
     // Always write name + email to user root doc — runs regardless of which
-    // path won the race (callable tx or onUserCreate trigger). Also clears
-    // `pendingDeletion` here, same reasoning as the in-transaction clear
-    // above: when `onUserCreate` won the race this is a brand-new user who
-    // cannot have the field, so the clear is a harmless no-op on that path,
-    // and it costs nothing to do it unconditionally rather than branch on
-    // which path won.
+    // call won the race. Also clears `pendingDeletion` here, same reasoning
+    // as the in-transaction clear above: it's a harmless no-op when the
+    // field was never set, and it costs nothing to do it unconditionally
+    // rather than branch on which call won.
     await userRef.set({ name: displayName, email: callerEmail, pendingDeletion: FieldValue.delete() }, { merge: true });
 
     // ── Set custom claims if none exist (only when we ran the full tx) ────────
-    // If onUserCreate won the race, it already set claims — skip to avoid churn.
+    // If the losing side of a concurrent-call race, the winning call already
+    // set claims — skip here to avoid churn.
     if (txSucceeded) {
       const existingClaims = (request.auth.token ?? {}) as Record<string, unknown>;
       if (!existingClaims['activeCompanyId']) {

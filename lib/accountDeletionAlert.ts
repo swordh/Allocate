@@ -1,18 +1,21 @@
 /**
- * Filter marker for a Cloud Monitoring log-based alert policy (prod) that
- * fires when a user's `deleteAccount` gets stuck — the policy matches on
- * `textPayload:"ACCOUNT_DELETION_STUCK" OR jsonPayload.message:"ACCOUNT_DELETION_STUCK"`
- * (the second form once server logs are emitted as structured JSON) against
- * the single-line log
- * `recordAccountDeletionFailure` (actions/account.ts) emits after its
- * trace-write transaction commits. That log line MUST stay a single line —
- * Cloud Run/App Hosting splits a multi-line/structured
- * `console.error('[tag]', {obj})` call into one log entry PER LINE (e.g. a
- * lone `"[actions/account] {"` entry with none of the actual fields), which a
- * `textPayload` filter can't match against — and this constant MUST NOT be
- * renamed or have its value changed without updating the alert policy;
- * either one silently breaks the alert with no local signal anything is
- * wrong.
+ * Filter marker for the Cloud Monitoring log-based alert policies (prod and
+ * beta, "Kontoradering fastnad") that fire when a user's `deleteAccount` gets
+ * stuck. `recordAccountDeletionFailure` (actions/account.ts) logs it as a
+ * plain single-line string after its trace-write transaction commits, and
+ * the policies match on
+ * `textPayload:"ACCOUNT_DELETION_STUCK" OR jsonPayload.message:"ACCOUNT_DELETION_STUCK"`.
+ *
+ * The `textPayload` half is the one that actually matches, and must stay:
+ * the structured console (instrumentation.ts, lib/structuredLog.ts) turns
+ * the string into `{"severity":"ERROR","message":"…"}`, and Cloud Logging
+ * stores an entry whose only field is `message` as `textPayload`, not
+ * `jsonPayload` (verified on alpha). The `jsonPayload.message` half only
+ * matters if the marker is ever logged alongside object fields.
+ *
+ * Keep the log a plain string, and don't rename this constant or change its
+ * value without updating both policies — either one silently breaks the
+ * alert with no local signal anything is wrong.
  *
  * Lives here rather than as an export on actions/account.ts: that file has
  * `'use server'` at the top, and a `'use server'` module may only export

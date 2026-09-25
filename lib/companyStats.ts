@@ -284,8 +284,9 @@ export async function readMemberCounts(
  * `{ merge: true }`) sidesteps that without an `as` cast.
  *
  * Mirrored at functions/src/companyStats.ts — see this module's docblock —
- * where `acceptInvitation` and `onUserCreate` call the Transaction-only
- * sibling from inside `db.runTransaction`. A missing company doc there would
+ * where `acceptInvitation` calls the Transaction-only sibling from inside
+ * `db.runTransaction` (`onUserCreate` is a no-op as of issue #396 and no
+ * longer calls it). A missing company doc there would
  * be a genuine anomaly (not a stale-pointer scenario like deleteAccount's),
  * but a merge-set is still the safer behaviour: an invitation acceptance
  * should not fail because a stats mirror could not be written. Keep both in

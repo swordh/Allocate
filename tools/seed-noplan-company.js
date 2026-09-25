@@ -59,13 +59,15 @@
  *   folded into the constant, which must stay an honest zero state).
  * - Membership doc for the two invited-style members (crew/viewer): same
  *   `companies/{cid}/members/{uid}` and `users/{uid}/memberships/{cid}`
- *   shapes `functions/src/auth/onUserCreate.ts` writes for an invitation
- *   accepted at signup — identical shape (`MembershipDocument` in
+ *   shapes `functions/src/auth/acceptInvitation.ts` writes for an invitation
+ *   accepted via the `/invite/{token}` link (as of issue #396, the only path
+ *   that turns an invitation into a membership — `onUserCreate.ts` is a
+ *   no-op) — identical shape (`MembershipDocument` in
  *   `functions/src/types.ts`) to the founder's, which is why one
  *   member-doc builder below covers all three roles in both companies.
  * - Custom Claims shape (`activeCompanyId`, `role`): `actions/auth.ts`
  *   (`setupNewCompany`'s `setCustomUserClaims` call) and
- *   `functions/src/auth/onUserCreate.ts`'s equivalent call.
+ *   `functions/src/auth/acceptInvitation.ts`'s equivalent call.
  * - `getVerifiedSession` requiring email verification before anything else:
  *   `lib/dal.ts` (`verifyAuthenticatedSession`) — `decoded['email_verified']
  *   === false` redirects to /verify-email BEFORE the company claim is even
@@ -412,8 +414,8 @@ async function run() {
     console.log(`\n── ${company.key}: members + user profiles + claims ────────────`);
     // Same companies/{cid}/members/{uid} and users/{uid}/memberships/{cid}
     // shapes for all three roles — setupNewCompany's companyMemberRef/
-    // memberRef for the founder and functions/src/auth/onUserCreate.ts's
-    // memberRef/userMembershipRef for an invited signup write the identical
+    // memberRef for the founder and functions/src/auth/acceptInvitation.ts's
+    // memberRef/userMembershipRef for an accepted invite write the identical
     // shape (MembershipDocument in functions/src/types.ts).
     for (const u of seededUsers) {
       writes.push(upsert(ALPHA_PROJECT, `users/${u.uid}`, {
@@ -438,7 +440,7 @@ async function run() {
         companyId: str(companyId),
       }));
 
-      // Custom Claims — same shape setupNewCompany and onUserCreate both
+      // Custom Claims — same shape setupNewCompany and acceptInvitation both
       // set. ALLOWED from here: activeCompanyId, role. Never
       // subscription.* — those are Cloud-Function/webhook-only (see
       // actions/auth.ts comment).
