@@ -11,9 +11,12 @@
  *
  * Cloud Run's log agent parses a single-line JSON object on stdout/stderr into
  * `jsonPayload`, using a few special top-level keys: `severity`, `message`,
- * `logging.googleapis.com/*`, and (for Error Reporting) `stack_trace`. This
- * formatter builds exactly that shape, deterministically, so it stays testable
- * without needing Cloud Run itself.
+ * `logging.googleapis.com/*`, and (for Error Reporting) `stack_trace`. If
+ * `message` is the only non-special field left, Cloud Logging stores the
+ * entry as `textPayload` instead (still with `severity`) — so a plain-string
+ * log lands in `textPayload`, and only logs with object fields land in
+ * `jsonPayload` (verified on alpha). This formatter builds that shape,
+ * deterministically, so it stays testable without needing Cloud Run itself.
  *
  * MUST NEVER THROW — a formatting bug must not take down logging, let alone
  * the request. Every risky step is wrapped. Critically, the LAST-RESORT

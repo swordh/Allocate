@@ -2876,11 +2876,12 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
 
   // ── Cloud Monitoring log-based alert marker ─────────────────────────────
   //
-  // On Cloud Run/App Hosting, `console.error('[tag]', {obj})` is split into
-  // one log entry PER LINE — the alert policy (prod) can only match a
-  // single-line `textPayload`, so `recordAccountDeletionFailure` emits a
-  // dedicated, single-string `console.error` call for this, separate from
-  // every other structured `console.error('[tag]', {...})` line in this file.
+  // The alert policies (prod, beta) match `textPayload:"ACCOUNT_DELETION_STUCK"`,
+  // which Cloud Logging only produces for an entry whose sole field is
+  // `message` — so `recordAccountDeletionFailure` emits a dedicated,
+  // plain-string `console.error` call for this, separate from every other
+  // `console.error('[tag]', {...})` line in this file. See
+  // lib/accountDeletionAlert.ts.
 
   it('emits a single-line ACCOUNT_DELETION_STUCK log after the trace transaction commits', async () => {
     // Same fixture as the preflight_unknown test above: company-A's own doc
