@@ -5,6 +5,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
 import { blockMemberWrite } from '../company/acceptsMembers';
+import { toRole } from './role';
 
 /**
  * Triggered when a new Firebase Auth user is created.
@@ -56,7 +57,10 @@ export const onUserCreate = functions
     const inviteData = inviteDoc.data();
     const companyId: string = inviteData.companyId;
     const token: string = inviteData.token;
-    const role: MembershipDocument['role'] = inviteData.role ?? 'crew';
+    const role: MembershipDocument['role'] = toRole(inviteData.role, {
+      fn: 'onUserCreate',
+      path: inviteDoc.ref.path,
+    });
     const now = Timestamp.now();
     const nowIso = now.toDate().toISOString();
 
