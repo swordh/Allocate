@@ -5,6 +5,7 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
 import { memberCountsDelta } from '../companyStats';
 import { blockMemberWrite } from '../company/acceptsMembers';
+import { toRole } from './role';
 
 /**
  * Callable function for already-authenticated users accepting an invite via link.
@@ -94,7 +95,10 @@ export const acceptInvitationByToken = onCall(
     }
 
     const inviteData = inviteSnap.data()!;
-    const role: MembershipDocument['role'] = inviteData['role'] ?? 'crew';
+    const role: MembershipDocument['role'] = toRole(inviteData['role'], {
+      fn: 'acceptInvitation',
+      path: inviteRef.path,
+    });
     const displayName = explicitName ?? request.auth.token.name ?? callerEmail;
 
     // ── Transaction ───────────────────────────────────────────────────────────
