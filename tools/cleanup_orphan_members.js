@@ -91,10 +91,11 @@ const DELETE_BATCH_LIMIT = 490;
 // users/{uid} AFTERWARDS and non-transactionally (`await userRef.set(...)`,
 // outside the transaction). Between those two writes a perfectly legitimate,
 // brand-new member doc exists with no matching users/{uid} doc yet — exactly
-// what this script otherwise calls an orphan. (onUserCreate.ts does not have
-// this window: it writes both docs inside one transaction.) Requiring
-// joinedAt to be older than this window before treating a member as an
-// orphan keeps a slow signup from being deleted mid-flight.
+// what this script otherwise calls an orphan. (acceptInvitationByToken is
+// the only path that creates a member doc at all — onUserCreate.ts is a
+// no-op as of issue #396.) Requiring joinedAt to be older than this window
+// before treating a member as an orphan keeps a slow signup from being
+// deleted mid-flight.
 const SAFETY_WINDOW_MS = 15 * 60 * 1000;
 
 // ── Credentials ──────────────────────────────────────────────────────────────
@@ -209,11 +210,11 @@ async function* chunks(iterable, size) {
  * via `.select()`), so it's done with `Promise.all` across the page rather
  * than serially.
  *
- * joinedAt is written as a Firestore Timestamp by all three writers
- * (acceptInvitation.ts and onUserCreate.ts via `Timestamp.now()`,
- * actions/auth.ts via `FieldValue.serverTimestamp()`, which reads back as a
- * Timestamp) — so `.toMillis()` is safe across all of them once the field
- * is present at all.
+ * joinedAt is written as a Firestore Timestamp by both writers
+ * (acceptInvitation.ts via `Timestamp.now()`, actions/auth.ts via
+ * `FieldValue.serverTimestamp()`, which reads back as a Timestamp) — so
+ * `.toMillis()` is safe across both of them once the field is present at
+ * all. (onUserCreate.ts is a no-op as of issue #396 and writes nothing.)
  */
 async function classifyMembers(companyId) {
   const membersSnap = await db

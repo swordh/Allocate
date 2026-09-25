@@ -191,7 +191,7 @@ export const acceptInvitationByToken = onCall(
         // That's fine either way — the invite is idempotent from the
         // caller's point of view. We still need to write users/{uid}
         // name+email below.
-        logger.info('acceptInvitationByToken: onUserCreate already created member doc', {
+        logger.info('acceptInvitationByToken: member doc already exists (concurrent accept)', {
           uid: uid.slice(0, 8) + '...',
           companyId,
         });
