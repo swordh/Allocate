@@ -1,7 +1,9 @@
 /**
  * Filter marker for a Cloud Monitoring log-based alert policy (prod) that
  * fires when a user's `deleteAccount` gets stuck — the policy matches on
- * `textPayload:"ACCOUNT_DELETION_STUCK"` against the single-line log
+ * `textPayload:"ACCOUNT_DELETION_STUCK" OR jsonPayload.message:"ACCOUNT_DELETION_STUCK"`
+ * (the second form once server logs are emitted as structured JSON) against
+ * the single-line log
  * `recordAccountDeletionFailure` (actions/account.ts) emits after its
  * trace-write transaction commits. That log line MUST stay a single line —
  * Cloud Run/App Hosting splits a multi-line/structured
