@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
+import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import {
@@ -15,6 +16,7 @@ import {
 import { formatDateFull, toIso } from '@/lib/companyDeletionCancelWrites'
 import { stripe } from '@/lib/stripe'
 import type { CompanyDeletionState } from '@/types'
+import type { AccountDeletionFailurePath } from '@/types/operator'
 import { deleteSession } from './auth'
 
 const BATCH_LIMIT = 490
@@ -367,6 +369,7 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_lock_acquire_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'lock_acquire', errorCode: errorCodeOf(err), companyIds: [] })
     return { error: COULD_NOT_VERIFY_ERROR }
   }
   if (!lockAcquired) {
@@ -418,6 +421,74 @@ function errorCodeOf(err: unknown): string {
   if (typeof code !== 'string' && typeof code !== 'number') return 'unknown'
   const str = String(code)
   return str.length > ERROR_CODE_MAX_LENGTH ? str.slice(0, ERROR_CODE_MAX_LENGTH) : str
+}
+
+/** How long an `accountDeletionFailures/{uid}` trace survives with no new
+ *  attempt — the doc's `expireAt` TTL field, rolled forward on every write. */
+const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
+/**
+ * Durable, minimal trace of a `deleteAccount` attempt that returned
+ * `COULD_NOT_VERIFY_ERROR` — issue #337 step 1. Before this, every such
+ * return left nothing behind an operator could see: no way to tell who is
+ * stuck, where, or how often, beyond a `console.error` line in App Hosting's
+ * 30-day log retention. One doc per uid at `accountDeletionFailures/{uid}`
+ * (Admin SDK only — see firestore.rules), overwritten on every retry rather
+ * than appended: `firstAt`/`attempts` accumulate across retries, `lastAt`/
+ * `lastPath`/`lastErrorCode`/`lastCompanyIds` describe only the most recent
+ * one. Cleared entirely — not merely left to expire — the moment a deletion
+ * for that uid actually succeeds (see the final anonymisation batch below);
+ * `expireAt` (a Firestore TTL field) is the backstop for a uid that never
+ * retries and never succeeds either.
+ *
+ * Best-effort, same shape as `writeDeletionFailureAudit` above: its own
+ * try/catch, logs and swallows, and — critically — is AWAITED by every
+ * caller before that caller returns, because a Server Action's process can
+ * be torn down the instant it returns a value to the client, which would
+ * otherwise race a fire-and-forget write into oblivion.
+ *
+ * A `runTransaction`, not a plain `set`, because `attempts`/`firstAt` must
+ * read-then-write relative to whatever this uid's doc already holds; unlike
+ * `writeDeletionFailureAudit`'s `collection().add()`, this doc is a single,
+ * mutable row per uid, not an append-only log.
+ *
+ * Raw uid, not `errorCodeOf`'s sha256-hash-elsewhere convention
+ * (`deletionAuditLog`'s `userIdHash`): the entire point of this doc is that
+ * an operator can look up the person who's stuck, which a one-way hash would
+ * make impossible. No name, no email — see `types/operator.ts`'s
+ * `StuckAccountDeletionRow` for the full shape this doc is read back as.
+ */
+async function recordAccountDeletionFailure(
+  uid: string,
+  params: { path: AccountDeletionFailurePath; errorCode: string | null; companyIds: string[] },
+): Promise<void> {
+  try {
+    const now = Timestamp.now()
+    const expireAt = Timestamp.fromMillis(now.toMillis() + ACCOUNT_DELETION_FAILURE_TTL_MS)
+    const ref = adminDb.collection('accountDeletionFailures').doc(uid)
+
+    await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref)
+      const existing = snap.data() as { firstAt?: Timestamp; attempts?: number } | undefined
+
+      tx.set(ref, {
+        firstAt: existing?.firstAt ?? now,
+        lastAt: now,
+        attempts: (typeof existing?.attempts === 'number' ? existing.attempts : 0) + 1,
+        lastPath: params.path,
+        lastErrorCode: params.errorCode,
+        lastCompanyIds: params.companyIds,
+        expireAt,
+      })
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      error: message,
+      action: 'account_deletion_failure_trace_failed',
+    })
+  }
 }
 
 /**
@@ -539,7 +610,8 @@ async function runAccountDeletion(
     outcomes = await getDeletionOutcomes(uid)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/account]', { error: message, action: 'delete_account_preflight_failed' })
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_preflight_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'preflight_read', errorCode: errorCodeOf(err), companyIds: [] })
     return { error: COULD_NOT_VERIFY_ERROR }
   }
 
@@ -550,7 +622,21 @@ async function runAccountDeletion(
   // with the same "try again" message the top-level catch above uses, rather
   // than silently treating an unreadable company as safe to leave.
   if (outcomes.some((o) => o.outcome === 'unknown')) {
+    const unknownOutcomes = outcomes.filter((o) => o.outcome === 'unknown')
+    const unknownCompanyIds = unknownOutcomes.map((o) => o.companyId)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_preflight_unknown_outcome' })
+    // This branch isn't a caught throw — there is no `err` to run through
+    // errorCodeOf — so `errorCode` instead carries the DISTINCT
+    // `unknownReason` values getDeletionOutcomes already attached to each
+    // unknown outcome (lib/queries/deletionOutcomes.ts), sorted and joined
+    // with ',' so two companies failing for the same reason don't repeat it.
+    // `null` only if somehow none of them carry a reason at all.
+    const unknownReasons = [...new Set(unknownOutcomes.map((o) => o.unknownReason).filter(Boolean))].sort()
+    await recordAccountDeletionFailure(uid, {
+      path: 'preflight_unknown',
+      errorCode: unknownReasons.length > 0 ? unknownReasons.join(',') : null,
+      companyIds: unknownCompanyIds,
+    })
     return { error: COULD_NOT_VERIFY_ERROR }
   }
 
@@ -612,7 +698,20 @@ async function runAccountDeletion(
   // delete from, not a helper built for showing the user a message. A second
   // read of a small per-user collection (bounded by how many companies one
   // person can join) is cheap next to the rest of this function's work.
-  const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
+  // Wrapped (issue #337 step 1) — this used to throw straight out of the
+  // Server Action on a transient Firestore error, with no trace at all: the
+  // one read in this file that reached Firestore without a surrounding
+  // try/catch. Same failure class as every other read here, so it gets the
+  // same COULD_NOT_VERIFY_ERROR / recordAccountDeletionFailure treatment.
+  let membershipsSnap: FirebaseFirestore.QuerySnapshot
+  try {
+    membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_memberships_read_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'memberships_read', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
   const unorderedCompanyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
 
   // Companies the pre-flight thinks will be `close` are processed LAST.
@@ -921,6 +1020,7 @@ async function runAccountDeletion(
           completedCompanies,
           totalCompanies: companyIds.length,
         })
+        await recordAccountDeletionFailure(uid, { path: 'commit_loop', errorCode: errorCodeOf(err), companyIds: [companyId] })
       }
 
       // `message` here is `guardError`'s own message — already the
@@ -1279,6 +1379,18 @@ async function runAccountDeletion(
     batch.delete(adminDb.doc(`users/${uid}`))
     opCount++
 
+    // issue #337: clear this uid's stuck-deletion trace, if any, in the same
+    // batch as the rest of this success — a deletion that reaches this point
+    // has nothing left for an operator to see. `.delete()` on a doc that
+    // never existed is a no-op, so this is safe to run unconditionally
+    // rather than reading the doc first to check.
+    batch.delete(adminDb.doc(`accountDeletionFailures/${uid}`))
+    opCount++
+    if (opCount >= BATCH_LIMIT) {
+      batch = await commitAndReset(batch)
+      opCount = 0
+    }
+
     // Deletion audit log (sha256 hash only — no PII stored). The SUCCESS
     // shape: `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only
     // ever appear on a `writeDeletionFailureAudit` row (issue #358), which is
@@ -1377,6 +1489,28 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
     const userSnap = await adminDb.collection('users').doc(uid).get()
     const userData = userSnap.data() ?? {}
 
+    // issue #337 step 1, GDPR Art. 15 (lolita's review): a stuck-deletion
+    // trace records the fact that THIS user's own earlier deletion attempt(s)
+    // failed, where, and how often — that's her own data, so it belongs in
+    // her own export like everything else here. Deliberately no new
+    // failure-handling policy: this read sits inside the same try block as
+    // every other read in this function, so a failure here fails the whole
+    // export exactly the way a failing `userSnap`/`membershipsSnap` read
+    // already does — there is no separate partial-export fallback elsewhere
+    // in this function to diverge from.
+    const traceSnap = await adminDb.doc(`accountDeletionFailures/${uid}`).get()
+    const traceData = traceSnap.data()
+    const accountDeletionFailure = traceSnap.exists && traceData
+      ? {
+          firstAt: iso(traceData.firstAt as TimestampLike),
+          lastAt: iso(traceData.lastAt as TimestampLike),
+          attempts: typeof traceData.attempts === 'number' ? traceData.attempts : 0,
+          lastPath: traceData.lastPath ?? null,
+          lastErrorCode: traceData.lastErrorCode ?? null,
+          lastCompanyIds: Array.isArray(traceData.lastCompanyIds) ? traceData.lastCompanyIds : [],
+        }
+      : null
+
     const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
 
     const companies = await Promise.all(
@@ -1422,6 +1556,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
         activeCompanyId: userData.activeCompanyId ?? null,
         createdAt:       userData.createdAt ?? null,
       },
+      accountDeletionFailure,
       companies,
     }
 

@@ -2,7 +2,7 @@ import 'server-only'
 
 import { adminDb } from '@/lib/firebase-admin'
 import { iso, isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
-import type { CompanyDeletionRow } from '@/types/operator'
+import type { AccountDeletionFailurePath, CompanyDeletionRow, StuckAccountDeletionRow } from '@/types/operator'
 
 /**
  * Firestore reads for the operator's read-only deletion views (issue #252
@@ -159,4 +159,41 @@ export async function queryAllDeletions(): Promise<CompanyDeletionRow[]> {
     .limit(LIST_VIEW_LIMIT)
     .get()
   return snap.docs.map(mapDeletionDoc)
+}
+
+/**
+ * `accountDeletionFailures/{uid}` rows (issue #337 step 1), newest attempt
+ * first — one row per stuck user, not per attempt (`recordAccountDeletionFailure`
+ * in actions/account.ts overwrites the doc on each retry). No composite index
+ * needed, same reasoning as `queryAllDeletions` above.
+ *
+ * Defensive on malformed data, same convention as `mapDeletionDoc`: a
+ * doc missing a field renders as an empty/zero value rather than throwing and
+ * taking the whole "Stuck account deletions" section down with it. The
+ * caller is expected to wrap this in its own try/catch, same as every other
+ * query in this file.
+ */
+export async function queryStuckAccountDeletions(): Promise<StuckAccountDeletionRow[]> {
+  const snap = await adminDb
+    .collection('accountDeletionFailures')
+    .orderBy('lastAt', 'desc')
+    .limit(LIST_VIEW_LIMIT)
+    .get()
+
+  return snap.docs.map((doc) => {
+    const d = doc.data()
+    return {
+      uid: doc.id,
+      firstAt: iso(d.firstAt),
+      lastAt: iso(d.lastAt),
+      attempts: typeof d.attempts === 'number' ? d.attempts : 0,
+      // Pass-through, same as `mapDeletionDoc`'s `state`/`mode` above — this
+      // doc has exactly one writer (`recordAccountDeletionFailure`), so a
+      // value outside the union would itself be the bug worth seeing, not
+      // something to paper over with a fabricated fallback path.
+      lastPath: d.lastPath as AccountDeletionFailurePath,
+      lastErrorCode: (d.lastErrorCode as string | null | undefined) ?? null,
+      lastCompanyIds: Array.isArray(d.lastCompanyIds) ? (d.lastCompanyIds as string[]) : [],
+    }
+  })
 }

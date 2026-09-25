@@ -115,6 +115,33 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Account deletion failure trace (issue #337) ───────────────────────────
+    // One doc per uid, `accountDeletionFailures/{uid}` — a minimal, durable
+    // trace of a self-service `deleteAccount` (actions/account.ts) that
+    // returned "could not verify, try again" instead of succeeding. Before
+    // this, that outcome left nothing behind but a `console.error` line in
+    // App Hosting's 30-day log retention, with no way for an operator to see
+    // who was stuck or how often. Written and cleared only by the Admin SDK
+    // — never readable or writable by a client:
+    //   firstAt, lastAt: Timestamp
+    //   attempts: number
+    //   lastPath: 'lock_acquire' | 'preflight_read' | 'preflight_unknown' |
+    //             'commit_loop' | 'memberships_read'
+    //   lastErrorCode: string | null
+    //   lastCompanyIds: string[]   // companies involved in the last failure —
+    //                              // may point at a company purged since this
+    //                              // was written; a dead link in the operator
+    //                              // view for that id is expected, not a bug.
+    //   expireAt: Timestamp        // TTL field, 90 days from lastAt
+    // Raw uid, not a hash like `deletionAuditLog`'s `userIdHash` — the whole
+    // point is that an operator can look up the person who's stuck. No name,
+    // no email. Deleted outright the moment a deletion for that uid actually
+    // succeeds; `expireAt` is only the backstop for a uid that never retries
+    // and never succeeds either.
+    match /accountDeletionFailures/{uid} {
+      allow read, write: if false;
+    }
+
     // ── Invitation mirror (public bearer-token lookup) ────────────────────────
     // Top-level mirror at invitations/{token}. The token is an unguessable random
     // id that acts as a bearer secret, so a single-document `get` is public — this
