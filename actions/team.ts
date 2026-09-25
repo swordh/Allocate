@@ -396,8 +396,7 @@ export async function updateMemberRole(
       // claims sync — not even the self-heal write, so a role-check that
       // changes nothing never has a side effect. (The counter still heals
       // itself on the next call that actually needs to write.) Returning here
-      // commits an empty transaction, same idiom onUserCreate.ts uses for its
-      // "member already exists" guard.
+      // commits an empty transaction.
       if (oldRole === newRole) {
         isNoOp = true
         return

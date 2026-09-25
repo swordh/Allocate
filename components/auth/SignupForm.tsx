@@ -192,9 +192,13 @@ export default function SignupForm() {
 
     if (mode === 'invite') {
       // ── Invite path: accept invitation (no new company) ────────────────
-      // onUserCreate trigger also fires, but calling the callable gives us a
-      // synchronous result we can act on immediately and gives a clear error
-      // if the token is stale/mismatched before we create a session.
+      // This callable is the only way a signup turns into a membership
+      // (issue #396 — onUserCreate is a no-op: at signup time this Auth
+      // user's email is unverified, so a trigger that auto-joined on it
+      // would let anyone sign up as an invitee they merely knew the
+      // address of). Calling it explicitly also gives us a synchronous
+      // result we can act on immediately and a clear error if the token is
+      // stale/mismatched before we create a session.
       try {
         const fns = getFunctions(auth.app, 'europe-west1')
         const accept = httpsCallable(fns, 'acceptInvitationByToken')
