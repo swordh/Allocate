@@ -19,9 +19,10 @@ function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
  * One-shot fetch of a company's members, sorted by joinedAt ascending.
  *
  * `joinedAt` is stored as a Firestore Timestamp by every writer
- * (actions/auth.ts, functions/src/auth/onUserCreate.ts,
- * functions/src/auth/acceptInvitation.ts) and is converted to an ISO
- * string here — Timestamp instances are not serializable across the
+ * (actions/auth.ts, functions/src/auth/acceptInvitation.ts — the only
+ * path that turns an invitation into a member doc as of issue #396;
+ * functions/src/auth/onUserCreate.ts is now a no-op) and is converted to
+ * an ISO string here — Timestamp instances are not serializable across the
  * server→client component boundary.
  *
  * Sorting happens in memory rather than via `.orderBy('joinedAt')` on

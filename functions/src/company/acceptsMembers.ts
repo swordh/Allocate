@@ -15,16 +15,18 @@ import type { DocumentSnapshot } from 'firebase-admin/firestore';
 export type MemberWriteBlock = { code: 'not-found' | 'deleting'; message: string } | null;
 
 /**
- * The shared guard behind the two — and only two — paths that turn an
- * invitation into a membership: `acceptInvitationByToken`
- * (functions/src/auth/acceptInvitation.ts, for someone who already has an
- * account) and `onUserCreate` (functions/src/auth/onUserCreate.ts, for a
- * brand-new signup whose address had a pending invite).
+ * The shared guard behind `acceptInvitationByToken`
+ * (functions/src/auth/acceptInvitation.ts) — the ONLY path that turns an
+ * invitation into a membership. `onUserCreate`
+ * (functions/src/auth/onUserCreate.ts) used to be a second such path, for a
+ * brand-new signup whose address had a pending invite, but issue #396 made
+ * it a no-op: at `onCreate` time a password-signup's `email` is unverified,
+ * so auto-joining on it let anyone who knew an invitee's address sign up as
+ * them. Accepting an invite now always goes through the token link, which
+ * proves mailbox ownership instead of trusting an unverified field.
  *
- * Extracted rather than written twice because the two used to be the classic
- * pair that drifts: the same rule, enforced in two files, with only one of
- * them updated. Having it here also makes it testable at all — both callers
- * are Cloud Functions wrappers (`onCall` / `beforeUserCreated`) whose bodies
+ * Extracted rather than inlined because this guard is worth testing on its
+ * own — its caller is a Cloud Functions wrapper (`onCall`) whose body
  * cannot be invoked directly from the emulator suite, which is precisely the
  * "write the logic as exported pure functions, keep the trigger a thin
  * wrapper" rule the step 5 plan sets out under PR A.

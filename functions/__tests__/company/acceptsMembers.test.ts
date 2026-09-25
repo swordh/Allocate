@@ -1,12 +1,13 @@
 /**
- * `blockMemberWrite` (functions/src/company/acceptsMembers.ts) — the shared
- * guard behind `acceptInvitationByToken` and `onUserCreate` that stops a new
- * member from being written into a company that's on its way out.
+ * `blockMemberWrite` (functions/src/company/acceptsMembers.ts) — the guard
+ * behind `acceptInvitationByToken` that stops a new member from being
+ * written into a company that's on its way out. (`onUserCreate` is a no-op
+ * as of issue #396 and no longer calls this.)
  *
  * Issue #331/#335 added a THIRD reachable `deletion.state` on the mirror:
  * `'failed'` (previously only `'requested'`/`'executing'` were ever mirrored
  * — see `applyFailedTransition` in failDeletion.ts). This file's job is to
- * make sure the message a blocked signup/invite-accept sees matches reality
+ * make sure the message a blocked invite-accept sees matches reality
  * for all three: only `'requested'` still has a deletion left to stop.
  */
 import { describe, expect, it } from 'vitest';
