@@ -19,7 +19,7 @@ vi.mock('@/lib/firebase-admin', () => ({
 }))
 
 import { adminDb } from '@/lib/firebase-admin'
-import { queryDeletionsByCompany } from '@/lib/operatorDeletionQueries'
+import { LIST_VIEW_LIMIT, queryDeletionsByCompany, queryStuckAccountDeletions } from '@/lib/operatorDeletionQueries'
 import { identityDisplay } from '@/lib/operatorDeletionView'
 
 function wireCompanyDeletions(docs: Array<Record<string, unknown>>) {
@@ -120,5 +120,78 @@ describe('mapDeletionDoc — issue #331/#335 failure + no-progress fields', () =
     expect(row.failedNotifiedCount).toBeUndefined()
     expect(row.noProgressResumes).toBeUndefined()
     expect(row.progressUnits).toBeUndefined()
+  })
+})
+
+// ── queryStuckAccountDeletions (issue #337 step 1) ──────────────────────────
+
+function wireAccountDeletionFailures(docs: Array<{ id: string; data: Record<string, unknown> }>) {
+  const chain: Record<string, unknown> = {
+    orderBy: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    get: async () => ({
+      docs: docs.map(({ id, data }) => ({ id, data: () => data })),
+    }),
+  }
+  vi.mocked(adminDb.collection).mockReturnValue(chain as unknown as ReturnType<typeof adminDb.collection>)
+  return chain as { orderBy: ReturnType<typeof vi.fn>; limit: ReturnType<typeof vi.fn> }
+}
+
+describe('queryStuckAccountDeletions', () => {
+  it('maps a well-formed doc to a StuckAccountDeletionRow, keyed by doc id (uid)', async () => {
+    wireAccountDeletionFailures([
+      {
+        id: 'user-42',
+        data: {
+          firstAt: { toDate: () => new Date('2026-01-01T00:00:00.000Z') },
+          lastAt: { toDate: () => new Date('2026-01-05T00:00:00.000Z') },
+          attempts: 4,
+          lastPath: 'commit_loop',
+          lastErrorCode: 'unavailable',
+          lastCompanyIds: ['company-A', 'company-B'],
+        },
+      },
+    ])
+
+    const [row] = await queryStuckAccountDeletions()
+
+    expect(row).toEqual({
+      uid: 'user-42',
+      firstAt: '2026-01-01T00:00:00.000Z',
+      lastAt: '2026-01-05T00:00:00.000Z',
+      attempts: 4,
+      lastPath: 'commit_loop',
+      lastErrorCode: 'unavailable',
+      lastCompanyIds: ['company-A', 'company-B'],
+    })
+  })
+
+  it('queries orderBy(lastAt, desc) with limit(LIST_VIEW_LIMIT), and preserves that order when mapping', async () => {
+    const chain = wireAccountDeletionFailures([
+      { id: 'user-1', data: { attempts: 1, lastCompanyIds: [] } },
+      { id: 'user-2', data: { attempts: 2, lastCompanyIds: [] } },
+    ])
+
+    const rows = await queryStuckAccountDeletions()
+
+    // Sorting by the wrong field, or dropping the limit, must fail this test
+    // — the previous version of this test only checked the mapper's own
+    // order-preservation and would have passed even if the query itself
+    // sorted on the wrong field or asked for no limit at all.
+    expect(chain.orderBy).toHaveBeenCalledWith('lastAt', 'desc')
+    expect(chain.limit).toHaveBeenCalledWith(LIST_VIEW_LIMIT)
+    expect(rows.map((r) => r.uid)).toEqual(['user-1', 'user-2'])
+  })
+
+  it('defaults a missing attempts/lastErrorCode/lastCompanyIds defensively rather than throwing', async () => {
+    wireAccountDeletionFailures([{ id: 'user-1', data: {} }])
+
+    const [row] = await queryStuckAccountDeletions()
+
+    expect(row.attempts).toBe(0)
+    expect(row.lastErrorCode).toBeNull()
+    expect(row.lastCompanyIds).toEqual([])
+    expect(row.firstAt).toBe('')
+    expect(row.lastAt).toBe('')
   })
 })

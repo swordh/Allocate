@@ -293,3 +293,40 @@ export const DELETION_SEGMENT_LABELS: Record<DeletionSegment, string> = {
   stuck: 'Stuck or failed',
   all: 'All history',
 }
+
+// ─── Stuck account deletions — operator view (issue #337 step 1) ──────────
+//
+// `deleteAccount` (actions/account.ts) can return `COULD_NOT_VERIFY_ERROR`
+// ("try again") at several points without leaving any durable trace beyond a
+// `console.error` line. `accountDeletionFailures/{uid}` (one doc per user,
+// Admin SDK only — see the rules comment) is the minimal record of that:
+// where it failed, how often, and which companies were involved, so an
+// operator can see who is stuck instead of only ever hearing about it
+// secondhand. Read-only here — this step ships no operator action or bypass.
+
+/** Mirrors the `path` values `recordAccountDeletionFailure` (actions/account.ts) writes. */
+export type AccountDeletionFailurePath =
+  | 'lock_acquire'
+  | 'preflight_read'
+  | 'preflight_unknown'
+  | 'commit_loop'
+  | 'memberships_read'
+
+export const ACCOUNT_DELETION_FAILURE_PATH_LABELS: Record<AccountDeletionFailurePath, string> = {
+  lock_acquire: 'Lock acquire',
+  preflight_read: 'Preflight read',
+  preflight_unknown: 'Preflight unknown outcome',
+  commit_loop: 'Commit loop',
+  memberships_read: 'Memberships read',
+}
+
+/** One `accountDeletionFailures/{uid}` doc, projected for the operator list — timestamps already ISO strings. */
+export interface StuckAccountDeletionRow {
+  uid: string
+  firstAt: string
+  lastAt: string
+  attempts: number
+  lastPath: AccountDeletionFailurePath
+  lastErrorCode: string | null
+  lastCompanyIds: string[]
+}
