@@ -35,3 +35,64 @@
   font-size: var(--fs-label-sm);
   color: var(--text-pale);
 }
+
+.stuckSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.stuckIntro {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-weak);
+  max-width: 640px;
+}
+
+.stuckList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stuckRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+}
+
+.stuckRowHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stuckRowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaLine {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-primary);
+}
+
+.metaLineFaint {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  color: var(--text-pale);
+}
+
+.companyLink {
+  color: var(--accent);
+  text-decoration: underline;
+}

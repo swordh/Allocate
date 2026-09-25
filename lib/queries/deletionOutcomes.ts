@@ -51,6 +51,17 @@ export interface CompanyDeletionOutcome {
    * browser zone.
    */
   pendingDeletion?: { state: CompanyDeletionState | undefined; scheduledFor: string; timezone: string }
+  /**
+   * Only set when `outcome === 'unknown'` — which of this function's two read
+   * failures produced it (issue #337 step 1). `deleteAccount`'s preflight
+   * (actions/account.ts) collects the DISTINCT `unknownReason` values across
+   * every unknown outcome it sees, sorts them, and joins them with ',' into
+   * `recordAccountDeletionFailure`'s `errorCode` — the one call site where
+   * this isn't a caught throw, so there's no `err` for `errorCodeOf` to read
+   * a code off. Not a new field on the `accountDeletionFailures` doc: it
+   * rides along in the existing `lastErrorCode` string column.
+   */
+  unknownReason?: 'company_read_failed' | 'counts_read_failed'
 }
 
 /**
@@ -210,7 +221,7 @@ export async function getDeletionOutcomes(uid: string): Promise<CompanyDeletionO
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         console.error('[lib/queries/deletionOutcomes]', { companyId, error: message, action: 'company_read_failed' })
-        return { companyId, companyName: '', role, memberCount: 0, otherAdminCount: 0, outcome: 'unknown' }
+        return { companyId, companyName: '', role, memberCount: 0, otherAdminCount: 0, outcome: 'unknown', unknownReason: 'company_read_failed' }
       }
 
       // Stale membership pointer — see this function's own docblock. Skipped
@@ -268,7 +279,7 @@ export async function getDeletionOutcomes(uid: string): Promise<CompanyDeletionO
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         console.error('[lib/queries/deletionOutcomes]', { companyId, error: message, action: 'counts_read_failed' })
-        return { companyId, companyName, role, memberCount: 0, otherAdminCount: 0, outcome: 'unknown' }
+        return { companyId, companyName, role, memberCount: 0, otherAdminCount: 0, outcome: 'unknown', unknownReason: 'counts_read_failed' }
       }
     }),
   )

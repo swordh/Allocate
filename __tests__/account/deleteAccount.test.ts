@@ -128,6 +128,7 @@ vi.mock('@/actions/auth', () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { deleteAccount } from '@/actions/account'
+import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { adminDb } from '@/lib/firebase-admin'
 import { formatDateFull } from '@/lib/companyDeletionCancelWrites'
 
@@ -804,7 +805,11 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     // distinguishable in Cloud Logging (action strings differ) as well as to
     // the user.
     expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
-    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    // issue #337: the ONE transaction that does run here is
+    // `recordAccountDeletionFailure`'s own best-effort trace write — the
+    // commit loop itself is never reached (the failure is in the pre-flight,
+    // before step 2 starts).
+    expect(adminDb.runTransaction).toHaveBeenCalledTimes(1)
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
@@ -962,7 +967,9 @@ describe('deleteAccount — multi-company sole-admin guard (#90, transactional a
     const result = await deleteAccount()
 
     expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
-    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    // issue #337: same as the memberships-fetch-fails test above — the one
+    // transaction that runs is the failure trace write, not the commit loop.
+    expect(adminDb.runTransaction).toHaveBeenCalledTimes(1)
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
@@ -1072,7 +1079,9 @@ describe('deleteAccount — issue #349 per-uid deletion lock', () => {
     const result = await deleteAccount()
 
     expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
-    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    // issue #337: the one transaction that runs is the failure trace write —
+    // the lock was never acquired, so the commit loop never starts.
+    expect(adminDb.runTransaction).toHaveBeenCalledTimes(1)
     expect(lockRef.delete).not.toHaveBeenCalled()
   })
 })
@@ -1501,7 +1510,16 @@ describe('deleteAccount — memberCounts delta', () => {
     const result = await deleteAccount()
 
     expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
-    expect(call).toBe(2)
+    // issue #337: a third `runTransaction` call is `recordAccountDeletionFailure`'s
+    // own best-effort trace write, fired from the same catch block as
+    // `writeDeletionFailureAudit` above it — company-A's real transaction (1),
+    // company-B's failing transaction (2), then the trace write (3). It hits
+    // this same mock, which rejects unconditionally for any call past the
+    // first — the callback never even runs, so this is the mock itself
+    // throwing, not a read inside the callback — but that rejection is
+    // swallowed inside `recordAccountDeletionFailure`'s own try/catch and
+    // never reaches this test's result.
+    expect(call).toBe(3)
     expect(mockDeleteSession).not.toHaveBeenCalled()
     expect(mockDeleteUser).not.toHaveBeenCalled()
   })
@@ -2567,5 +2585,355 @@ describe('deleteAccount — issue #383 refuses when a close company already has 
     // A refusal, not a failure — same reasoning as the 'sole-admin' refusal
     // test in the issue #358 block above.
     expect(auditChain.add).not.toHaveBeenCalled()
+  })
+})
+
+// ── issue #337 step 1: durable trace of a COULD_NOT_VERIFY_ERROR return ────
+//
+// `recordAccountDeletionFailure` (actions/account.ts) is called before every
+// `return { error: COULD_NOT_VERIFY_ERROR }` in this file, plus the
+// previously-unwrapped `users/{uid}/memberships` read. These tests pin its
+// write shape at each call site, its firstAt/attempts accumulation, its
+// best-effort behaviour (a throw here must never change what the user sees),
+// and the trace doc's deletion in the final success batch.
+
+describe('deleteAccount — issue #337 stuck-deletion trace', () => {
+  /** Finds the `tx.set` call that wrote `accountDeletionFailures/{uid}`, given
+   *  the shared `tx` `wireScenario` wires every `runTransaction` call through. */
+  function findTraceWrite(tx: ReturnType<typeof makeTransaction>) {
+    return tx.set.mock.calls.find(([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`)
+  }
+
+  it('lock_acquire: records the path, errorCode, and empty companyIds', async () => {
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    // code 2 (UNKNOWN), not 6 (ALREADY_EXISTS) — an unrelated Firestore
+    // failure, same fixture the #349 lock-acquire-failure test above uses.
+    const lockRef = makeLockRef({ createError: { code: 2 } })
+    stubLockCollection(wired, lockRef)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'lock_acquire', lastErrorCode: '2', lastCompanyIds: [] })
+  })
+
+  it('preflight_read: records the path, errorCode, and empty companyIds when getDeletionOutcomes throws', async () => {
+    stubSession()
+    const { tx } = wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    // Plain Error, no `.code` — errorCodeOf falls back to 'unknown'.
+    expect(call![1]).toMatchObject({ lastPath: 'preflight_read', lastErrorCode: 'unknown', lastCompanyIds: [] })
+  })
+
+  it('preflight_unknown: records the single unknownReason as errorCode, and the ids of the unreadable companies', async () => {
+    // Same fixture as "blocks with a distinct message when a company's
+    // outcome could not be determined" above: company-A's own doc reads
+    // fine, but its memberCounts read fails, so getDeletionOutcomes reports
+    // outcome 'unknown' for it (unknownReason: 'counts_read_failed') without
+    // throwing.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const resolveDocNormally = wired.doc.getMockImplementation() as unknown as (path: string) => DocRefStub
+    vi.mocked(adminDb.doc).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/_meta/memberCounts') {
+        return { path, id: 'memberCounts', get: async () => { throw new Error('Firestore unavailable') } }
+      }
+      return resolveDocNormally(path)
+    }) as unknown as typeof adminDb.doc)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    // This branch isn't a caught throw — there is no `err` for errorCodeOf
+    // to read a `.code` off — so errorCode instead carries
+    // getDeletionOutcomes's own `unknownReason` for the one unknown company.
+    expect(call![1]).toMatchObject({
+      lastPath: 'preflight_unknown',
+      lastErrorCode: 'counts_read_failed',
+      lastCompanyIds: ['company-A'],
+    })
+  })
+
+  it('preflight_unknown: joins DISTINCT unknownReason values, sorted, when companies fail for different reasons', async () => {
+    // company-A's own document read fails outright (unknownReason:
+    // 'company_read_failed'); company-B's document reads fine but its
+    // memberCounts read fails (unknownReason: 'counts_read_failed'). Both
+    // reasons must appear, sorted and comma-joined, not just the first one
+    // encountered — an operator reading `lastErrorCode` should see the full
+    // picture of what went wrong across companies, not a partial one.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [
+        { companyId: 'company-A', role: 'admin' },
+        { companyId: 'company-B', role: 'admin' },
+      ],
+      companies: {
+        'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } },
+        'company-B': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } },
+      },
+    })
+    const resolveDocNormally = wired.doc.getMockImplementation() as unknown as (path: string) => DocRefStub
+    vi.mocked(adminDb.doc).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A') {
+        return { path, id: 'company-A', get: async () => { throw new Error('Firestore unavailable') } }
+      }
+      if (path === 'companies/company-B/_meta/memberCounts') {
+        return { path, id: 'memberCounts', get: async () => { throw new Error('Firestore unavailable') } }
+      }
+      return resolveDocNormally(path)
+    }) as unknown as typeof adminDb.doc)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'preflight_unknown',
+      lastErrorCode: 'company_read_failed,counts_read_failed',
+      lastCompanyIds: ['company-A', 'company-B'],
+    })
+  })
+
+  it('memberships_read: records the path and errorCode when the post-preflight memberships read throws', async () => {
+    // Preflight (getDeletionOutcomes) succeeds normally — only the SECOND
+    // read of users/{uid}/memberships (previously unwrapped, actions/account.ts
+    // ~:615) fails. Both reads hit the same collection path, so this
+    // overrides `adminDb.collection` to let the first call through normally
+    // and fail only the second.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+    })
+    let membershipsCall = 0
+    const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+    vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+      if (path === `users/${UID}/memberships`) {
+        membershipsCall += 1
+        if (membershipsCall === 1) return resolveCollectionNormally(path)
+        return { get: async () => { throw Object.assign(new Error('Firestore unavailable'), { code: 'unavailable' }) } }
+      }
+      return resolveCollectionNormally(path)
+    }) as unknown as typeof adminDb.collection)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    // Only the trace write's own transaction runs — the commit loop is never
+    // reached because this read fails before it starts.
+    expect(adminDb.runTransaction).toHaveBeenCalledTimes(1)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'memberships_read', lastErrorCode: 'unavailable', lastCompanyIds: [] })
+  })
+
+  it('commit_loop: records the path, errorCode, and the failing companyId — never for a valid refusal', async () => {
+    stubSession()
+
+    const docsA: DocMap = {
+      'companies/company-A': { name: 'A' },
+      [`companies/company-A/members/${UID}`]: { role: 'crew' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'crew' } }]
+        : []
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: docsA, query })
+
+    let call = 0
+    let traceTx: ReturnType<typeof makeTransaction> | undefined
+    vi.mocked(adminDb.runTransaction).mockImplementation(async (cb: unknown) => {
+      call += 1
+      if (call === 1) {
+        throw Object.assign(new Error('Simulated transient Firestore failure for company-A'), { code: 'unavailable' })
+      }
+      // call === 2: recordAccountDeletionFailure's own trace-write transaction.
+      traceTx = makeTransaction({})
+      return (cb as (tx: unknown) => Promise<unknown>)(traceTx)
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    expect(call).toBe(2)
+    const traceCall = traceTx!.set.mock.calls.find(([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`)
+    expect(traceCall).toBeDefined()
+    expect(traceCall![1]).toMatchObject({ lastPath: 'commit_loop', lastErrorCode: 'unavailable', lastCompanyIds: ['company-A'] })
+  })
+
+  it('commit_loop: a valid refusal (sole-admin) writes NO trace — a refusal is not a failure', async () => {
+    // Reuses the authoritative in-transaction sole-admin refusal fixture from
+    // the issue #358 block above: the guard fires for real, throwing a
+    // REFUSAL_CODES error, which must never be traced the way a genuine
+    // failure is.
+    stubSession()
+    const preflightDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 2 },
+    }
+    const txDocs: DocMap = {
+      'companies/company-A': { name: 'Acme' },
+      [`companies/company-A/members/${UID}`]: { role: 'admin' },
+      'companies/company-A/_meta/memberCounts': { members: 3, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/members') {
+        return [{ id: UID, path: `companies/company-A/members/${UID}`, data: { role: 'admin' } }]
+      }
+      return []
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: preflightDocs, query, collectionGroup: () => [] })
+    const tx = makeTransaction(txDocs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).not.toBe(COULD_NOT_VERIFY_ERROR)
+    expect(findTraceWrite(tx)).toBeUndefined()
+  })
+
+  it('preserves firstAt and increments attempts when a trace doc already exists for this uid', async () => {
+    stubSession()
+    const { docs, tx } = wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+    const originalFirstAt = { __marker: 'ORIGINAL_FIRST_AT' }
+    docs[`accountDeletionFailures/${UID}`] = { firstAt: originalFirstAt, attempts: 2 }
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ firstAt: originalFirstAt, attempts: 3 })
+  })
+
+  it('starts firstAt at now and attempts at 1 when no trace doc exists yet', async () => {
+    stubSession()
+    const { tx } = wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect((call![1] as { firstAt: unknown; attempts: number }).attempts).toBe(1)
+    expect((call![1] as { firstAt: { toMillis: () => number } }).firstAt.toMillis()).toBe(1_760_000_000_000)
+  })
+
+  it('a trace write that itself throws does not change the returned error', async () => {
+    stubSession()
+    wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+    // Only one runTransaction call happens in this scenario (the trace write
+    // itself) — make it reject, simulating the trace's OWN write failing.
+    vi.mocked(adminDb.runTransaction).mockImplementationOnce(async () => {
+      throw new Error('trace write blew up')
+    })
+
+    // Resolving at all (rather than rejecting) is itself part of what this
+    // test pins: a Server Action must never throw, including when its own
+    // best-effort trace write is the thing that failed.
+    const result = await deleteAccount()
+    expect(result).toEqual({ error: COULD_NOT_VERIFY_ERROR })
+  })
+
+  it('a successful deletion deletes the trace doc in the final anonymisation batch', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+    })
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `accountDeletionFailures/${UID}` }),
+    )
+  })
+
+  // ── Cloud Monitoring log-based alert marker ─────────────────────────────
+  //
+  // On Cloud Run/App Hosting, `console.error('[tag]', {obj})` is split into
+  // one log entry PER LINE — the alert policy (prod) can only match a
+  // single-line `textPayload`, so `recordAccountDeletionFailure` emits a
+  // dedicated, single-string `console.error` call for this, separate from
+  // every other structured `console.error('[tag]', {...})` line in this file.
+
+  it('emits a single-line ACCOUNT_DELETION_STUCK log after the trace transaction commits', async () => {
+    // Same fixture as the preflight_unknown test above: company-A's own doc
+    // reads fine, but its memberCounts read fails.
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const resolveDocNormally = wired.doc.getMockImplementation() as unknown as (path: string) => DocRefStub
+    vi.mocked(adminDb.doc).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/_meta/memberCounts') {
+        return { path, id: 'memberCounts', get: async () => { throw new Error('Firestore unavailable') } }
+      }
+      return resolveDocNormally(path)
+    }) as unknown as typeof adminDb.doc)
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await deleteAccount()
+
+    const stuckCall = consoleErrorSpy.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCall).toBeDefined()
+    // Exactly one argument — a plain string, never a second object argument
+    // the way every other `console.error` line in this file passes one; a
+    // second argument would land on its own log entry on Cloud Run/App
+    // Hosting, defeating the single-line requirement.
+    expect(stuckCall).toHaveLength(1)
+    const line = stuckCall![0] as string
+    expect(line).toContain(ACCOUNT_DELETION_STUCK_LOG_MARKER)
+    expect(line).toContain('path=preflight_unknown')
+    expect(line).toContain('attempts=1')
+    expect(line).not.toContain('\n')
+
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('does NOT emit the ACCOUNT_DELETION_STUCK log when the trace write itself throws', async () => {
+    stubSession()
+    wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+    vi.mocked(adminDb.runTransaction).mockImplementationOnce(async () => {
+      throw new Error('trace write blew up')
+    })
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await deleteAccount()
+
+    const stuckCall = consoleErrorSpy.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCall).toBeUndefined()
+
+    consoleErrorSpy.mockRestore()
   })
 })
