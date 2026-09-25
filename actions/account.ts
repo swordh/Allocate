@@ -4,6 +4,7 @@ import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
+import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
 import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
@@ -467,20 +468,37 @@ async function recordAccountDeletionFailure(
     const expireAt = Timestamp.fromMillis(now.toMillis() + ACCOUNT_DELETION_FAILURE_TTL_MS)
     const ref = adminDb.collection('accountDeletionFailures').doc(uid)
 
-    await adminDb.runTransaction(async (tx) => {
+    const attempts = await adminDb.runTransaction(async (tx) => {
       const snap = await tx.get(ref)
       const existing = snap.data() as { firstAt?: Timestamp; attempts?: number } | undefined
+      const nextAttempts = (typeof existing?.attempts === 'number' ? existing.attempts : 0) + 1
 
       tx.set(ref, {
         firstAt: existing?.firstAt ?? now,
         lastAt: now,
-        attempts: (typeof existing?.attempts === 'number' ? existing.attempts : 0) + 1,
+        attempts: nextAttempts,
         lastPath: params.path,
         lastErrorCode: params.errorCode,
         lastCompanyIds: params.companyIds,
         expireAt,
       })
+
+      return nextAttempts
     })
+
+    // Single-line, template-string log, deliberately NOT the structured
+    // `console.error('[tag]', {obj})` shape every other log line in this file
+    // uses — on Cloud Run/App Hosting that shape is split into one log entry
+    // PER LINE (e.g. a lone `"[actions/account] {"` entry with none of the
+    // actual fields), which a log-based alert filter can't match against.
+    // This line only fires once the transaction above has actually
+    // committed — a trace write that itself failed is covered by the
+    // existing `account_deletion_failure_trace_failed` log in the catch
+    // block below, not this one; logging "stuck" for a trace we never
+    // managed to record would be its own kind of lie.
+    console.error(
+      `[actions/account] ${ACCOUNT_DELETION_STUCK_LOG_MARKER} path=${params.path} attempts=${attempts} uid=${uid.slice(0, 8)}...`,
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', {

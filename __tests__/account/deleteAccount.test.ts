@@ -128,6 +128,7 @@ vi.mock('@/actions/auth', () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { deleteAccount } from '@/actions/account'
+import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { adminDb } from '@/lib/firebase-admin'
 import { formatDateFull } from '@/lib/companyDeletionCancelWrites'
 
@@ -2871,5 +2872,68 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
     expect(wired.batch.delete).toHaveBeenCalledWith(
       expect.objectContaining({ path: `accountDeletionFailures/${UID}` }),
     )
+  })
+
+  // ── Cloud Monitoring log-based alert marker ─────────────────────────────
+  //
+  // On Cloud Run/App Hosting, `console.error('[tag]', {obj})` is split into
+  // one log entry PER LINE — the alert policy (prod) can only match a
+  // single-line `textPayload`, so `recordAccountDeletionFailure` emits a
+  // dedicated, single-string `console.error` call for this, separate from
+  // every other structured `console.error('[tag]', {...})` line in this file.
+
+  it('emits a single-line ACCOUNT_DELETION_STUCK log after the trace transaction commits', async () => {
+    // Same fixture as the preflight_unknown test above: company-A's own doc
+    // reads fine, but its memberCounts read fails.
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const resolveDocNormally = wired.doc.getMockImplementation() as unknown as (path: string) => DocRefStub
+    vi.mocked(adminDb.doc).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/_meta/memberCounts') {
+        return { path, id: 'memberCounts', get: async () => { throw new Error('Firestore unavailable') } }
+      }
+      return resolveDocNormally(path)
+    }) as unknown as typeof adminDb.doc)
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await deleteAccount()
+
+    const stuckCall = consoleErrorSpy.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCall).toBeDefined()
+    // Exactly one argument — a plain string, never a second object argument
+    // the way every other `console.error` line in this file passes one; a
+    // second argument would land on its own log entry on Cloud Run/App
+    // Hosting, defeating the single-line requirement.
+    expect(stuckCall).toHaveLength(1)
+    const line = stuckCall![0] as string
+    expect(line).toContain(ACCOUNT_DELETION_STUCK_LOG_MARKER)
+    expect(line).toContain('path=preflight_unknown')
+    expect(line).toContain('attempts=1')
+    expect(line).not.toContain('\n')
+
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('does NOT emit the ACCOUNT_DELETION_STUCK log when the trace write itself throws', async () => {
+    stubSession()
+    wireScenario({ memberships: [], membershipsFetchError: new Error('Firestore unavailable') })
+    vi.mocked(adminDb.runTransaction).mockImplementationOnce(async () => {
+      throw new Error('trace write blew up')
+    })
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await deleteAccount()
+
+    const stuckCall = consoleErrorSpy.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCall).toBeUndefined()
+
+    consoleErrorSpy.mockRestore()
   })
 })
