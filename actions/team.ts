@@ -7,6 +7,7 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import { listMembers } from '@/lib/queries/members'
+import { ALLOWED_ROLES, toRole } from '@/lib/roles'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
 import type { Role } from '@/types'
@@ -18,8 +19,6 @@ async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   await batch.commit()
   return adminDb.batch()
 }
-
-const ALLOWED_ROLES: Role[] = ['admin', 'crew', 'viewer']
 
 function newExpiresAt(): string {
   return new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
@@ -93,7 +92,7 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
   // ── 2. Harden input — never trust the client's parser ────────────────────────
   if (!Array.isArray(emails)) return { error: 'Invalid recipient list.' }
 
-  const submittedRole: Role = ALLOWED_ROLES.includes(role) ? role : 'crew'
+  const submittedRole: Role = toRole(role, { fn: 'inviteUsers', path: `companies/${cid}` })
 
   const seen = new Set<string>()
   const normalizedEmails: string[] = []
@@ -288,7 +287,7 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
 
   const token = inviteData.token as string
   const email = inviteData.email as string
-  const role = (inviteData.role as Role) ?? 'crew'
+  const role = toRole(inviteData.role, { fn: 'resendInvitation', path: inviteRef.path })
   const inviterName = (inviteData.invitedByName as string) || 'A teammate'
 
   // App URL is required to rebuild the accept link.
@@ -361,8 +360,7 @@ export async function updateMemberRole(
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
 
-  const validRoles: Role[] = ['admin', 'crew', 'viewer']
-  if (!validRoles.includes(newRole)) return { error: 'Invalid role' }
+  if (!ALLOWED_ROLES.includes(newRole)) return { error: 'Invalid role' }
 
   if (memberId === session.uid) return { error: "You can't change your own role" }
 
@@ -690,9 +688,10 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
         .get()
 
       if (remainingMembershipsSnap.docs.length > 0) {
-        const next = remainingMembershipsSnap.docs[0].data()
+        const nextDoc = remainingMembershipsSnap.docs[0]
+        const next = nextDoc.data()
         const nextCompanyId = next.companyId as string
-        const nextRole      = next.role as string
+        const nextRole      = toRole(next.role, { fn: 'removeMember', path: nextDoc.ref.path })
 
         await adminDb.doc(`users/${memberId}`).update({ activeCompanyId: nextCompanyId })
         await adminAuth.setCustomUserClaims(memberId, {
@@ -878,12 +877,14 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
       const remainingSnap = await adminDb.collection(`users/${session.uid}/memberships`).get()
 
       if (remainingSnap.docs.length > 0) {
-        const next = remainingSnap.docs[0]!.data()
+        const nextDoc = remainingSnap.docs[0]!
+        const next = nextDoc.data()
         redirectCompanyId = next.companyId as string
+        const nextRole = toRole(next.role, { fn: 'leaveCompany', path: nextDoc.ref.path })
         await adminDb.doc(`users/${session.uid}`).update({ activeCompanyId: redirectCompanyId })
         await adminAuth.setCustomUserClaims(session.uid, {
           activeCompanyId: redirectCompanyId,
-          role: next.role as string,
+          role: nextRole,
         })
       } else {
         await adminDb.doc(`users/${session.uid}`).update({ activeCompanyId: null })

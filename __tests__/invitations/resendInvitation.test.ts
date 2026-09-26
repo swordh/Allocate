@@ -36,7 +36,7 @@ const INVITE_ID = 'invite-1'
 const TOKEN = 'existingtoken0123456789abcdef01'
 const EMAIL = 'crew@example.com'
 
-function stubSession(role: 'admin' | 'crew' | 'viewer' = 'admin') {
+function stubSession(role: 'admin' | 'crew' = 'admin') {
   vi.mocked(getVerifiedSession).mockResolvedValue({
     uid: 'admin-1',
     email: 'admin@example.com',

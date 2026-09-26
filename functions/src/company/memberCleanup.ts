@@ -3,6 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import { TRIGGERED_BY_STRANDED_MEMBER_SCHEDULED } from '../deletionAuditLogTriggers';
+import { toRole } from '../auth/role';
 
 /** Thirty days, per "Del 3" of the design brief and "Fattade beslut" in the plan. */
 export const STRANDED_MEMBER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -123,9 +124,10 @@ export async function cleanupOneMember(
   if (userData['activeCompanyId'] === companyId) {
     try {
       if (remaining.length > 0) {
-        const next = remaining[0].data();
+        const nextDoc = remaining[0];
+        const next = nextDoc.data();
         const nextCompanyId = next['companyId'] as string;
-        const nextRole = next['role'] as string;
+        const nextRole = toRole(next['role'], { fn: 'cleanupOneMember', path: nextDoc.ref.path });
         await userRef.set({ activeCompanyId: nextCompanyId }, { merge: true });
         await getAuth().setCustomUserClaims(uid, { activeCompanyId: nextCompanyId, role: nextRole });
       } else {

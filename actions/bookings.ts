@@ -404,7 +404,6 @@ export async function createBooking(
   formData: FormData,
 ): Promise<{ bookingId: string } | { error: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   // userName is not stored on bookings — read from user profile at display time
   // (GDPR Art. 5(1)(c) data minimisation; anonymised on account deletion).
@@ -589,7 +588,6 @@ export async function updateBooking(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 
@@ -822,7 +820,6 @@ export async function updateBooking(
 
 export async function cancelBooking(bookingId: string): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 
@@ -990,7 +987,6 @@ export async function approveBooking(
   rejectionReason?: string,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 

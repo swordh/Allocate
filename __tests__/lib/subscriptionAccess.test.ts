@@ -20,7 +20,7 @@ import { evaluateAppAccess, hasFullAccess, needsSubscription } from '@/lib/subsc
 import { SETTINGS_ITEMS, settingsItemsFor } from '@/components/nav/nav-items'
 import type { Role } from '@/types'
 
-const ROLES: Role[] = ['admin', 'crew', 'viewer']
+const ROLES: Role[] = ['admin', 'crew']
 
 describe('hasFullAccess / needsSubscription', () => {
   it('are exact inverses', () => {
@@ -76,12 +76,6 @@ describe('evaluateAppAccess — fail-closed pathname, role-aware', () => {
       })
     })
 
-    it(`viewer with pathname=${JSON.stringify(pathname)} redirects to /settings/account, never /subscribe`, () => {
-      expect(evaluateAppAccess({ pathname, role: 'viewer', subStatus: undefined, trialEnd: null })).toEqual({
-        allowed: false,
-        redirectTo: '/settings/account',
-      })
-    })
   }
 })
 
@@ -114,13 +108,13 @@ describe('evaluateAppAccess — the prefix hole (named regression tests)', () =>
 
   it('allows /settings/account/export (a true sub-route, segment-prefixed)', () => {
     expect(
-      evaluateAppAccess({ pathname: '/settings/account/export', role: 'viewer', subStatus: undefined, trialEnd: null }),
+      evaluateAppAccess({ pathname: '/settings/account/export', role: 'crew', subStatus: undefined, trialEnd: null }),
     ).toEqual({ allowed: true })
   })
 
   it('allows /settings/account itself (exact match)', () => {
     expect(
-      evaluateAppAccess({ pathname: '/settings/account', role: 'viewer', subStatus: undefined, trialEnd: null }),
+      evaluateAppAccess({ pathname: '/settings/account', role: 'crew', subStatus: undefined, trialEnd: null }),
     ).toEqual({ allowed: true })
   })
 })
@@ -158,12 +152,6 @@ describe('evaluateAppAccess — role mismatch on an always-available route', () 
     ).toEqual({ allowed: false, redirectTo: '/settings/account' })
   })
 
-  it('viewer hitting /settings/subscription (admin-only) lands on /settings/account', () => {
-    expect(
-      evaluateAppAccess({ pathname: '/settings/subscription', role: 'viewer', subStatus: undefined, trialEnd: null }),
-    ).toEqual({ allowed: false, redirectTo: '/settings/account' })
-  })
-
   it('admin reaches /settings/company with no plan', () => {
     expect(
       evaluateAppAccess({ pathname: '/settings/company', role: 'admin', subStatus: undefined, trialEnd: null }),
@@ -174,12 +162,6 @@ describe('evaluateAppAccess — role mismatch on an always-available route', () 
 describe('evaluateAppAccess — decision: non-admin never sent to /subscribe', () => {
   it('crew blocked anywhere lands on /settings/account', () => {
     expect(evaluateAppAccess({ pathname: '/equipment', role: 'crew', subStatus: 'canceled', trialEnd: null })).toEqual(
-      { allowed: false, redirectTo: '/settings/account' },
-    )
-  })
-
-  it('viewer blocked anywhere lands on /settings/account', () => {
-    expect(evaluateAppAccess({ pathname: '/bookings', role: 'viewer', subStatus: 'past_due', trialEnd: null })).toEqual(
       { allowed: false, redirectTo: '/settings/account' },
     )
   })

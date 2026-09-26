@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
+import { toRole } from '@/lib/roles'
 import { PLAN_LIMITS } from '@/lib/subscription'
 import { INITIAL_COMPANY_STATS } from '@/lib/companyStats'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
@@ -109,11 +110,20 @@ async function repairMissingClaims(
   const founded = liveMemberships.find((m) => m.createdBy === uid)
   if (!founded) return false
 
-  const memberSnap = await adminDb.doc(`companies/${founded.companyId}/members/${uid}`).get()
+  const memberPath = `companies/${founded.companyId}/members/${uid}`
+  const memberSnap = await adminDb.doc(memberPath).get()
   if (!memberSnap.exists) return false
 
-  const role = memberSnap.data()?.role
-  if (role !== 'admin' && role !== 'crew' && role !== 'viewer') return false
+  // Deliberately stricter than toRole's normal "anything unrecognised
+  // becomes crew" behaviour: this branch WRITES Custom Claims for the
+  // caller, so a role value that isn't one this app actually recognises —
+  // 'admin'/'crew', or the still-transitional legacy 'viewer' — must refuse
+  // the repair outright rather than silently hand her a working session
+  // anyway. `toRole` still owns the one substitution that IS safe here:
+  // mapping a legacy 'viewer' member doc to 'crew'.
+  const rawRole = memberSnap.data()?.role
+  if (rawRole !== 'admin' && rawRole !== 'crew' && rawRole !== 'viewer') return false
+  const role = toRole(rawRole, { fn: 'repairMissingClaims', path: memberPath })
 
   await adminAuth.setCustomUserClaims(uid, { activeCompanyId: founded.companyId, role })
   console.log('[actions/auth]', { action: 'claims_repaired' })
@@ -385,8 +395,8 @@ export async function switchCompany(companyId: string): Promise<{ customToken: s
       throw new Error('No membership found for this company')
     }
 
-    const membershipData = membershipSnap.data() as { role?: string }
-    const role = membershipData.role ?? 'viewer'
+    const membershipData = membershipSnap.data() as { role?: unknown }
+    const role = toRole(membershipData.role, { fn: 'switchCompany', path: membershipRef.path })
 
     await adminAuth.setCustomUserClaims(uid, {
       activeCompanyId: companyId,

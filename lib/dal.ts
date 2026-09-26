@@ -4,6 +4,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
+import { toRole } from '@/lib/roles'
 import type { SessionClaims } from '@/types'
 
 /** A verified session that may or may not have an active company. */
@@ -65,11 +66,21 @@ export const verifyAuthenticatedSession = cache(async (): Promise<AuthenticatedS
       redirect('/verify-email')
     }
 
+    // Normalise a present role claim through the shared guard (issue #398) —
+    // a stale `viewer` claim or any other invalid value becomes `crew`
+    // immediately, without waiting for a token refresh or the migration
+    // script. Absence of the claim (the /no-company path) is left as
+    // `undefined`, never coerced to a role.
+    const rawRole = decoded['role'] as unknown
+    const role = rawRole === undefined
+      ? undefined
+      : toRole(rawRole, { fn: 'verifyAuthenticatedSession', path: `users/${decoded.uid}` })
+
     return {
       uid:             decoded.uid,
       email:           decoded.email ?? '',
       activeCompanyId: decoded['activeCompanyId'] as string | undefined,
-      role:            decoded['role'] as SessionClaims['role'] | undefined,
+      role,
     }
   } catch (err) {
     // Re-throw Next.js redirect errors so they propagate to the framework.

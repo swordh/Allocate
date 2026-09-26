@@ -12,14 +12,12 @@ export interface InvitationEmailData {
 const ROLE_LABEL: Record<string, string> = {
   admin: 'an Admin',
   crew: 'Crew',
-  viewer: 'a Viewer',
 };
 
 /** Bare role label for the eyebrow ("INVITED AS ADMIN"). */
 const ROLE_EYEBROW: Record<string, string> = {
   admin: 'ADMIN',
   crew: 'CREW',
-  viewer: 'VIEWER',
 };
 
 /**

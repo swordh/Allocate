@@ -1,7 +1,7 @@
 import type { Role } from './user'
 
-// Full Role union — the design's invite form offers ADMIN / CREW / VIEWER,
-// so 'viewer' is invitable like the other two roles.
+// Full Role union — the design's invite form offers ADMIN / CREW, so both
+// are invitable.
 export type InvitationRole = Role
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
 

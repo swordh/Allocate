@@ -255,6 +255,44 @@ describe('getVerifiedSession', () => {
     expect(claims.uid).toBe('user-4')
     expect(claims.activeCompanyId).toBe('company-legacy')
   })
+
+  // ── role normalisation (issue #397/#398) ──────────────────────────────────
+  //
+  // A role claim, once present, is routed through lib/roles.ts's toRole
+  // before it ever reaches SessionClaims — a stale 'viewer' claim (issued
+  // before the migration ran) or any other invalid value must act as crew
+  // immediately, without a token refresh. Absence of the claim entirely is
+  // untouched — that's the /no-company path's territory, not this guard's.
+
+  it('normalises a stale viewer role claim to crew', async () => {
+    mockCookieGet.mockReturnValue({ value: 'viewer-claim-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-9',
+      email:           'stale@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'viewer',
+      email_verified:  true,
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.role).toBe('crew')
+  })
+
+  it('normalises a garbage role claim to crew', async () => {
+    mockCookieGet.mockReturnValue({ value: 'garbage-claim-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-10',
+      email:           'garbage@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'owner',
+      email_verified:  true,
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.role).toBe('crew')
+  })
 })
 
 // ── Tests: getSessionWithoutCompany ─────────────────────────────────────────────
@@ -491,5 +529,51 @@ describe('switchCompany', () => {
     await expect(switchCompany('company-nonexistent')).rejects.toThrow('Failed to switch company')
 
     expect(mockRevokeRefreshTokens).not.toHaveBeenCalled()
+  })
+
+  // Issue #398: switchCompany used to default a MISSING role straight to
+  // 'viewer' (`membershipData.role ?? 'viewer'`) and otherwise trusted
+  // whatever string was on the membership doc verbatim. Both a missing role
+  // and an invalid one must now come out as 'crew' via toRole.
+  it('coerces a missing membership role to crew, not viewer', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({}), // no `role` field at all
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
+  })
+
+  it('coerces an invalid membership role to crew', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({ role: 'owner' }),
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
+  })
+
+  it('coerces a legacy viewer membership role to crew', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({ role: 'viewer' }),
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
   })
 })

@@ -8,7 +8,7 @@ import NoPlanNotice from './NoPlanNotice'
  * Issue #350 (GDPR) — role split. `evaluateAppAccess` (lib/subscriptionAccess.ts)
  * already keeps non-admins from being redirected HERE by the `(app)` layout
  * gate, but `/subscribe` lives outside `(app)` and has no route-group-level
- * role check of its own — a crew/viewer member can still type the URL
+ * role check of its own — a crew member can still type the URL
  * directly. This split is defense in depth, not the primary control: a
  * non-admin gets `NoPlanNotice` (no plan grid, no button that can produce
  * `actions/subscription.ts`'s "Only an administrator can change the plan"
