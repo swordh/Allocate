@@ -60,6 +60,11 @@ const SUBTREE_COLLECTIONS = ['bookings', 'equipment', 'categories', 'invitations
  * warning for "a collection with companyId exists that this list doesn't
  * know about". Check this list whenever you add a new collection with a
  * denormalized `companyId`.
+ *
+ * Deliberately excludes `operators` and `operatorLoginLog` (issue #344):
+ * neither is company-scoped — an operator's grant and login history exist
+ * independent of any single customer's company and must survive that
+ * company's deletion untouched.
  */
 const ORPHAN_COLLECTIONS = ['companyEvents', 'operatorNotes', 'operatorFeedback', 'stripeFailedPayments'] as const;
 

@@ -3,9 +3,7 @@ import 'server-only'
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { adminAuth } from '@/lib/firebase-admin'
-
-const OPERATOR_ALLOWLIST = ['jocke@allocate.at']
+import { adminAuth, adminDb } from '@/lib/firebase-admin'
 
 export interface OperatorSession {
   uid: string
@@ -13,29 +11,41 @@ export interface OperatorSession {
 }
 
 /**
- * The one operator check — provider:true custom claim AND email allowlist.
- * Shared by getOperatorSession (session-cookie path) and the /operator/login
- * server action (fresh-ID-token path, before any session cookie exists), so
- * both gates stay identical by construction instead of by copy-paste.
+ * The one operator check — issue #344. Previously this was a custom claim
+ * (`provider === true`) AND an email allowlist, both rejected:
  *
- * Deliberately takes only the two claims it needs rather than a full
- * DecodedIdToken, so it works for both a verifySessionCookie() result and a
- * verifyIdToken() result without a type union.
+ *   - The claim was overwritten wholesale by any of the 11 other
+ *     `setCustomUserClaims` call sites in this codebase (actions/auth.ts,
+ *     actions/team.ts, functions/src/auth/acceptInvitation.ts,
+ *     functions/src/company/memberCleanup.ts) — none of them know about or
+ *     preserve `provider`, so an operator's own claim could silently vanish
+ *     the moment she switched companies or was re-invited somewhere.
+ *   - Revoking access via a claim only takes effect once the 14-day session
+ *     cookie the claim was baked into actually expires (or an explicit
+ *     `revokeRefreshTokens` call, which nothing here made) — up to two weeks
+ *     of lag on a security-sensitive gate.
+ *   - The hardcoded `OPERATOR_ALLOWLIST` needed a code change + deploy to
+ *     add or remove an operator.
+ *
+ * Operator status is now a plain Firestore doc, `operators/{uid}`, read
+ * server-side via the Admin SDK on every check — no claim, no allowlist, no
+ * cookie lag: revoking access (deleting the doc) takes effect on that uid's
+ * very next request. Managed with `tools/set-operator.js`.
+ *
+ * Fails closed: a Firestore read error is logged and treated as "not an
+ * operator", never as "presumed operator".
  */
-export function isOperator(claims: { provider?: unknown; email?: string | null }): boolean {
-  if (claims.provider !== true) return false
-  const email = claims.email ?? ''
-  return OPERATOR_ALLOWLIST.includes(email)
+export async function isOperator(uid: string): Promise<boolean> {
+  try {
+    const snap = await adminDb.collection('operators').doc(uid).get()
+    return snap.exists
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[operator-dal]', { action: 'operator_check_failed', error: message })
+    return false
+  }
 }
 
-/**
- * Verifies the __session cookie and checks for provider:true custom claim.
- * Also enforces an email allowlist for extra security.
- * Redirects to /login if the cookie is missing, invalid, or unauthorized.
- *
- * Wrapped in React.cache — multiple Server Components calling this in the
- * same render pass incur only one Admin SDK verification call.
- */
 /**
  * Re-throws Next.js's internal redirect signal so it can propagate to the
  * framework instead of being swallowed by a server action's try/catch.
@@ -53,6 +63,14 @@ export function rethrowRedirect(err: unknown): void {
   if (digest.startsWith('NEXT_REDIRECT') || msg.startsWith('REDIRECT:')) throw err
 }
 
+/**
+ * Verifies the __session cookie and checks `operators/{uid}` in Firestore
+ * (see `isOperator` above). Redirects to /login if the cookie is missing,
+ * invalid, or the uid is not an operator.
+ *
+ * Wrapped in React.cache — multiple Server Components calling this in the
+ * same render pass incur only one Admin SDK verification call.
+ */
 export const getOperatorSession = cache(async (): Promise<OperatorSession> => {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get('__session')?.value
@@ -65,7 +83,7 @@ export const getOperatorSession = cache(async (): Promise<OperatorSession> => {
   try {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true)
 
-    if (!isOperator(decoded)) {
+    if (!(await isOperator(decoded.uid))) {
       console.error('[operator-dal] session_failed_operator_check')
       redirect('/login')
     }
@@ -75,12 +93,7 @@ export const getOperatorSession = cache(async (): Promise<OperatorSession> => {
       email: decoded.email ?? '',
     }
   } catch (err) {
-    // Re-throw Next.js redirect errors so they propagate to the framework.
-    // In production, redirect() throws an error with a NEXT_REDIRECT digest.
-    // In test, the mock throws Error('REDIRECT:…'). Both must pass through.
-    const digest = (err as { digest?: string }).digest ?? ''
-    const msg    = err instanceof Error ? err.message : ''
-    if (digest.startsWith('NEXT_REDIRECT') || msg.startsWith('REDIRECT:')) throw err
+    rethrowRedirect(err)
     // Do not log the raw error — Firebase session errors can contain tokens or emails.
     console.error('[operator-dal] session_cookie_invalid')
     redirect('/login')

@@ -48,7 +48,8 @@ import type { CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/typ
  * sees it (see the docblock on `confirmationMatches` in
  * actions/companyDeletion.ts, and `getOperatorSession`'s own callers). None of
  * these three touch, weaken, or add an alternative to the operator
- * allowlist/claim/revocation check `getOperatorSession` already performs.
+ * check `getOperatorSession` already performs (the `operators/{uid}`
+ * Firestore doc, issue #344 — see lib/operator-dal.ts).
  *
  * ── Traceability, shared by all three ──────────────────────────────────────
  * Every one of these appends a `CompanyDeletionOperatorAction` entry to the
