@@ -21,12 +21,6 @@ describe('toRole', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('maps the legacy role viewer to crew without logging (issue #397)', () => {
-    const warnSpy = vi.spyOn(logger, 'warn');
-    expect(toRole('viewer', ctx)).toBe('crew');
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
   it('falls back to crew for undefined without logging', () => {
     const warnSpy = vi.spyOn(logger, 'warn');
     expect(toRole(undefined, ctx)).toBe('crew');
@@ -43,6 +37,7 @@ describe('toRole', () => {
     ['', 'empty string'],
     ['owner', 'unknown role string'],
     ['Admin', 'wrong casing'],
+    ['viewer', 'removed legacy role (issue #397)'],
     [42, 'a number'],
     [{}, 'an object'],
   ] as const)('falls back to crew and warns once for %s (%s)', (value) => {

@@ -3,10 +3,9 @@
  *
  * Covers the role allowlist: the submitted role must be one of
  * 'admin' | 'crew', with 'crew' as the fallback for an invalid value —
- * including the legacy 'viewer' value (issue #397), which is treated the
- * same as any other non-allowlisted input, just without the warning log
- * `toRole` gives a genuinely unexpected value. Never trust the client value
- * without this check.
+ * including the removed 'viewer' value (issue #397), which is now treated
+ * exactly like any other non-allowlisted input, warning included. Never
+ * trust the client value without this check.
  *
  * Asserts on the batch.set PAYLOAD, not the ref path — wireDb's
  * `chain['doc']` returns `${path}/auto-id` for every generated ref, so with
@@ -89,7 +88,8 @@ describe('inviteUsers — create branch (role allowlist)', () => {
     )
   })
 
-  it('falls back to crew for a submitted role of legacy viewer', async () => {
+  it('falls back to crew and warns for a submitted role of removed legacy viewer', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     stubSession()
     const { batch } = wire()
 
@@ -100,6 +100,7 @@ describe('inviteUsers — create branch (role allowlist)', () => {
       expect.anything(),
       expect.objectContaining({ email: EMAIL, role: 'crew' }),
     )
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to crew for an invalid role value', async () => {

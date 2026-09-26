@@ -259,12 +259,14 @@ describe('getVerifiedSession', () => {
   // ── role normalisation (issue #397/#398) ──────────────────────────────────
   //
   // A role claim, once present, is routed through lib/roles.ts's toRole
-  // before it ever reaches SessionClaims — a stale 'viewer' claim (issued
-  // before the migration ran) or any other invalid value must act as crew
-  // immediately, without a token refresh. Absence of the claim entirely is
-  // untouched — that's the /no-company path's territory, not this guard's.
+  // before it ever reaches SessionClaims — a stale 'viewer' claim (the role
+  // removed in #397) or any other invalid value must act as crew
+  // immediately, without a token refresh, and both are logged the same way.
+  // Absence of the claim entirely is untouched — that's the /no-company
+  // path's territory, not this guard's.
 
-  it('normalises a stale viewer role claim to crew', async () => {
+  it('normalises a stale viewer role claim to crew and warns', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockCookieGet.mockReturnValue({ value: 'viewer-claim-session-token' })
     mockVerifySessionCookie.mockResolvedValue({
       uid:             'user-9',
@@ -277,6 +279,7 @@ describe('getVerifiedSession', () => {
     const claims = await getVerifiedSession()
 
     expect(claims.role).toBe('crew')
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 
   it('normalises a garbage role claim to crew', async () => {
@@ -533,8 +536,9 @@ describe('switchCompany', () => {
 
   // Issue #398: switchCompany used to default a MISSING role straight to
   // 'viewer' (`membershipData.role ?? 'viewer'`) and otherwise trusted
-  // whatever string was on the membership doc verbatim. Both a missing role
-  // and an invalid one must now come out as 'crew' via toRole.
+  // whatever string was on the membership doc verbatim. A missing role, an
+  // invalid one, and the now-removed legacy 'viewer' (#397) must all come
+  // out as 'crew' via toRole.
   it('coerces a missing membership role to crew, not viewer', async () => {
     mockMembershipGet.mockResolvedValue({
       exists: true,
@@ -563,7 +567,8 @@ describe('switchCompany', () => {
     })
   })
 
-  it('coerces a legacy viewer membership role to crew', async () => {
+  it('coerces a legacy viewer membership role to crew and warns', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockMembershipGet.mockResolvedValue({
       exists: true,
       data:   () => ({ role: 'viewer' }),
@@ -575,5 +580,6 @@ describe('switchCompany', () => {
       activeCompanyId: 'company-new',
       role:            'crew',
     })
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 })

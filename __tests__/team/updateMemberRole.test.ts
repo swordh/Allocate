@@ -320,8 +320,9 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
   })
 
   it('rejects the removed legacy role viewer — admin input is never coerced to crew', async () => {
-    // Unlike toRole's silent coercion of a stored/claimed 'viewer' to
-    // 'crew', an admin explicitly SUBMITTING 'viewer' here is refused
+    // Unlike toRole's coercion of a stored/claimed 'viewer' to 'crew' (now
+    // always logged, since 'viewer' is no longer a recognised transitional
+    // case), an admin explicitly SUBMITTING 'viewer' here is refused
     // outright (issue #397) — this is deliberate, unvalidated client input,
     // not a legacy document being read.
     wireDb(adminDb as unknown as Record<string, unknown>, { docs: {} })

@@ -151,10 +151,12 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
   })
 
   // Issue #398: the removed member's activeCompanyId repoint used to trust
-  // `next.role as string` from the remaining membership doc verbatim. A
-  // legacy 'viewer' role (or any other invalid value) there must now come
-  // out as 'crew' in the Custom Claims write, never pass through raw.
-  it('coerces a legacy viewer role on the target\'s remaining membership to crew when repointing claims', async () => {
+  // `next.role as string` from the remaining membership doc verbatim. The
+  // removed 'viewer' role (or any other invalid value) there must now come
+  // out as 'crew' in the Custom Claims write, with a warning logged, never
+  // pass through raw.
+  it('coerces the removed legacy viewer role on the target\'s remaining membership to crew and warns when repointing claims', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const OTHER_COMPANY_ID = 'company-remaining'
     const docs: DocMap = {
       [TARGET_PATH]: { role: 'crew' },
@@ -180,6 +182,7 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
       activeCompanyId: OTHER_COMPANY_ID,
       role: 'crew',
     })
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 
   it('coerces an invalid role on the remaining membership to crew when repointing claims', async () => {
