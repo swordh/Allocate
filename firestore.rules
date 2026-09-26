@@ -142,6 +142,37 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Operator access (issue #344) ──────────────────────────────────────────
+    // Operator status is a plain doc, not a custom claim or an allowlist —
+    // see lib/operator-dal.ts's isOperator() for why. Written and read only
+    // by the Admin SDK: `getOperatorSession`/`operatorSignIn` read it,
+    // tools/set-operator.js writes it. Never client-readable — a client that
+    // could read its own doc could also infer operator status of others via
+    // existence checks, and there is no legitimate client use case anyway.
+    //   email: string
+    //   grantedAt: Timestamp
+    match /operators/{uid} {
+      allow read, write: if false;
+    }
+
+    // ── Operator login audit log (issue #344) ─────────────────────────────────
+    // Append-only, never client-readable. One row per attempt to authenticate
+    // against /operator/login — both operators who succeed and anyone else
+    // who tries (legitimate interest: security). Written only by
+    // actions/operator-auth.ts via the Admin SDK, before a session cookie is
+    // ever issued — "no access without an audit trail".
+    //   uid: string
+    //   email: string
+    //   outcome: 'granted' | 'denied'
+    //   reason: string
+    //   at: Timestamp
+    //   expireAt: Timestamp        // TTL field, 12 months from `at`
+    // No IP address, no user agent — deliberately out of scope, see
+    // lib/operator-login-log.ts.
+    match /operatorLoginLog/{id} {
+      allow read, write: if false;
+    }
+
     // ── Invitation mirror (public bearer-token lookup) ────────────────────────
     // Top-level mirror at invitations/{token}. The token is an unguessable random
     // id that acts as a bearer secret, so a single-document `get` is public — this
