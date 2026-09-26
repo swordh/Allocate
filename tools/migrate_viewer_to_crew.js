@@ -25,7 +25,8 @@
  *   `memberships` pass above (an `invitations` doc has no uid — the
  *   invitee may not even have an account yet), if that uid's CURRENT custom
  *   claim `role` is exactly `'viewer'`, the existing claims are spread and
- *   re-set with `role: 'crew'` (same pattern as tools/set-provider-claim.js).
+ *   re-set with `role: 'crew'` (same claims-preserving spread pattern
+ *   tools/set-operator.js's --strip-provider-claim uses).
  *   Deliberately does NOT call `revokeRefreshTokens` — `lib/dal.ts`'s
  *   `verifyAuthenticatedSession` already normalises a stale `viewer` claim
  *   to `crew` on every read (issue #398), so an existing session keeps
