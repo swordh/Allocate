@@ -27,10 +27,10 @@ interface NoPlanBannerProps {
  *
  * Copy is role-dependent, not just role-blind boilerplate: a non-admin
  * cannot buy a plan (`actions/subscription.ts` rejects `createCheckoutSession`
- * for any role but admin), so sending crew/viewer to `/subscribe` would be a
+ * for any role but admin), so sending crew to `/subscribe` would be a
  * dead end — the same reasoning `evaluateAppAccess` already uses to route
  * blocked non-admins to `/settings/account` instead of `/subscribe`. Only
- * the admin copy carries the `/subscribe` link; crew/viewer are told to
+ * the admin copy carries the `/subscribe` link; crew are told to
  * contact their administrator, with no link at all, because there is
  * nothing for them to do at that destination.
  */

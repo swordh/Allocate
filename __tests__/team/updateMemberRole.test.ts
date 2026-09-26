@@ -139,7 +139,7 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
     wireDb(adminDb as unknown as Record<string, unknown>, { docs })
     const tx = wireTransaction(docs)
 
-    const result = await updateMemberRole(TARGET_UID, 'viewer')
+    const result = await updateMemberRole(TARGET_UID, 'crew')
 
     expect(result.error).toBeUndefined()
     const countsCall = tx.set.mock.calls.find((c) => (c[0] as { path: string }).path === META_PATH)
@@ -314,6 +314,19 @@ describe('updateMemberRole — transactional sole-admin guard', () => {
     wireDb(adminDb as unknown as Record<string, unknown>, { docs: {} })
 
     const result = await updateMemberRole(TARGET_UID, 'owner' as never)
+
+    expect(result.error).toBe('Invalid role')
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects the removed legacy role viewer — admin input is never coerced to crew', async () => {
+    // Unlike toRole's silent coercion of a stored/claimed 'viewer' to
+    // 'crew', an admin explicitly SUBMITTING 'viewer' here is refused
+    // outright (issue #397) — this is deliberate, unvalidated client input,
+    // not a legacy document being read.
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs: {} })
+
+    const result = await updateMemberRole(TARGET_UID, 'viewer' as never)
 
     expect(result.error).toBe('Invalid role')
     expect(adminDb.runTransaction).not.toHaveBeenCalled()

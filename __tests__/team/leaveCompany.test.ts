@@ -104,6 +104,56 @@ describe('leaveCompany', () => {
     expect(adminAuth.createCustomToken).toHaveBeenCalledWith(UID)
   })
 
+  // Issue #398: the session repoint used to trust `next.role as string` from
+  // the remaining membership doc verbatim. A legacy 'viewer' role (or any
+  // other invalid value) there must now come out as 'crew' in the Custom
+  // Claims write.
+  it('coerces a legacy viewer role on the remaining membership to crew when repointing the session', async () => {
+    const REMAINING_COMPANY_ID = 'company-remaining'
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+    const query = queryFor(
+      (ctx) => ctx.path === `users/${UID}/memberships`,
+      [{ id: REMAINING_COMPANY_ID, path: `users/${UID}/memberships/${REMAINING_COMPANY_ID}`, data: { companyId: REMAINING_COMPANY_ID, role: 'viewer' } }],
+      () => [],
+    )
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    await leaveCompany(COMPANY_ID)
+
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, {
+      activeCompanyId: REMAINING_COMPANY_ID,
+      role: 'crew',
+    })
+  })
+
+  it('coerces an invalid role on the remaining membership to crew when repointing the session', async () => {
+    const REMAINING_COMPANY_ID = 'company-remaining'
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+    const query = queryFor(
+      (ctx) => ctx.path === `users/${UID}/memberships`,
+      [{ id: REMAINING_COMPANY_ID, path: `users/${UID}/memberships/${REMAINING_COMPANY_ID}`, data: { companyId: REMAINING_COMPANY_ID, role: 'owner' } }],
+      () => [],
+    )
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    await leaveCompany(COMPANY_ID)
+
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, {
+      activeCompanyId: REMAINING_COMPANY_ID,
+      role: 'crew',
+    })
+  })
+
   it('leaving a NON-active company writes the same membership deletes but skips claims/revoke/custom-token entirely', async () => {
     const OTHER_COMPANY_ID = 'company-B'
     const OTHER_PATH = `companies/${OTHER_COMPANY_ID}/members/${UID}`

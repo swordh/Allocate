@@ -1,7 +1,8 @@
 /**
- * `toRole` (functions/src/auth/role.ts) — the guard that stands between an
- * invitation doc's untyped `role` field and what gets written into a member
- * doc, a membership doc, and Custom Claims (issue #255).
+ * `toRole` (functions/src/auth/role.ts) — the guard that stands between any
+ * untyped `role` value (an invitation doc, a member/membership doc, or a
+ * decoded claim) and what gets written into a member doc, a membership doc,
+ * or Custom Claims (issue #255, and issue #398's single-guard requirement).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { logger } from 'firebase-functions/v2';
@@ -14,9 +15,15 @@ describe('toRole', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['admin', 'crew', 'viewer'] as const)('passes %s through unchanged', (role) => {
+  it.each(['admin', 'crew'] as const)('passes %s through unchanged', (role) => {
     const warnSpy = vi.spyOn(logger, 'warn');
     expect(toRole(role, ctx)).toBe(role);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('maps the legacy role viewer to crew without logging (issue #397)', () => {
+    const warnSpy = vi.spyOn(logger, 'warn');
+    expect(toRole('viewer', ctx)).toBe('crew');
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
@@ -43,7 +50,7 @@ describe('toRole', () => {
     expect(toRole(value, ctx)).toBe('crew');
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
-      'toRole: invalid role on invitation, falling back to crew',
+      'toRole: invalid role, falling back to crew',
       expect.objectContaining({ fn: ctx.fn, path: ctx.path }),
     );
   });

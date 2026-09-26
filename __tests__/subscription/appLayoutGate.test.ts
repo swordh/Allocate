@@ -58,7 +58,7 @@ const SESSION = {
   role: 'admin' as const,
 }
 
-function wire(opts: { pathname: string | null; role?: 'admin' | 'crew' | 'viewer'; companyData?: Record<string, unknown> }) {
+function wire(opts: { pathname: string | null; role?: 'admin' | 'crew'; companyData?: Record<string, unknown> }) {
   mockGetVerifiedSession.mockResolvedValue({ ...SESSION, role: opts.role ?? SESSION.role })
   mockGetCompanyDoc.mockResolvedValue({
     data: () => ({ name: 'Rigg & Rep AB', ...(opts.companyData ?? {}) }),

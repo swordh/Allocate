@@ -6,7 +6,7 @@ import { getVerifiedSession } from '@/lib/dal'
  *
  * Issue #350 (GDPR): this used to redirect unconditionally to
  * /settings/company, which is admin-only and NOT always-available — a
- * crew/viewer on a planless company hitting bare /settings would pass
+ * crew member on a planless company hitting bare /settings would pass
  * `evaluateAppAccess`'s pass-through rule (lib/subscriptionAccess.ts) only to
  * be bounced straight back out by /settings/company's own role/plan checks.
  * Redirecting by role instead means the pass-through always lands somewhere

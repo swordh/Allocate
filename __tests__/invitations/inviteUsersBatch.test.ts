@@ -133,7 +133,7 @@ describe('inviteUsers — batch writes', () => {
     stubSession()
     const { batch } = wire({ memberCount: 0, limit: 100 })
 
-    await inviteUsers(['newperson@example.com'], 'viewer')
+    await inviteUsers(['newperson@example.com'], 'crew')
 
     expect(batch.set).toHaveBeenCalledWith(
       expect.anything(),
@@ -143,7 +143,7 @@ describe('inviteUsers — batch writes', () => {
         status: 'queued',
         data: expect.objectContaining({
           companyName: 'Nordfilm AB',
-          role: 'viewer',
+          role: 'crew',
           acceptUrl: expect.stringContaining('/invite/'),
         }),
       }),

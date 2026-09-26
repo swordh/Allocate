@@ -40,7 +40,7 @@ vi.mock('next/cache', () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { removeMember } from '@/actions/team'
-import { adminDb } from '@/lib/firebase-admin'
+import { adminDb, adminAuth } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 
 const COMPANY_ID = 'company-A'
@@ -148,6 +148,63 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     expect(result.error).toBeUndefined()
     const countsCall = tx.set.mock.calls.find((c) => (c[0] as { path: string }).path === META_PATH)
     expect(countsCall![1]).toMatchObject({ admins: expect.anything() })
+  })
+
+  // Issue #398: the removed member's activeCompanyId repoint used to trust
+  // `next.role as string` from the remaining membership doc verbatim. A
+  // legacy 'viewer' role (or any other invalid value) there must now come
+  // out as 'crew' in the Custom Claims write, never pass through raw.
+  it('coerces a legacy viewer role on the target\'s remaining membership to crew when repointing claims', async () => {
+    const OTHER_COMPANY_ID = 'company-remaining'
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      // The removed member's OWN active company IS the one she's being
+      // removed from — this is what triggers the repoint branch.
+      [`users/${TARGET_UID}`]: { activeCompanyId: COMPANY_ID },
+    }
+
+    const query: QueryResolver = queryFor(
+      (ctx) => ctx.path === `users/${TARGET_UID}/memberships`,
+      [{ id: OTHER_COMPANY_ID, path: `users/${TARGET_UID}/memberships/${OTHER_COMPANY_ID}`, data: { companyId: OTHER_COMPANY_ID, role: 'viewer' } }],
+      () => [],
+    )
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(TARGET_UID, {
+      activeCompanyId: OTHER_COMPANY_ID,
+      role: 'crew',
+    })
+  })
+
+  it('coerces an invalid role on the remaining membership to crew when repointing claims', async () => {
+    const OTHER_COMPANY_ID = 'company-remaining'
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      [`users/${TARGET_UID}`]: { activeCompanyId: COMPANY_ID },
+    }
+
+    const query: QueryResolver = queryFor(
+      (ctx) => ctx.path === `users/${TARGET_UID}/memberships`,
+      [{ id: OTHER_COMPANY_ID, path: `users/${TARGET_UID}/memberships/${OTHER_COMPANY_ID}`, data: { companyId: OTHER_COMPANY_ID, role: 'owner' } }],
+      () => [],
+    )
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    await removeMember(TARGET_UID)
+
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(TARGET_UID, {
+      activeCompanyId: OTHER_COMPANY_ID,
+      role: 'crew',
+    })
   })
 
   it('blocks removal of the sole admin — real read, not a vacuous pass', async () => {

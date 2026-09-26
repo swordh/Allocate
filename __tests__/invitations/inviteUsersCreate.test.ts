@@ -2,8 +2,11 @@
  * inviteUsers — create branch (role allowlist).
  *
  * Covers the role allowlist: the submitted role must be one of
- * 'admin' | 'crew' | 'viewer', with 'crew' as the fallback for an invalid
- * value. Never trust the client value without this check.
+ * 'admin' | 'crew', with 'crew' as the fallback for an invalid value —
+ * including the legacy 'viewer' value (issue #397), which is treated the
+ * same as any other non-allowlisted input, just without the warning log
+ * `toRole` gives a genuinely unexpected value. Never trust the client value
+ * without this check.
  *
  * Asserts on the batch.set PAYLOAD, not the ref path — wireDb's
  * `chain['doc']` returns `${path}/auto-id` for every generated ref, so with
@@ -86,16 +89,16 @@ describe('inviteUsers — create branch (role allowlist)', () => {
     )
   })
 
-  it('accepts a submitted role of viewer', async () => {
+  it('falls back to crew for a submitted role of legacy viewer', async () => {
     stubSession()
     const { batch } = wire()
 
-    const result = await inviteUsers([EMAIL], 'viewer')
+    const result = await inviteUsers([EMAIL], 'viewer' as unknown as Role)
 
     expect(result.error).toBeUndefined()
     expect(batch.set).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ email: EMAIL, role: 'viewer' }),
+      expect.objectContaining({ email: EMAIL, role: 'crew' }),
     )
   })
 
