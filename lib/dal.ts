@@ -67,10 +67,10 @@ export const verifyAuthenticatedSession = cache(async (): Promise<AuthenticatedS
     }
 
     // Normalise a present role claim through the shared guard (issue #398) —
-    // a stale `viewer` claim or any other invalid value becomes `crew`
-    // immediately, without waiting for a token refresh or the migration
-    // script. Absence of the claim (the /no-company path) is left as
-    // `undefined`, never coerced to a role.
+    // a stale `viewer` claim (the role removed in #397) or any other invalid
+    // value becomes `crew` immediately, without waiting for a token refresh.
+    // Absence of the claim (the /no-company path) is left as `undefined`,
+    // never coerced to a role.
     const rawRole = decoded['role'] as unknown
     const role = rawRole === undefined
       ? undefined

@@ -7,10 +7,7 @@ import { UserRole } from '../types';
  * imported, only kept in lockstep by hand.
  *
  * `viewer` is gone (issue #397) — `crew` is the lowest role and the
- * fallback. `toRole` below still accepts the string `'viewer'` as input and
- * silently maps it to `crew`; that mapping is a transitional shim for
- * documents/claims written before `tools/migrate_viewer_to_crew.js` has run
- * in every environment, and can be deleted once it has.
+ * fallback.
  */
 export const ALLOWED_ROLES: readonly UserRole[] = ['admin', 'crew'];
 
@@ -33,20 +30,11 @@ export const ALLOWED_ROLES: readonly UserRole[] = ['admin', 'crew'];
  * and the `invitations/{token}` mirror docs never carry one at all) fall
  * back to `crew` silently, matching the previous `?? 'crew'` behaviour.
  *
- * `'viewer'` also falls back to `crew` silently — see the module docblock
- * above. This is the one deliberate exception to "any other invalid value
- * is logged": a document written before the migration ran is not a bug to
- * flag, it's the expected transitional state.
- *
- * Any other invalid value is logged so a bad write upstream doesn't fail
- * silent.
+ * Any other invalid value — including the removed `'viewer'` role — is
+ * logged so a bad write upstream doesn't fail silent.
  */
 export function toRole(value: unknown, ctx: { fn: string; path: string }): UserRole {
   if (value === null || value === undefined) {
-    return 'crew';
-  }
-
-  if (value === 'viewer') {
     return 'crew';
   }
 

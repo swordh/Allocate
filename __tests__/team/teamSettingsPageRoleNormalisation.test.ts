@@ -5,11 +5,12 @@
  * `listMembers` (lib/queries/members.ts) already runs a member doc's role
  * through `toRole` before it reaches the client. This page builds its
  * `pendingInvites` prop straight off `companies/{cid}/invitations` docs
- * without going through any such guard — a legacy `role: 'viewer'`
+ * without going through any such guard — a removed `role: 'viewer'`
  * invitation (or any other invalid value) would reach
  * `TeamSettingsView`'s `ROLE_LABELS[role]` lookup, which has no entry for
  * anything but 'admin'/'crew', and render a blank chip. This test proves
- * the page normalises `role` on every pending invitation the same way.
+ * the page normalises `role` on every pending invitation the same way,
+ * warning included.
  *
  * `TeamSettingsView` itself is mocked out — the page just needs to pass it
  * the right props via `React.createElement`, which never invokes the
@@ -76,7 +77,8 @@ describe('TeamSettingsPage — pending invitation role normalisation', () => {
     vi.mocked(listMembers).mockResolvedValue([])
   })
 
-  it('normalises a legacy viewer role on a pending invitation to crew', async () => {
+  it('normalises the removed legacy viewer role on a pending invitation to crew and warns', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     wireInvitations([
       {
         id: 'inv-1',
@@ -97,6 +99,7 @@ describe('TeamSettingsPage — pending invitation role normalisation', () => {
     expect(element.props.pendingInvites).toHaveLength(1)
     expect(element.props.pendingInvites[0].role).toBe('crew')
     expect(vi.mocked(TeamSettingsView)).not.toHaveBeenCalled() // React.createElement never invokes it
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 
   it('normalises an invalid role on a pending invitation to crew', async () => {

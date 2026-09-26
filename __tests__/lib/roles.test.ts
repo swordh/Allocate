@@ -1,9 +1,9 @@
 /**
  * `toRole` (lib/roles.ts) — the app-side mirror of
  * `functions/src/auth/role.ts`'s guard (issue #398). Covers the same
- * behaviour matrix: valid roles pass through, `null`/`undefined` and the
- * legacy `'viewer'` role fall back to `crew` silently, and any other
- * invalid value falls back to `crew` with a `console.warn`.
+ * behaviour matrix: valid roles pass through, `null`/`undefined` fall back
+ * to `crew` silently, and any other invalid value — including the removed
+ * legacy `'viewer'` role — falls back to `crew` with a `console.warn`.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ALLOWED_ROLES, toRole } from '@/lib/roles'
@@ -27,12 +27,6 @@ describe('toRole', () => {
     expect(warnSpy).not.toHaveBeenCalled()
   })
 
-  it('maps the legacy role viewer to crew without logging', () => {
-    const warnSpy = vi.spyOn(console, 'warn')
-    expect(toRole('viewer', ctx)).toBe('crew')
-    expect(warnSpy).not.toHaveBeenCalled()
-  })
-
   it('falls back to crew for undefined without logging', () => {
     const warnSpy = vi.spyOn(console, 'warn')
     expect(toRole(undefined, ctx)).toBe('crew')
@@ -49,6 +43,7 @@ describe('toRole', () => {
     ['', 'empty string'],
     ['owner', 'unknown role string'],
     ['Admin', 'wrong casing'],
+    ['viewer', 'removed legacy role'],
     [42, 'a number'],
     [{}, 'an object'],
   ] as const)('falls back to crew and warns once for %s (%s)', (value) => {

@@ -471,8 +471,26 @@ describe('setupNewCompany — refuses to repair claims against a company that is
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
     ).rejects.toThrow('already-exists')
 
-    // Never write a role into claims that isn't one of the three the app
+    // Never write a role into claims that isn't one of the two the app
     // knows (types/user.ts `Role`).
+    expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
+  })
+
+  it('refuses on a member document with the removed legacy role viewer, unlike toRole\'s normal fallback', async () => {
+    // This branch WRITES Custom Claims, so it is deliberately stricter than
+    // toRole's usual "anything unrecognised becomes crew": a 'viewer' member
+    // doc (issue #397) is refused outright rather than silently handed a
+    // working crew session.
+    wire({
+      memberships: [{ companyId: 'my-co' }],
+      companyMembers: { 'my-co': { role: 'viewer' } },
+    })
+    vi.mocked(getCompanyDoc).mockResolvedValue(liveCompany(UID))
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).rejects.toThrow('already-exists')
+
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
 

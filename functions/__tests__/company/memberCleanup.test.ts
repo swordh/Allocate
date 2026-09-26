@@ -4,9 +4,9 @@
  * repointed to a remaining membership, the role written into Custom Claims
  * used to be read straight off that membership doc (`next['role'] as
  * string`) with no allowlist at all. This pins that it now routes through
- * `toRole`: a legacy `'viewer'` role, or any other invalid value, on the
- * remaining membership doc must come out as `crew` in the claims write, not
- * be trusted verbatim.
+ * `toRole`: the removed `'viewer'` role, or any other invalid value, on the
+ * remaining membership doc must come out as `crew` in the claims write (with
+ * a warning logged), not be trusted verbatim.
  *
  * Minimal Firestore/Auth test doubles, in the same spirit as
  * `billingEmailReminder.test.ts` — `cleanupOneMember` takes its `db`
@@ -15,6 +15,7 @@
  * module-level import, so that one is mocked.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { logger } from 'firebase-functions/v2';
 
 const mockSetCustomUserClaims = vi.fn();
 const mockRevokeRefreshTokens = vi.fn();
@@ -78,7 +79,8 @@ describe('cleanupOneMember — role coercion on the claims write (issue #398)', 
     mockRevokeRefreshTokens.mockResolvedValue(undefined);
   });
 
-  it('coerces a legacy viewer role on the remaining membership to crew', async () => {
+  it('coerces the removed legacy viewer role on the remaining membership to crew and warns', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const { db } = makeFakeDb({ remainingRole: 'viewer' });
 
     const outcome = await cleanupOneMember(db, COMPANY_ID, UID, REQUEST_ID);
@@ -89,6 +91,7 @@ describe('cleanupOneMember — role coercion on the claims write (issue #398)', 
     });
     expect(outcome.claimsUpdated).toBe(true);
     expect(outcome.accountStatus).toBe('kept');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
   it('coerces an invalid role on the remaining membership to crew', async () => {

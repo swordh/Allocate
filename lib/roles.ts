@@ -7,10 +7,7 @@ import type { Role } from '@/types'
  * hand.
  *
  * `viewer` is gone (issue #397) — `crew` is the lowest role and the
- * fallback. `toRole` below still accepts the string `'viewer'` as input and
- * silently maps it to `crew`; that mapping is a transitional shim for
- * documents/claims written before `tools/migrate_viewer_to_crew.js` has run
- * in every environment, and can be deleted once it has.
+ * fallback.
  *
  * Deliberately has no `import 'server-only'` — this module is used by
  * `lib/dal.ts` (server-only) but also needs to be importable from
@@ -36,20 +33,12 @@ export const ALLOWED_ROLES: readonly Role[] = ['admin', 'crew']
  * `null`/`undefined` (no role claim/field present at all) falls back to
  * `crew` silently.
  *
- * `'viewer'` also falls back to `crew` silently — see the module docblock
- * above. This is the one deliberate exception to "any other invalid value
- * is logged": a document or claim written before the migration ran is not a
- * bug to flag, it's the expected transitional state.
- *
- * Any other invalid value is logged (`console.warn`, matching `lib/dal.ts`'s
- * own log style) so a bad write upstream doesn't fail silent.
+ * Any other invalid value — including the removed `'viewer'` role — is
+ * logged (`console.warn`, matching `lib/dal.ts`'s own log style) so a bad
+ * write upstream doesn't fail silent.
  */
 export function toRole(value: unknown, ctx: { fn: string; path: string }): Role {
   if (value === null || value === undefined) {
-    return 'crew'
-  }
-
-  if (value === 'viewer') {
     return 'crew'
   }
 

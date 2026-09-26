@@ -105,10 +105,11 @@ describe('leaveCompany', () => {
   })
 
   // Issue #398: the session repoint used to trust `next.role as string` from
-  // the remaining membership doc verbatim. A legacy 'viewer' role (or any
+  // the remaining membership doc verbatim. The removed 'viewer' role (or any
   // other invalid value) there must now come out as 'crew' in the Custom
-  // Claims write.
-  it('coerces a legacy viewer role on the remaining membership to crew when repointing the session', async () => {
+  // Claims write, with a warning logged.
+  it('coerces the removed legacy viewer role on the remaining membership to crew and warns when repointing the session', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const REMAINING_COMPANY_ID = 'company-remaining'
     const docs: DocMap = {
       [SELF_PATH]: { role: 'crew' },
@@ -129,6 +130,7 @@ describe('leaveCompany', () => {
       activeCompanyId: REMAINING_COMPANY_ID,
       role: 'crew',
     })
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 
   it('coerces an invalid role on the remaining membership to crew when repointing the session', async () => {

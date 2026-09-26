@@ -117,15 +117,12 @@ async function repairMissingClaims(
   // Deliberately stricter than toRole's normal "anything unrecognised
   // becomes crew" behaviour: this branch WRITES Custom Claims for the
   // caller, so a role value that isn't one this app actually recognises —
-  // 'admin'/'crew', or the still-transitional legacy 'viewer' — must refuse
-  // the repair outright rather than silently hand her a working session
-  // anyway. `toRole` still owns the one substitution that IS safe here:
-  // mapping a legacy 'viewer' member doc to 'crew'.
+  // only 'admin'/'crew' since 'viewer' was removed (#397) — must refuse the
+  // repair outright rather than silently hand her a working session anyway.
   const rawRole = memberSnap.data()?.role
-  if (rawRole !== 'admin' && rawRole !== 'crew' && rawRole !== 'viewer') return false
-  const role = toRole(rawRole, { fn: 'repairMissingClaims', path: memberPath })
+  if (rawRole !== 'admin' && rawRole !== 'crew') return false
 
-  await adminAuth.setCustomUserClaims(uid, { activeCompanyId: founded.companyId, role })
+  await adminAuth.setCustomUserClaims(uid, { activeCompanyId: founded.companyId, role: rawRole })
   console.log('[actions/auth]', { action: 'claims_repaired' })
   return true
 }
