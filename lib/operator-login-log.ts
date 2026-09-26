@@ -33,6 +33,10 @@ export async function writeOperatorLoginLog(params: {
   outcome: OperatorLoginOutcome
   reason: string
 }): Promise<void> {
+  // Process clock, not FieldValue.serverTimestamp(), on purpose: a TTL field
+  // needs a concrete Timestamp value at write time for Firestore's TTL
+  // policy to schedule against — serverTimestamp() is a sentinel resolved
+  // server-side, not a value this code could do arithmetic on.
   const now = Timestamp.now()
   const expireAt = Timestamp.fromMillis(now.toMillis() + OPERATOR_LOGIN_LOG_TTL_MS)
 

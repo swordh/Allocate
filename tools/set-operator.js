@@ -15,8 +15,7 @@
  *   node tools/set-operator.js revoke --email=jocke@allocate.at --project=allocate-alpha --yes
  *   node tools/set-operator.js list --project=allocate-alpha
  *
- *   node tools/set-operator.js grant --email=jocke@allocate.at --sa=./service-account.json --yes
- *   node tools/set-operator.js grant --email=jocke@allocate.at --yes   # .env.local fallback
+ *   node tools/set-operator.js grant --email=jocke@allocate.at --project=allocate-alpha --sa=./service-account.json --yes
  *
  *   # Also strip the legacy provider:true claim while granting/revoking,
  *   # preserving every other existing claim:
@@ -25,26 +24,28 @@
  * --dry-run is the DEFAULT for grant/revoke. Nothing is written unless
  * --yes is passed. `list` is always read-only.
  *
- * Credentials, in resolution order (identical to
- * tools/migrate_viewer_to_crew.js / tools/cleanup_orphan_members.js):
- *   --project=<id>  Application Default Credentials. Preferred — no long-lived
- *                   key file on disk, and it reaches every project your gcloud
- *                   login can. Requires `gcloud auth application-default login`
- *                   once.
- *   --sa=<path>     an explicit service account key file.
- *   neither         FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON from .env.local, which
- *                   only ever points at one project.
- * Passing both --project and --sa is refused — one source only, silently
- * preferring one over the other is how you end up writing to the wrong
- * project.
+ * `--project=<id>` is REQUIRED for every subcommand — nothing ever falls
+ * back to a service account's own `project_id` silently. It always selects
+ * the Firestore project this script targets.
  *
- * When both --project and a service-account credential are known (--sa, or
- * the .env.local fallback), the credential's own `project_id` is checked
- * against --project and the run is refused on a mismatch — see the
- * reasoning in tools/seed-noplan-company.js (~L365-381): `initializeApp`'s
- * `projectId` option does not redirect the Auth SDK, so a mismatched
- * credential can silently touch the wrong project's Auth users while this
- * script's own Firestore writes still (correctly) target `--project`.
+ * Credentials, in resolution order (identical to
+ * tools/migrate_viewer_to_crew.js / tools/cleanup_orphan_members.js, now
+ * always used TOGETHER with `--project` rather than instead of it):
+ *   --sa=<path>     an explicit service account key file.
+ *   (no --sa)       FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON from .env.local, if
+ *                   present.
+ *   neither exists  Application Default Credentials. Requires
+ *                   `gcloud auth application-default login` once.
+ *
+ * Whenever the resolved credential is a service account (from --sa or from
+ * .env.local), its own `project_id` is checked against `--project` and the
+ * run is refused on a mismatch — see the reasoning in
+ * tools/seed-noplan-company.js (~L365-381): `initializeApp`'s `projectId`
+ * option does not redirect the Auth SDK, so a mismatched credential can
+ * silently touch the wrong project's Auth users while this script's own
+ * Firestore writes still (correctly) target `--project`. Application
+ * Default Credentials carry no fixed `project_id` to check, so that branch
+ * trusts `--project` outright, same as before.
  */
 
 'use strict';
@@ -69,7 +70,7 @@ const PROJECT = value('project');
 const EMAIL = value('email');
 
 if (!['grant', 'revoke', 'list'].includes(SUBCOMMAND)) {
-  console.error('ERROR: usage: node tools/set-operator.js <grant|revoke|list> [--email=] [--project=|--sa=] [--yes] [--strip-provider-claim]');
+  console.error('ERROR: usage: node tools/set-operator.js <grant|revoke|list> --project= [--email=] [--sa=] [--yes] [--strip-provider-claim]');
   process.exit(1);
 }
 
@@ -78,14 +79,18 @@ if ((SUBCOMMAND === 'grant' || SUBCOMMAND === 'revoke') && !EMAIL) {
   process.exit(1);
 }
 
-// One source only. Silently preferring one over the other is how you end up
-// writing to the wrong project.
-if (PROJECT && SA_PATH) {
-  console.error('ERROR: pass either --project or --sa, not both.');
+// --project is mandatory for every subcommand — see the module docblock for
+// why (nothing may fall back to a service account's own project_id
+// silently). This check runs BEFORE firebase-admin is even required, let
+// alone initialized, so a missing --project fails fast with no network
+// access and no risk of touching any project.
+if (!PROJECT) {
+  console.error('ERROR: --project= is required.');
   process.exit(1);
 }
 
-// ── Credentials (same resolution as tools/migrate_viewer_to_crew.js) ─────────
+// ── Credentials (same resolution as tools/migrate_viewer_to_crew.js, now
+//    combined with the mandatory --project rather than an alternative to it) ─
 
 function readServiceAccountFile(p) {
   const resolved = path.resolve(p);
@@ -96,12 +101,9 @@ function readServiceAccountFile(p) {
   return JSON.parse(fs.readFileSync(resolved, 'utf8'));
 }
 
-function readServiceAccountFromEnv() {
+function readServiceAccountFromEnvIfPresent() {
   const envPath = path.resolve(__dirname, '../.env.local');
-  if (!fs.existsSync(envPath)) {
-    console.error('ERROR: no --project or --sa given, and .env.local not found.');
-    process.exit(1);
-  }
+  if (!fs.existsSync(envPath)) return null;
 
   const vars = {};
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
@@ -113,39 +115,34 @@ function readServiceAccountFromEnv() {
   }
 
   const raw = vars['FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON'];
-  if (!raw) {
-    console.error('ERROR: FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON not found in .env.local');
-    process.exit(1);
-  }
-  return JSON.parse(raw);
+  return raw ? JSON.parse(raw) : null;
 }
 
 const { initializeApp, cert, applicationDefault } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 
-let projectId;
+const projectId = PROJECT;
 let credentialSource;
 let serviceAccount = null;
 
-if (PROJECT) {
-  projectId = PROJECT;
-  credentialSource = 'application default credentials';
-  initializeApp({ credential: applicationDefault(), projectId });
+if (SA_PATH) {
+  serviceAccount = readServiceAccountFile(SA_PATH);
+  credentialSource = `service account file ${SA_PATH}`;
 } else {
-  serviceAccount = SA_PATH ? readServiceAccountFile(SA_PATH) : readServiceAccountFromEnv();
-  projectId = serviceAccount.project_id;
-  credentialSource = SA_PATH ? `service account file ${SA_PATH}` : 'service account from .env.local';
-  initializeApp({ credential: cert(serviceAccount) });
+  serviceAccount = readServiceAccountFromEnvIfPresent();
+  credentialSource = serviceAccount ? 'service account from .env.local' : 'application default credentials';
 }
 
-// Guard: when BOTH --project and a service-account credential are known,
-// verify they agree before doing anything. See this file's module docblock
-// and tools/seed-noplan-company.js (~L365-381) for why a mismatch here is
-// dangerous specifically for Auth operations (grant/revoke both call
-// getAuth().getUserByEmail()), even though the Firestore side would still
-// (correctly) target --project regardless.
-if (PROJECT && serviceAccount && serviceAccount.project_id !== PROJECT) {
+// Guard: whenever the credential is a service account (file or .env.local),
+// verify it actually belongs to --project before doing anything. See the
+// module docblock for why this matters specifically for Auth operations
+// (grant/revoke both call getAuth().getUserByEmail()) — a service account
+// always operates on its OWN project's Auth, regardless of what
+// `initializeApp`'s `projectId` option says. Application Default
+// Credentials carry no fixed project_id, so there is nothing to check in
+// that branch — --project is trusted outright, same as before this fix.
+if (serviceAccount && serviceAccount.project_id !== PROJECT) {
   console.error(
     `ERROR: --project=${PROJECT} does not match the credential's project_id ` +
     `(${serviceAccount.project_id}). Auth operations run against the CREDENTIAL's ` +
@@ -153,6 +150,8 @@ if (PROJECT && serviceAccount && serviceAccount.project_id !== PROJECT) {
   );
   process.exit(1);
 }
+
+initializeApp(serviceAccount ? { credential: cert(serviceAccount), projectId } : { credential: applicationDefault(), projectId });
 
 const db = getFirestore();
 const auth = getAuth();
@@ -171,10 +170,11 @@ console.log('');
 async function grant() {
   const user = await auth.getUserByEmail(EMAIL);
   console.log(`  Found user: ${EMAIL} (${user.uid})`);
+  const hasProviderClaim = Boolean(user.customClaims && 'provider' in user.customClaims);
 
   if (!APPLY) {
     console.log(`  Dry run — would set operators/${user.uid} = { email: '${EMAIL}', grantedAt: <server timestamp> }`);
-    if (STRIP_PROVIDER_CLAIM) {
+    if (STRIP_PROVIDER_CLAIM && hasProviderClaim) {
       console.log('  Dry run — would also strip the legacy provider claim, preserving other claims.');
     }
     console.log('  Re-run with --yes to apply.');
@@ -188,17 +188,18 @@ async function grant() {
   console.log(`  operators/${user.uid} written.`);
 
   if (STRIP_PROVIDER_CLAIM) {
-    await stripProviderClaim(user.uid);
+    await stripProviderClaim(user);
   }
 }
 
 async function revoke() {
   const user = await auth.getUserByEmail(EMAIL);
   console.log(`  Found user: ${EMAIL} (${user.uid})`);
+  const hasProviderClaim = Boolean(user.customClaims && 'provider' in user.customClaims);
 
   if (!APPLY) {
     console.log(`  Dry run — would delete operators/${user.uid}`);
-    if (STRIP_PROVIDER_CLAIM) {
+    if (STRIP_PROVIDER_CLAIM && hasProviderClaim) {
       console.log('  Dry run — would also strip the legacy provider claim, preserving other claims.');
     }
     console.log('  Re-run with --yes to apply.');
@@ -209,7 +210,7 @@ async function revoke() {
   console.log(`  operators/${user.uid} deleted.`);
 
   if (STRIP_PROVIDER_CLAIM) {
-    await stripProviderClaim(user.uid);
+    await stripProviderClaim(user);
   }
 }
 
@@ -221,18 +222,21 @@ async function revoke() {
  * correctly on its own; a stale `provider:true` claim left in place is
  * harmless once lib/operator-dal.ts no longer reads it, but this cleans it
  * up so it doesn't linger and confuse a future reader of the claims.
+ *
+ * Takes the UserRecord grant()/revoke() already fetched via
+ * getUserByEmail() (which already carries customClaims) rather than
+ * re-fetching by uid — one Auth lookup per invocation, not two.
  */
-async function stripProviderClaim(uid) {
-  const user = await auth.getUser(uid);
+async function stripProviderClaim(user) {
   const existing = user.customClaims ?? {};
   if (!('provider' in existing)) {
-    console.log(`  No 'provider' claim present on ${uid} — nothing to strip.`);
+    console.log(`  No 'provider' claim present on ${user.uid} — nothing to strip.`);
     return;
   }
   const rest = { ...existing };
   delete rest.provider;
-  await auth.setCustomUserClaims(uid, rest);
-  console.log(`  'provider' claim removed from ${uid}. Remaining claims:`, rest);
+  await auth.setCustomUserClaims(user.uid, rest);
+  console.log(`  'provider' claim removed from ${user.uid}. Remaining claims:`, rest);
 }
 
 async function list() {
