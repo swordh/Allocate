@@ -229,7 +229,8 @@ async function stripProviderClaim(uid) {
     console.log(`  No 'provider' claim present on ${uid} — nothing to strip.`);
     return;
   }
-  const { provider: _provider, ...rest } = existing;
+  const rest = { ...existing };
+  delete rest.provider;
   await auth.setCustomUserClaims(uid, rest);
   console.log(`  'provider' claim removed from ${uid}. Remaining claims:`, rest);
 }
