@@ -1633,30 +1633,60 @@ describe('deleteAccount — companies scheduled for immediate deletion', () => {
 // already exists to prevent for bookings/equipment/etc — see that comment.
 
 /**
- * Routes `adminDb.collection('operatorFeedback')` to a fixed chain of
- * tickets, each with its own assertable `ref.update` spy — same
- * "capture the normal implementation, override one path" pattern as
- * `stubAuditLogCollection`/`stubLockCollection` above. `updateImpl` lets a
- * test script a specific ticket's `.update()` to reject (NOT_FOUND, or any
- * other error) instead of resolving.
+ * Routes `adminDb.collection('operatorFeedback')` to a chain that actually
+ * applies `.where(field, op, value)` against each ticket's own `data` —
+ * unlike a chain that just returns every ticket regardless of the filter
+ * arguments, this is what lets a test prove `.where('submittedBy', '==', uid)`
+ * is doing real work: a ticket in the fixture list whose `data.submittedBy`
+ * doesn't match the query's value is excluded, exactly as real Firestore
+ * would exclude it, rather than the mock silently handing back everything it
+ * was given. Same "capture the normal implementation, override one path"
+ * pattern as `stubAuditLogCollection`/`stubLockCollection` above.
+ *
+ * Only `==` is supported — the one operator `deleteAccount` ever uses against
+ * this collection; anything else throws immediately so a future query change
+ * here doesn't silently pass every filter.
+ *
+ * `updateImpl` lets a test script one specific ticket's `.update()` to reject
+ * (NOT_FOUND, or any other error) instead of resolving. Returns a `Map` keyed
+ * by ticket id so a test can grab a specific ref without depending on the
+ * fixture array's order.
  */
 function stubFeedbackCollection(
   wired: ReturnType<typeof wireDb>,
   tickets: Array<{ id: string; data: Record<string, unknown>; updateImpl?: () => Promise<unknown> }>,
 ) {
-  const refs = tickets.map((t) => ({
-    path: `operatorFeedback/${t.id}`,
-    id: t.id,
-    update: t.updateImpl ? vi.fn(t.updateImpl) : vi.fn().mockResolvedValue(undefined),
-  }))
-  const chain: Record<string, unknown> = {
-    where: () => chain,
-    get: async () => ({
-      empty: tickets.length === 0,
-      size: tickets.length,
-      docs: tickets.map((t, i) => ({ id: t.id, data: () => t.data, ref: refs[i] })),
-    }),
+  const refs = new Map(
+    tickets.map((t) => [
+      t.id,
+      {
+        path: `operatorFeedback/${t.id}`,
+        id: t.id,
+        update: t.updateImpl ? vi.fn(t.updateImpl) : vi.fn().mockResolvedValue(undefined),
+      },
+    ]),
+  )
+
+  function makeChain(filters: Array<{ field: string; op: string; value: unknown }>): Record<string, unknown> {
+    return {
+      where: (field: string, op: string, value: unknown) => makeChain([...filters, { field, op, value }]),
+      get: async () => {
+        const matching = tickets.filter((t) =>
+          filters.every((f) => {
+            if (f.op !== '==') throw new Error(`stubFeedbackCollection: unsupported operator "${f.op}"`)
+            return t.data[f.field] === f.value
+          }),
+        )
+        return {
+          empty: matching.length === 0,
+          size: matching.length,
+          docs: matching.map((t) => ({ id: t.id, data: () => t.data, ref: refs.get(t.id)! })),
+        }
+      },
+    }
   }
+
+  const chain = makeChain([])
   const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
   vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
     if (path === 'operatorFeedback') return chain
@@ -1682,8 +1712,31 @@ describe('deleteAccount — operatorFeedback anonymisation (issue #338 PR 1)', (
     const result = await deleteAccount()
 
     expect(result.error).toBeUndefined()
-    expect(refs[0]!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
-    expect(refs[1]!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+    expect(refs.get('BUG-1111')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+    expect(refs.get('SUP-2222')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+  })
+
+  // Test gap flagged in PR #413 review: nothing previously proved
+  // `.where('submittedBy', '==', uid)` was doing real filtering work — the
+  // old mock chain returned every fixture ticket regardless of the query's
+  // filter arguments, so this would have passed even if the filter were
+  // dropped or pointed at the wrong field entirely.
+  it('does not touch an operatorFeedback ticket submitted by a DIFFERENT uid', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const refs = stubFeedbackCollection(wired, [
+      { id: 'BUG-1111', data: { submittedBy: UID, companyId: 'company-A', userName: 'Deleter' } },
+      { id: 'BUG-9999', data: { submittedBy: 'someone-else', companyId: 'company-A', userName: 'Other' } },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(refs.get('BUG-1111')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+    expect(refs.get('BUG-9999')!.update).not.toHaveBeenCalled()
   })
 
   it('skips a ticket in a company scheduled for immediate deletion this run, without attempting the write', async () => {
@@ -1716,7 +1769,7 @@ describe('deleteAccount — operatorFeedback anonymisation (issue #338 PR 1)', (
     // …and its ticket was never touched — proves the
     // `immediatelyDeletedCompanyIds.has(companyId)` skip applies here too,
     // not just to the batch-based bookings/equipment scans.
-    expect(refs[0]!.update).not.toHaveBeenCalled()
+    expect(refs.get('BUG-3333')!.update).not.toHaveBeenCalled()
   })
 
   it('tolerates NOT_FOUND (code 5) on one ticket update — a concurrent purge already deleted it — and deletion still succeeds', async () => {
@@ -1766,6 +1819,38 @@ describe('deleteAccount — operatorFeedback anonymisation (issue #338 PR 1)', (
     expect(auditChain.add).toHaveBeenCalledOnce()
     const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
     expect(row).toMatchObject({ failedStep: 'anonymisation', errorCode: '7' })
+  })
+
+  // BLOCKER fixed per PR #413 review: this pass used to run AFTER the main
+  // `batch.commit()`, which already deletes users/{uid}, every
+  // users/{uid}/memberships/* doc and accountDeletionFailures/{uid}, and
+  // writes the SUCCESS deletionAuditLog row. A failure in THIS loop
+  // afterwards would then write a *contradictory* 'failed' audit row
+  // alongside an already-committed SUCCESS row for the same run. Asserting
+  // `wired.batch.commit` was never called is the direct proof that nothing
+  // downstream of it — user doc delete, membership deletes, the SUCCESS
+  // audit row queued via `batch.set` — was ever actually applied: they were
+  // queued into the batch object, as production code does throughout step 3,
+  // but `.commit()` itself never ran.
+  it('a ticket update failure happens BEFORE the main batch commits — no user doc/membership deletes, no SUCCESS audit row applied', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    stubAuditLogCollection(wired)
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-6666',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('permission denied'), { code: 7 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(wired.batch.commit).not.toHaveBeenCalled()
   })
 })
 

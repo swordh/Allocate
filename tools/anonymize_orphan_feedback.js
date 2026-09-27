@@ -19,7 +19,23 @@
  *     or was removed from the company the ticket was filed in, but her
  *     account itself is otherwise fine).
  *
- * Both checks are plain Firestore existence reads — deliberately NOT a check
+ * ── A ticket with no `companyId` at all ──────────────────────────────────
+ * Every ticket `submitFeedback.ts` writes today always sets `companyId`, but
+ * older/malformed data might not. Without one, there is no
+ * `companies/{companyId}/members/{uid}` path to check — the membership half
+ * of the orphan test simply CANNOT be evaluated, not "evaluated as missing".
+ * An earlier draft of this script defaulted that unevaluable case to "member
+ * doc missing" and anonymised on it — indistinguishable, in the output, from
+ * a ticket that was actually checked and confirmed orphaned. Fixed: a ticket
+ * with no `companyId` is anonymised ONLY if `users/{uid}` is confirmed
+ * missing (that check needs no `companyId` and stays fully trustworthy on
+ * its own); otherwise it is reported in its own 'no companyId — membership
+ * unverifiable' category and is NEVER written to, dry run or `--yes` alike —
+ * a human decides what, if anything, to do with it. See `classifyTicket`'s
+ * own docblock for the implementation.
+ *
+ * Both existence checks (`users/{uid}`, `companies/{cid}/members/{uid}`) are
+ * plain Firestore existence reads — deliberately NOT a check
  * against Firebase Auth (`adminAuth.getUser`). Firestore is authoritative
  * here for the same reason `tools/cleanup_orphan_members.js` only ever reads
  * `users/{uid}`, never Auth: both `deleteAccount` (actions/account.ts) and
@@ -192,9 +208,27 @@ async function* candidateTickets() {
 }
 
 /**
- * Classifies one candidate ticket as an orphan or not, per the module
- * docblock's "What counts as an orphan" section. Both existence checks run
- * concurrently — they're independent reads.
+ * Classifies one candidate ticket into exactly one of three buckets:
+ * `orphan` (anonymise it), `flagged` (report only, never anonymised), or
+ * `null` (neither — a live ticket, not a candidate at all).
+ *
+ * A ticket with NO `companyId` at all (malformed/legacy data — every ticket
+ * `submitFeedback.ts` writes today always sets one) can't have its
+ * membership checked: there is no `companies/{companyId}/members/{uid}` path
+ * to read in the first place, so "member doc missing" can never be
+ * evaluated, only assumed. Review caught the earlier version of this script
+ * defaulting that unevaluable case to `{ exists: false }` and reporting it as
+ * a confirmed 'no longer a member' — indistinguishable from a real,
+ * confirmed membership check, when it had actually verified nothing at all.
+ *
+ * The fix: `users/{uid}` is still checked either way (that check never
+ * depended on `companyId`), and is the ONLY thing this script trusts enough
+ * to anonymise on when `companyId` is missing — a deleted account is a
+ * definite fact independent of any company. Membership, however, is left
+ * exactly as unverifiable as it is: such a ticket is reported under its own
+ * 'no companyId — membership unverifiable' category, in a *separate* table
+ * from confirmed orphans, and is NEVER written to — a human decides what (if
+ * anything) to do with it.
  */
 async function classifyTicket({ doc, data }) {
   const uid = data.submittedBy;
@@ -202,22 +236,33 @@ async function classifyTicket({ doc, data }) {
 
   const [userSnap, memberSnap] = await Promise.all([
     db.collection('users').doc(uid).get(),
-    companyId
-      ? db.collection(`companies/${companyId}/members`).doc(uid).get()
-      : Promise.resolve({ exists: false }),
+    companyId ? db.collection(`companies/${companyId}/members`).doc(uid).get() : null,
   ]);
 
-  const orphan = !userSnap.exists || !memberSnap.exists;
-  if (!orphan) return null;
-
-  return {
+  const userDeleted = !userSnap.exists;
+  const entry = {
     ticketId: doc.id,
     ref: doc.ref,
     submittedBy: uid,
     userName: data.userName ?? null,
     companyId: companyId ?? null,
     companyName: data.companyName ?? null,
-    reason: !userSnap.exists ? 'account deleted' : 'no longer a member',
+  };
+
+  if (!companyId) {
+    // No membership doc to check at all. Anonymise only on the one fact this
+    // script CAN still verify (the account itself is gone); otherwise this is
+    // report-only, never a write.
+    if (userDeleted) return { kind: 'orphan', entry: { ...entry, reason: 'account deleted' } };
+    return { kind: 'flagged', entry: { ...entry, reason: 'no companyId — membership unverifiable' } };
+  }
+
+  const memberMissing = !memberSnap.exists;
+  if (!userDeleted && !memberMissing) return null;
+
+  return {
+    kind: 'orphan',
+    entry: { ...entry, reason: userDeleted ? 'account deleted' : 'no longer a member' },
   };
 }
 
@@ -263,23 +308,22 @@ async function main() {
 
   let scanned = 0;
   const orphans = [];
+  const flagged = [];
 
   for await (const candidate of candidateTickets()) {
     scanned += 1;
-    const orphan = await classifyTicket(candidate);
-    if (orphan) orphans.push(orphan);
+    const result = await classifyTicket(candidate);
+    if (!result) continue;
+    if (result.kind === 'orphan') orphans.push(result.entry);
+    else flagged.push(result.entry);
   }
 
   console.log(`  ${scanned} ticket${scanned === 1 ? '' : 's'} with a submittedBy scanned`);
   console.log('');
 
-  if (orphans.length === 0) {
-    console.log('  No orphaned tickets found.');
-  } else {
-    console.log(`  Found ${orphans.length} orphaned ticket${orphans.length === 1 ? '' : 's'}:`);
-    console.log('');
+  const printTable = (rows) => {
     console.log(`  ticket id       company id                      company name              submitted by     userName              reason`);
-    for (const o of orphans) {
+    for (const o of rows) {
       const submittedBy = SHOW_PII ? o.submittedBy : maskId(o.submittedBy);
       const userName = SHOW_PII ? (o.userName ?? '—') : maskName(o.userName);
       console.log(
@@ -287,6 +331,14 @@ async function main() {
           `${pad(submittedBy, 15)}  ${pad(userName, 20)}  ${o.reason}`,
       );
     }
+  };
+
+  if (orphans.length === 0) {
+    console.log('  No orphaned tickets found.');
+  } else {
+    console.log(`  Found ${orphans.length} orphaned ticket${orphans.length === 1 ? '' : 's'}:`);
+    console.log('');
+    printTable(orphans);
     console.log('');
 
     if (APPLY) {
@@ -295,6 +347,19 @@ async function main() {
     } else {
       console.log('  Re-run with --yes to anonymise.');
     }
+  }
+
+  // Never anonymised, regardless of --yes — see classifyTicket's docblock:
+  // a missing companyId means membership can't be checked at all, only the
+  // account-deletion half of the orphan check could be evaluated. Reported
+  // separately so a human can decide what (if anything) to do with these.
+  if (flagged.length > 0) {
+    console.log('');
+    console.log(
+      `  Flagged for review — never anonymised (${flagged.length}, membership unverifiable):`,
+    );
+    console.log('');
+    printTable(flagged);
   }
 
   console.log('');
