@@ -8,6 +8,13 @@ import { blockMemberWrite } from '../company/acceptsMembers';
 import { toRole } from './role';
 
 /**
+ * How long an accepted private invitation doc (`companies/{cid}/invitations/{id}`)
+ * survives before Firestore's TTL policy deletes it — issue #410. Nothing
+ * reads an accepted doc again, so this is just cleanup, not a live window.
+ */
+const ACCEPTED_INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * Callable function for already-authenticated users accepting an invite via link.
  *
  * @param data.token - The 32-char invite token from the invite URL
@@ -171,11 +178,19 @@ export const acceptInvitationByToken = onCall(
         // (`FieldValue.delete()` on an absent field is a no-op).
         tx.set(userRef, { pendingDeletion: FieldValue.delete() }, { merge: true });
 
-        // 3. Mark invitation accepted
+        // 3. Mark invitation accepted. `expireAt` (issue #410) is a concrete
+        // Timestamp, not a serverTimestamp sentinel — Firestore's TTL
+        // service reads the stored value directly. Nothing reads an
+        // accepted private invitation doc again (the team page and
+        // findPendingByEmail both query status=='pending'), and the TTL
+        // policy already declared on the `invitations` collection group
+        // (firestore.indexes.json) covers this private doc too, so it's
+        // deleted 30 days after acceptance.
         tx.update(inviteRef, {
           status: 'accepted',
           acceptedAt: nowIso,
           acceptedBy: uid,
+          expireAt: Timestamp.fromMillis(Date.now() + ACCEPTED_INVITE_TTL_MS),
         });
 
         // 4. Delete the mirror — issue #297. The mirror at invitations/{token}
