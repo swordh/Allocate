@@ -26,6 +26,19 @@
  *   node tools/cleanup_orphan_members.js --project=allocate-e0735 --yes      # apply (prod)
  *
  *   node tools/cleanup_orphan_members.js --project=allocate-alpha --company=<id>  # one company
+ *   node tools/cleanup_orphan_members.js --project=allocate-alpha --show-pii       # unmasked
+ *
+ * PII is masked by default in every table this script prints (member doc id,
+ * name, email — see tools/lib/mask_pii.js). Pass --show-pii to print full
+ * values instead. Company id and company name are never masked either way —
+ * they're not personal data about the member.
+ *
+ * Runbook for --show-pii: don't save this output to a file or paste it into
+ * a CI artifact — that just recreates the leak this script exists to clean
+ * up. Agents run this script masked, always; never pass --show-pii from an
+ * agent session, on any environment. To inspect one specific record instead,
+ * open companies/{companyId}/members in the Firebase console and match the
+ * 8-character prefix shown in the masked member doc id column.
  *
  * Credentials, in resolution order:
  *   --project=<id>  Application Default Credentials. Preferred — no long-lived
@@ -68,6 +81,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { maskId, maskEmail, maskName } = require('./lib/mask_pii');
 
 // ── Arguments ────────────────────────────────────────────────────────────────
 
@@ -82,6 +96,7 @@ const APPLY = flag('yes');
 const ONLY_COMPANY = value('company');
 const SA_PATH = value('sa');
 const PROJECT = value('project');
+const SHOW_PII = flag('show-pii');
 const CONCURRENCY = 5;
 const PAGE_SIZE = 200;
 const DELETE_BATCH_LIMIT = 490;
@@ -371,9 +386,19 @@ async function main() {
   console.log(`  Project : ${projectId}`);
   console.log(`  Auth    : ${credentialSource}`);
   console.log(`  Mode    : ${mode}`);
+  console.log(
+    `  PII     : ${SHOW_PII ? 'FULL — do not save or paste this output' : 'masked (pass --show-pii for full values)'}`,
+  );
   if (ONLY_COMPANY) console.log(`  Company : ${ONLY_COMPANY}`);
   console.log(`  Safety window: ${SAFETY_WINDOW_MS / 60000} min (members newer than this are held back, never auto-deleted)`);
   console.log('');
+
+  if (SHOW_PII) {
+    console.error(
+      'WARNING: --show-pii passed — member names and emails will print in clear text below. ' +
+        'Do not save this output to a file or CI artifact.',
+    );
+  }
 
   // Count companies up front so the operator knows the scope before anything runs.
   const allCompanyIds = [];
@@ -423,11 +448,24 @@ async function main() {
 
   const totalOrphans = allOrphans.length;
 
+  // Company id and company name stay in clear text (not personal data about
+  // the member). member doc id, name and email are masked unless --show-pii
+  // was passed — see tools/lib/mask_pii.js. The masked id column is narrower
+  // (maskId's output is always 11 chars, "xxxxxxxx..." — the full 30-wide pad
+  // is only needed for a raw uid), but idWidth still has to be at least as
+  // wide as the "member doc id" header label (13 chars) — `pad()` truncates
+  // a string that's already >= width, so a width of 11 would cut the header
+  // itself down to "member doc ". The masked ids just get a couple of extra
+  // trailing spaces instead.
   const printTable = (rows) => {
-    console.log('  company id                      company name              member doc id                   name                  email');
+    const idWidth = SHOW_PII ? 30 : 13;
+    console.log(`  company id                      company name              ${pad('member doc id', idWidth)}  name                  email`);
     for (const o of rows) {
+      const memberDocId = SHOW_PII ? o.memberDocId : maskId(o.memberDocId);
+      const name = SHOW_PII ? (o.name ?? '—') : maskName(o.name);
+      const email = SHOW_PII ? (o.email ?? '—') : maskEmail(o.email);
       console.log(
-        `  ${pad(o.companyId, 30)}  ${pad(o.companyName, 24)}  ${pad(o.memberDocId, 30)}  ${pad(o.name ?? '—', 20)}  ${o.email ?? '—'}`,
+        `  ${pad(o.companyId, 30)}  ${pad(o.companyName, 24)}  ${pad(memberDocId, idWidth)}  ${pad(name, 20)}  ${email}`,
       );
     }
   };
