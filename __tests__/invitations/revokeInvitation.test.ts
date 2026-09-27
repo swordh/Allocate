@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
 
 vi.mock('@/lib/firebase-admin', () => ({
   adminDb: { doc: vi.fn(), collection: vi.fn(), batch: vi.fn() },
@@ -103,6 +104,13 @@ describe('revokeInvitation', () => {
     expect(batch.update).toHaveBeenCalledWith(
       expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${INVITE_ID}` }),
       expect.objectContaining({ status: 'revoked', revokedBy: 'admin-1' }),
+    )
+    // Issue #410: a revoked private doc is never read again, so it gets a
+    // concrete `expireAt` Timestamp for the TTL policy to clean it up 30
+    // days later.
+    expect(batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${INVITE_ID}` }),
+      expect.objectContaining({ expireAt: expect.any(Timestamp) }),
     )
     // Issue #297: the mirror is deleted, not marked 'revoked' — it's a
     // publicly readable doc carrying the invitee's email, and a revoked

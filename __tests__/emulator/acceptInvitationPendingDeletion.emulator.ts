@@ -78,5 +78,12 @@ describe('acceptInvitationByToken clears pendingDeletion', () => {
     // invitee's email, and an accepted invite can never be used again.
     const mirrorSnap = await adminDb.collection('invitations').doc(token).get()
     expect(mirrorSnap.exists).toBe(false)
+
+    // Issue #410: the private doc is never read again once accepted, so it
+    // gets a concrete `expireAt` Timestamp for the TTL policy to delete it
+    // 30 days later.
+    const privateSnap = await adminDb.doc(`companies/${companyId}/invitations/${inviteId}`).get()
+    expect(privateSnap.data()?.status).toBe('accepted')
+    expect(privateSnap.data()?.expireAt).toBeInstanceOf(Timestamp)
   })
 })
