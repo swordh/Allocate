@@ -1403,15 +1403,12 @@ async function runAccountDeletion(
     // `accountDeletionFailures/{uid}`, and writes the SUCCESS
     // `deletionAuditLog` row — once that commits, this deletion IS success,
     // as far as every other reader of this user's data is concerned. A
-    // non-NOT_FOUND failure in this loop running AFTER that commit would (a)
+    // non-NOT_FOUND failure in this loop running AFTER that commit would
     // write a `writeDeletionFailureAudit('anonymisation', ...)` row that
     // directly contradicts the SUCCESS row committed moments earlier in the
     // very same run (`completedCompanies === totalCompanies`, yet also a
-    // 'failed' outcome), and (b) never reach `recordAccountDeletionFailure`
-    // (only step 2's commit-loop calls that — see its own catch below),
-    // leaving the stuck-deletion alert (`ACCOUNT_DELETION_STUCK`,
-    // lib/accountDeletionAlert.ts) with nothing to page on even though a
-    // ticket's PII was never anonymised. Running this loop first means any
+    // 'failed' outcome) — nothing would ever be recorded as both a success
+    // and a failure for the same attempt. Running this loop first means any
     // failure here is caught by the SAME catch block every other step-3
     // failure already uses, before anything downstream of it has committed —
     // exactly the same reasoning as the `immediatelyDeletedCompanyIds` skip
@@ -1420,6 +1417,15 @@ async function runAccountDeletion(
     // clean: any ticket this loop already nulled before the throw no longer
     // matches `where('submittedBy', '==', uid)` on the next attempt, the same
     // idempotence the batch's own deletes/creates already rely on.
+    //
+    // NOT fixed by this reorder, and not attempted here: step 3's catch below
+    // only ever calls `writeDeletionFailureAudit`, never
+    // `recordAccountDeletionFailure` — for ANY step-3 failure, not just this
+    // one. That gap (the `ACCOUNT_DELETION_STUCK` alert has nothing to page
+    // on for a step-3 failure of any kind, this one included) predates this
+    // PR and covers the whole of step 3, not something specific to
+    // operatorFeedback — left as a separate, pre-existing follow-up rather
+    // than wired in piecemeal here.
     const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
     for (const doc of feedbackSnap.docs) {
       const companyId = doc.data().companyId as string | undefined
