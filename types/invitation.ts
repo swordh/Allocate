@@ -1,3 +1,4 @@
+import type { Timestamp } from 'firebase-admin/firestore'
 import type { Role } from './user'
 
 // Full Role union — the design's invite form offers ADMIN / CREW, so both
@@ -39,4 +40,17 @@ export interface InvitationMirror {
   email: string
   status: InvitationStatus
   expiresAt?: string      // ISO string — mirrors Invitation.expiresAt
+  /**
+   * Firestore TTL field (issue #297), set to the same instant as
+   * `expiresAt`. Missing on a mirror written before this field existed,
+   * until `tools/backfill_invitation_mirrors.js` runs.
+   *
+   * The TTL policy (`firestore.indexes.json` `fieldOverrides`) is scoped to
+   * the `invitations` COLLECTION GROUP, so it also matches every
+   * `companies/{cid}/invitations/*` private doc — this field must NEVER be
+   * added to `Invitation` above, and must never be renamed to `expiresAt`
+   * (the private doc's own field), or a private invitation record would be
+   * silently TTL-deleted.
+   */
+  expireAt?: Timestamp
 }

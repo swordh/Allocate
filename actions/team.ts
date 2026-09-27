@@ -26,11 +26,63 @@ function newExpiresAt(): string {
 }
 
 /**
- * Shared resend step: pushes `expiresAt` out on both the private doc and the
- * public mirror, and stamps `lastSentAt` on the private doc so the UI can
- * show "Invite re-sent just now" (`lib/invite-status.ts:inviteMeta`). The
- * mirror intentionally does NOT get `lastSentAt` — it's a minimal public
- * lookup doc and nothing reads that field from it.
+ * The `expireAt` Firestore TTL value for an `invitations/{token}` mirror —
+ * issue #297. Set to the exact same instant as the mirror's own `expiresAt`
+ * ISO string: no grace period is needed, because a resend recreates the
+ * mirror (`extendPendingInvite` below does a `batch.set`, not `update`), so
+ * there's nothing left to read once the token has expired.
+ *
+ * Stays local to this file rather than moving into `lib/invite-token.ts`,
+ * which the client can reach — this is server-only.
+ *
+ * WARNING: the TTL policy declared in `firestore.indexes.json` is scoped to
+ * the `invitations` COLLECTION GROUP, not just the top-level mirror
+ * collection — it also matches every `companies/{cid}/invitations/*`
+ * private doc. Never call this for a private doc, and never rename this
+ * field to `expiresAt` (the private doc's own field name) — either mistake
+ * would get a private invitation record silently TTL-deleted.
+ */
+function mirrorExpireAt(expiresAtIso: string): Timestamp {
+  return Timestamp.fromDate(new Date(expiresAtIso))
+}
+
+/**
+ * Shared resend step: pushes `expiresAt` out on the private doc and stamps
+ * `lastSentAt` so the UI can show "Invite re-sent just now"
+ * (`lib/invite-status.ts:inviteMeta`).
+ *
+ * A `runTransaction`, NOT a plain `batch` — this closes a race a security
+ * review caught in the original issue #297 fix: `resendInvitation` reads
+ * the private doc as a pre-check, then (previously) blindly wrote the
+ * mirror as `status: 'pending'` regardless of what happened in between.
+ * Interleave a concurrent `revokeInvitation` between that read and this
+ * write — private doc -> 'revoked', mirror deleted — and this function
+ * would recreate a LIVE pending mirror for a revoked invite, un-revoking
+ * it: `acceptInvitationByToken` trusts the mirror's own `status`, so the
+ * revoked link would become acceptable again (and, short of that, the
+ * recreated mirror still re-exposes the invitee's email regardless of
+ * whether anyone accepts it). The same shape of race applies against a
+ * concurrent accept.
+ *
+ * The fix: re-read `inviteRef` INSIDE the transaction and re-verify
+ * `status === 'pending'` there — Firestore's transaction read set makes
+ * this authoritative: if a revoke or accept commits after this
+ * transaction's read but before it tries to commit, this transaction is
+ * retried against the now-current (non-pending) doc and returns `ok:
+ * false` without writing anything. `token`/`email` also come from this
+ * SAME in-transaction read, not from the caller's pre-check snapshot,
+ * companyId/inviteId are still ok to take from the caller since they only
+ * ADDRESS the doc rather than describe its content — closing the loop
+ * entirely on stale data driving a write.
+ *
+ * The mirror is fully REPLACED with `tx.set`, not `tx.update` — a TTL
+ * policy now deletes the mirror once its `expireAt` passes (see
+ * `mirrorExpireAt`), so by the time an admin resends an invite whose mirror
+ * expired a while ago, that mirror doc may no longer exist at all. `update`
+ * on a missing doc throws `not-found`; `set` recreates it, which is exactly
+ * what a resend of a still-pending invite should do. The mirror
+ * intentionally does NOT get `lastSentAt` — it's a minimal public lookup
+ * doc and nothing reads that field from it.
  *
  * Used by `resendInvitation` — the team page's per-row RESEND button. There
  * used to be a second caller (`inviteUser`'s "already-pending" fallback),
@@ -41,20 +93,40 @@ function newExpiresAt(): string {
 async function extendPendingInvite(
   cid: string,
   inviteId: string,
-  token: string,
-): Promise<{ expiresAt: string; lastSentAt: string }> {
+): Promise<
+  | { ok: true; expiresAt: string; lastSentAt: string; email: string; token: string }
+  | { ok: false }
+> {
   const expiresAt = newExpiresAt()
   const lastSentAt = new Date().toISOString()
-
   const inviteRef = adminDb.doc(`companies/${cid}/invitations/${inviteId}`)
-  const mirrorRef = adminDb.collection('invitations').doc(token)
 
-  const batch = adminDb.batch()
-  batch.update(inviteRef, { expiresAt, lastSentAt })
-  batch.update(mirrorRef, { expiresAt })
-  await batch.commit()
+  return adminDb.runTransaction(async (tx) => {
+    const inviteSnap = await tx.get(inviteRef)
+    if (!inviteSnap.exists) return { ok: false as const }
 
-  return { expiresAt, lastSentAt }
+    const inviteData = inviteSnap.data()!
+    // The authoritative check — see this function's docblock. A concurrent
+    // revoke or accept that committed after `resendInvitation`'s own
+    // pre-check but before this transaction's read is caught right here.
+    if (inviteData.status !== 'pending') return { ok: false as const }
+
+    const token = inviteData.token as string
+    const email = inviteData.email as string
+    const mirrorRef = adminDb.collection('invitations').doc(token)
+
+    tx.update(inviteRef, { expiresAt, lastSentAt })
+    tx.set(mirrorRef, {
+      companyId: cid,
+      inviteId,
+      email,
+      status: 'pending',
+      expiresAt,
+      expireAt: mirrorExpireAt(expiresAt),
+    })
+
+    return { ok: true as const, expiresAt, lastSentAt, email, token }
+  })
 }
 
 /** Why a submitted recipient was NOT sent an invite. */
@@ -220,12 +292,16 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
       expiresAt,
     })
     // Public mirror — resolved by the /invite/{token} page and accept callable.
+    // `expireAt` (issue #297) is the Firestore TTL field declared in
+    // firestore.indexes.json's fieldOverrides — see `mirrorExpireAt`'s
+    // docblock for why it's a separate field from `expiresAt`.
     batch.set(mirrorRef, {
       companyId: cid,
       inviteId: inviteRef.id,
       email,
       status: 'pending',
       expiresAt,
+      expireAt: mirrorExpireAt(expiresAt),
     })
     // Enqueued mail — sent by the onMailQueued Cloud Function.
     const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
@@ -280,8 +356,13 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
   const cid = session.activeCompanyId
   if (!cid) return { error: 'No active company' }
 
-  // ── 2. Read the private doc FIRST — it's what gives us the token for the
-  // mirror path. Never accept a token from the client. ─────────────────────────
+  // ── 2. Read the private doc — cheap early exit for a bad request (missing,
+  // or already not pending) and to get the role/name for the mail content.
+  // This is NOT the authority for the actual write: extendPendingInvite
+  // (below) re-reads this same doc inside a transaction and re-verifies
+  // `status === 'pending'` there before writing anything — see its docblock
+  // for the revoke/accept race this closes. Never accept a token from the
+  // client either way. ──────────────────────────────────────────────────────
   const inviteRef = adminDb.doc(`companies/${cid}/invitations/${inviteId}`)
   const inviteSnap = await inviteRef.get()
   if (!inviteSnap.exists) return { error: 'Invitation not found' }
@@ -291,8 +372,6 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
     return { error: 'Only pending invitations can be resent' }
   }
 
-  const token = inviteData.token as string
-  const email = inviteData.email as string
   const role = toRole(inviteData.role, { fn: 'resendInvitation', path: inviteRef.path })
   const inviterName = (inviteData.invitedByName as string) || 'A teammate'
 
@@ -303,10 +382,23 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
     return { error: 'Server is misconfigured — please contact support.' }
   }
 
-  // ── 3. Extend expiry + stamp lastSentAt ───────────────────────────────────────
-  await extendPendingInvite(cid, inviteId, token)
+  // ── 3. Extend expiry + stamp lastSentAt, and recreate the mirror if TTL
+  // already deleted it — all inside one transaction that re-verifies
+  // `status === 'pending'` against its own fresh read (see
+  // extendPendingInvite's docblock). `email`/`token` below come from THAT
+  // read, not from the pre-check above. ─────────────────────────────────────
+  const result = await extendPendingInvite(cid, inviteId)
+  if (!result.ok) {
+    // The invite stopped being pending between the pre-check above and the
+    // transaction's own read — e.g. a concurrent revoke or accept. Same
+    // user-facing message as the pre-check's non-pending case. No mail is
+    // queued below this point: the mirror was never recreated.
+    return { error: 'Only pending invitations can be resent' }
+  }
+  const { email, token } = result
 
-  // ── 4. Re-queue the email ──────────────────────────────────────────────────────
+  // ── 4. Re-queue the email — only reached once the transaction above
+  // actually committed a fresh, live pending mirror. ────────────────────────
   const companySnap = await adminDb.doc(`companies/${cid}`).get()
   const companyName = (companySnap.data()?.name as string) || 'your team'
   const acceptUrl = `${appUrl.replace(/\/$/, '')}/invite/${token}`
@@ -1018,7 +1110,10 @@ export async function revokeInvitation(inviteId: string): Promise<{ error?: stri
     revokedAt: nowIso,
     revokedBy: session.uid,
   })
-  batch.update(mirrorRef, { status: 'revoked' })
+  // Issue #297: delete the mirror rather than marking it 'revoked' — it's a
+  // publicly readable doc carrying the invitee's email, and a revoked invite
+  // can never be used again, so nothing needs it to keep existing.
+  batch.delete(mirrorRef)
   await batch.commit()
 
   revalidatePath('/settings/team')
