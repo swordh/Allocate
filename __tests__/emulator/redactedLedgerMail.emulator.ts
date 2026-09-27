@@ -59,12 +59,29 @@ describe('mail built from a redacted ledger', () => {
       .where('template', '==', 'companyDeletionRequested')
       .get()
     expect(mailSnap.size).toBe(1)
-    const data = mailSnap.docs[0].data()['data'] as Record<string, unknown>
+    const mailDoc = mailSnap.docs[0].data()
+    const data = mailDoc['data'] as Record<string, unknown>
     expect(data['requestedByName']).toBe('An administrator')
     // Not the string "null", and not missing either — Firestore rejects
     // `undefined` outright, so a plain pass-through would have failed the
     // write and lost the mail entirely.
     expect(data['requestedByName']).not.toBe('null')
+
+    // Issue #325 (mail retention): every queued mail doc carries a Firestore
+    // TTL `expireAt` ~90 days out — see lib/mail-retention.ts /
+    // functions/src/email/mailRetention.ts. Checked against a real emulator
+    // write (not a fake Timestamp) so this catches the field actually being
+    // a plain Date, a number, or missing entirely — none of which the unit
+    // tests around mailExpireAt() itself would ever see.
+    const expireAt = mailDoc['expireAt'] as FirebaseFirestore.Timestamp
+    expect(expireAt).toBeDefined()
+    expect(typeof expireAt.toMillis).toBe('function')
+    const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
+    const deltaMs = expireAt.toMillis() - Date.now()
+    // Generous ±1 hour window — this run against the real emulator, not a
+    // fake clock, so it only needs to rule out "wrong TTL entirely" (30
+    // days, no TTL, a bug), not pin the exact millisecond.
+    expect(Math.abs(deltaMs - NINETY_DAYS_MS)).toBeLessThan(60 * 60 * 1000)
   })
 
   it('the companyDeleted mail names "An administrator", never null', async () => {

@@ -2,11 +2,12 @@
 
 import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { WriteBatch } from 'firebase-admin/firestore'
+import { Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import { listMembers } from '@/lib/queries/members'
+import { mailExpireAt } from '@/lib/mail-retention'
 import { ALLOWED_ROLES, toRole } from '@/lib/roles'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
@@ -192,6 +193,10 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
   // and fires the same way on batched creates.
   // 25 addresses × 3 writes = 75, well under BATCH_LIMIT (490) — no chunking. ─
   const nowIso = new Date().toISOString()
+  // Issue #325 (mail retention): shared across every mail doc this loop
+  // queues, so all of them get the exact same `expireAt` rather than each
+  // drifting by however long the loop takes to run.
+  const now = Timestamp.now()
   const expiresAt = newExpiresAt()
   const batch = adminDb.batch()
   const invitations: PublicInvitation[] = []
@@ -231,6 +236,7 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
       status: 'queued',
       companyId: cid,
       priority: 'normal',
+      expireAt: mailExpireAt(now),
       createdAt: nowIso,
     })
 
@@ -313,6 +319,9 @@ export async function resendInvitation(inviteId: string): Promise<{ error?: stri
     companyId: cid,
     priority: 'normal',
     createdAt: new Date().toISOString(),
+    // Issue #325 (mail retention): no `now` already in scope here, so a
+    // fresh one is taken at write time — see lib/mail-retention.ts.
+    expireAt: mailExpireAt(Timestamp.now()),
   })
 
   revalidatePath('/settings/team')
@@ -942,6 +951,9 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
         companyId: cid,
         priority: 'normal',
         createdAt: new Date().toISOString(),
+        // Issue #325 (mail retention): no `now` already in scope here, so a
+        // fresh one is taken at write time — see lib/mail-retention.ts.
+        expireAt: mailExpireAt(Timestamp.now()),
       })
     }
   } catch (err) {

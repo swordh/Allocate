@@ -8,6 +8,7 @@ import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
 import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
+import { mailExpireAt } from '@/lib/mail-retention'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
 import {
   confirmSoleMember,
@@ -1354,6 +1355,10 @@ async function runAccountDeletion(
                 companyId,
                 priority: 'normal',
                 createdAt: iso,
+                // Issue #325 (mail retention): `iso` above is a string, not a
+                // Timestamp, so a fresh one is taken here rather than parsed
+                // back out of it.
+                expireAt: mailExpireAt(Timestamp.now()),
               })
             }
           }

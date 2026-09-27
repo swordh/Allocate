@@ -1,10 +1,11 @@
-import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions/v2';
 import type Stripe from 'stripe';
 import { getStripeClient } from './stripeClient';
 import { appUrl } from '../appUrl';
+import { mailExpireAt } from '../email/mailRetention';
 import type { CompanyBilling } from '../types';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
@@ -153,6 +154,11 @@ async function processCompany(
   const settingsUrl = appUrl('settings/subscription');
   const companyName = (data['name'] as string | undefined) ?? '';
 
+  // Issue #325 (mail retention): derived from the SAME `now` this run
+  // already stamps `lastReminderAt`/`createdAt` with, converted to a
+  // Timestamp since this function's `now` is a plain Date.
+  const expireAt = mailExpireAt(Timestamp.fromDate(now));
+
   const batch = db.batch();
   for (const adminDoc of adminsWithEmail) {
     const email = adminDoc.data()['email'] as string;
@@ -165,6 +171,7 @@ async function processCompany(
       priority: 'normal',
       data: { companyName, settingsUrl, isReminder: true },
       createdAt: nowIso,
+      expireAt,
     });
   }
   batch.update(companyRef, { 'billing.lastReminderAt': nowIso });

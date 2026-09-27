@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions/v2';
 import type { CompanyDeletionDocument, CompanyDeletionFailureReason } from '../types';
 import { formatDateFull } from './format';
 import { appUrl } from '../appUrl';
+import { mailExpireAt } from '../email/mailRetention';
 
 /**
  * Consecutive no-progress stale-lease claims (see `claimStaleLease` in
@@ -185,6 +186,11 @@ export function applyFailedTransition(
           status: 'queued',
           template: 'companyDeletionFailed',
           companyId: ledger.companyId,
+          // Issue #325 (mail retention): the SAME `now` this transition
+          // already stamps `failedAt`/`lastHeartbeatAt` with — required for
+          // byte-for-byte parity with lib/companyDeletionFailWrites.ts's
+          // Next-side mirror, see __tests__/company/failWritesParity.test.ts.
+          expireAt: mailExpireAt(now),
           data: {
             companyName: ledger.companyName,
             requestedAtFormatted,
