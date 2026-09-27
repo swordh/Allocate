@@ -23,6 +23,15 @@ export const FEEDBACK_TYPES: FeedbackType[] = ['feature_request', 'bug_report', 
 export const FEEDBACK_STATUSES: FeedbackStatus[] = ['open', 'in_progress', 'done', 'wont_fix']
 export const FEEDBACK_PRIORITIES: FeedbackPriority[] = ['low', 'medium', 'high']
 
+// issue #338 PR 2: the two statuses that count as "closed" for retention
+// purposes — `closedAt` (actions/operator/(protected)/feedback/actions.ts's
+// `updateFeedbackStatus`) is set when a ticket transitions INTO one of these
+// and cleared when it transitions back OUT to `open`/`in_progress`.
+// `functions/src/admin/purgeOldFeedback.ts` purges tickets 24 months after
+// `closedAt`. Exported as the single source of truth so the setter and the
+// purge query can never drift apart on which statuses count as closed.
+export const CLOSED_FEEDBACK_STATUSES: FeedbackStatus[] = ['done', 'wont_fix']
+
 // Design's uppercase labels (23/24 Operator - Feedback). `wont_fix` reads as
 // "NO ACTION" in the design, not "Won't fix" — this is the one source of
 // truth for that label, used by both the setter buttons and the event text
