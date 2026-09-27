@@ -74,10 +74,13 @@ import { GrpcStatus, getFirestore, type Firestore } from 'firebase-admin/firesto
  * Scheduler retries that redo the whole query-and-delete pass for no
  * benefit (everything already deleted is already gone; redoing it is a
  * cheap no-op, but the noise is not). `failed > 0` is logged at
- * `logger.error` specifically so it surfaces through this project's
- * existing Cloud-Logging-based alerting (see the memory note on
- * `ACCOUNT_DELETION_STUCK` for the same pattern applied elsewhere) without
- * needing the function invocation itself to be marked as failed.
+ * `logger.error` so the outcome is visible to anyone reading Cloud Logging
+ * for this function — but NO alert currently fires on it. This project's
+ * one existing log-based alert policy (see the `ACCOUNT_DELETION_STUCK`
+ * memory note) matches that literal marker string only, in a different
+ * function (`lib/accountDeletionAlert.ts`); nothing here reuses it or
+ * defines a new one. A log-based alert on this message is a reasonable
+ * follow-up, not something this change does.
  */
 export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: number; failed: number }> {
   const cutoff = new Date();
