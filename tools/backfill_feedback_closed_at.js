@@ -14,14 +14,23 @@
  * them too.
  *
  * Source of the backfilled value, per ticket, in priority order:
- *   1. `createdAt` of the most recent `kind: 'event'` doc in
- *      `operatorFeedback/{id}/notes` whose `text` ends with "→ DONE" or
- *      "→ NO ACTION" — the exact suffix `updateFeedbackStatus` writes via
- *      FEEDBACK_STATUS_LABELS['done'] / FEEDBACK_STATUS_LABELS['wont_fix']
- *      (types/operator.ts) when it closes a ticket. "Most recent" matters
- *      because a ticket can be closed, reopened, and closed again — only
- *      the LAST closing event reflects when it most recently became closed.
- *   2. `submittedAt` on the ticket itself, if no such event exists — either
+ *   1. `createdAt` of the most recent CLOSING transition in
+ *      `operatorFeedback/{id}/notes` — a `kind: 'event'` doc whose FROM
+ *      status is NOT closed and whose TO status IS (see
+ *      `tools/lib/feedbackClosedAtClassification.js`'s
+ *      `isClosingTransition`). This is deliberately narrower than "any event
+ *      ending in → DONE / → NO ACTION": a closed → closed RECLASSIFICATION
+ *      (`done` ↔ `wont_fix`, e.g. "NO ACTION → DONE") also ends that way but
+ *      is NOT a new closing — `updateFeedbackStatus` itself leaves
+ *      `closedAt` untouched for that transition (see its own "closed →
+ *      closed: keep existing closedAt" branch) — so counting it here would
+ *      over-estimate how long the ticket has been closed and purge it later
+ *      than the 24-month policy intends. "Most recent" matters on its own
+ *      too: a ticket can be closed, reopened, and closed again — only the
+ *      LAST closing transition reflects when it most recently became
+ *      closed, and a later closed → closed reclassification of that same
+ *      closure must not push the timestamp forward either.
+ *   2. `submittedAt` on the ticket itself, if no such transition exists — either
  *      the ticket was created already-closed (no status-change event ever
  *      fired) or it predates the notes subcollection entirely. This likely
  *      OVER-estimates how long the ticket has been closed, which is the
@@ -92,15 +101,11 @@ const SA_PATH = value('sa');
 const PROJECT = value('project');
 const WRITE_BATCH_LIMIT = 490;
 
-// The exact suffixes `updateFeedbackStatus` writes when it closes a ticket —
-// FEEDBACK_STATUS_LABELS['done'] === 'DONE' and
-// FEEDBACK_STATUS_LABELS['wont_fix'] === 'NO ACTION' (types/operator.ts),
-// composed into "Status changed {FROM} → {TO}". Hardcoded rather than
-// imported: this script runs as plain Node (no TS build step), and the
-// labels are a stable, already-shipped wire contract — the event text is
-// read back by humans in the operator UI, so changing it is not a casual
-// edit either.
-const CLOSING_EVENT_SUFFIXES = ['→ DONE', '→ NO ACTION'];
+// Pure classification logic (no Firestore/admin-app imports) lives in its
+// own module so it can be unit-tested directly — see that file's own
+// docblock for why the status labels it uses are hardcoded rather than
+// imported from types/operator.ts.
+const { latestClosingEventCreatedAt } = require('./lib/feedbackClosedAtClassification');
 
 // ── Credentials ──────────────────────────────────────────────────────────────
 
@@ -164,25 +169,17 @@ const db = getFirestore();
 // ── Source lookup ────────────────────────────────────────────────────────────
 
 /**
- * The most recent closing event for one ticket, or null if there isn't one.
- * `notes` is small per ticket (an operator's own timeline of notes/status
- * changes on ONE support ticket — realistically single digits to a few
- * dozen), so reading the whole subcollection and sorting in memory is fine;
- * there is no need for a composite index on `kind`+`createdAt` just for
- * this one-off script.
+ * The most recent CLOSING transition for one ticket, or null if there isn't
+ * one — see `tools/lib/feedbackClosedAtClassification.js`'s
+ * `latestClosingEventCreatedAt` for the actual logic. `notes` is small per
+ * ticket (an operator's own timeline of notes/status changes on ONE support
+ * ticket — realistically single digits to a few dozen), so reading the
+ * whole subcollection and classifying in memory is fine; there is no need
+ * for a composite index on `kind`+`createdAt` just for this one-off script.
  */
 async function findLatestClosingEvent(ticketId) {
   const notesSnap = await db.collection(`operatorFeedback/${ticketId}/notes`).get();
-  let latest = null;
-  for (const doc of notesSnap.docs) {
-    const data = doc.data();
-    if (data.kind !== 'event') continue;
-    if (typeof data.text !== 'string') continue;
-    if (!CLOSING_EVENT_SUFFIXES.some((suffix) => data.text.endsWith(suffix))) continue;
-    if (!data.createdAt || typeof data.createdAt.toMillis !== 'function') continue;
-    if (!latest || data.createdAt.toMillis() > latest.toMillis()) latest = data.createdAt;
-  }
-  return latest;
+  return latestClosingEventCreatedAt(notesSnap.docs.map((doc) => doc.data()));
 }
 
 /**
@@ -288,9 +285,3 @@ main()
     console.error('FATAL:', err);
     process.exit(1);
   });
-
-// Re-exported for tests that want to exercise the pure classification logic
-// without touching a real project (none exist yet — this script is covered
-// by dry-run verification against alpha instead, same as
-// tools/cleanup_orphan_members.js).
-module.exports = { CLOSING_EVENT_SUFFIXES };

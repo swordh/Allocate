@@ -11,6 +11,22 @@
  * using `recursiveDelete`/BulkWriter rather than a manual `WriteBatch`, so
  * this test is really proving that choice holds at scale, not exercising a
  * chunk-and-commit loop of its own.
+ *
+ * Every test below also asserts `result.failed === 0` — the sweep's return
+ * shape changed from `{ purged }` to `{ purged, failed }` in code review
+ * (the first version reported `snap.size` as "purged" regardless of
+ * whether the deletes actually succeeded).
+ *
+ * NOT covered here: the reopen-race guard (`isStillEligibleForPurge`,
+ * re-reading a ticket immediately before its delete to skip one reopened
+ * or reclassified since the sweep's initial query ran). That guard's pure
+ * logic is unit-tested directly in
+ * `__tests__/functions/purgeOldFeedbackReopenGuard.test.ts` — genuinely
+ * forcing the race itself (a write landing in the exact window between
+ * this function's query and a specific ticket's delete) isn't practically
+ * simulable against a real emulator without adding a test-only seam to the
+ * production function, which wasn't judged worth it for a millisecond-wide
+ * window. See that function's own docblock for the accepted residual risk.
  */
 import { describe, expect, it } from 'vitest'
 import { Timestamp } from 'firebase-admin/firestore'
@@ -69,6 +85,7 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(1)
+    expect(result.failed).toBe(0)
 
     expect((await ticketRef.get()).exists).toBe(false)
     const notesSnap = await ticketRef.collection('notes').get()
@@ -88,6 +105,7 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(0)
+    expect(result.failed).toBe(0)
     expect((await ticketRef.get()).exists).toBe(true)
   })
 
@@ -104,6 +122,7 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(0)
+    expect(result.failed).toBe(0)
     expect((await ticketRef.get()).exists).toBe(true)
   })
 
@@ -120,6 +139,7 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(0)
+    expect(result.failed).toBe(0)
     expect((await ticketRef.get()).exists).toBe(true)
   })
 
@@ -149,6 +169,7 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(COUNT)
+    expect(result.failed).toBe(0)
 
     const remaining = await adminDb.collection('operatorFeedback').get()
     expect(remaining.size).toBe(1)
@@ -159,5 +180,6 @@ describe('purgeOldFeedbackSweep', () => {
     const db = getTestFunctionsDb()
     const result = await purgeOldFeedbackSweep(db)
     expect(result.purged).toBe(0)
+    expect(result.failed).toBe(0)
   })
 })
