@@ -26,6 +26,14 @@ function newExpiresAt(): string {
 }
 
 /**
+ * How long a revoked private invitation doc survives before Firestore's TTL
+ * policy deletes it — issue #410. Nothing reads a revoked doc again (the
+ * team page and `findPendingByEmail` both query `status == 'pending'`), so
+ * this is just cleanup, not a live window.
+ */
+const REVOKED_INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
  * The `expireAt` Firestore TTL value for an `invitations/{token}` mirror —
  * issue #297. Set to the exact same instant as the mirror's own `expiresAt`
  * ISO string: no grace period is needed, because a resend recreates the
@@ -35,12 +43,17 @@ function newExpiresAt(): string {
  * Stays local to this file rather than moving into `lib/invite-token.ts`,
  * which the client can reach — this is server-only.
  *
- * WARNING: the TTL policy declared in `firestore.indexes.json` is scoped to
- * the `invitations` COLLECTION GROUP, not just the top-level mirror
- * collection — it also matches every `companies/{cid}/invitations/*`
- * private doc. Never call this for a private doc, and never rename this
- * field to `expiresAt` (the private doc's own field name) — either mistake
- * would get a private invitation record silently TTL-deleted.
+ * The TTL policy declared in `firestore.indexes.json` is scoped to the
+ * `invitations` COLLECTION GROUP, not just the top-level mirror collection —
+ * it also matches every `companies/{cid}/invitations/*` private doc. That's
+ * intentional for an accepted/revoked private doc (issue #410 —
+ * `acceptInvitationByToken` and `revokeInvitation` both stamp their own
+ * `expireAt` once nothing reads the doc again), but never call THIS function
+ * for a private doc, and never set `expireAt` on a PENDING private doc — a
+ * live invite must survive until its own `expiresAt`, not get TTL-deleted
+ * early. Also never rename this field to `expiresAt` (the private doc's own
+ * field name) — either mistake would get a private invitation record
+ * silently deleted (or, for a pending one, deleted while still live).
  */
 function mirrorExpireAt(expiresAtIso: string): Timestamp {
   return Timestamp.fromDate(new Date(expiresAtIso))
@@ -1105,10 +1118,16 @@ export async function revokeInvitation(inviteId: string): Promise<{ error?: stri
   // ── 3. Batch-update both documents ────────────────────────────────────────────
   const nowIso = new Date().toISOString()
   const batch = adminDb.batch()
+  // `expireAt` (issue #410) is a concrete Timestamp, not a serverTimestamp
+  // sentinel — Firestore's TTL service reads the stored value directly. The
+  // TTL policy on the `invitations` collection group already covers this
+  // private doc, so it's deleted 30 days after revocation — nothing reads a
+  // revoked doc again.
   batch.update(inviteRef, {
     status: 'revoked',
     revokedAt: nowIso,
     revokedBy: session.uid,
+    expireAt: Timestamp.fromMillis(Date.now() + REVOKED_INVITE_TTL_MS),
   })
   // Issue #297: delete the mirror rather than marking it 'revoked' — it's a
   // publicly readable doc carrying the invitee's email, and a revoked invite
