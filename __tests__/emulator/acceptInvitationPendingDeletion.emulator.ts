@@ -72,5 +72,11 @@ describe('acceptInvitationByToken clears pendingDeletion', () => {
 
     const membershipSnap = await adminDb.doc(`users/${uid}/memberships/${companyId}`).get()
     expect(membershipSnap.exists).toBe(true)
+
+    // Issue #297: the mirror at invitations/{token} is deleted on accept,
+    // not marked 'accepted' — it's a publicly readable doc carrying the
+    // invitee's email, and an accepted invite can never be used again.
+    const mirrorSnap = await adminDb.collection('invitations').doc(token).get()
+    expect(mirrorSnap.exists).toBe(false)
   })
 })

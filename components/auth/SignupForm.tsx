@@ -36,7 +36,7 @@ function extractInviteToken(redirect: string | null): string | null {
 
 const INVALID_REASON_HINT: Record<Exclude<InviteValidation, { ok: true }>['reason'], string> = {
   malformed: "That doesn't look like an invitation link or code.",
-  not_found: "We don't recognise this code",
+  not_found: "This invitation code isn't valid. Ask whoever invited you to send a new one.",
   accepted:  'This invitation has already been used.',
   revoked:   'This invitation was withdrawn.',
   expired:   'This invitation has expired.',
