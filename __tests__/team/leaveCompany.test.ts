@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { wireDb, queryFor, makeTransaction, type DocMap } from '../helpers/firestore'
+import { wireDb, queryFor, filterValue, makeTransaction, type DocMap, type QueryResolver } from '../helpers/firestore'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
@@ -342,5 +342,34 @@ describe('leaveCompany', () => {
 
     expect(successes).toHaveLength(1)
     expect(blocked).toHaveLength(1)
+  })
+
+  // Issue #338 PR 1: leaveCompany shares anonymizeMemberReferences with
+  // removeMember (see that file's docblock) — same operatorFeedback scan,
+  // scoped to this company via the companyId equality filter.
+  it('nulls submittedBy/userName on an operatorFeedback ticket the leaver filed in this company (issue #338 PR 1)', async () => {
+    const TICKET_PATH = 'operatorFeedback/SUP-4242'
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path !== 'operatorFeedback') return []
+      const submittedBy = filterValue(ctx, 'submittedBy')
+      const companyId = filterValue(ctx, 'companyId')
+      if (submittedBy !== UID || companyId !== COMPANY_ID) return []
+      return [{ id: 'SUP-4242', path: TICKET_PATH, data: { submittedBy: UID, companyId: COMPANY_ID, userName: 'Leaver' } }]
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: TICKET_PATH }),
+      { submittedBy: null, userName: null },
+    )
   })
 })

@@ -703,6 +703,17 @@ async function anonymizeMemberReferences(cid: string, uid: string): Promise<void
     await addOp(companyRef, { createdBy: null })
   }
 
+  // operatorFeedback: top-level collection (submitFeedback.ts), keyed by a
+  // human-readable ticketId rather than under companies/{cid}. Scoped to
+  // this company with a second equality filter — both are equality (`==`),
+  // so no composite index is needed. Issue #338 PR 1.
+  const feedbackRef = adminDb.collection('operatorFeedback')
+  const byFeedbackSubmitter = await feedbackRef
+    .where('submittedBy', '==', uid)
+    .where('companyId', '==', cid)
+    .get()
+  for (const doc of byFeedbackSubmitter.docs) await addOp(doc.ref, { submittedBy: null, userName: null })
+
   await batch.commit()
 }
 
