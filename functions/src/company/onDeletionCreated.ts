@@ -7,6 +7,7 @@ import type { CompanyDeletionDocument, CompanyDeletionCancelTokenDocument } from
 import { runCompanyPurge } from './purge';
 import { formatDateFull, formatDateShort, buildCancelUrl, formatRequesterDisplay } from './format';
 import { claimRequestedLease } from './lease';
+import { mailExpireAt } from '../email/mailRetention';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -91,6 +92,9 @@ async function queueRequestedMail(
       status: 'queued',
       template: 'companyDeletionRequested',
       companyId: ledger.companyId,
+      // Issue #325 (mail retention): no `now` already in scope here, so a
+      // fresh one is taken at write time — see mailRetention.ts.
+      expireAt: mailExpireAt(Timestamp.now()),
       data: {
         companyName: ledger.companyName,
         requestedByName: requestedByDisplay,

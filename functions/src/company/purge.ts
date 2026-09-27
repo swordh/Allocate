@@ -6,6 +6,7 @@ import { getStripeClient } from './stripeClient';
 import { formatDateFull, formatRequesterDisplay } from './format';
 import { appUrl } from '../appUrl';
 import { applyFailedTransition } from './failDeletion';
+import { mailExpireAt } from '../email/mailRetention';
 
 /** Matches actions/account.ts and actions/team.ts's chunked-WriteBatch convention. */
 const BATCH_LIMIT = 490;
@@ -519,6 +520,9 @@ async function runFinalizePhase(
       // in mailDelivery.ts.
       priority: 'critical',
       companyId,
+      // Issue #325 (mail retention): no `now` already in scope here, so a
+      // fresh one is taken at write time — see mailRetention.ts.
+      expireAt: mailExpireAt(Timestamp.now()),
       data: {
         companyName: ledger.companyName,
         requestedByName: requestedByDisplay,

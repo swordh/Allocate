@@ -2,7 +2,9 @@
 
 import 'server-only'
 import type { ActionCodeSettings } from 'firebase-admin/auth'
+import { Timestamp } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
+import { mailExpireAt } from '@/lib/mail-retention'
 
 /** Canonical error code from a FirebaseAuthError (e.g. 'auth/user-not-found'). */
 function firebaseErrorCode(err: unknown): string {
@@ -55,6 +57,9 @@ async function queueMail(to: string, template: string, data: Record<string, unkn
     status: 'queued',
     priority: 'normal',
     createdAt: new Date().toISOString(),
+    // Issue #325 (mail retention): no `now` already in scope here, so a
+    // fresh one is taken at write time — see lib/mail-retention.ts.
+    expireAt: mailExpireAt(Timestamp.now()),
   })
 }
 
