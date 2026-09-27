@@ -84,7 +84,7 @@ export type AppAccessDecision =
  * bypass. Account is reachable by all three roles, so this can't loop.
  *
  * Non-admin without full access lands on `/settings/account`, never
- * `/subscribe` — a crew/viewer member cannot buy a plan, so sending them to
+ * `/subscribe` — a crew member cannot buy a plan, so sending them to
  * a page whose only action is "choose a plan" is a dead end. Admin without
  * full access goes to `/subscribe`, since only an admin can act on it.
  */

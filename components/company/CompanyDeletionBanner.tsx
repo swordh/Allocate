@@ -15,7 +15,7 @@ interface CompanyDeletionBannerProps {
  * The app-shell-wide deletion notice — issue #252 step 6, PR 3. Rendered by
  * `app/(app)/layout.tsx` above `children` on every page under `(app)`, for
  * every member regardless of role, because the design brief requires it:
- * crew and viewers are never mailed when a deletion is requested or
+ * crew are never mailed when a deletion is requested or
  * cancelled, so this banner is their only warning that the company (and
  * their access to it) has an end date — see "Alla i företaget måste veta" in
  * plan/designbrief-radering-av-konto.md.

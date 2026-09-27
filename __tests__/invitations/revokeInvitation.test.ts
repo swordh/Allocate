@@ -87,7 +87,7 @@ describe('revokeInvitation', () => {
     expect(result.error).toBe('Invitation not found')
   })
 
-  it('writes revoked status to both the private doc and the mirror', async () => {
+  it('marks the private doc revoked and deletes the mirror', async () => {
     stubSession('admin')
     const { batch } = wire({
       [`companies/${COMPANY_ID}/invitations/${INVITE_ID}`]: {
@@ -104,9 +104,13 @@ describe('revokeInvitation', () => {
       expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${INVITE_ID}` }),
       expect.objectContaining({ status: 'revoked', revokedBy: 'admin-1' }),
     )
-    expect(batch.update).toHaveBeenCalledWith(
+    // Issue #297: the mirror is deleted, not marked 'revoked' — it's a
+    // publicly readable doc carrying the invitee's email, and a revoked
+    // invite can never be used again.
+    expect(batch.delete).toHaveBeenCalledWith(expect.objectContaining({ path: `invitations/${TOKEN}` }))
+    expect(batch.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: `invitations/${TOKEN}` }),
-      { status: 'revoked' },
+      expect.anything(),
     )
     expect(batch.commit).toHaveBeenCalledOnce()
   })

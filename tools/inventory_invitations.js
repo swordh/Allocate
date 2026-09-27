@@ -23,11 +23,13 @@
  * migration/backfill.
  *
  * Issue #255: `role` on an invitation is never validated against the
- * allowed set (admin | crew | viewer) before being written or trusted at
- * accept time. This script counts private invites (any status) whose role
- * is missing or is not one of the three allowed values, and separately
- * counts pending invites with role 'viewer' (context for how the allowed
- * set is actually used today).
+ * allowed set (admin | crew) before being written or trusted at accept
+ * time. This script counts private invites (any status) whose role is
+ * missing or is not one of the allowed values, and separately counts
+ * pending invites with role 'viewer' — that role was removed in issue #397
+ * and is legacy, not "invalid": `LEGACY_ROLES` below keeps it out of the
+ * roleInvalid bucket so this inventory doesn't conflate "will migrate
+ * cleanly to crew" with "actually broken input".
  *
  * ── What this script does and does not do ───────────────────────────────
  * READ-ONLY. There is no write path, no flag that enables one, and no
@@ -88,7 +90,11 @@ const SA_PATH = value('sa');
 const PROJECT = value('project');
 const JSON_OUTPUT = flag('json');
 
-const ALLOWED_ROLES = new Set(['admin', 'crew', 'viewer']);
+const ALLOWED_ROLES = new Set(['admin', 'crew']);
+// 'viewer' was removed in issue #397. It is still counted separately below
+// (not folded into ALLOWED_ROLES) so a pending legacy 'viewer' invite is
+// reported as legacy rather than lumped in with roleInvalid.
+const LEGACY_ROLES = new Set(['viewer']);
 
 // ── Credentials (identical resolution to tools/inventory_stranded_deletions.js) ─
 
@@ -216,12 +222,12 @@ async function main() {
     const role = d.data.role;
     if (role === undefined) {
       roleMissing.push(d);
-    } else if (!ALLOWED_ROLES.has(role)) {
+    } else if (!ALLOWED_ROLES.has(role) && !LEGACY_ROLES.has(role)) {
       roleInvalid.push(d);
     }
   }
 
-  // ── 4. Pending private invites with role 'viewer' ─────────────────────
+  // ── 4. Pending private invites with legacy role 'viewer' (issue #397) ──
   const pendingViewer = privateDocs.filter((d) => d.data.status === 'pending' && d.data.role === 'viewer');
 
   // ── 5. Cross-reference private <-> mirror by token ────────────────────
@@ -325,7 +331,7 @@ async function main() {
   for (const d of roleInvalid) {
     console.log(`    ${d.path}  status=${d.data.status ?? '(missing)'}  role=${truncateRole(d.data.role)}`);
   }
-  console.log(`  Pending private invites with role 'viewer' : ${pendingViewer.length}`);
+  console.log(`  Pending private invites with legacy role 'viewer' : ${pendingViewer.length}`);
   console.log('');
 
   console.log('  ── Cross-reference: private <-> mirror by token ───────────────────');

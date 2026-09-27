@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { adminDb } from '@/lib/firebase-admin'
 import { listMembers } from '@/lib/queries/members'
+import { toRole } from '@/lib/roles'
 import { computeSeatsUsed } from '@/lib/invite-recipients'
 import TeamSettingsView from '@/components/settings/TeamSettingsView'
 import type { Invitation, PublicInvitation } from '@/types/invitation'
@@ -25,7 +26,17 @@ export default async function TeamSettingsPage() {
   // reach the client payload. Destructure it off explicitly (not just cast
   // away) so it is actually absent from what gets serialized to the Client
   // Component, not merely untyped.
-  const pendingInvitesFull = pendingSnap.docs.map((doc) => doc.data() as Invitation)
+  //
+  // `role` is normalised through `toRole` here for the same reason
+  // `listMembers` (lib/queries/members.ts) normalises a member doc's role —
+  // a legacy `viewer` invitation (or any other invalid value) must not
+  // reach `TeamSettingsView`'s `ROLE_LABELS[role]` lookup (issue #397/#398),
+  // which has no entry for anything but 'admin'/'crew' and would render a
+  // blank chip for anything else.
+  const pendingInvitesFull = pendingSnap.docs.map((doc) => {
+    const data = doc.data() as Invitation
+    return { ...data, role: toRole(data.role, { fn: 'TeamSettingsPage', path: doc.ref.path }) }
+  })
   const pendingInvites: PublicInvitation[] = pendingInvitesFull.map(
     ({ token: _token, ...publicInvite }) => publicInvite,
   )

@@ -8,6 +8,7 @@ import { runCompanyPurge } from './purge';
 import { formatDateFull, buildCancelUrl, formatRequesterDisplay } from './format';
 import { appUrl } from '../appUrl';
 import { claimRequestedLease, claimStaleLease } from './lease';
+import { mailExpireAt } from '../email/mailRetention';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -151,6 +152,9 @@ async function claimAndQueueReminder(db: Firestore, companyId: string, now: Time
         status: 'queued',
         template: 'companyDeletionReminder',
         companyId,
+        // Issue #325 (mail retention): the SAME `now` this sweep already
+        // stamps `deletion.remindedAt` with.
+        expireAt: mailExpireAt(now),
         data: {
           companyName: companyData['name'] ?? '',
           requestedByName: requestedByDisplay,

@@ -3,6 +3,7 @@ import 'server-only'
 import type { Timestamp } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
 import { formatDateFull, toIso } from '@/lib/companyDeletionCancelWrites'
+import { mailExpireAt } from '@/lib/mail-retention'
 import type { CompanyDeletionFailureReason, CompanyDeletionRecord } from '@/types'
 
 /**
@@ -121,6 +122,11 @@ export function applyFailedTransitionNext(
           status: 'queued',
           template: 'companyDeletionFailed',
           companyId: ledger.companyId,
+          // Issue #325 (mail retention): the SAME `now` this transition
+          // already stamps `failedAt`/`lastHeartbeatAt` with — required for
+          // byte-for-byte parity with the functions-side original, see
+          // __tests__/company/failWritesParity.test.ts.
+          expireAt: mailExpireAt(now),
           data: {
             companyName: ledger.companyName,
             requestedAtFormatted,

@@ -178,8 +178,19 @@ export const acceptInvitationByToken = onCall(
           acceptedBy: uid,
         });
 
-        // 4. Mark mirror accepted
-        tx.update(mirrorRef, { status: 'accepted' });
+        // 4. Delete the mirror — issue #297. The mirror at invitations/{token}
+        // is a `allow get: if true` public doc that carries the invitee's
+        // email, resolvable by anyone holding the link. Once accepted it can
+        // never be used again, so there's no reason left for it to exist —
+        // updating its `status` (the old behavior) kept that address
+        // publicly readable forever. Deleting it here is safe against the
+        // same double-click/two-tabs race the rest of this function already
+        // handles: the mirror was read OUTSIDE this transaction (above), so
+        // a concurrent second call still reaches the swallowed
+        // `already-exists` path below; any call arriving after this commits
+        // gets `not-found` at the mirror read, same code path as an invite
+        // that was never pending in the first place.
+        tx.delete(mirrorRef);
       });
       txSucceeded = true;
     } catch (err) {

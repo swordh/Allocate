@@ -57,7 +57,7 @@
  * - `stats` initial shape: `lib/companyStats.ts` (`INITIAL_COMPANY_STATS`),
  *   with `memberCount` set explicitly the way `setupNewCompany` does (not
  *   folded into the constant, which must stay an honest zero state).
- * - Membership doc for the two invited-style members (crew/viewer): same
+ * - Membership doc for the two invited-style members (both crew): same
  *   `companies/{cid}/members/{uid}` and `users/{uid}/memberships/{cid}`
  *   shapes `functions/src/auth/acceptInvitation.ts` writes for an invitation
  *   accepted via the `/invite/{token}` link (as of issue #396, the only path
@@ -74,7 +74,7 @@
  *   looked at, so an unverified seeded user would fail on the wrong thing.
  * - Expected redirect targets per role: `lib/subscriptionAccess.ts`
  *   (`evaluateAppAccess`) — admin without access → `/subscribe`; non-admin
- *   without access → `/settings/account`, never `/subscribe` (a crew/viewer
+ *   without access → `/settings/account`, never `/subscribe` (a crew
  *   member can't buy a plan, so sending her to a "choose a plan" page is a
  *   dead end); `SETTINGS_ITEMS` (`components/nav/nav-items.ts`) for which
  *   `/settings/*` tabs are `alwaysAvailable` and which roles can see them.
@@ -120,7 +120,7 @@ const COMPANIES = [
     users: [
       { role: 'admin',  name: 'Claude350 Admin',  email: 'dev+claude350admin@allocate.at' },
       { role: 'crew',   name: 'Claude350 Crew',   email: 'dev+claude350crew@allocate.at' },
-      { role: 'viewer', name: 'Claude350 Viewer', email: 'dev+claude350viewer@allocate.at' },
+      { role: 'crew',   name: 'Claude350 Crew2',  email: 'dev+claude350crew2@allocate.at' },
     ],
   },
   {
@@ -131,7 +131,7 @@ const COMPANIES = [
     users: [
       { role: 'admin',  name: 'Claude350T Admin',  email: 'dev+claude350tadmin@allocate.at' },
       { role: 'crew',   name: 'Claude350T Crew',   email: 'dev+claude350tcrew@allocate.at' },
-      { role: 'viewer', name: 'Claude350T Viewer', email: 'dev+claude350tviewer@allocate.at' },
+      { role: 'crew',   name: 'Claude350T Crew2',  email: 'dev+claude350tcrew2@allocate.at' },
     ],
   },
 ];
@@ -478,7 +478,7 @@ async function run() {
   console.log('  (`if (!subscription)`) is not the branch its own repro steps hit —');
   console.log('  see this script\'s header docblock for the full explanation.');
   console.log('\n  Rule for every state below: admin without access → /subscribe;');
-  console.log('  crew/viewer without access → /settings/account (never /subscribe —');
+  console.log('  crew without access → /settings/account (never /subscribe —');
   console.log('  a non-admin cannot buy a plan). That difference is itself a test case.');
 
   for (const { company, companyId, seededUsers } of results) {

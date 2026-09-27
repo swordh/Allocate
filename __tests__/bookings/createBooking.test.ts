@@ -36,7 +36,6 @@ import {
   ADMIN_SESSION,
   COMPANY_ID,
   CREW_SESSION,
-  VIEWER_SESSION,
   makeUnit,
   makeUnitsEquipment,
 } from '../helpers/fixtures'
@@ -156,15 +155,6 @@ describe('createBooking', () => {
   // ── Auth guards ────────────────────────────────────────────────────────────
 
   describe('auth guards', () => {
-    it('returns Unauthorized when session role is viewer', async () => {
-      vi.mocked(getVerifiedSession).mockResolvedValue(VIEWER_SESSION)
-
-      const result = await createBooking(makeFormData())
-
-      expect(result).toEqual({ error: 'Unauthorized' })
-      expect(adminDb.runTransaction).not.toHaveBeenCalled()
-    })
-
     it('allows crew members to create bookings', async () => {
       vi.mocked(getVerifiedSession).mockResolvedValue(CREW_SESSION)
 

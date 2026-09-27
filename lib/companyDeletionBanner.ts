@@ -29,7 +29,7 @@ export interface CompanyDeletionBannerDisplay {
  * brief. Unlike `SubscriptionView`'s notice (lib/subscription-state.ts),
  * which is admin-only and treats every `deletion` presence as one
  * `DELETION_PENDING` state, this banner is shown to EVERY member — including
- * crew and viewers, who are never mailed about a deletion request or a
+ * crew, who are never mailed about a deletion request or a
  * cancellation — so it must say something true and actionable (or honestly
  * inactionable) for `requested`, `executing` AND `failed`, not just the
  * happy-path `requested` case. See the `'failed'` case below for a note on

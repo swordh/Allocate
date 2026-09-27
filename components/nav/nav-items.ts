@@ -71,7 +71,7 @@ export interface SettingsNavItem extends NavItem {
   alwaysAvailable: boolean
 }
 
-const ALL_ROLES: Role[] = ['admin', 'crew', 'viewer']
+const ALL_ROLES: Role[] = ['admin', 'crew']
 
 // Order matches the design: Account, Company, Team, Preferences, Subscription.
 export const SETTINGS_ITEMS: SettingsNavItem[] = [

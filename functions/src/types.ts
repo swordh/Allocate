@@ -2,7 +2,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'crew' | 'viewer';
+export type UserRole = 'admin' | 'crew';
 
 // ─── Subscription ─────────────────────────────────────────────────────────────
 

@@ -103,7 +103,7 @@ export async function seedMember(
   db: Firestore,
   companyId: string,
   uid: string,
-  opts: { name?: string; email?: string; role?: 'admin' | 'crew' | 'viewer'; otherCompanyId?: string } = {},
+  opts: { name?: string; email?: string; role?: 'admin' | 'crew'; otherCompanyId?: string } = {},
 ): Promise<void> {
   const name = opts.name ?? `Member ${uid}`
   const email = opts.email ?? `${uid}@example.com`

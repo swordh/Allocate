@@ -1,7 +1,7 @@
 /**
  * The app-shell deletion banner is member-visible (issue #252 step 6, PR 3) —
  * unlike SubscriptionView's admin-only notice, this one has to say something
- * true to crew and viewers too, who are never mailed about a deletion. These
+ * true to crew too, who are never mailed about a deletion. These
  * tests lock the per-state, per-role copy and — most importantly — that a
  * non-admin is never handed a `cancelHref`, since there is no cancel control
  * on this banner and offering one to someone who cannot use it would be the
@@ -41,11 +41,6 @@ describe('getCompanyDeletionBannerDisplay', () => {
       expect(d!.cancelHref).toBeUndefined()
       expect(d!.message).toContain('22 September 2026')
       expect(d!.message).toContain('Only an administrator can cancel it')
-    })
-
-    it('gives a viewer the date but no cancel link either', () => {
-      const d = getCompanyDeletionBannerDisplay(deletion(), 'viewer', TIMEZONE)
-      expect(d!.cancelHref).toBeUndefined()
     })
 
     // The whole reason this banner exists: a booking made in the viewer's

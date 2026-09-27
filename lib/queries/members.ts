@@ -2,6 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 import { adminDb } from '@/lib/firebase-admin'
+import { toRole } from '@/lib/roles'
 import type { TeamMember } from '@/types'
 
 function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
@@ -10,7 +11,7 @@ function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
     uid:      data.uid  ?? doc.id,
     name:     data.name ?? '',
     email:    data.email ?? '',
-    role:     data.role ?? 'crew',
+    role:     toRole(data.role, { fn: 'listMembers', path: doc.ref.path }),
     joinedAt: data.joinedAt?.toDate?.()?.toISOString() ?? data.joinedAt ?? '',
   }
 }

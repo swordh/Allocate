@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'crew' | 'viewer'
+export type Role = 'admin' | 'crew'
 
 /**
  * Set on `users/{uid}` by the company purge's "members" phase (issue #252

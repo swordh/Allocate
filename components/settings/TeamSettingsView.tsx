@@ -83,8 +83,8 @@ interface TeamSettingsViewProps {
   seatLimit: number | null
 }
 
-const ROLES: Role[] = ['admin', 'crew', 'viewer']
-const ROLE_LABELS: Record<Role, string> = { admin: 'Admin', crew: 'Crew', viewer: 'Viewer' }
+const ROLES: Role[] = ['admin', 'crew']
+const ROLE_LABELS: Record<Role, string> = { admin: 'Admin', crew: 'Crew' }
 
 /** Below this, an inline confirm renders inside the member card instead of the ConfirmDialog. Matches the CSS breakpoint. */
 const MOBILE_BREAKPOINT = 768
@@ -123,7 +123,6 @@ function pendingAccentColor(invite: PublicInvitation, state: ReturnType<typeof i
 const ROLE_ACCENT: Record<Role, string> = {
   admin: 'var(--accent)',
   crew: 'var(--text-bright)',
-  viewer: 'var(--border-medium)',
 }
 
 export default function TeamSettingsView({

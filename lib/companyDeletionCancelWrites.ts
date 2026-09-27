@@ -1,8 +1,9 @@
 import 'server-only'
 
-import { FieldValue, type Timestamp } from 'firebase-admin/firestore'
+import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
 import { recordStripeOutcome, resumeSubscriptionAfterCancel } from '@/lib/companyDeletionStripe'
+import { mailExpireAt } from '@/lib/mail-retention'
 import type { CompanyDeletionCancelSource, CompanyDeletionOperatorAction, CompanyDeletionRecord } from '@/types'
 
 /**
@@ -157,6 +158,11 @@ export async function finishCancellation(
     const cancelledAtFormatted = formatDateFull(cancelledAtIso, timezone)
 
     const batch = adminDb.batch()
+    // Issue #325 (mail retention): shared across every admin mailed in this
+    // loop, same reasoning as inviteUsers's batch in actions/team.ts. No
+    // Timestamp `now` already in scope in this function (only
+    // `cancelledAtIso`, a string), so a fresh one is taken here.
+    const now = Timestamp.now()
     let queued = 0
     for (const adminDoc of adminsSnap.docs) {
       const email = adminDoc.data().email as string | undefined
@@ -166,6 +172,7 @@ export async function finishCancellation(
         status: 'queued',
         template: 'companyDeletionCancelled',
         companyId,
+        expireAt: mailExpireAt(now),
         data: {
           companyName: ledger.companyName ?? '',
           cancelledByName,
