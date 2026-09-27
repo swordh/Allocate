@@ -2,7 +2,7 @@
 
 import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
+import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
@@ -1373,6 +1373,72 @@ async function runAccountDeletion(
         if (subStatus === 'canceled') {
           await addOp(companyRef, { stripeCustomerId: '' } as Record<string, null | string>)
         }
+      }
+    }
+
+    // operatorFeedback (issue #338 PR 1): ONE global query across every
+    // company this user has ever submitted a ticket in, not per-`companyIds`
+    // like the loop above — this also catches a ticket filed in a company
+    // she already left before this deletion run, whose id no longer appears
+    // in `companyIds` at all.
+    //
+    // Written outside the batch above, one ticket at a time, on purpose: a
+    // company on `immediatelyDeletedCompanyIds` starts an async
+    // `runCompanyPurge` (functions/src/company/purge.ts) that deletes this
+    // exact ticket — `operatorFeedback` is one of purge's ORPHAN_COLLECTIONS
+    // — possibly mid-run of this very function. A `batch.update()` against a
+    // document that no longer exists fails with NOT_FOUND and aborts the
+    // ENTIRE WriteBatch, which is exactly the halfway-abort the
+    // `immediatelyDeletedCompanyIds` skip earlier in this function exists to
+    // prevent (see that comment) — folding these into the same batch would
+    // reintroduce that failure mode for a collection the batch loop above
+    // never touches. Individual `ref.update()` calls confine a NOT_FOUND to
+    // the one ticket that raced the purge, which is skipped and tolerated;
+    // any OTHER error is a real failure and is rethrown, landing in the
+    // catch below exactly like a failure from the batch would.
+    //
+    // MUST run BEFORE `batch.commit()` below, not after (code review on PR
+    // #413 caught this the first time round). The batch that follows deletes
+    // `users/{uid}`, every `users/{uid}/memberships/*` doc and
+    // `accountDeletionFailures/{uid}`, and writes the SUCCESS
+    // `deletionAuditLog` row — once that commits, this deletion IS success,
+    // as far as every other reader of this user's data is concerned. A
+    // non-NOT_FOUND failure in this loop running AFTER that commit would
+    // write a `writeDeletionFailureAudit('anonymisation', ...)` row that
+    // directly contradicts the SUCCESS row committed moments earlier in the
+    // very same run (`completedCompanies === totalCompanies`, yet also a
+    // 'failed' outcome) — nothing would ever be recorded as both a success
+    // and a failure for the same attempt. Running this loop first means any
+    // failure here is caught by the SAME catch block every other step-3
+    // failure already uses, before anything downstream of it has committed —
+    // exactly the same reasoning as the `immediatelyDeletedCompanyIds` skip
+    // two paragraphs up, just at the scale of "this whole function's step 3"
+    // rather than one company's writes. A retry after such a failure is
+    // clean: any ticket this loop already nulled before the throw no longer
+    // matches `where('submittedBy', '==', uid)` on the next attempt, the same
+    // idempotence the batch's own deletes/creates already rely on.
+    //
+    // NOT fixed by this reorder, and not attempted here: step 3's catch below
+    // only ever calls `writeDeletionFailureAudit`, never
+    // `recordAccountDeletionFailure` — for ANY step-3 failure, not just this
+    // one. That gap (the `ACCOUNT_DELETION_STUCK` alert has nothing to page
+    // on for a step-3 failure of any kind, this one included) predates this
+    // PR and covers the whole of step 3, not something specific to
+    // operatorFeedback — left as a separate, pre-existing follow-up rather
+    // than wired in piecemeal here.
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    for (const doc of feedbackSnap.docs) {
+      const companyId = doc.data().companyId as string | undefined
+      // Skip outright, don't even attempt: this ticket's company is already
+      // scheduled for purge this run, so the update is racing a delete that
+      // is guaranteed to win eventually even if it hasn't yet — attempting it
+      // only spends a round trip on a write whose outcome doesn't matter.
+      if (companyId && immediatelyDeletedCompanyIds.has(companyId)) continue
+      try {
+        await doc.ref.update({ submittedBy: null, userName: null })
+      } catch (updateErr) {
+        if ((updateErr as { code?: unknown } | undefined)?.code === GrpcStatus.NOT_FOUND) continue
+        throw updateErr
       }
     }
 

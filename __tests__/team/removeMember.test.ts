@@ -285,6 +285,75 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     expect(countsCall).toBeDefined()
   })
 
+  // Issue #338 PR 1: operatorFeedback tickets (actions/submitFeedback.ts, a
+  // top-level collection keyed by ticketId, not under companies/{cid}) carry
+  // the submitter's uid and display name. anonymizeMemberReferences now scans
+  // it too, scoped to this company with a second equality filter.
+  it('nulls submittedBy/userName on an operatorFeedback ticket scoped to this company (issue #338 PR 1)', async () => {
+    const TICKET_PATH = 'operatorFeedback/BUG-1234'
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      [`users/${TARGET_UID}`]: { activeCompanyId: 'company-B' },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path !== 'operatorFeedback') return []
+      const submittedBy = filterValue(ctx, 'submittedBy')
+      const companyId = filterValue(ctx, 'companyId')
+      if (submittedBy !== TARGET_UID || companyId !== COMPANY_ID) return []
+      return [{ id: 'BUG-1234', path: TICKET_PATH, data: { submittedBy: TARGET_UID, companyId: COMPANY_ID, userName: 'Target User' } }]
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: TICKET_PATH }),
+      { submittedBy: null, userName: null },
+    )
+  })
+
+  // MUTATION GUARD: a ticket belonging to a DIFFERENT company must never be
+  // touched — proves the companyId filter is load-bearing, not decorative.
+  // Removing the `.where('companyId', '==', cid)` clause in
+  // anonymizeMemberReferences would make this test fail, since the resolver
+  // above only returns the ticket when BOTH filters match.
+  it('does not touch an operatorFeedback ticket submitted by this uid in a DIFFERENT company', async () => {
+    const OTHER_TICKET_PATH = 'operatorFeedback/BUG-9999'
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      [`users/${TARGET_UID}`]: { activeCompanyId: 'company-B' },
+    }
+    // Modelled on the actual filters present in the query, not on an
+    // assumption that both are always there — if `.where('companyId', ...)`
+    // were removed from production code, a real Firestore query would widen
+    // to match every ticket this uid submitted anywhere, and this resolver
+    // must widen the same way for the mutation-guard below to mean anything.
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path !== 'operatorFeedback') return []
+      if (filterValue(ctx, 'submittedBy') !== TARGET_UID) return []
+      const companyIdFilter = ctx.filters.find((f) => f.field === 'companyId')
+      // The ticket lives in 'company-other', never in this removal's
+      // COMPANY_ID ('company-A') — a companyId filter present with the
+      // wrong value must still exclude it.
+      if (companyIdFilter && companyIdFilter.value !== 'company-other') return []
+      return [{ id: 'BUG-9999', path: OTHER_TICKET_PATH, data: { submittedBy: TARGET_UID, companyId: 'company-other' } }]
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    const touchedPaths = wired.batch.update.mock.calls.map((c) => (c[0] as { path: string }).path)
+    expect(touchedPaths).not.toContain(OTHER_TICKET_PATH)
+  })
+
   // ── Confirm the TOCTOU bug is fixed ─────────────────────────────────────────
   //
   // Simulates two concurrent removeMember calls targeting the company's last
