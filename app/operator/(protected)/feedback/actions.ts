@@ -4,7 +4,16 @@ import { adminDb } from '@/lib/firebase-admin'
 import { revalidatePath } from 'next/cache'
 import { FieldValue } from 'firebase-admin/firestore'
 import type { FeedbackStatus, FeedbackPriority } from '@/types/operator'
-import { FEEDBACK_STATUS_LABELS, FEEDBACK_PRIORITY_LABELS } from '@/types/operator'
+import { CLOSED_FEEDBACK_STATUSES, FEEDBACK_STATUS_LABELS, FEEDBACK_PRIORITY_LABELS } from '@/types/operator'
+
+// issue #338 PR 2: whether a (possibly undefined — a doc that predates the
+// `status` field entirely) status counts as "closed" for `closedAt`
+// purposes. `undefined` is never closed — there is nothing to have closed
+// FROM — which is what makes an undefined-to-closed transition below set
+// `closedAt` rather than silently skip it.
+function isClosedStatus(status: FeedbackStatus | undefined): boolean {
+  return status !== undefined && CLOSED_FEEDBACK_STATUSES.includes(status)
+}
 
 // Single home for both status/priority setters and the note composer — used
 // by both the list screen's right panel (app/operator/feedback) and the
@@ -27,8 +36,25 @@ export async function updateFeedbackStatus(
     const from = snap.data()?.status as FeedbackStatus | undefined
 
     if (from !== status) {
+      const wasClosed = isClosedStatus(from)
+      const willBeClosed = isClosedStatus(status)
+
+      // issue #338 PR 2 (retention): `closedAt` marks the 24-month clock
+      // functions/src/admin/purgeOldFeedback.ts reads. Set on an open-ish →
+      // closed transition (including from `undefined`, i.e. a doc that
+      // predates `status` entirely — closing it now starts the clock same
+      // as any other closure), cleared on closed → open-ish (a reopened
+      // ticket is not retired), and left untouched on closed → closed
+      // (`done` ↔ `wont_fix` — the ticket has been closed the whole time,
+      // so its original closedAt should keep governing retention).
+      const closedAtUpdate = willBeClosed && !wasClosed
+        ? { closedAt: FieldValue.serverTimestamp() }
+        : !willBeClosed && wasClosed
+          ? { closedAt: FieldValue.delete() }
+          : {}
+
       const batch = adminDb.batch()
-      batch.update(ref, { status })
+      batch.update(ref, { status, ...closedAtUpdate })
       // Only write an event when the value actually changes, and only once
       // we know what it changed FROM — an explicit ?? would fabricate a
       // "changed from itself" line for the (should-never-happen) case where
