@@ -1,6 +1,6 @@
 /**
- * Filter marker for the Cloud Monitoring log-based alert policies (all four
- * environments — issue #419) that fire when `anonymizeMemberReferences`
+ * Filter marker for the Cloud Monitoring log-based alert policies (alpha, beta
+ * and prod — issue #419; local dev logs nowhere they'd match) that fire when `anonymizeMemberReferences`
  * (actions/team.ts) can't be made to succeed for a removed/leaving member
  * after a retry. `anonymizeMemberReferencesWithRetry` logs it as a plain
  * single-line string once the second attempt has also failed, and the
@@ -16,7 +16,7 @@
  * alongside object fields.
  *
  * Keep the log a plain string, and don't rename this constant or change its
- * value without updating all four policies — either one silently breaks the
+ * value without updating all three policies — either one silently breaks the
  * alert with no local signal anything is wrong.
  *
  * Lives here rather than as an export on actions/team.ts: that file has

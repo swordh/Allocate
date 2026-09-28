@@ -8,8 +8,8 @@ export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
 
 export interface Invitation {
   id: string
-  email: string | null    // null after anonymizeMemberReferences clears an accepted invite's
-                           // acceptedBy (actions/team.ts, issue #419)
+  email: string | null    // null after an accepted invite's acceptedBy is anonymised
+                           // (deleteAccount, and anonymizeMemberReferences — issue #419)
   role: InvitationRole
   invitedBy: string | null      // null after the inviter is removed/leaves (issue #419)
   invitedByName: string | null  // null after the inviter is removed/leaves (issue #419)
@@ -17,10 +17,10 @@ export interface Invitation {
   status: InvitationStatus
   token: string
   acceptedAt?: string     // ISO string
-  acceptedBy?: string     // uid
+  acceptedBy?: string | null  // uid; null once anonymised (deleteAccount / issue #419)
   expiresAt?: string      // ISO string — missing means "never expires" (backward compat)
   revokedAt?: string      // ISO string
-  revokedBy?: string      // uid of the admin who revoked it
+  revokedBy?: string | null   // uid of the admin who revoked it; null once anonymised
   lastSentAt?: string     // ISO string — set on invite creation and every resend, so the
                           // UI can render "Invite re-sent just now"
 }
