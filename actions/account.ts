@@ -6,7 +6,7 @@ import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/fi
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
-import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
+import { iso, isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { mailExpireAt } from '@/lib/mail-retention'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
@@ -1691,6 +1691,69 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
       })
     )
 
+    // Feedback tickets (issue #415, GDPR Art. 15/20): the user's own support
+    // tickets in the top-level `operatorFeedback` collection
+    // (actions/submitFeedback.ts), plus each ticket's status/priority-change
+    // history — the `kind: 'event'` entries in its `notes` subcollection
+    // (see types/operator.ts's `FeedbackTimelineEntry` doc comment). Same
+    // query deleteAccount's anonymisation pass uses (~line 1455 above), and
+    // this read sits inside the SAME try block as every other read in this
+    // function — same "a failure here fails the whole export" policy as the
+    // `accountDeletionFailure` trace above, no partial-export fallback.
+    //
+    // Deliberately EXCLUDED (decided 2026-09-28, legal check still open):
+    //   - `kind: 'note'` entries — free-text operator notes about the
+    //     ticket, not authored by this user, so they aren't unambiguously
+    //     "her own data" the way the ticket and its status changes are.
+    //     Filtered with an EQUALITY check (`kind === 'event'`), not a
+    //     negation of 'note': legacy docs written before `kind` existed have
+    //     no field at all and must be treated as notes (see
+    //     types/operator.ts), so `!== 'note'` would wrongly include them.
+    //   - `createdBy` on every event (and on notes, moot since notes are
+    //     excluded entirely) — the operator's email address, third-party
+    //     PII that never belongs in this user's own export regardless of
+    //     which entry kinds are included.
+    // A ticket already anonymised by #413 (its `submittedBy` nulled when she
+    // leaves the company or deletes her account) is intentionally NOT
+    // exported here — not a gap: once nulled, the ticket no longer carries
+    // her uid, so the query below correctly stops finding it, the same
+    // anonymisation working as intended.
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    const feedbackTickets = await Promise.all(
+      feedbackSnap.docs.map(async (ticketDoc) => {
+        const t = ticketDoc.data()
+
+        const eventsSnap = await adminDb
+          .collection(`operatorFeedback/${ticketDoc.id}/notes`)
+          .where('kind', '==', 'event')
+          .get()
+
+        // No `orderBy` (avoids needing a composite index for this one-off
+        // export path) — sorted in memory instead, ascending by `createdAt`.
+        const statusHistory = eventsSnap.docs
+          .map((eventDoc) => {
+            const e = eventDoc.data()
+            return {
+              text: e.text ?? null,
+              at:   isoOrNull(e.createdAt as TimestampLike),
+            }
+          })
+          .sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''))
+
+        return {
+          ticketId:    ticketDoc.id,
+          type:        t.type ?? null,
+          title:       t.title ?? null,
+          description: t.description ?? null,
+          status:      t.status ?? null,
+          priority:    t.priority ?? null,
+          companyName: t.companyName ?? null,
+          submittedAt: isoOrNull(t.submittedAt as TimestampLike),
+          statusHistory,
+        }
+      })
+    )
+
     const exportPayload = {
       exportedAt: new Date().toISOString(),
       user: {
@@ -1701,6 +1764,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
       },
       accountDeletionFailure,
       companies,
+      feedbackTickets,
     }
 
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'data_exported' })
