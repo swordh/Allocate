@@ -100,6 +100,102 @@ describe('exportUserData — issue #337 accountDeletionFailure inclusion', () =>
     const payload = JSON.parse(result.json!)
     expect(payload.accountDeletionFailure).toBeNull()
   })
+
+  it('firstAt/lastAt are null, not raw Timestamps or \'\', when the trace doc has no values for them', async () => {
+    const docs: DocMap = {
+      [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' },
+      [`accountDeletionFailures/${UID}`]: {
+        attempts: 1,
+        lastPath: 'commit_loop',
+        lastErrorCode: 'unavailable',
+        lastCompanyIds: [],
+      },
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: noMemberships })
+
+    const result = await exportUserData()
+
+    expect(result.error).toBeUndefined()
+    const payload = JSON.parse(result.json!)
+    expect(payload.accountDeletionFailure.firstAt).toBeNull()
+    expect(payload.accountDeletionFailure.lastAt).toBeNull()
+  })
+})
+
+// ── issue #423: Timestamps must be serialised as ISO strings, not raw ─────
+
+describe('exportUserData — issue #423 Timestamp serialisation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockVerifyAuthenticatedSession.mockResolvedValue({ uid: UID, email: 'user@example.com' })
+  })
+
+  const membershipsWithBooking: QueryResolver = (ctx) => {
+    if (ctx.path === `users/${UID}/memberships`) {
+      return [{ id: 'company-A', data: { companyId: 'company-A', role: 'admin', joinedAt: { toDate: () => new Date('2026-02-01T00:00:00.000Z') } } }]
+    }
+    if (ctx.path === 'companies/company-A/bookings') {
+      return [{ id: 'booking-1', data: { projectName: 'Job 1', startDate: '2026-03-01', endDate: '2026-03-02', status: 'confirmed', createdAt: { toDate: () => new Date('2026-01-10T00:00:00.000Z') } } }]
+    }
+    return []
+  }
+
+  it('serialises user.createdAt, joinedAt, booking createdAt, and trace firstAt/lastAt as ISO strings', async () => {
+    const docs: DocMap = {
+      [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com', createdAt: { toDate: () => new Date('2025-01-01T00:00:00.000Z') } },
+      [`companies/company-A`]: { name: 'Acme AB' },
+      [`accountDeletionFailures/${UID}`]: {
+        firstAt: { toDate: () => new Date('2026-01-01T00:00:00.000Z') },
+        lastAt: { toDate: () => new Date('2026-01-05T00:00:00.000Z') },
+        attempts: 2,
+        lastPath: 'commit_loop',
+        lastErrorCode: 'unavailable',
+        lastCompanyIds: [],
+      },
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: membershipsWithBooking })
+
+    const result = await exportUserData()
+
+    expect(result.error).toBeUndefined()
+    const payload = JSON.parse(result.json!)
+    expect(payload.user.createdAt).toBe('2025-01-01T00:00:00.000Z')
+    expect(payload.companies[0].joinedAt).toBe('2026-02-01T00:00:00.000Z')
+    expect(payload.companies[0].bookings[0].createdAt).toBe('2026-01-10T00:00:00.000Z')
+    expect(payload.accountDeletionFailure.firstAt).toBe('2026-01-01T00:00:00.000Z')
+    expect(payload.accountDeletionFailure.lastAt).toBe('2026-01-05T00:00:00.000Z')
+    // startDate/endDate are already plain "YYYY-MM-DD" strings, untouched.
+    expect(payload.companies[0].bookings[0].startDate).toBe('2026-03-01')
+
+    // The whole point of #423: no raw Firestore Timestamp shape anywhere.
+    expect(result.json).not.toContain('_seconds')
+  })
+
+  it('serialises user.createdAt, joinedAt, and booking createdAt as null when absent', async () => {
+    const docs: DocMap = {
+      [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' },
+      [`companies/company-A`]: { name: 'Acme AB' },
+    }
+    const membershipsNoCreatedAt: QueryResolver = (ctx) => {
+      if (ctx.path === `users/${UID}/memberships`) {
+        return [{ id: 'company-A', data: { companyId: 'company-A', role: 'admin' } }]
+      }
+      if (ctx.path === 'companies/company-A/bookings') {
+        return [{ id: 'booking-1', data: { projectName: 'Job 1', startDate: '2026-03-01', endDate: '2026-03-02', status: 'confirmed' } }]
+      }
+      return []
+    }
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: membershipsNoCreatedAt })
+
+    const result = await exportUserData()
+
+    expect(result.error).toBeUndefined()
+    const payload = JSON.parse(result.json!)
+    expect(payload.user.createdAt).toBeNull()
+    expect(payload.companies[0].joinedAt).toBeNull()
+    expect(payload.companies[0].bookings[0].createdAt).toBeNull()
+    expect(result.json).not.toContain('_seconds')
+  })
 })
 
 // ── issue #415: feedbackTickets ────────────────────────────────────────────

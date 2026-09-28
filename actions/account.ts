@@ -6,7 +6,7 @@ import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/fi
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
-import { iso, isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
+import { isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { mailExpireAt } from '@/lib/mail-retention'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
@@ -1645,8 +1645,8 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
     const traceData = traceSnap.data()
     const accountDeletionFailure = traceSnap.exists && traceData
       ? {
-          firstAt: iso(traceData.firstAt as TimestampLike),
-          lastAt: iso(traceData.lastAt as TimestampLike),
+          firstAt: isoOrNull(traceData.firstAt as TimestampLike),
+          lastAt: isoOrNull(traceData.lastAt as TimestampLike),
           attempts: typeof traceData.attempts === 'number' ? traceData.attempts : 0,
           lastPath: traceData.lastPath ?? null,
           lastErrorCode: traceData.lastErrorCode ?? null,
@@ -1676,7 +1676,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
             startDate:   b.startDate ?? null,
             endDate:     b.endDate ?? null,
             status:      b.status ?? null,
-            createdAt:   b.createdAt ?? null,
+            createdAt:   isoOrNull(b.createdAt as TimestampLike),
           }
         })
 
@@ -1685,7 +1685,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
           companyName: companyData.name ?? null,
           plan:        companyData.subscription?.plan ?? null,
           role:        membership.role ?? null,
-          joinedAt:    membership.joinedAt ?? null,
+          joinedAt:    isoOrNull(membership.joinedAt as TimestampLike),
           bookings,
         }
       })
@@ -1776,7 +1776,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
         name:            userData.name ?? null,
         email:           userData.email ?? null,
         activeCompanyId: userData.activeCompanyId ?? null,
-        createdAt:       userData.createdAt ?? null,
+        createdAt:       isoOrNull(userData.createdAt as TimestampLike),
       },
       accountDeletionFailure,
       companies,
