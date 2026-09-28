@@ -3,8 +3,8 @@
  * `deletionAuditLog.userIdHash`'s old unkeyed `sha256(uid)` with an
  * HMAC-SHA256 keyed by `AUDIT_LOG_HMAC_KEY`, so the hash can no longer be
  * rebuilt by anyone who doesn't hold the key. See that mirror in
- * functions/src/audit/userIdHash.test.ts for the Cloud Functions side of
- * the same contract.
+ * functions/__tests__/audit/userIdHash.test.ts for the Cloud Functions side
+ * of the same contract.
  */
 import { createHash, createHmac } from 'crypto'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
