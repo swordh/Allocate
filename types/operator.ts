@@ -313,13 +313,21 @@ export const DELETION_SEGMENT_LABELS: Record<DeletionSegment, string> = {
 // operator can see who is stuck instead of only ever hearing about it
 // secondhand. Read-only here — this step ships no operator action or bypass.
 
-/** Mirrors the `path` values `recordAccountDeletionFailure` (actions/account.ts) writes. */
+/** Mirrors the `path` values `recordAccountDeletionFailure` (actions/account.ts) writes.
+ *  'anonymisation' and 'auth_delete' cover `runAccountDeletion`'s phase-3 and
+ *  step-4 catch blocks respectively — added in the same PR that closed the
+ *  gap where those two failure points traced only to `deletionAuditLog`
+ *  (via `writeDeletionFailureAudit`), never here, so neither showed up in
+ *  the operator "stuck deletions" list nor paged the `ACCOUNT_DELETION_STUCK`
+ *  alert. */
 export type AccountDeletionFailurePath =
   | 'lock_acquire'
   | 'preflight_read'
   | 'preflight_unknown'
   | 'commit_loop'
   | 'memberships_read'
+  | 'anonymisation'
+  | 'auth_delete'
 
 export const ACCOUNT_DELETION_FAILURE_PATH_LABELS: Record<AccountDeletionFailurePath, string> = {
   lock_acquire: 'Lock acquire',
@@ -327,6 +335,8 @@ export const ACCOUNT_DELETION_FAILURE_PATH_LABELS: Record<AccountDeletionFailure
   preflight_unknown: 'Preflight unknown outcome',
   commit_loop: 'Commit loop',
   memberships_read: 'Memberships read',
+  anonymisation: 'Anonymisation',
+  auth_delete: 'Auth record delete',
 }
 
 /** One `accountDeletionFailures/{uid}` doc, projected for the operator list — timestamps already ISO strings. */

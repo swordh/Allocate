@@ -3177,4 +3177,187 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
 
     consoleErrorSpy.mockRestore()
   })
+
+  // ── Extension (this PR): phase 3 (anonymisation) and step 4 (auth_delete) ──
+  //
+  // Everything above this point covers the five ORIGINAL failure paths (lock/
+  // preflight×2/memberships/commit-loop), which all return a
+  // COULD_NOT_VERIFY_ERROR-shaped message and already called
+  // `recordAccountDeletionFailure`. Phase 3's catch and step 4's catch used to
+  // call only `writeDeletionFailureAudit` (issue #358's append-only log) —
+  // never this trace, so neither ever reached the operator "stuck deletions"
+  // list nor paged the `ACCOUNT_DELETION_STUCK` alert. These tests pin the
+  // fix.
+
+  it('anonymisation: a per-company query rejecting inside the phase-3 loop records that company as the failing one', async () => {
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+    })
+    // Fail the very first per-company read phase 3 issues (bookings by
+    // userId) with a `code`-bearing error — same shape as a real Firestore
+    // failure — so the loop throws while `currentCompanyId` is still set to
+    // 'company-A'.
+    const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+    vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/bookings') {
+        return {
+          where: () => ({
+            get: async () => {
+              throw Object.assign(new Error('Firestore unavailable'), { code: 'unavailable' })
+            },
+          }),
+        }
+      }
+      return resolveCollectionNormally(path)
+    }) as unknown as typeof adminDb.collection)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'anonymisation',
+      lastErrorCode: 'unavailable',
+      lastCompanyIds: ['company-A'],
+    })
+  })
+
+  it('anonymisation: a non-NOT_FOUND operatorFeedback update failure records an empty companyIds — no single company to blame', async () => {
+    // Same fixture as the pre-existing "MUTATION GUARD: a non-NOT_FOUND error
+    // from a ticket update propagates and fails the deletion" test above
+    // (issue #338 PR 1 describe block) — reused here to assert on the trace
+    // that test itself doesn't check. `currentCompanyId` is reset to `null`
+    // before the operatorFeedback pass runs (see its declaration comment in
+    // actions/account.ts), even though the per-company loop just finished
+    // with 'company-A' — the failure here isn't attributable to any one
+    // company the way a per-company query failure is.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-5555',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('permission denied'), { code: 7 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'anonymisation',
+      lastErrorCode: '7',
+      lastCompanyIds: [],
+    })
+  })
+
+  it('anonymisation: the final batch.commit() rejecting is traced with a single-line ACCOUNT_DELETION_STUCK log containing path=anonymisation', async () => {
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    wired.batch.commit.mockRejectedValueOnce(Object.assign(new Error('commit failed'), { code: 'aborted' }))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'anonymisation', lastErrorCode: 'aborted' })
+
+    const stuckCalls = consoleErrorSpy.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCalls).toHaveLength(1)
+    // Single string argument, not the `console.error('[tag]', {obj})` shape
+    // — a second argument would land on its own Cloud Logging entry and
+    // defeat the single-line `textPayload` match the alert policies rely on.
+    expect(stuckCalls[0]).toHaveLength(1)
+    const line = stuckCalls[0]![0] as string
+    expect(line).toContain('path=anonymisation')
+    expect(line).not.toContain('\n')
+
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('auth_delete: adminAuth.deleteUser rejecting (non-user-not-found) is traced with an empty companyIds', async () => {
+    stubSession()
+    const { tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('auth delete failed'), { code: 'auth/internal-error' }),
+    )
+
+    const result = await deleteAccount()
+
+    // Step 4's catch never surfaces an error to the caller — this is the
+    // same asymmetry `writeDeletionFailureAudit`'s "auth_delete" test above
+    // pins: the deletion still reports success even though this trace now
+    // records the failure.
+    expect(result.error).toBeUndefined()
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'auth_delete',
+      lastErrorCode: 'auth/internal-error',
+      lastCompanyIds: [],
+    })
+  })
+
+  it('auth_delete: adminAuth.deleteUser rejecting with auth/user-not-found writes NO trace — the record is already gone, not a failure', async () => {
+    stubSession()
+    const { tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('There is no user record corresponding to this identifier'), { code: 'auth/user-not-found' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(findTraceWrite(tx)).toBeUndefined()
+  })
+
+  it('ordering: the failure deletionAuditLog add() happens before the accountDeletionFailures trace transaction (phase-3 anonymisation failure)', async () => {
+    // Mirrors the commit_loop ordering this suite already relies on
+    // implicitly — `writeDeletionFailureAudit` (a standalone `.add()`,
+    // issue #358) must run and complete before `recordAccountDeletionFailure`
+    // (its own `runTransaction`, issue #337) is even called, since
+    // `runAccountDeletion`'s catch block awaits the first before starting the
+    // second. Reuses the same batch.commit-throws fixture as the
+    // single-line-log test above.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    wired.batch.commit.mockRejectedValueOnce(Object.assign(new Error('commit failed'), { code: 'aborted' }))
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const traceCallIndex = tx.set.mock.calls.findIndex(
+      ([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`,
+    )
+    expect(traceCallIndex).toBeGreaterThanOrEqual(0)
+    const auditOrder = auditChain.add.mock.invocationCallOrder[0]!
+    const traceOrder = tx.set.mock.invocationCallOrder[traceCallIndex]!
+    expect(auditOrder).toBeLessThan(traceOrder)
+  })
 })
