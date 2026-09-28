@@ -182,6 +182,22 @@ service cloud.firestore {
     // customer were readable by that customer. A top-level collection has no
     // such membership rule to inherit.
 
+    // ── counters (no rule — intentional) ──────────────────────────────────────
+    // Issue #424. Top-level `counters/{counterId}` — today only
+    // `counters/operatorFeedback`, the shared sequential ticket-number
+    // counter (`{ next: number }`) that `actions/submitFeedback.ts` reads
+    // and increments inside a transaction. Same reasoning and the same
+    // absent-rule-is-default-deny mechanism as `operatorNotes`/
+    // `companyEvents` above: no rule here means default-deny, and no
+    // wildcard in this file matches a top-level path segment named
+    // `counters` (the only broad wildcards are scoped under
+    // `companies/{companyId}/{document=**}` and `{path=**}/units/{unitId}`).
+    // Written and read only via the Admin SDK from
+    // `actions/submitFeedback.ts` — never by a client. A ticket's sequence
+    // number reveals roughly how many tickets have ever been submitted
+    // (volume), which is exactly the kind of thing that must never be
+    // client-readable even though it isn't PII on its own.
+
     // ── companyDeletions / companyDeletionCancelTokens (no rule — intentional) ─
     // Issue #252, step 5. Same reasoning as `operatorNotes`/`companyEvents`
     // directly above, and the same absent-rule-is-default-deny mechanism: a
