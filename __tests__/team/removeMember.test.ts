@@ -354,6 +354,69 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     expect(touchedPaths).not.toContain(OTHER_TICKET_PATH)
   })
 
+  // Anonymisation failure handling: the membership transaction has already
+  // committed by the time anonymizeMemberReferences runs — a thrown error
+  // there must not turn into a 500 that skips the target's claims repoint,
+  // revalidatePath, or the success log. See the try/catch around the call in
+  // removeMember and its comment for why this is continue-and-succeed.
+  it('continues and still repoints the target\'s claims when anonymisation fails, and logs the failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const OTHER_COMPANY_ID = 'company-remaining'
+    const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      // The removed member's own active company — triggers the claims-repoint
+      // branch in step 5, which is what this test asserts still runs.
+      [`users/${TARGET_UID}`]: { activeCompanyId: COMPANY_ID },
+    }
+    const query: QueryResolver = (ctx) => {
+      // Real match for the bookings anonymisation scan — proves the failing
+      // call actually got to the point of matching a doc, not that it threw
+      // before ever reaching real work.
+      if (ctx.path === `companies/${COMPANY_ID}/bookings` && filterValue(ctx, 'userId') === TARGET_UID) {
+        return [{ id: 'booking-1', path: BOOKING_PATH, data: { userId: TARGET_UID } }]
+      }
+      if (ctx.path === `users/${TARGET_UID}/memberships`) {
+        return [{ id: OTHER_COMPANY_ID, path: `users/${TARGET_UID}/memberships/${OTHER_COMPANY_ID}`, data: { companyId: OTHER_COMPANY_ID, role: 'crew' } }]
+      }
+      return []
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    wired.batch.commit.mockRejectedValue(new Error('batch commit failed'))
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result).toEqual({})
+
+    // Proves the anonymisation pass really reached the failing commit —
+    // a stub that threw earlier (e.g. on the first query) would never
+    // produce this update call, making the test pass vacuously.
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: BOOKING_PATH }),
+      { userId: null, userName: null },
+    )
+    expect(wired.batch.commit).toHaveBeenCalled()
+
+    // Steps after the anonymisation call must still have run.
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(TARGET_UID, {
+      activeCompanyId: OTHER_COMPANY_ID,
+      role: 'crew',
+    })
+
+    const errorCall = errorSpy.mock.calls.find(
+      (c) => (c[1] as { action?: string } | undefined)?.action === 'remove_member_anonymise_failed',
+    )
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1]).toMatchObject({
+      companyId: COMPANY_ID,
+      error: 'batch commit failed',
+    })
+  })
+
   // ── Confirm the TOCTOU bug is fixed ─────────────────────────────────────────
   //
   // Simulates two concurrent removeMember calls targeting the company's last
