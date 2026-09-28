@@ -1701,18 +1701,26 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
     // function — same "a failure here fails the whole export" policy as the
     // `accountDeletionFailure` trace above, no partial-export fallback.
     //
-    // Deliberately EXCLUDED (decided 2026-09-28, legal check still open):
-    //   - `kind: 'note'` entries — free-text operator notes about the
-    //     ticket, not authored by this user, so they aren't unambiguously
-    //     "her own data" the way the ticket and its status changes are.
-    //     Filtered with an EQUALITY check (`kind === 'event'`), not a
-    //     negation of 'note': legacy docs written before `kind` existed have
-    //     no field at all and must be treated as notes (see
-    //     types/operator.ts), so `!== 'note'` would wrongly include them.
+    // Deliberately EXCLUDED (decided 2026-09-28):
+    //   - `kind: 'note'` entries — free-text operator notes DO concern this
+    //     user, but they're the operator's own assessment of her, not
+    //     something she authored. Whether they belong in HER export is an
+    //     Art. 15(4) balancing call ("shall not adversely affect the rights
+    //     and freedoms of others") that can't be made automatically, note by
+    //     note, at export time — a note might quote a colleague, name
+    //     another customer, or contain the operator's private read on a
+    //     dispute. So the automated self-service export leaves them out
+    //     entirely, and an explicit request for them is handled manually
+    //     (note-by-note review before release) rather than by this function.
+    //     This question is still open; the filter below is EQUALITY
+    //     (`kind === 'event'`), not a negation of 'note': legacy docs written
+    //     before `kind` existed have no field at all and must be treated as
+    //     notes (see types/operator.ts), so `!== 'note'` would wrongly
+    //     include them.
     //   - `createdBy` on every event (and on notes, moot since notes are
-    //     excluded entirely) — the operator's email address, third-party
-    //     PII that never belongs in this user's own export regardless of
-    //     which entry kinds are included.
+    //     excluded entirely) — the operator's email address, third-party PII
+    //     that never belongs in this user's own export regardless of which
+    //     entry kinds are included. This one is settled, not open.
     // A ticket already anonymised by #413 (its `submittedBy` nulled when she
     // leaves the company or deletes her account) is intentionally NOT
     // exported here — not a gap: once nulled, the ticket no longer carries
@@ -1730,6 +1738,9 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
 
         // No `orderBy` (avoids needing a composite index for this one-off
         // export path) — sorted in memory instead, ascending by `createdAt`.
+        // An entry with no `createdAt` (`at: null`) sorts LAST, not first —
+        // `?? ''` would otherwise put it first, since an empty string
+        // collates before every real ISO date string.
         const statusHistory = eventsSnap.docs
           .map((eventDoc) => {
             const e = eventDoc.data()
@@ -1738,7 +1749,12 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
               at:   isoOrNull(e.createdAt as TimestampLike),
             }
           })
-          .sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''))
+          .sort((a, b) => {
+            if (a.at === null && b.at === null) return 0
+            if (a.at === null) return 1
+            if (b.at === null) return -1
+            return a.at.localeCompare(b.at)
+          })
 
         return {
           ticketId:    ticketDoc.id,

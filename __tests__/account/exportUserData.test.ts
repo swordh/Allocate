@@ -107,34 +107,42 @@ describe('exportUserData — issue #337 accountDeletionFailure inclusion', () =>
 const OPERATOR_EMAIL = 'ops@allocate.at'
 
 /**
- * Routes both queries `exportUserData`'s `feedbackTickets` build issues:
- *   - `operatorFeedback` filtered by `submittedBy` (must equal `forUid`,
- *     mirroring the production `.where('submittedBy', '==', uid)` call —
- *     tickets belonging to a different uid are never returned even if
- *     present in `tickets`, same as a real Firestore filter would).
- *   - `operatorFeedback/{ticketId}/notes` filtered by `kind` (must equal
- *     'event' — a query without that exact filter gets nothing, so a
- *     regression that widens or drops the filter fails the "no note text"
- *     assertions below instead of silently passing).
- * `users/${forUid}/memberships` (and anything else) resolves to no docs,
- * same as `noMemberships` above — this suite doesn't exercise `companies`.
+ * Routes both queries `exportUserData`'s `feedbackTickets` build issues,
+ * modelling real Firestore behaviour rather than "no exact filter → nothing":
+ *   - `operatorFeedback` — WITH a `submittedBy` filter, returns only the
+ *     tickets whose own `data.submittedBy` matches its value (a real
+ *     `.where('submittedBy', '==', uid)` query does exactly this). WITH NO
+ *     `submittedBy` filter at all, returns EVERY ticket in the fixture —
+ *     same as an unfiltered collection read would. That asymmetry is the
+ *     point: if production code ever drops the `.where(...)` call, this
+ *     resolver hands back every ticket regardless of owner, so a ticket
+ *     belonging to another uid leaks into the export and the assertions
+ *     below catch it — a resolver that instead answered "[]" for a missing
+ *     filter would make that regression silently pass.
+ *   - `operatorFeedback/{ticketId}/notes` — same shape: WITH a `kind` filter,
+ *     returns only entries whose own `data.kind` matches its value; WITH NO
+ *     `kind` filter, returns every entry for that ticket, notes included. So
+ *     dropping the production `.where('kind', '==', 'event')` call leaks
+ *     note text into `statusHistory`, which the "no note text" assertions
+ *     below then catch.
+ * `users/${uid}/memberships` (and anything else) resolves to no docs, same
+ * as `noMemberships` above — this suite doesn't exercise `companies`.
  */
 function feedbackResolver(
-  forUid: string,
   tickets: Array<{ id: string; data: Record<string, unknown> }>,
   notesByTicket: Record<string, Array<{ id: string; data: Record<string, unknown> }>>,
 ): QueryResolver {
   return (ctx) => {
     if (ctx.path === 'operatorFeedback') {
       const f = ctx.filters.find((x) => x.field === 'submittedBy')
-      if (!f || f.op !== '==' || f.value !== forUid) return []
-      return tickets.map((t) => ({ id: t.id, data: t.data }))
+      if (!f) return tickets.map((t) => ({ id: t.id, data: t.data }))
+      return tickets.filter((t) => t.data.submittedBy === f.value).map((t) => ({ id: t.id, data: t.data }))
     }
     const notesMatch = ctx.path.match(/^operatorFeedback\/(.+)\/notes$/)
     if (notesMatch) {
-      const kindFilter = ctx.filters.find((x) => x.field === 'kind')
       const entries = notesByTicket[notesMatch[1]] ?? []
-      if (!kindFilter || kindFilter.op !== '==') return []
+      const kindFilter = ctx.filters.find((x) => x.field === 'kind')
+      if (!kindFilter) return entries
       return entries.filter((e) => e.data.kind === kindFilter.value)
     }
     return []
@@ -147,10 +155,9 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
     mockVerifyAuthenticatedSession.mockResolvedValue({ uid: UID, email: 'user@example.com' })
   })
 
-  it('includes ticket fields + sorted event history, excludes note text', async () => {
+  it('includes ticket fields + sorted event history, excludes note text (incl. legacy no-kind notes)', async () => {
     const docs: DocMap = { [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' } }
     const query = feedbackResolver(
-      UID,
       [
         {
           id: 'BUG-1111',
@@ -197,6 +204,17 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
               createdBy: OPERATOR_EMAIL,
             },
           },
+          // Legacy doc predating the `kind` field entirely (types/operator.ts:
+          // must be read as a note, never included) — no `kind` key at all,
+          // not even an empty/falsy one.
+          {
+            id: 'legacy-1',
+            data: {
+              text: 'legacy note',
+              createdAt: { toDate: () => new Date('2026-01-02T18:00:00.000Z') },
+              createdBy: OPERATOR_EMAIL,
+            },
+          },
         ],
       },
     )
@@ -222,14 +240,65 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
         ],
       },
     ])
-    // The note's own text must not have leaked in anywhere.
+    // Neither the `kind: 'note'` entry's nor the legacy (no-`kind`) entry's
+    // own text must have leaked in anywhere.
     expect(result.json).not.toContain('VIP')
+    expect(result.json).not.toContain('legacy note')
+  })
+
+  it('sorts an event with no createdAt (`at: null`) LAST, not first', async () => {
+    const docs: DocMap = { [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' } }
+    const query = feedbackResolver(
+      [
+        {
+          id: 'BUG-2222',
+          data: {
+            type: 'bug_report',
+            title: 'Undated event ticket',
+            description: 'd',
+            submittedAt: { toDate: () => new Date('2026-01-01T00:00:00.000Z') },
+            submittedBy: UID,
+            companyId: 'company-A',
+            companyName: 'Acme AB',
+            userName: 'Anna',
+            status: 'open',
+            priority: 'low',
+          },
+        },
+      ],
+      {
+        'BUG-2222': [
+          {
+            id: 'ev-undated',
+            data: { kind: 'event', text: 'Undated event', createdBy: OPERATOR_EMAIL },
+          },
+          {
+            id: 'ev-dated',
+            data: {
+              kind: 'event',
+              text: 'Dated event',
+              createdAt: { toDate: () => new Date('2026-01-02T00:00:00.000Z') },
+              createdBy: OPERATOR_EMAIL,
+            },
+          },
+        ],
+      },
+    )
+    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+
+    const result = await exportUserData()
+
+    expect(result.error).toBeUndefined()
+    const payload = JSON.parse(result.json!)
+    expect(payload.feedbackTickets[0].statusHistory).toEqual([
+      { text: 'Dated event', at: '2026-01-02T00:00:00.000Z' },
+      { text: 'Undated event', at: null },
+    ])
   })
 
   it('never includes the operator createdBy email anywhere in the export', async () => {
     const docs: DocMap = { [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' } }
     const query = feedbackResolver(
-      UID,
       [
         {
           id: 'BUG-1111',
@@ -271,7 +340,7 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
 
   it('is an empty array when the user has no tickets', async () => {
     const docs: DocMap = { [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' } }
-    const query = feedbackResolver(UID, [], {})
+    const query = feedbackResolver([], {})
     wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
 
     const result = await exportUserData()
@@ -283,11 +352,14 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
 
   it('only exports tickets matching this uid\'s submittedBy filter, not another uid\'s', async () => {
     const docs: DocMap = { [`users/${UID}`]: { name: 'Anna', email: 'anna@example.com' } }
-    // feedbackResolver only returns tickets when the captured filter is
-    // exactly `submittedBy == UID` — a ticket belonging to 'other-uid' would
-    // only leak through if production code dropped or widened that filter.
+    // The fixture genuinely contains a second ticket for 'other-uid' —
+    // `feedbackResolver` (unlike before this revision) does NOT pre-filter
+    // by the uid the test expects; it filters strictly by whatever
+    // `submittedBy` value the captured `.where()` call carries, same as real
+    // Firestore. So this assertion is only meaningful because the production
+    // `.where('submittedBy', '==', uid)` call is what keeps 'other-uid-ticket'
+    // out — a dropped/widened filter would leak it straight into the payload.
     const query = feedbackResolver(
-      UID,
       [
         {
           id: 'BUG-1111',
@@ -300,6 +372,21 @@ describe('exportUserData — issue #415 feedbackTickets', () => {
             companyId: 'company-A',
             companyName: 'Acme AB',
             userName: 'Anna',
+            status: 'open',
+            priority: 'low',
+          },
+        },
+        {
+          id: 'other-uid-ticket',
+          data: {
+            type: 'bug_report',
+            title: 'Not mine',
+            description: 'd',
+            submittedAt: { toDate: () => new Date('2026-01-01T00:00:00.000Z') },
+            submittedBy: 'other-uid',
+            companyId: 'company-A',
+            companyName: 'Acme AB',
+            userName: 'Someone Else',
             status: 'open',
             priority: 'low',
           },
