@@ -76,11 +76,12 @@ import { GrpcStatus, getFirestore, type Firestore } from 'firebase-admin/firesto
  * cheap no-op, but the noise is not). `failed > 0` is logged at
  * `logger.error` so the outcome is visible to anyone reading Cloud Logging
  * for this function — but NO alert currently fires on it. This project's
- * one existing log-based alert policy (see the `ACCOUNT_DELETION_STUCK`
- * memory note) matches that literal marker string only, in a different
- * function (`lib/accountDeletionAlert.ts`); nothing here reuses it or
- * defines a new one. A log-based alert on this message is a reasonable
- * follow-up, not something this change does.
+ * log-based alert policies match a literal marker string in a different
+ * function each — `ACCOUNT_DELETION_STUCK` (`lib/accountDeletionAlert.ts`)
+ * and `MEMBER_ANONYMISATION_STUCK` (`lib/memberAnonymisationAlert.ts`,
+ * issue #419); nothing here reuses either or defines a new one. A log-based
+ * alert on this message is a reasonable follow-up, not something this
+ * change does.
  */
 export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: number; failed: number }> {
   const cutoff = new Date();

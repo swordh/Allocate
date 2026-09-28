@@ -11,6 +11,7 @@ import { mailExpireAt } from '@/lib/mail-retention'
 import { ALLOWED_ROLES, toRole } from '@/lib/roles'
 import { INVITE_TTL_DAYS } from '@/constants/invitation'
 import { EMAIL_RE, MAX_RECIPIENTS, normalizeEmail, classifyRecipients, computeSeatsUsed } from '@/lib/invite-recipients'
+import { MEMBER_ANONYMISATION_STUCK_LOG_MARKER } from '@/lib/memberAnonymisationAlert'
 import type { Role } from '@/types'
 import type { Invitation, PublicInvitation } from '@/types/invitation'
 
@@ -233,7 +234,11 @@ export async function inviteUsers(emails: string[], role: Role): Promise<InviteU
   // double-counting it in every future seat calculation and showing two
   // rows in the pending list — the address is still visible with its own
   // RESEND button, which is exactly where re-sending an expired link belongs.
-  const invitedEmails = new Set(pendingDocs.map((doc) => doc.email.toLowerCase()))
+  // A pending invite's email is only ever nulled by anonymisation once it's
+  // been accepted or the inviter is gone (issue #419) — a still-`pending`
+  // doc always has one — but the field's type is now `string | null`, so
+  // fall back defensively rather than assert.
+  const invitedEmails = new Set(pendingDocs.map((doc) => (doc.email ?? '').toLowerCase()))
 
   // ── 4. Classify ────────────────────────────────────────────────────────────
   const classified = classifyRecipients(normalizedEmails, { members: memberEmails, invited: invitedEmails })
@@ -629,10 +634,12 @@ export async function updateMemberRole(
 
 /**
  * Anonymises `uid`'s references throughout `cid`'s bookings, equipment,
- * units, the company doc's own `createdBy`, and their `operatorFeedback`
- * submissions — the uid is replaced with `null` everywhere it appears, in a
- * chunked `WriteBatch`. Does NOT touch `invitations` (acceptedBy/email,
- * invitedBy/invitedByName, revokedBy) — see issue #419.
+ * units, invitations, the company doc's own `createdBy`, and their
+ * `operatorFeedback` submissions — the uid is replaced with `null`
+ * everywhere it appears, in a chunked `WriteBatch`. The invitations pass is
+ * scoped to `companies/${cid}/invitations` and mirrors what `deleteAccount`
+ * (actions/account.ts) already does for the same three fields — see issue
+ * #419.
  *
  * Extracted from `removeMember` so `leaveCompany` (self-service) can apply
  * the exact same anonymisation an admin-initiated removal already does,
@@ -693,6 +700,29 @@ async function anonymizeMemberReferences(cid: string, uid: string): Promise<void
     }
   }
 
+  // Invitations: this uid shows up in three distinct roles, each requiring
+  // a different field to be cleared. Anonymise (like bookings/equipment
+  // above), never delete — the record that an invitation happened is
+  // company history worth keeping. Mirrors actions/account.ts's
+  // deleteAccount treatment of the same collection; unlike that one, no
+  // pending-invitation-addressed-to-this-email pass is needed here — that
+  // only applies when the user themselves is being deleted, not when
+  // they're removed from/leaving one company. Issue #419.
+  const invitationsRef = adminDb.collection(`companies/${cid}/invitations`)
+
+  // Invitations: acceptedBy — the invitation that brought this uid IN.
+  const byAcceptedBy = await invitationsRef.where('acceptedBy', '==', uid).get()
+  for (const doc of byAcceptedBy.docs) await addOp(doc.ref, { acceptedBy: null, email: null })
+
+  // Invitations: invitedBy — invitations this uid SENT to someone else.
+  // Still-pending invitations are unaffected by the sender losing access.
+  const byInvitedBy = await invitationsRef.where('invitedBy', '==', uid).get()
+  for (const doc of byInvitedBy.docs) await addOp(doc.ref, { invitedBy: null, invitedByName: null })
+
+  // Invitations: revokedBy
+  const byRevokedBy = await invitationsRef.where('revokedBy', '==', uid).get()
+  for (const doc of byRevokedBy.docs) await addOp(doc.ref, { revokedBy: null })
+
   // Company doc: createdBy. Confirmed empirically (throwaway script against
   // allocate-alpha, deleted after use) that a single WriteBatch permits more
   // than one write to the same document — companies/{cid} already received
@@ -717,6 +747,70 @@ async function anonymizeMemberReferences(cid: string, uid: string): Promise<void
   for (const doc of byFeedbackSubmitter.docs) await addOp(doc.ref, { submittedBy: null, userName: null })
 
   await batch.commit()
+}
+
+/** How long `anonymizeMemberReferencesWithRetry` waits before its one retry. */
+const ANONYMISE_RETRY_DELAY_MS = 1000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Runs `anonymizeMemberReferences` with one retry, and — only if both
+ * attempts fail — logs a single-line `MEMBER_ANONYMISATION_STUCK` marker so
+ * the Cloud Monitoring alert policies (issue #419) can page support. Never
+ * rethrows: both callers (`removeMember`, `leaveCompany`) already treat
+ * anonymisation as continue-and-succeed, since the membership transaction
+ * has committed by the time this runs — see the comments at each call site.
+ *
+ * A single retry rather than an outbox/scheduled-function pattern is the
+ * deliberate design here — decided with the user: most failures are
+ * transient (a query blip, a batch-commit hiccup), and a second immediate
+ * attempt clears those without adding new infrastructure. A failure that
+ * survives the retry gets a support alert instead, for manual follow-up —
+ * no automatic rescheduling.
+ */
+async function anonymizeMemberReferencesWithRetry(
+  cid: string,
+  uid: string,
+  source: 'remove_member' | 'leave_company',
+): Promise<void> {
+  try {
+    await anonymizeMemberReferences(cid, uid)
+    return
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      target: uid.slice(0, 8) + '...',
+      companyId: cid,
+      error: message,
+      action: `${source}_anonymise_failed`,
+    })
+  }
+
+  await sleep(ANONYMISE_RETRY_DELAY_MS)
+
+  try {
+    await anonymizeMemberReferences(cid, uid)
+  } catch (err) {
+    // Full uid/cid, deliberately — an operator needs to be able to act on
+    // this without another lookup. No names/emails. Plain-string log, NOT
+    // the `console.error('[tag]', {obj})` shape every other line in this
+    // file uses: the alert policies match `textPayload:"..."`, and Cloud
+    // Logging only stores a structured entry as `textPayload` when
+    // `message` is its only field — see lib/memberAnonymisationAlert.ts.
+    const code = (err as { code?: unknown } | undefined)?.code
+    const detail = (typeof code === 'string' || typeof code === 'number'
+      ? String(code)
+      : err instanceof Error
+        ? err.message
+        : String(err)
+    ).replace(/\r?\n/g, ' ')
+    console.error(
+      `[actions/team] ${MEMBER_ANONYMISATION_STUCK_LOG_MARKER} source=${source} cid=${cid} uid=${uid} attempts=2 error=${detail}`,
+    )
+  }
 }
 
 /**
@@ -814,20 +908,11 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   // a lie: the removal already happened). So this is deliberately
   // continue-and-succeed: log for visibility and fall through to steps 5-6,
   // which must still run — the target's claims/activeCompanyId repoint in
-  // particular must not be skipped just because anonymisation failed. Any
-  // residual PII left behind by the failure has no durable trace or retry
-  // path yet beyond this log line — tracked in issue #419.
-  try {
-    await anonymizeMemberReferences(cid, memberId)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/team]', {
-      target: memberId.slice(0, 8) + '...',
-      companyId: cid,
-      error: message,
-      action: 'remove_member_anonymise_failed',
-    })
-  }
+  // particular must not be skipped just because anonymisation failed.
+  // `anonymizeMemberReferencesWithRetry` gives it one retry, and pages
+  // support via the MEMBER_ANONYMISATION_STUCK log marker if that also
+  // fails — issue #419.
+  await anonymizeMemberReferencesWithRetry(cid, memberId, 'remove_member')
 
   // ── 5. Handle target's activeCompanyId server-side ───────────────────────────
   try {
@@ -1023,19 +1108,10 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
   // especially `revokeRefreshTokens` (security-relevant: the leaver would
   // otherwise keep a live session carrying the old company's claims), the
   // custom token the client needs for sessionRefresh, and the receipt mail.
-  // Residual PII from a failed pass has no durable trace or retry path yet
-  // beyond this log line — tracked in issue #419.
-  try {
-    await anonymizeMemberReferences(cid, session.uid)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/team]', {
-      uid: session.uid.slice(0, 8) + '...',
-      companyId: cid,
-      error: message,
-      action: 'leave_company_anonymise_failed',
-    })
-  }
+  // `anonymizeMemberReferencesWithRetry` gives it one retry, and pages
+  // support via the MEMBER_ANONYMISATION_STUCK log marker if that also
+  // fails — issue #419.
+  await anonymizeMemberReferencesWithRetry(cid, session.uid, 'leave_company')
 
   // Session repoint — ONLY when the company just left was the caller's
   // active one. Leaving a non-active membership (the common case from

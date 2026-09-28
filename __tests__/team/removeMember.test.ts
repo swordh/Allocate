@@ -354,13 +354,69 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     expect(touchedPaths).not.toContain(OTHER_TICKET_PATH)
   })
 
-  // Anonymisation failure handling: the membership transaction has already
-  // committed by the time anonymizeMemberReferences runs — a thrown error
-  // there must not turn into a 500 that skips the target's claims repoint,
-  // revalidatePath, or the success log. See the try/catch around the call in
-  // removeMember and its comment for why this is continue-and-succeed.
-  it('continues and still repoints the target\'s claims when anonymisation fails, and logs the failure', async () => {
+  // Anonymisation failure handling (issue #419): the membership transaction
+  // has already committed by the time anonymizeMemberReferencesWithRetry
+  // runs — a thrown error there must not turn into a 500 that skips the
+  // target's claims repoint, revalidatePath, or the success log. See the
+  // comment at the call site in removeMember for why this is
+  // continue-and-succeed, and lib/memberAnonymisationAlert.ts for the retry
+  // + support-alert design.
+  it('retries once and succeeds on the second attempt — no support alert, flow completes', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    const OTHER_COMPANY_ID = 'company-remaining'
+    const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
+    const docs: DocMap = {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      [`users/${TARGET_UID}`]: { activeCompanyId: COMPANY_ID },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `companies/${COMPANY_ID}/bookings` && filterValue(ctx, 'userId') === TARGET_UID) {
+        return [{ id: 'booking-1', path: BOOKING_PATH, data: { userId: TARGET_UID } }]
+      }
+      if (ctx.path === `users/${TARGET_UID}/memberships`) {
+        return [{ id: OTHER_COMPANY_ID, path: `users/${TARGET_UID}/memberships/${OTHER_COMPANY_ID}`, data: { companyId: OTHER_COMPANY_ID, role: 'crew' } }]
+      }
+      return []
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    // wireDb hands out ONE shared batch stub — mockRejectedValueOnce so only
+    // the first (of two, across the retry) commit fails.
+    wired.batch.commit.mockRejectedValueOnce(new Error('transient commit failure'))
+
+    const resultPromise = removeMember(TARGET_UID)
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await resultPromise
+
+    expect(result).toEqual({})
+    expect(wired.batch.commit).toHaveBeenCalledTimes(2)
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(TARGET_UID, {
+      activeCompanyId: OTHER_COMPANY_ID,
+      role: 'crew',
+    })
+
+    // The first-attempt failure still logs (existing shape, unchanged).
+    const firstFailureCall = errorSpy.mock.calls.find(
+      (c) => (c[1] as { action?: string } | undefined)?.action === 'remove_member_anonymise_failed',
+    )
+    expect(firstFailureCall).toBeDefined()
+
+    // No support-alert marker — the retry succeeded.
+    const markerCall = errorSpy.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('MEMBER_ANONYMISATION_STUCK'),
+    )
+    expect(markerCall).toBeUndefined()
+
+    vi.useRealTimers()
+  })
+
+  it('logs the support-alert marker exactly once when both anonymisation attempts fail, and the flow still completes', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
     const OTHER_COMPANY_ID = 'company-remaining'
     const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
     const docs: DocMap = {
@@ -386,9 +442,13 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
     wireTransaction(docs)
 
+    // wireDb hands out ONE shared batch stub — mockRejectedValue (not
+    // -Once) so BOTH the initial attempt and the retry fail.
     wired.batch.commit.mockRejectedValue(new Error('batch commit failed'))
 
-    const result = await removeMember(TARGET_UID)
+    const resultPromise = removeMember(TARGET_UID)
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await resultPromise
 
     expect(result).toEqual({})
 
@@ -399,7 +459,7 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
       expect.objectContaining({ path: BOOKING_PATH }),
       { userId: null, userName: null },
     )
-    expect(wired.batch.commit).toHaveBeenCalled()
+    expect(wired.batch.commit).toHaveBeenCalledTimes(2)
 
     // Steps after the anonymisation call must still have run.
     expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(TARGET_UID, {
@@ -407,6 +467,7 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
       role: 'crew',
     })
 
+    // First attempt: existing structured failure log, unchanged shape.
     const errorCall = errorSpy.mock.calls.find(
       (c) => (c[1] as { action?: string } | undefined)?.action === 'remove_member_anonymise_failed',
     )
@@ -415,6 +476,20 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
       companyId: COMPANY_ID,
       error: 'batch commit failed',
     })
+
+    // Second attempt: single-line MEMBER_ANONYMISATION_STUCK marker, logged
+    // exactly once, carrying the FULL cid and uid (no truncation).
+    const markerCalls = errorSpy.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('MEMBER_ANONYMISATION_STUCK'),
+    )
+    expect(markerCalls).toHaveLength(1)
+    const markerLine = markerCalls[0]![0] as string
+    expect(markerLine).toBe(
+      `[actions/team] MEMBER_ANONYMISATION_STUCK source=remove_member cid=${COMPANY_ID} uid=${TARGET_UID} attempts=2 error=batch commit failed`,
+    )
+    expect(markerCalls[0]).toHaveLength(1) // a single plain string, no object argument
+
+    vi.useRealTimers()
   })
 
   // ── Confirm the TOCTOU bug is fixed ─────────────────────────────────────────
@@ -459,5 +534,100 @@ describe('removeMember — transactional sole-admin guard + memberCounts decreme
     expect(successes).toHaveLength(1)
     expect(failures).toHaveLength(1)
     expect(failures[0]!.error).toBe('Cannot remove the only admin. Promote another member first.')
+  })
+})
+
+// ── Invitation anonymisation (issue #419) ───────────────────────────────────
+//
+// companies/{cid}/invitations carries the removed member's uid in three
+// roles (acceptedBy, invitedBy/invitedByName, revokedBy) that must be
+// nulled — mirrors deleteAccount's invitation anonymisation
+// (__tests__/account/deleteAccount.test.ts), minus the "pending invite
+// addressed TO this user" deletion pass, which only applies when the user
+// themselves is being deleted, not when they're removed from one company.
+
+describe('removeMember — invitation anonymisation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    vi.mocked(getVerifiedSession).mockResolvedValue({
+      uid: ADMIN_UID,
+      email: 'admin@example.com',
+      activeCompanyId: COMPANY_ID,
+      role: 'admin',
+    } as never)
+  })
+
+  const INVITATIONS_PATH = `companies/${COMPANY_ID}/invitations`
+
+  function baseDocs(): DocMap {
+    return {
+      [TARGET_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme', createdBy: 'someone-else' },
+      [`users/${TARGET_UID}`]: { activeCompanyId: 'company-B' },
+    }
+  }
+
+  it('nulls email and acceptedBy on the invitation that brought the removed member in', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'acceptedBy') === TARGET_UID
+        ? [{ id: 'inv-1', path: `${INVITATIONS_PATH}/inv-1`, data: { email: 'target@example.com', acceptedBy: TARGET_UID, status: 'accepted' } }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-1' }),
+      { acceptedBy: null, email: null },
+    )
+  })
+
+  it('nulls invitedBy and invitedByName on invitations the removed member sent, leaving the recipient email untouched', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'invitedBy') === TARGET_UID
+        ? [{
+            id: 'inv-2',
+            path: `${INVITATIONS_PATH}/inv-2`,
+            data: { email: 'someone-else@example.com', invitedBy: TARGET_UID, invitedByName: 'Removed Member', status: 'pending' },
+          }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      { invitedBy: null, invitedByName: null },
+    )
+    expect(wired.batch.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      expect.objectContaining({ email: expect.anything() }),
+    )
+  })
+
+  it('nulls revokedBy on an invitation the removed member revoked', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'revokedBy') === TARGET_UID
+        ? [{ id: 'inv-3', path: `${INVITATIONS_PATH}/inv-3`, data: { revokedBy: TARGET_UID, status: 'revoked' } }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await removeMember(TARGET_UID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-3' }),
+      { revokedBy: null },
+    )
   })
 })

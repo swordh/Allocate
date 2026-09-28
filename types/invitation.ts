@@ -8,10 +8,11 @@ export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
 
 export interface Invitation {
   id: string
-  email: string
+  email: string | null    // null after anonymizeMemberReferences clears an accepted invite's
+                           // acceptedBy (actions/team.ts, issue #419)
   role: InvitationRole
-  invitedBy: string
-  invitedByName: string
+  invitedBy: string | null      // null after the inviter is removed/leaves (issue #419)
+  invitedByName: string | null  // null after the inviter is removed/leaves (issue #419)
   invitedAt: string       // ISO string
   status: InvitationStatus
   token: string
