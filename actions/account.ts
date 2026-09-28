@@ -6,7 +6,7 @@ import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/fi
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
-import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
+import { iso, isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { mailExpireAt } from '@/lib/mail-retention'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
@@ -1691,6 +1691,85 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
       })
     )
 
+    // Feedback tickets (issue #415, GDPR Art. 15/20): the user's own support
+    // tickets in the top-level `operatorFeedback` collection
+    // (actions/submitFeedback.ts), plus each ticket's status/priority-change
+    // history — the `kind: 'event'` entries in its `notes` subcollection
+    // (see types/operator.ts's `FeedbackTimelineEntry` doc comment). Same
+    // query deleteAccount's anonymisation pass uses (~line 1455 above), and
+    // this read sits inside the SAME try block as every other read in this
+    // function — same "a failure here fails the whole export" policy as the
+    // `accountDeletionFailure` trace above, no partial-export fallback.
+    //
+    // Deliberately EXCLUDED (decided 2026-09-28):
+    //   - `kind: 'note'` entries — free-text operator notes DO concern this
+    //     user, but they're the operator's own assessment of her, not
+    //     something she authored. Whether they belong in HER export is an
+    //     Art. 15(4) balancing call ("shall not adversely affect the rights
+    //     and freedoms of others") that can't be made automatically, note by
+    //     note, at export time — a note might quote a colleague, name
+    //     another customer, or contain the operator's private read on a
+    //     dispute. So the automated self-service export leaves them out
+    //     entirely, and an explicit request for them is handled manually
+    //     (note-by-note review before release) rather than by this function.
+    //     This question is still open; the filter below is EQUALITY
+    //     (`kind === 'event'`), not a negation of 'note': legacy docs written
+    //     before `kind` existed have no field at all and must be treated as
+    //     notes (see types/operator.ts), so `!== 'note'` would wrongly
+    //     include them.
+    //   - `createdBy` on every event (and on notes, moot since notes are
+    //     excluded entirely) — the operator's email address, third-party PII
+    //     that never belongs in this user's own export regardless of which
+    //     entry kinds are included. This one is settled, not open.
+    // A ticket already anonymised by #413 (its `submittedBy` nulled when she
+    // leaves the company or deletes her account) is intentionally NOT
+    // exported here — not a gap: once nulled, the ticket no longer carries
+    // her uid, so the query below correctly stops finding it, the same
+    // anonymisation working as intended.
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    const feedbackTickets = await Promise.all(
+      feedbackSnap.docs.map(async (ticketDoc) => {
+        const t = ticketDoc.data()
+
+        const eventsSnap = await adminDb
+          .collection(`operatorFeedback/${ticketDoc.id}/notes`)
+          .where('kind', '==', 'event')
+          .get()
+
+        // No `orderBy` (avoids needing a composite index for this one-off
+        // export path) — sorted in memory instead, ascending by `createdAt`.
+        // An entry with no `createdAt` (`at: null`) sorts LAST, not first —
+        // `?? ''` would otherwise put it first, since an empty string
+        // collates before every real ISO date string.
+        const statusHistory = eventsSnap.docs
+          .map((eventDoc) => {
+            const e = eventDoc.data()
+            return {
+              text: e.text ?? null,
+              at:   isoOrNull(e.createdAt as TimestampLike),
+            }
+          })
+          .sort((a, b) => {
+            if (a.at === null && b.at === null) return 0
+            if (a.at === null) return 1
+            if (b.at === null) return -1
+            return a.at.localeCompare(b.at)
+          })
+
+        return {
+          ticketId:    ticketDoc.id,
+          type:        t.type ?? null,
+          title:       t.title ?? null,
+          description: t.description ?? null,
+          status:      t.status ?? null,
+          priority:    t.priority ?? null,
+          companyName: t.companyName ?? null,
+          submittedAt: isoOrNull(t.submittedAt as TimestampLike),
+          statusHistory,
+        }
+      })
+    )
+
     const exportPayload = {
       exportedAt: new Date().toISOString(),
       user: {
@@ -1701,6 +1780,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
       },
       accountDeletionFailure,
       companies,
+      feedbackTickets,
     }
 
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'data_exported' })
