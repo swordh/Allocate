@@ -629,8 +629,11 @@ export async function updateMemberRole(
 
 /**
  * Anonymises `uid`'s references throughout `cid`'s bookings, equipment,
- * units and the company doc's own `createdBy` — the uid is replaced with
- * `null` everywhere it appears, in a chunked `WriteBatch`.
+ * units, the company doc's own `createdBy`, and their `operatorFeedback`
+ * submissions — the uid is replaced with `null` everywhere it appears, in a
+ * chunked `WriteBatch`. Does NOT touch `invitations` (acceptedBy/email,
+ * invitedBy/invitedByName, revokedBy) — see the follow-up issue linked from
+ * this PR.
  *
  * Extracted from `removeMember` so `leaveCompany` (self-service) can apply
  * the exact same anonymisation an admin-initiated removal already does,
@@ -720,7 +723,8 @@ async function anonymizeMemberReferences(cid: string, uid: string): Promise<void
 /**
  * Removes `memberId` from the caller's active company (companies/{cid} and
  * users/{memberId} sides) and anonymises their uid references throughout the
- * company's bookings/equipment/units/invitations.
+ * company's bookings/equipment/units — see `anonymizeMemberReferences` for
+ * the exact scope (invitations are NOT touched).
  *
  * The sole-admin guard, the two membership deletes, and the memberCounts
  * delta all run inside one `runTransaction` — see the comment at that guard
@@ -799,7 +803,28 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   }
 
   // ── 3. Anonymize uid-references scoped to this company (WriteBatch) ──────────
-  await anonymizeMemberReferences(cid, memberId)
+  //
+  // The membership transaction above has already committed — the member is
+  // gone regardless of what happens here. If the anonymisation query or
+  // batch.commit throws, there is nothing left to roll back to, and
+  // returning an error here would be false ("no changes were made" would be
+  // a lie: the removal already happened). So this is deliberately
+  // continue-and-succeed: log for visibility and fall through to steps 5-6,
+  // which must still run — the target's claims/activeCompanyId repoint in
+  // particular must not be skipped just because anonymisation failed. Any
+  // residual PII left behind by the failure has no durable trace or retry
+  // path yet beyond this log line — tracked in a follow-up issue.
+  try {
+    await anonymizeMemberReferences(cid, memberId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      target: memberId.slice(0, 8) + '...',
+      companyId: cid,
+      error: message,
+      action: 'remove_member_anonymise_failed',
+    })
+  }
 
   // ── 5. Handle target's activeCompanyId server-side ───────────────────────────
   try {
@@ -987,7 +1012,27 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
 
   // Anonymize the leaver's own references — same treatment `removeMember`
   // gives a removed member.
-  await anonymizeMemberReferences(cid, session.uid)
+  //
+  // Same continue-and-succeed reasoning as removeMember above: the
+  // membership transaction has already committed, so there is no "no
+  // changes were made" error to return honestly. Everything below MUST
+  // still run on failure — the claims/activeCompanyId repoint, and
+  // especially `revokeRefreshTokens` (security-relevant: the leaver would
+  // otherwise keep a live session carrying the old company's claims), the
+  // custom token the client needs for sessionRefresh, and the receipt mail.
+  // Residual PII from a failed pass has no durable trace or retry path yet
+  // beyond this log line — tracked in a follow-up issue.
+  try {
+    await anonymizeMemberReferences(cid, session.uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/team]', {
+      uid: session.uid.slice(0, 8) + '...',
+      companyId: cid,
+      error: message,
+      action: 'leave_company_anonymise_failed',
+    })
+  }
 
   // Session repoint — ONLY when the company just left was the caller's
   // active one. Leaving a non-active membership (the common case from

@@ -344,6 +344,77 @@ describe('leaveCompany', () => {
     expect(blocked).toHaveLength(1)
   })
 
+  // Anonymisation failure handling: the membership transaction has already
+  // committed by the time anonymizeMemberReferences runs. Leaving the ACTIVE
+  // company still needs its claims repoint, its (security-relevant)
+  // revokeRefreshTokens, the custom token for sessionRefresh, and the
+  // receipt mail — none of those may be skipped just because anonymisation
+  // threw. See the try/catch around the call in leaveCompany.
+  it('continues past a failed anonymisation pass: still revokes tokens, returns a custom token, queues the receipt mail, and logs the failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.allocate.at'
+    const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+      // No remaining memberships — redirectCompanyId: null path.
+    }
+    const query: QueryResolver = (ctx) => {
+      // Real match for the bookings anonymisation scan — proves the failing
+      // call actually reached real work rather than throwing immediately.
+      if (ctx.path === `companies/${COMPANY_ID}/bookings` && filterValue(ctx, 'userId') === UID) {
+        return [{ id: 'booking-1', path: BOOKING_PATH, data: { userId: UID } }]
+      }
+      return []
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    wired.batch.commit.mockRejectedValue(new Error('batch commit failed'))
+
+    // Capture the 'mail' collection's `add` spy the same way
+    // resendInvitation.test.ts does, since wireDb hands out a fresh chain
+    // per `collection()` call.
+    const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
+    const mailAdd = vi.fn().mockResolvedValue({ id: 'mail-1' })
+    const collectionWithMailAdd = vi.fn((path: string) => {
+      const chain = innerCollection(path)
+      if (path === 'mail') chain['add'] = mailAdd
+      return chain
+    })
+    ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithMailAdd
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(result.left).toEqual({
+      sessionRefresh: { redirectCompanyId: null, customToken: 'custom-token-for-leaver' },
+    })
+
+    // Proves the anonymisation pass really reached the failing commit.
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: BOOKING_PATH }),
+      { userId: null, userName: null },
+    )
+    expect(wired.batch.commit).toHaveBeenCalled()
+
+    // Everything after the anonymisation call must still have run.
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, { activeCompanyId: null, role: null })
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(UID)
+    expect(adminAuth.createCustomToken).toHaveBeenCalledWith(UID)
+    expect(mailAdd).toHaveBeenCalledWith(expect.objectContaining({ to: 'leaver@example.com', template: 'leftCompany' }))
+
+    const errorCall = errorSpy.mock.calls.find(
+      (c) => (c[1] as { action?: string } | undefined)?.action === 'leave_company_anonymise_failed',
+    )
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1]).toMatchObject({
+      companyId: COMPANY_ID,
+      error: 'batch commit failed',
+    })
+  })
+
   // Issue #338 PR 1: leaveCompany shares anonymizeMemberReferences with
   // removeMember (see that file's docblock) — same operatorFeedback scan,
   // scoped to this company via the companyId equality filter.
