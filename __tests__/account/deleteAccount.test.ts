@@ -22,7 +22,8 @@
  * the only source of truth left.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createHmac } from 'crypto'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   wireDb,
   filterValue,
@@ -138,6 +139,13 @@ import { adminDb } from '@/lib/firebase-admin'
 import { formatDateFull } from '@/lib/companyDeletionCancelWrites'
 
 const UID = 'user-1'
+
+/** issue #294: every test in this file drives `deleteAccount`, which now
+ *  fails fast (before anything is deleted) if `AUDIT_LOG_HMAC_KEY` is
+ *  missing — see the top-level `beforeEach` below. The exact value here has
+ *  no significance beyond being non-empty and shared with the dedicated
+ *  "equals createHmac(...)" assertion further down. */
+const TEST_AUDIT_HMAC_KEY = 'test-audit-hmac-key-do-not-use-in-prod'
 
 /** What the user sees when the guard itself couldn't be evaluated (a read
  * failed) — distinct from the sole-admin message below, and from the
@@ -427,12 +435,23 @@ function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // issue #294: `deleteAccount` now computes an HMAC-keyed audit hash
+  // BEFORE anything else, and fails closed if the key is missing — see the
+  // dedicated `describe` block below for that behaviour itself. Every other
+  // test in this file needs the key present, same as it needs Stripe
+  // defaults below, or it would fail at the very first line for a reason
+  // unrelated to what it's actually testing.
+  vi.stubEnv('AUDIT_LOG_HMAC_KEY', TEST_AUDIT_HMAC_KEY)
   mockDeleteSession.mockResolvedValue(undefined)
   mockDeleteUser.mockResolvedValue(undefined)
   // Default: no Stripe customer to retrieve/update. Individual Stripe tests
   // override this per case.
   mockStripeRetrieve.mockResolvedValue({ deleted: true })
   mockStripeUpdate.mockResolvedValue({})
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 // ── Guard: pre-flight + commit-loop ────────────────────────────────────────────
@@ -1929,7 +1948,9 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
       outcome: 'failed',
       triggeredBy: 'user_self',
     })
-    expect(row.userIdHash).toEqual(expect.any(String))
+    // issue #294: exact HMAC-SHA256 value, not merely "some string" — pins
+    // the algorithm and key, not just that a hash-shaped value was written.
+    expect(row.userIdHash).toBe(createHmac('sha256', TEST_AUDIT_HMAC_KEY).update(UID).digest('hex'))
     expect(row.userIdHash).not.toContain(UID)
     // No PII: no name/email fields, and the thrown error's own MESSAGE text
     // (which could contain anything, as simulated above) never makes it into
@@ -2843,6 +2864,25 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
   function findTraceWrite(tx: ReturnType<typeof makeTransaction>) {
     return tx.set.mock.calls.find(([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`)
   }
+
+  it('audit_hash_missing: fails before the lock, records the path, and deletes nothing (issue #294)', async () => {
+    stubSession()
+    const { tx } = wireScenario({ memberships: [] })
+    // Simulate a missing/misconfigured secret — overrides the file-wide
+    // beforeEach stub for this one test only.
+    vi.stubEnv('AUDIT_LOG_HMAC_KEY', '')
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'audit_hash_missing', lastCompanyIds: [] })
+    // Nothing was deleted: this must fail before the per-uid lock is even
+    // acquired, let alone before any membership/user/Auth deletion.
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+  })
 
   it('lock_acquire: records the path, errorCode, and empty companyIds', async () => {
     stubSession()
