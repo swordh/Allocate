@@ -430,9 +430,17 @@ function errorCodeOf(err: unknown): string {
 const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 /**
- * Durable, minimal trace of a `deleteAccount` attempt that returned
- * `COULD_NOT_VERIFY_ERROR` — issue #337 step 1. Before this, every such
- * return left nothing behind an operator could see: no way to tell who is
+ * Durable, minimal trace of a `deleteAccount` attempt that failed —
+ * originally issue #337 step 1, covering only the early return-a-vague-error
+ * paths (lock/preflight/memberships-read/commit-loop, all of which return
+ * `COULD_NOT_VERIFY_ERROR`-shaped messages). This PR extends the same trace
+ * to `runAccountDeletion`'s two remaining failure points: the phase-3
+ * anonymisation catch, which returns 'Failed to delete account', and the
+ * step-4 Auth-record-delete catch, which — unlike every other path here —
+ * still returns SUCCESS (`{}`) to the caller, because Firestore's side of
+ * the deletion already committed; the trace this call writes is the only
+ * place that failure is visible at all. Before this, every one of these
+ * returns left nothing behind an operator could see: no way to tell who is
  * stuck, where, or how often, beyond a `console.error` line in App Hosting's
  * 30-day log retention. One doc per uid at `accountDeletionFailures/{uid}`
  * (Admin SDK only — see firestore.rules), overwritten on every retry rather
@@ -1049,6 +1057,16 @@ async function runAccountDeletion(
   }
 
   // ── 3. Anonymize all user data ──────────────────────────────────────────────
+  // Follow-up to issues #337/#338 (PR #413): `currentCompanyId` tracks
+  // whichever company the loop
+  // below is working on, so the catch block can pass it to
+  // `recordAccountDeletionFailure` as `companyIds` — same idea as step 2's
+  // `[companyId]` a few hundred lines up, just without a transaction scope of
+  // its own to close over. `null` both before the loop starts and after it
+  // ends (including during the operatorFeedback pass, which iterates tickets
+  // across companies rather than one company at a time) — a failure in
+  // either of those spots legitimately has no single company to blame.
+  let currentCompanyId: string | null = null
   try {
     let batch = adminDb.batch()
     let opCount = 0
@@ -1121,6 +1139,8 @@ async function runAccountDeletion(
       // anonymises the customer — the two things the tail of this loop body
       // would otherwise have done for this company.
       if (immediatelyDeletedCompanyIds.has(companyId)) continue
+
+      currentCompanyId = companyId
 
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const equipmentRef = adminDb.collection(`companies/${companyId}/equipment`)
@@ -1376,6 +1396,13 @@ async function runAccountDeletion(
       }
     }
 
+    // Reset before the operatorFeedback pass below: that pass queries across
+    // every company the user has ever filed a ticket in, not the one company
+    // the loop above just finished with, so a failure inside it has no
+    // single company to attribute — see `currentCompanyId`'s declaration
+    // comment above the try block.
+    currentCompanyId = null
+
     // operatorFeedback (issue #338 PR 1): ONE global query across every
     // company this user has ever submitted a ticket in, not per-`companyIds`
     // like the loop above — this also catches a ticket filed in a company
@@ -1418,14 +1445,13 @@ async function runAccountDeletion(
     // matches `where('submittedBy', '==', uid)` on the next attempt, the same
     // idempotence the batch's own deletes/creates already rely on.
     //
-    // NOT fixed by this reorder, and not attempted here: step 3's catch below
-    // only ever calls `writeDeletionFailureAudit`, never
-    // `recordAccountDeletionFailure` — for ANY step-3 failure, not just this
-    // one. That gap (the `ACCOUNT_DELETION_STUCK` alert has nothing to page
-    // on for a step-3 failure of any kind, this one included) predates this
-    // PR and covers the whole of step 3, not something specific to
-    // operatorFeedback — left as a separate, pre-existing follow-up rather
-    // than wired in piecemeal here.
+    // Step 3's catch below now also calls `recordAccountDeletionFailure`
+    // (path 'anonymisation') alongside the pre-existing
+    // `writeDeletionFailureAudit` call, so a failure here — same as any other
+    // step-3 failure — both traces to `accountDeletionFailures/{uid}` for the
+    // operator view AND pages the `ACCOUNT_DELETION_STUCK` alert. That used
+    // to be a gap covering the whole of step 3, not something specific to
+    // operatorFeedback; it isn't anymore (see the phase-3 catch block below).
     const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
     for (const doc of feedbackSnap.docs) {
       const companyId = doc.data().companyId as string | undefined
@@ -1508,6 +1534,22 @@ async function runAccountDeletion(
       completedCompanies,
       totalCompanies: companyIds.length,
     })
+    // This PR: also trace to `accountDeletionFailures/{uid}` and emit the
+    // `ACCOUNT_DELETION_STUCK` marker — `writeDeletionFailureAudit` above is
+    // an append-only, operator-invisible-until-queried log; this is what
+    // actually pages support@ (see `recordAccountDeletionFailure`'s
+    // docblock) and what the operator "stuck deletions" list reads. Before
+    // this PR, a step-3 failure — the one that returns 'Failed to delete
+    // account' to the user, the same wording as the stuck-alert paths above
+    // — was the one failure mode in this function invisible to both.
+    // `currentCompanyId` is whichever company the loop above was on when it
+    // threw, or `null` if the throw happened during the operatorFeedback
+    // pass (see that variable's declaration comment).
+    await recordAccountDeletionFailure(uid, {
+      path: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      companyIds: currentCompanyId ? [currentCompanyId] : [],
+    })
     return { error: 'Failed to delete account' }
   }
 
@@ -1557,6 +1599,19 @@ async function runAccountDeletion(
       completedCompanies,
       totalCompanies: companyIds.length,
     })
+    // This PR: also trace to `accountDeletionFailures/{uid}` / page the
+    // `ACCOUNT_DELETION_STUCK` alert — same reasoning as the phase-3 catch
+    // above, but note the asymmetry here: this function still returns `{}`
+    // (success) to the CALLER below, because Firestore's side of the
+    // deletion already committed in step 3. The trace this call (re)writes
+    // is therefore the only place this failure is visible at all — not the
+    // return value, which a client can't use to detect it, and the success
+    // batch a few lines up already deleted whatever trace doc existed before
+    // this attempt, so this recreates one rather than adding to it. A retry
+    // resolves cleanly: memberships are already gone, so step 2 no-ops, step
+    // 3's batch clears this trace doc again, and `deleteUser` runs a second
+    // time.
+    await recordAccountDeletionFailure(uid, { path: 'auth_delete', errorCode: errorCodeOf(err), companyIds: [] })
   }
 
   return {}

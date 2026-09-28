@@ -117,16 +117,24 @@ service cloud.firestore {
 
     // ── Account deletion failure trace (issue #337) ───────────────────────────
     // One doc per uid, `accountDeletionFailures/{uid}` — a minimal, durable
-    // trace of a self-service `deleteAccount` (actions/account.ts) that
-    // returned "could not verify, try again" instead of succeeding. Before
-    // this, that outcome left nothing behind but a `console.error` line in
-    // App Hosting's 30-day log retention, with no way for an operator to see
-    // who was stuck or how often. Written and cleared only by the Admin SDK
-    // — never readable or writable by a client:
+    // trace of a self-service `deleteAccount` (actions/account.ts) attempt
+    // that failed. Originally only the early paths that return "could not
+    // verify, try again" (lock/preflight×2/memberships/commit-loop); extended
+    // (follow-up to issues #337/#338, PR #413) to `runAccountDeletion`'s two
+    // remaining failure points: phase-3 anonymisation, which returns 'Failed
+    // to delete account', and step-4 Auth-record deletion, which — unlike
+    // every other path here — still returns SUCCESS (`{}`) to the caller,
+    // because Firestore's side of the deletion already committed; this trace
+    // is the only place that failure is visible at all. Before any of this,
+    // every one of these outcomes left nothing behind but a `console.error`
+    // line in App Hosting's 30-day log retention, with no way for an operator
+    // to see who was stuck or how often. Written and cleared only by the
+    // Admin SDK — never readable or writable by a client:
     //   firstAt, lastAt: Timestamp
     //   attempts: number
     //   lastPath: 'lock_acquire' | 'preflight_read' | 'preflight_unknown' |
-    //             'commit_loop' | 'memberships_read'
+    //             'commit_loop' | 'memberships_read' | 'anonymisation' |
+    //             'auth_delete'
     //   lastErrorCode: string | null
     //   lastCompanyIds: string[]   // companies involved in the last failure —
     //                              // may point at a company purged since this
