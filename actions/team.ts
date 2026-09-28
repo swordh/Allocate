@@ -632,8 +632,7 @@ export async function updateMemberRole(
  * units, the company doc's own `createdBy`, and their `operatorFeedback`
  * submissions — the uid is replaced with `null` everywhere it appears, in a
  * chunked `WriteBatch`. Does NOT touch `invitations` (acceptedBy/email,
- * invitedBy/invitedByName, revokedBy) — see the follow-up issue linked from
- * this PR.
+ * invitedBy/invitedByName, revokedBy) — see issue #419.
  *
  * Extracted from `removeMember` so `leaveCompany` (self-service) can apply
  * the exact same anonymisation an admin-initiated removal already does,
@@ -729,8 +728,12 @@ async function anonymizeMemberReferences(cid: string, uid: string): Promise<void
  * The sole-admin guard, the two membership deletes, and the memberCounts
  * delta all run inside one `runTransaction` — see the comment at that guard
  * for why this closes a TOCTOU race the old count()-then-WriteBatch shape
- * had. The anonymisation pass, and the target's activeCompanyId/claims sync,
- * happen afterward in a separate WriteBatch and are unrelated to the guard.
+ * had. The anonymisation pass happens afterward in a separate WriteBatch and
+ * is unrelated to the guard. The target's activeCompanyId/claims sync is
+ * separate again — plain sequential `update`/`setCustomUserClaims` calls,
+ * not batched and not atomic with anonymisation — and runs independently:
+ * it still happens even when the anonymisation pass above it fails (see the
+ * try/catch around that call).
  */
 export async function removeMember(memberId: string): Promise<{ error?: string }> {
   // ── 1. Auth-guard ────────────────────────────────────────────────────────────
@@ -813,7 +816,7 @@ export async function removeMember(memberId: string): Promise<{ error?: string }
   // which must still run — the target's claims/activeCompanyId repoint in
   // particular must not be skipped just because anonymisation failed. Any
   // residual PII left behind by the failure has no durable trace or retry
-  // path yet beyond this log line — tracked in a follow-up issue.
+  // path yet beyond this log line — tracked in issue #419.
   try {
     await anonymizeMemberReferences(cid, memberId)
   } catch (err) {
@@ -1021,7 +1024,7 @@ export async function leaveCompany(companyId: string): Promise<LeaveCompanyResul
   // otherwise keep a live session carrying the old company's claims), the
   // custom token the client needs for sessionRefresh, and the receipt mail.
   // Residual PII from a failed pass has no durable trace or retry path yet
-  // beyond this log line — tracked in a follow-up issue.
+  // beyond this log line — tracked in issue #419.
   try {
     await anonymizeMemberReferences(cid, session.uid)
   } catch (err) {

@@ -156,7 +156,8 @@ describe('leaveCompany', () => {
     })
   })
 
-  it('leaving a NON-active company writes the same membership deletes but skips claims/revoke/custom-token entirely', async () => {
+  it('leaving a NON-active company writes the same membership deletes but skips claims/revoke/custom-token entirely, and still queues the receipt mail', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.allocate.at'
     const OTHER_COMPANY_ID = 'company-B'
     const OTHER_PATH = `companies/${OTHER_COMPANY_ID}/members/${UID}`
     const OTHER_META_PATH = `companies/${OTHER_COMPANY_ID}/_meta/memberCounts`
@@ -174,8 +175,22 @@ describe('leaveCompany', () => {
       [OTHER_META_PATH]: { members: 5, admins: 2 },
       [`companies/${OTHER_COMPANY_ID}`]: { name: 'Other Co' },
     }
-    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: queryFor(() => true, []) })
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: queryFor(() => true, []) })
     const tx = wireTransaction(docs)
+
+    // Capture the 'mail' collection's `add` spy the same way
+    // resendInvitation.test.ts does, since wireDb hands out a fresh chain
+    // per `collection()` call — leaveCompany's docblock claims "always a
+    // queued receipt email" regardless of whether the left company was
+    // active, so this must hold on the non-active path too.
+    const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
+    const mailAdd = vi.fn().mockResolvedValue({ id: 'mail-1' })
+    const collectionWithMailAdd = vi.fn((path: string) => {
+      const chain = innerCollection(path)
+      if (path === 'mail') chain['add'] = mailAdd
+      return chain
+    })
+    ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithMailAdd
 
     const result = await leaveCompany(OTHER_COMPANY_ID)
 
@@ -186,6 +201,12 @@ describe('leaveCompany', () => {
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
     expect(adminAuth.revokeRefreshTokens).not.toHaveBeenCalled()
     expect(adminAuth.createCustomToken).not.toHaveBeenCalled()
+
+    expect(mailAdd).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'leaver@example.com',
+      template: 'leftCompany',
+      companyId: OTHER_COMPANY_ID,
+    }))
   })
 
   it('decrements admins too when the leaver was an admin', async () => {
