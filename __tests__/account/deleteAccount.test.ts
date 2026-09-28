@@ -3274,6 +3274,12 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
     const call = findTraceWrite(tx)
     expect(call).toBeDefined()
     expect(call![1]).toMatchObject({ lastPath: 'anonymisation', lastErrorCode: 'aborted' })
+    // No prior trace doc exists for this uid in this fixture, and the batch
+    // that queued `accountDeletionFailures/{uid}`'s delete never actually
+    // committed (that's the whole premise of this test — `batch.commit()`
+    // itself is what rejected) — so this is a fresh trace, not one riding on
+    // top of a delete that landed in an earlier BATCH_LIMIT rotation chunk.
+    expect((call![1] as { attempts: number }).attempts).toBe(1)
 
     const stuckCalls = consoleErrorSpy.mock.calls.filter(
       (c) => typeof c[0] === 'string' && c[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
