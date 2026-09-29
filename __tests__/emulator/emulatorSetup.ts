@@ -16,12 +16,18 @@ import {
   EMULATOR_PROJECT_ID,
   FIRESTORE_EMULATOR_HOST,
   FIREBASE_AUTH_EMULATOR_HOST,
+  AUDIT_LOG_HMAC_TEST_KEY,
 } from './constants'
 import { ensureFunctionsAdminAppInitialized } from '../../functions/src/testSupport/emulatorInit'
 
 process.env.FIRESTORE_EMULATOR_HOST = FIRESTORE_EMULATOR_HOST
 process.env.FIREBASE_AUTH_EMULATOR_HOST = FIREBASE_AUTH_EMULATOR_HOST
 process.env.GCLOUD_PROJECT = EMULATOR_PROJECT_ID
+// Issue #294: both `lib/auditLogHash.ts` (webapp) and
+// `functions/src/audit/userIdHash.ts` (Cloud Functions) read this directly
+// off process.env — set once, process-wide, before any code under test can
+// run, same reasoning as the emulator host vars above.
+process.env.AUDIT_LOG_HMAC_KEY = AUDIT_LOG_HMAC_TEST_KEY
 
 /**
  * The default Admin app for '@/lib/firebase-admin' (adminDb/adminAuth — see

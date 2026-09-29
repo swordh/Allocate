@@ -132,9 +132,9 @@ service cloud.firestore {
     // Admin SDK — never readable or writable by a client:
     //   firstAt, lastAt: Timestamp
     //   attempts: number
-    //   lastPath: 'lock_acquire' | 'preflight_read' | 'preflight_unknown' |
-    //             'commit_loop' | 'memberships_read' | 'anonymisation' |
-    //             'auth_delete'
+    //   lastPath: 'audit_hash_missing' | 'lock_acquire' | 'preflight_read' |
+    //             'preflight_unknown' | 'commit_loop' | 'memberships_read' |
+    //             'anonymisation' | 'auth_delete'
     //   lastErrorCode: string | null
     //   lastCompanyIds: string[]   // companies involved in the last failure —
     //                              // may point at a company purged since this

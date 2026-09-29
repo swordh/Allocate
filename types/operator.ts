@@ -321,6 +321,7 @@ export const DELETION_SEGMENT_LABELS: Record<DeletionSegment, string> = {
  *  the operator "stuck deletions" list nor paged the `ACCOUNT_DELETION_STUCK`
  *  alert. */
 export type AccountDeletionFailurePath =
+  | 'audit_hash_missing'
   | 'lock_acquire'
   | 'preflight_read'
   | 'preflight_unknown'
@@ -330,6 +331,7 @@ export type AccountDeletionFailurePath =
   | 'auth_delete'
 
 export const ACCOUNT_DELETION_FAILURE_PATH_LABELS: Record<AccountDeletionFailurePath, string> = {
+  audit_hash_missing: 'Audit hash key missing',
   lock_acquire: 'Lock acquire',
   preflight_read: 'Preflight read',
   preflight_unknown: 'Preflight unknown outcome',

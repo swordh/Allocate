@@ -1,10 +1,10 @@
 'use server'
 
-import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
+import { hashUserIdForAudit } from '@/lib/auditLogHash'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
 import { isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
@@ -360,6 +360,26 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
+  // issue #294: fail fast on a missing/misconfigured AUDIT_LOG_HMAC_KEY
+  // BEFORE the lock below, BEFORE any read or write this function makes.
+  // `hashUserIdForAudit` (lib/auditLogHash.ts) throws when the key is
+  // missing — every later call site in this file relies on it already
+  // having succeeded once, so if it's going to fail, it must fail here,
+  // where nothing has been touched yet, rather than partway through step 3
+  // after companies have already been removed (see `writeDeletionFailureAudit`
+  // and the SUCCESS-row write below, neither of which is a place a
+  // configuration error should ever be discovered for the first time). The
+  // computed hash itself is discarded — this call exists purely as a
+  // pre-flight check, same spirit as `acquireAccountDeletionLock` below.
+  try {
+    hashUserIdForAudit(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_audit_hash_missing' })
+    await recordAccountDeletionFailure(uid, { path: 'audit_hash_missing', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
   // issue #349: acquire the per-uid lock before any of the work below — see
   // acquireAccountDeletionLock's docblock. A failure to even acquire it
   // (anything other than the lock being held) is treated like every other
@@ -462,11 +482,12 @@ const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
  * `writeDeletionFailureAudit`'s `collection().add()`, this doc is a single,
  * mutable row per uid, not an append-only log.
  *
- * Raw uid, not `errorCodeOf`'s sha256-hash-elsewhere convention
- * (`deletionAuditLog`'s `userIdHash`): the entire point of this doc is that
- * an operator can look up the person who's stuck, which a one-way hash would
- * make impossible. No name, no email — see `types/operator.ts`'s
- * `StuckAccountDeletionRow` for the full shape this doc is read back as.
+ * Raw uid, not `deletionAuditLog`'s hash-elsewhere convention (its
+ * `userIdHash`, now an HMAC-keyed hash — see `lib/auditLogHash.ts`, issue
+ * #294): the entire point of this doc is that an operator can look up the
+ * person who's stuck, which a one-way hash would make impossible. No name,
+ * no email — see `types/operator.ts`'s `StuckAccountDeletionRow` for the
+ * full shape this doc is read back as.
  */
 async function recordAccountDeletionFailure(
   uid: string,
@@ -561,7 +582,7 @@ async function writeDeletionFailureAudit(
   },
 ): Promise<void> {
   try {
-    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    const userIdHash = hashUserIdForAudit(uid)
     await adminDb.collection('deletionAuditLog').add({
       userIdHash,
       failedAt: FieldValue.serverTimestamp(),
@@ -1505,12 +1526,14 @@ async function runAccountDeletion(
       opCount = 0
     }
 
-    // Deletion audit log (sha256 hash only — no PII stored). The SUCCESS
-    // shape: `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only
-    // ever appear on a `writeDeletionFailureAudit` row (issue #358), which is
+    // Deletion audit log (HMAC-keyed hash of the uid, not a plain sha256 —
+    // see lib/auditLogHash.ts, issue #294; still personal data, not
+    // anonymous — pseudonymisation, not anonymisation). The SUCCESS shape:
+    // `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only ever
+    // appear on a `writeDeletionFailureAudit` row (issue #358), which is
     // written outside this batch, from each phase's own `catch` block, never
     // here.
-    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    const userIdHash = hashUserIdForAudit(uid)
     batch.set(adminDb.collection('deletionAuditLog').doc(), {
       userIdHash,
       deletedAt: FieldValue.serverTimestamp(),

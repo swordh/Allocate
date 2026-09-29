@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -7,6 +6,7 @@ import {
   TRIGGERED_BY_STRANDED_ACCOUNT_ENFORCED,
   TRIGGERED_BY_STRANDED_ACCOUNT_SPARED,
 } from '../deletionAuditLogTriggers';
+import { AUDIT_LOG_HMAC_KEY, hashUserIdForAudit } from '../audit/userIdHash';
 
 /**
  * Enforcement sweep for issue #252 step 6 — the "Hård ordningsregel" in
@@ -209,7 +209,7 @@ async function processCandidateTransaction(
     const pendingDeletion = stillDue(userSnap, now);
     if (!pendingDeletion) return 'skipped';
 
-    const userIdHash = createHash('sha256').update(uid).digest('hex');
+    const userIdHash = hashUserIdForAudit(uid);
 
     if (!membershipsSnap.empty) {
       // Spared: the exact gap Part A of this change closes for
@@ -359,6 +359,7 @@ export const strandedAccountSweep = onSchedule(
     // cadence `purgeCompanyDeletionLogs` uses for its own monthslong windows.
     schedule: 'every 24 hours',
     region: 'europe-west1',
+    secrets: [AUDIT_LOG_HMAC_KEY],
     timeoutSeconds: 300,
     memory: '256MiB',
   },

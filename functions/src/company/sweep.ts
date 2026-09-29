@@ -9,6 +9,7 @@ import { formatDateFull, buildCancelUrl, formatRequesterDisplay } from './format
 import { appUrl } from '../appUrl';
 import { claimRequestedLease, claimStaleLease } from './lease';
 import { mailExpireAt } from '../email/mailRetention';
+import { AUDIT_LOG_HMAC_KEY } from '../audit/userIdHash';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -240,7 +241,7 @@ export const companyDeletionSweep = onSchedule(
   {
     schedule: 'every 30 minutes',
     region: 'europe-west1',
-    secrets: [STRIPE_SECRET_KEY],
+    secrets: [STRIPE_SECRET_KEY, AUDIT_LOG_HMAC_KEY],
     // Same sizing as onCompanyDeletionCreated — this sweep also runs
     // runCompanyPurge synchronously, both for newly-overdue requests and
     // for resuming a stuck one.

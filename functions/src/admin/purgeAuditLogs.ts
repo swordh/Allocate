@@ -98,8 +98,11 @@ export async function purgeOldAuditLogsSweep(db: Firestore): Promise<{ purged: n
 }
 
 // GDPR Art. 5(1)(e) storage limitation: purge deletion audit log entries older
-// than 12 months. The log stores only a sha256 hash of the uid — no PII — but
-// retention beyond the audit period has no legal basis.
+// than 12 months. The log stores only an HMAC-keyed hash of the uid (issue
+// #294 — see functions/src/audit/userIdHash.ts's docblock for why a plain
+// unkeyed hash was not pseudonymisation) — still personal data, not
+// anonymous, since anyone holding the key can link a row back to a person —
+// so retention beyond the audit period still has no legal basis.
 export const purgeOldAuditLogs = onSchedule(
   { schedule: 'every monday 03:00', region: 'europe-west1' },
   async () => {
