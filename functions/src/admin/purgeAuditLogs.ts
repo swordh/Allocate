@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { runWithRetentionAlert } from './retentionPurgeAlert';
+import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from './jobHeartbeat';
 
 const BATCH_LIMIT = 490;
 
@@ -105,23 +106,39 @@ export async function purgeOldAuditLogsSweep(db: Firestore): Promise<{ purged: n
 // anonymous, since anyone holding the key can link a row back to a person —
 // so retention beyond the audit period still has no legal basis.
 export const purgeOldAuditLogs = onSchedule(
-  { schedule: 'every monday 03:00', region: 'europe-west1' },
+  {
+    schedule: 'every monday 03:00',
+    region: 'europe-west1',
+    // Sourced from JOB_HEARTBEAT_CONFIG, not a literal — this IS the deployed
+    // Cloud Run timeout, not just a value the watchdog reads (see
+    // jobHeartbeat.ts's docblock). Changing it here changes this function's
+    // real timeout on next deploy.
+    timeoutSeconds: JOB_HEARTBEAT_CONFIG.purgeOldAuditLogs.timeoutSeconds,
+  },
   async () => {
-    // This sweep has no per-row failure count of its own — it either
-    // completes or a `batch.commit()` throws and the whole execution fails
-    // (see the sweep's own docblock on why nothing here catches that). So
-    // `failedCount` is always 0: only the throw path can ever feed the
-    // `RETENTION_PURGE_FAILED` alert marker (issue #416,
-    // `./retentionPurgeAlert.ts`) for this job.
-    const { purged } = await runWithRetentionAlert(
-      'purgeOldAuditLogs',
-      () => purgeOldAuditLogsSweep(getFirestore()),
-      () => 0,
-    );
-    // The original version of this function logged nothing at all, which is
-    // half of why its unchunked-batch bug went unnoticed for so long: a
-    // retention job that says nothing is indistinguishable from one that
-    // never ran.
-    logger.info('purgeOldAuditLogs: sweep complete', { purged });
+    // `withJobHeartbeat` wraps the whole handler body, outermost — issue
+    // #430. It writes `jobHeartbeats/purgeOldAuditLogs` around the run so
+    // the watchdog in `./checkJobHeartbeats.ts` can notice this job never
+    // starting, never finishing, or repeatedly erroring, independent of
+    // whether `runWithRetentionAlert` below ever gets a chance to log
+    // anything.
+    await withJobHeartbeat(getFirestore(), 'purgeOldAuditLogs', async () => {
+      // This sweep has no per-row failure count of its own — it either
+      // completes or a `batch.commit()` throws and the whole execution fails
+      // (see the sweep's own docblock on why nothing here catches that). So
+      // `failedCount` is always 0: only the throw path can ever feed the
+      // `RETENTION_PURGE_FAILED` alert marker (issue #416,
+      // `./retentionPurgeAlert.ts`) for this job.
+      const { purged } = await runWithRetentionAlert(
+        'purgeOldAuditLogs',
+        () => purgeOldAuditLogsSweep(getFirestore()),
+        () => 0,
+      );
+      // The original version of this function logged nothing at all, which is
+      // half of why its unchunked-batch bug went unnoticed for so long: a
+      // retention job that says nothing is indistinguishable from one that
+      // never ran.
+      logger.info('purgeOldAuditLogs: sweep complete', { purged });
+    });
   }
 );

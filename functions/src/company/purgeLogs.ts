@@ -2,6 +2,7 @@ import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-ad
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { runWithRetentionAlert } from '../admin/retentionPurgeAlert';
+import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from '../admin/jobHeartbeat';
 
 /**
  * Firestore's own WriteBatch cap is 500 operations; 490 leaves headroom and
@@ -575,29 +576,44 @@ export async function purgeCompanyDeletionLogsSweep(
 }
 
 export const purgeCompanyDeletionLogs = onSchedule(
-  { schedule: 'every monday 04:00', region: 'europe-west1' },
+  {
+    schedule: 'every monday 04:00',
+    region: 'europe-west1',
+    // Sourced from JOB_HEARTBEAT_CONFIG, not a literal — this IS the deployed
+    // Cloud Run timeout, not just a value the watchdog reads (see
+    // jobHeartbeat.ts's docblock). Changing it here changes this function's
+    // real timeout on next deploy.
+    timeoutSeconds: JOB_HEARTBEAT_CONFIG.purgeCompanyDeletionLogs.timeoutSeconds,
+  },
   async () => {
-    const result = await runWithRetentionAlert(
-      'purgeCompanyDeletionLogs',
-      () => purgeCompanyDeletionLogsSweep(getFirestore()),
-      (r) => r.failedRows,
-    );
-    // The sweep swallows failures on purpose (the other rows still have to be
-    // done). Throwing HERE is what makes them visible as a failed scheduled
-    // execution, in addition to the `RETENTION_PURGE_FAILED` alert marker
-    // `runWithRetentionAlert` above already logged for the same
-    // `failedRows > 0` condition (issue #416, `../admin/retentionPurgeAlert.ts`)
-    // — the rows themselves are simply retried next Monday either way.
-    //
-    // The condition is `failedRows`, not `failedBatches`: a chunk that failed
-    // and was then rescued document by document left nothing un-redacted, and
-    // raising an alarm for it would train whoever reads these to ignore the
-    // one that matters. `failedRows` is exactly "rows whose data is still
-    // there and should not be".
-    if (result.failedRows > 0) {
-      throw new Error(
-        `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted; ${result.redacted} of ${result.eligible} due rows redacted`,
+    // `withJobHeartbeat` wraps the WHOLE handler, outermost — issue #430.
+    // In particular it sits OUTSIDE the `if (result.failedRows > 0) throw`
+    // below: that throw must still land in `lastErrorAt`, not be missed
+    // because the heartbeat only covered the sweep call above it. See
+    // `purgeOldAuditLogs.ts`'s matching comment.
+    await withJobHeartbeat(getFirestore(), 'purgeCompanyDeletionLogs', async () => {
+      const result = await runWithRetentionAlert(
+        'purgeCompanyDeletionLogs',
+        () => purgeCompanyDeletionLogsSweep(getFirestore()),
+        (r) => r.failedRows,
       );
-    }
+      // The sweep swallows failures on purpose (the other rows still have to be
+      // done). Throwing HERE is what makes them visible as a failed scheduled
+      // execution, in addition to the `RETENTION_PURGE_FAILED` alert marker
+      // `runWithRetentionAlert` above already logged for the same
+      // `failedRows > 0` condition (issue #416, `../admin/retentionPurgeAlert.ts`)
+      // — the rows themselves are simply retried next Monday either way.
+      //
+      // The condition is `failedRows`, not `failedBatches`: a chunk that failed
+      // and was then rescued document by document left nothing un-redacted, and
+      // raising an alarm for it would train whoever reads these to ignore the
+      // one that matters. `failedRows` is exactly "rows whose data is still
+      // there and should not be".
+      if (result.failedRows > 0) {
+        throw new Error(
+          `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted; ${result.redacted} of ${result.eligible} due rows redacted`,
+        );
+      }
+    });
   },
 );
