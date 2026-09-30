@@ -96,6 +96,16 @@ function toMillis(ts: Timestamp | undefined): number {
  * Per-job rule precedence — evaluated in this order, first match wins, AT
  * Most one finding per job:
  *
+ *   0. In-progress grace (not itself a finding) — if the job started more
+ *      recently than it last finished (successfully or not) and is still
+ *      within its own `timeoutSeconds` plus an hour of grace, NOTHING is
+ *      reported for this job this check, regardless of how old `lastOkAt` or
+ *      `lastErrorAt` is. A run that is genuinely still executing — including
+ *      a job's very first-ever run, which has only `lastStartAt` and no
+ *      `lastOkAt`/`lastErrorAt` at all — deserves a reprieve until it either
+ *      finishes or overruns its grace window, not an immediate `stale` or
+ *      `failed` finding just because nothing has landed yet. See the
+ *      in-progress check in the loop below for the exact condition.
  *   1. `unfinished` — the job started more recently than it last finished
  *      (successfully or not), and it's been running long enough that even
  *      its own `timeoutSeconds` plus an hour of grace has elapsed. This
@@ -157,8 +167,27 @@ export function evaluateHeartbeats(
     const lastErrorMs = toMillis(doc.lastErrorAt);
     const lastFinishMs = Math.max(lastOkMs, lastErrorMs);
 
-    // Rule 1: unfinished.
-    if (lastStartMs > lastFinishMs && nowMs - lastStartMs > config.timeoutSeconds * 1000 + ONE_HOUR_MS) {
+    // A run is currently in progress whenever the latest start is newer than
+    // the latest finish (success or failure) — includes a job's very first
+    // ever run, where lastOkMs/lastErrorMs/lastFinishMs are all 0 and only
+    // lastStartAt exists. While that's true AND we're still within grace
+    // (timeoutSeconds + 1h), emit no finding at all for this job: not
+    // `unfinished` (grace hasn't elapsed — the run may still land cleanly),
+    // and not `failed`/`stale` either, even if lastOkAt is missing or very
+    // old, because a currently-running job gets a reprieve until it either
+    // finishes or the grace window passes. This applies generally, not only
+    // when lastOkMs is 0 — a weekly job with a week-old lastOkAt that has
+    // just started its next run is exactly this case too, and reporting it
+    // `stale` mid-run would be wrong. Once grace passes without a finish,
+    // rule 1 below fires `unfinished` on a later check.
+    const inProgress = lastStartMs > lastFinishMs;
+    const graceMs = config.timeoutSeconds * 1000 + ONE_HOUR_MS;
+    if (inProgress && nowMs - lastStartMs <= graceMs) {
+      continue;
+    }
+
+    // Rule 1: unfinished — in progress, and grace has elapsed.
+    if (inProgress) {
       findings.push({ job, reason: 'unfinished' });
       continue;
     }
@@ -271,6 +300,12 @@ async function readHeartbeatDocs(db: Firestore): Promise<Partial<Record<Heartbea
  * inconsistent in a way that under-alarms). Rather than claim a clean
  * "checked, all good" outcome while that uncertainty exists, the OK line is
  * simply withheld for this run.
+ *
+ * No claim/transaction against overlapping invocations: two concurrent runs
+ * of this watchdog (e.g. a manual trigger landing mid-schedule) could both
+ * read the same pre-dedupe state and each log the same JOB_STALE line —
+ * accepted as a low-consequence duplicate, not worth the added complexity of
+ * a lock for a 6-hourly job whose worst case is one extra log line.
  */
 export async function runCheckJobHeartbeats(db: Firestore, nowMs: number = Date.now()): Promise<void> {
   const [docs, watchdog] = await Promise.all([readHeartbeatDocs(db), readWatchdogState(db)]);

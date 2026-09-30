@@ -21,6 +21,26 @@ import type { RetentionPurgeJob } from './retentionPurgeAlert';
  * currently have no alerting at all, `companyDeletionSweep` and
  * `strandedAccountSweep` — see `JOB_HEARTBEAT_CONFIG` below for why they
  * can't share the retention jobs' weekly-cadence assumptions.
+ *
+ * Known gap: `jobHeartbeats/{job}` keeps only the LATEST
+ * `lastStartAt`/`lastOkAt`/`lastErrorAt`, not a history of runs. A run that
+ * fails at run N and self-heals with a success at run N+1 — before the
+ * watchdog's next 6-hourly check happens to land between those two runs —
+ * leaves no trace at all: `lastOkAt` from run N+1 simply overwrites whatever
+ * `lastErrorAt` run N wrote, and `evaluateHeartbeats`' `failed` rule never
+ * sees the failure. This is intentional, not an oversight: this mechanism
+ * exists to catch a job that is PERSISTENTLY broken (never runs, hangs, or
+ * fails repeatedly with no recovery), not to audit every individual run —
+ * that's a different, higher-cardinality problem. A single transient failure
+ * that resolves itself before the next watchdog check is, by design, not
+ * something this mechanism reports. Per-run failure visibility is covered
+ * separately, and only for the three retention jobs, by
+ * `RETENTION_PURGE_FAILED_LOG_MARKER` (`./retentionPurgeAlert.ts`) — which
+ * fires synchronously on every failing run, not just persistent ones.
+ * `companyDeletionSweep` and `strandedAccountSweep` have no equivalent
+ * per-run signal; a transient failure in either is only visible here if it
+ * happens to coincide with a watchdog check landing between the failing run
+ * and its self-healing successor.
  */
 export type HeartbeatJob = RetentionPurgeJob | 'companyDeletionSweep' | 'strandedAccountSweep';
 
@@ -32,13 +52,18 @@ export type HeartbeatJob = RetentionPurgeJob | 'companyDeletionSweep' | 'strande
  *     slack, not a shared constant, because the five jobs run on wildly
  *     different cadences (weekly retention sweeps vs. a sweep that runs
  *     every 30 minutes).
- *   - `timeoutSeconds` — the job's own `onSchedule` timeout (or, for the
- *     three retention jobs, today's IMPLICIT default of 60s: none of them
- *     sets `timeoutSeconds` explicitly, so Cloud Functions v2's own default
- *     applies. Made explicit here so the watchdog's `unfinished` rule below
- *     has a real number to add its 1-hour grace window to. Issue #435 will
- *     revisit whether 60s is actually enough headroom for these three jobs
- *     as their collections grow — not in scope here).
+ *   - `timeoutSeconds` — the job's own `onSchedule` timeout. THIS IS THE
+ *     SOURCE OF TRUTH: all five `onSchedule` configs (`purgeAuditLogs.ts`,
+ *     `purgeOldFeedback.ts`, `../company/purgeLogs.ts`, `../company/sweep.ts`,
+ *     `../company/strandedAccountSweep.ts`) set their `timeoutSeconds` option
+ *     by reading it from this config rather than hardcoding a literal, so the
+ *     watchdog's `unfinished` grace window and the job's ACTUAL deployed
+ *     Cloud Run timeout can never silently drift apart. Practically: changing
+ *     a value here changes the deployed function's timeout on the next
+ *     deploy, not just the watchdog's expectations — a value bump for #435
+ *     (revisiting whether the three retention jobs' 60s is enough headroom
+ *     as their collections grow) is a real behavior change, not just a
+ *     bigger alerting window.
  *
  * Retention jobs run weekly (`purgeOldAuditLogs`, `purgeOldFeedback`,
  * `purgeCompanyDeletionLogs` all schedule for a specific day/time). 8 days

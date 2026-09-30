@@ -109,6 +109,10 @@ export const purgeOldAuditLogs = onSchedule(
   {
     schedule: 'every monday 03:00',
     region: 'europe-west1',
+    // Sourced from JOB_HEARTBEAT_CONFIG, not a literal — this IS the deployed
+    // Cloud Run timeout, not just a value the watchdog reads (see
+    // jobHeartbeat.ts's docblock). Changing it here changes this function's
+    // real timeout on next deploy.
     timeoutSeconds: JOB_HEARTBEAT_CONFIG.purgeOldAuditLogs.timeoutSeconds,
   },
   async () => {

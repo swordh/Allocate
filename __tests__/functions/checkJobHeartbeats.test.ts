@@ -146,6 +146,54 @@ describe('evaluateHeartbeats', () => {
     })
   })
 
+  describe('in-progress grace (bug fix: a running job must not be reported stale/unfinished mid-run)', () => {
+    const job: HeartbeatJob = 'companyDeletionSweep'
+    const graceMs = JOB_HEARTBEAT_CONFIG[job].timeoutSeconds * 1000 + ONE_HOUR_MS
+
+    it('start-only doc (first-ever run, no lastOkAt/lastErrorAt at all) within grace: no finding', () => {
+      const docs = healthyDocs()
+      docs[job] = { lastStartAt: ts(NOW_MS - graceMs + 1000) }
+      const findings = evaluateHeartbeats(docs, {}, NOW_MS)
+      expect(findingsFor(findings, job)).toEqual([])
+    })
+
+    it('start-only doc exactly at the grace boundary: no finding — the comparison is strictly >', () => {
+      const docs = healthyDocs()
+      docs[job] = { lastStartAt: ts(NOW_MS - graceMs) }
+      const findings = evaluateHeartbeats(docs, {}, NOW_MS)
+      expect(findingsFor(findings, job)).toEqual([])
+    })
+
+    it('start-only doc just past grace: unfinished finding', () => {
+      const docs = healthyDocs()
+      docs[job] = { lastStartAt: ts(NOW_MS - graceMs - 1000) }
+      const findings = evaluateHeartbeats(docs, {}, NOW_MS)
+      expect(findingsFor(findings, job)).toEqual([{ job, reason: 'unfinished' }])
+    })
+
+    it('old lastOkAt (past maxAgeMs — would be stale if not in progress) + a fresh in-progress start within grace: no finding', () => {
+      const docs = healthyDocs()
+      const maxAgeMs = JOB_HEARTBEAT_CONFIG[job].maxAgeMs
+      docs[job] = {
+        lastStartAt: ts(NOW_MS - 1000),
+        lastOkAt: ts(NOW_MS - maxAgeMs - 60_000), // would independently trigger 'stale'
+      }
+      const findings = evaluateHeartbeats(docs, {}, NOW_MS)
+      expect(findingsFor(findings, job)).toEqual([])
+    })
+
+    it('old lastOkAt + in-progress start, but grace has elapsed: unfinished, not stale (rule 1 still wins per precedence)', () => {
+      const docs = healthyDocs()
+      const maxAgeMs = JOB_HEARTBEAT_CONFIG[job].maxAgeMs
+      docs[job] = {
+        lastStartAt: ts(NOW_MS - graceMs - 1000),
+        lastOkAt: ts(NOW_MS - maxAgeMs - 60_000),
+      }
+      const findings = evaluateHeartbeats(docs, {}, NOW_MS)
+      expect(findingsFor(findings, job)).toEqual([{ job, reason: 'unfinished' }])
+    })
+  })
+
   describe('failed, and self-healing', () => {
     const job: HeartbeatJob = 'strandedAccountSweep'
 
