@@ -170,6 +170,31 @@ describe('purgeOldFeedbackSweep — re-read failure handling (issue #433)', () =
     })
     expect(close).toHaveBeenCalledTimes(1)
   })
+
+  it('guards the finally: an error thrown inside the loop but outside both inner try/catches still closes the BulkWriter', async () => {
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1'),
+      {
+        ref: {
+          path: 'operatorFeedback/ticket-2',
+          get: () =>
+            Promise.resolve({
+              exists: true,
+              data: () => {
+                throw new Error('boom')
+              },
+            }),
+        },
+      },
+      makeTicketDoc('operatorFeedback/ticket-3'),
+    ]
+    const { db, bulkWriter } = makeFakeDb(docs)
+
+    await expect(
+      purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0]),
+    ).rejects.toThrow('boom')
+    expect(bulkWriter.close).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('purgeOldFeedback end-to-end with runWithRetentionAlert (issue #433)', () => {

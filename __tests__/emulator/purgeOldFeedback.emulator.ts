@@ -13,9 +13,9 @@
  * chunk-and-commit loop of its own.
  *
  * Every test below also asserts `result.failed === 0` — the sweep's return
- * shape changed from `{ purged }` to `{ purged, failed }` in code review
- * (the first version reported `snap.size` as "purged" regardless of
- * whether the deletes actually succeeded).
+ * shape changed from `{ purged }` to `{ purged, failed, closeFailed }` in
+ * code review (the first version reported `snap.size` as "purged"
+ * regardless of whether the deletes actually succeeded).
  *
  * NOT covered here: the reopen-race guard (`isStillEligibleForPurge`,
  * re-reading a ticket immediately before its delete to skip one reopened

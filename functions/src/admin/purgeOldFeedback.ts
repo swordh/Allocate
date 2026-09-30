@@ -87,9 +87,9 @@ import { runWithRetentionAlert } from './retentionPurgeAlert';
  * (`lib/accountDeletionAlert.ts`) and `MEMBER_ANONYMISATION_STUCK`
  * (`lib/memberAnonymisationAlert.ts`, issue #419), that marker is the third
  * of this project's log-based alert policies, not something this function
- * defines itself. The BulkWriter opened above must be closed here no matter
- * how the per-ticket loop ends, so the loop now runs inside a `try` whose
- * `finally` always reaches the existing `bulkWriter.close()` below.
+ * defines itself. The shared BulkWriter must be closed no matter how the
+ * per-ticket loop ends, so the loop runs inside a `try` whose `finally`
+ * always reaches `bulkWriter.close()`.
  */
 export async function purgeOldFeedbackSweep(
   db: Firestore,
