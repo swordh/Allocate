@@ -67,8 +67,8 @@ describe('mail built from a redacted ledger', () => {
     // write and lost the mail entirely.
     expect(data['requestedByName']).not.toBe('null')
 
-    // Issue #325 (mail retention): every queued mail doc carries a Firestore
-    // TTL `expireAt` ~90 days out — see lib/mail-retention.ts /
+    // Issue #325/#406 (mail retention): every queued mail doc carries a
+    // Firestore TTL `expireAt` ~30 days out — see lib/mail-retention.ts /
     // functions/src/email/mailRetention.ts. Checked against a real emulator
     // write (not a fake Timestamp) so this catches the field actually being
     // a plain Date, a number, or missing entirely — none of which the unit
@@ -76,12 +76,12 @@ describe('mail built from a redacted ledger', () => {
     const expireAt = mailDoc['expireAt'] as FirebaseFirestore.Timestamp
     expect(expireAt).toBeDefined()
     expect(typeof expireAt.toMillis).toBe('function')
-    const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
     const deltaMs = expireAt.toMillis() - Date.now()
     // Generous ±1 hour window — this run against the real emulator, not a
-    // fake clock, so it only needs to rule out "wrong TTL entirely" (30
+    // fake clock, so it only needs to rule out "wrong TTL entirely" (90
     // days, no TTL, a bug), not pin the exact millisecond.
-    expect(Math.abs(deltaMs - NINETY_DAYS_MS)).toBeLessThan(60 * 60 * 1000)
+    expect(Math.abs(deltaMs - THIRTY_DAYS_MS)).toBeLessThan(60 * 60 * 1000)
   })
 
   it('the companyDeleted mail names "An administrator", never null', async () => {

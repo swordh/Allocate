@@ -23,17 +23,25 @@ import { Timestamp } from 'firebase-admin/firestore';
  * write. Same reasoning as `ACCOUNT_DELETION_FAILURE_TTL_MS` in
  * `actions/account.ts`.
  *
- * A queued mail (still `status: 'queued'` or `'retry'`, or one that reached
- * `'error'`) lives 90 days — long enough to investigate a delivery problem
- * — before TTL reclaims it. `mailDelivery.ts`'s `deliverMail` rolls
- * `expireAt` forward to `sentMailExpireAt` the moment a mail actually reaches
- * `status: 'sent'`, since a delivered mail's recipient address has no reason
- * to outlive it by nearly as long.
+ * Issue #406: the 90-day queue-time TTL above meant an undelivered mail
+ * (stuck in `error` or `retry`, often because its recipient had already
+ * deleted their account) sat in Firestore for up to three times as long as
+ * one that was actually sent. Joakim confirmed the 90-day delivery-history
+ * window was never used, so every status now gets the same 30-day clock
+ * from the moment the mail is queued. `mailDelivery.ts`'s `deliverMail`
+ * still re-anchors `expireAt` to `sentMailExpireAt` the moment a mail
+ * reaches `status: 'sent'` — not because that TTL is shorter any more (it's
+ * the same 30 days), but because it re-anchors the clock to `sentAt`
+ * instead of the original queue time, which is still the right anchor for
+ * a delivered mail.
  */
-export const MAIL_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+export const MAIL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** How long a `mail/{id}` doc survives once it reaches `status: 'sent'` —
- *  see `MAIL_TTL_MS`'s docblock above for why this is shorter. */
+/** How long a `mail/{id}` doc survives once it reaches `status: 'sent'`,
+ *  counted from `sentAt` rather than queue time — see `MAIL_TTL_MS`'s
+ *  docblock above. Deliberately equal to `MAIL_TTL_MS` (both 30 days) since
+ *  issue #406; kept as its own constant/anchor because `sentAt` remains the
+ *  correct re-anchor point for a delivered mail regardless of the duration. */
 export const MAIL_SENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
