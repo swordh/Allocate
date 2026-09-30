@@ -65,12 +65,15 @@ import { runWithRetentionAlert } from './retentionPurgeAlert';
  *     it's ever observed in practice.
  *
  * Permanent per-ticket failures do NOT make this function throw. The sweep
- * is naturally self-healing: a ticket whose delete permanently failed is
- * simply still sitting in Firestore afterward, still matches
- * `closedAt < cutoff`, and gets tried again next Monday with no operator
- * action needed — unlike `purgeOldAuditLogsSweep` in this same directory,
- * which propagates a throwing `batch.commit()` straight out (it has no
- * per-row failure path to swallow into). Throwing here instead would
+ * is naturally self-healing: a ticket that this run could not confirm
+ * eligible and deleted — either its pre-delete re-read rejected (issue
+ * #433: that re-read is now counted in `failed` rather than thrown out of
+ * the whole sweep), or the re-read succeeded but `recursiveDelete`
+ * permanently failed — is simply still sitting in Firestore afterward,
+ * still matches `closedAt < cutoff`, and gets tried again next Monday with
+ * no operator action needed — unlike `purgeOldAuditLogsSweep` in this same
+ * directory, which propagates a throwing `batch.commit()` straight out (it
+ * has no per-row failure path to swallow into). Throwing here instead would
  * mark the ENTIRE weekly run as failed over what is very likely a handful
  * of transient documents out of a much larger batch, inviting Cloud
  * Scheduler retries that redo the whole query-and-delete pass for no
@@ -79,11 +82,14 @@ import { runWithRetentionAlert } from './retentionPurgeAlert';
  * `logger.error` so the outcome is visible to anyone reading Cloud Logging
  * for this function, and also feeds the `RETENTION_PURGE_FAILED` alert
  * marker (issue #416, `./retentionPurgeAlert.ts`) via the `onSchedule`
- * wrapper below, alongside `closeFailed` — together with
- * `ACCOUNT_DELETION_STUCK` (`lib/accountDeletionAlert.ts`) and
- * `MEMBER_ANONYMISATION_STUCK` (`lib/memberAnonymisationAlert.ts`, issue
- * #419), that marker is the third of this project's log-based alert
- * policies, not something this function defines itself.
+ * wrapper below (through the exported `purgeOldFeedbackFailedCount`),
+ * alongside `closeFailed` — together with `ACCOUNT_DELETION_STUCK`
+ * (`lib/accountDeletionAlert.ts`) and `MEMBER_ANONYMISATION_STUCK`
+ * (`lib/memberAnonymisationAlert.ts`, issue #419), that marker is the third
+ * of this project's log-based alert policies, not something this function
+ * defines itself. The shared BulkWriter must be closed no matter how the
+ * per-ticket loop ends, so the loop runs inside a `try` whose `finally`
+ * always reaches `bulkWriter.close()`.
  */
 export async function purgeOldFeedbackSweep(
   db: Firestore,
@@ -123,47 +129,66 @@ export async function purgeOldFeedbackSweep(
   let failed = 0;
   let skippedReopened = 0;
   const cutoffMillis = cutoff.getTime();
+  let closeFailed = false;
 
-  for (const doc of snap.docs) {
-    // Reopen-race guard — see the docblock above. Read the ticket's CURRENT
-    // state, not the one captured in `snap` above, immediately before
-    // deleting it.
-    const fresh = await doc.ref.get();
-    if (!fresh.exists || !isStillEligibleForPurge(fresh.data()?.closedAt, cutoffMillis)) {
-      skippedReopened++;
-      continue;
+  try {
+    for (const doc of snap.docs) {
+      // Reopen-race guard — see the docblock above. Read the ticket's
+      // CURRENT state, not the one captured in `snap` above, immediately
+      // before deleting it. This re-read gets its own try/catch (issue
+      // #433) so a transient read failure is counted in `failed` and
+      // logged with a distinct message, instead of throwing out of the
+      // whole sweep and skipping every ticket after it.
+      let fresh;
+      try {
+        fresh = await doc.ref.get();
+      } catch (err) {
+        failed++;
+        logger.error('purgeOldFeedback: ticket re-read failed', {
+          path: doc.ref.path,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+
+      if (!fresh.exists || !isStillEligibleForPurge(fresh.data()?.closedAt, cutoffMillis)) {
+        skippedReopened++;
+        continue;
+      }
+
+      try {
+        await db.recursiveDelete(doc.ref, bulkWriter);
+        purged++;
+      } catch (err) {
+        failed++;
+        logger.error('purgeOldFeedback: ticket purge failed permanently', {
+          path: doc.ref.path,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
-
+  } finally {
+    // Runs whether the loop above completed normally or something inside
+    // it threw past the per-ticket try/catches — the BulkWriter must be
+    // closed no matter what (see docblock).
     try {
-      await db.recursiveDelete(doc.ref, bulkWriter);
-      purged++;
+      await bulkWriter.close();
     } catch (err) {
-      failed++;
-      logger.error('purgeOldFeedback: ticket purge failed permanently', {
-        path: doc.ref.path,
+      // `recursiveDelete`'s own per-ticket rejection above already reflects
+      // every permanent per-document failure this BulkWriter produces — see
+      // its doc comment: "the promise is rejected if any of the deletes
+      // fail." A rejection surfacing HERE instead would mean something failed
+      // outside that accounting (e.g. after the last per-ticket call
+      // returned but before the writer's internal queue fully drained).
+      // Logged, and reflected in `closeFailed` (not folded into `failed`
+      // itself), precisely because it can't be attributed to a specific
+      // ticket the way the per-ticket catch above can — the `onSchedule`
+      // wrapper below folds it into the retention alert's failure count.
+      closeFailed = true;
+      logger.error('purgeOldFeedback: bulkWriter close reported an additional failure', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-  }
-
-  let closeFailed = false;
-  try {
-    await bulkWriter.close();
-  } catch (err) {
-    // `recursiveDelete`'s own per-ticket rejection above already reflects
-    // every permanent per-document failure this BulkWriter produces — see
-    // its doc comment: "the promise is rejected if any of the deletes
-    // fail." A rejection surfacing HERE instead would mean something failed
-    // outside that accounting (e.g. after the last per-ticket call
-    // returned but before the writer's internal queue fully drained).
-    // Logged, and reflected in `closeFailed` (not folded into `failed`
-    // itself), precisely because it can't be attributed to a specific
-    // ticket the way the per-ticket catch above can — the `onSchedule`
-    // wrapper below folds it into the retention alert's failure count.
-    closeFailed = true;
-    logger.error('purgeOldFeedback: bulkWriter close reported an additional failure', {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 
   if (skippedReopened > 0) {
@@ -187,13 +212,23 @@ export function isStillEligibleForPurge(closedAt: unknown, cutoffMillis: number)
   return (closedAt as { toMillis: () => number }).toMillis() < cutoffMillis;
 }
 
+/**
+ * Failure count fed to `runWithRetentionAlert` for the `RETENTION_PURGE_FAILED`
+ * marker — `failed` (per-ticket re-read/delete failures) plus one more if
+ * the shared BulkWriter itself reported a close failure it couldn't
+ * attribute to a specific ticket (see the sweep's docblock).
+ */
+export function purgeOldFeedbackFailedCount(r: { failed: number; closeFailed: boolean }): number {
+  return r.failed + (r.closeFailed ? 1 : 0);
+}
+
 export const purgeOldFeedback = onSchedule(
   { schedule: 'every monday 03:30', region: 'europe-west1' },
   async () => {
     const { purged, failed, closeFailed } = await runWithRetentionAlert(
       'purgeOldFeedback',
       () => purgeOldFeedbackSweep(getFirestore()),
-      (r) => r.failed + (r.closeFailed ? 1 : 0),
+      purgeOldFeedbackFailedCount,
     );
     logger.info('purgeOldFeedback: sweep complete', { purged, failed, closeFailed });
   }
