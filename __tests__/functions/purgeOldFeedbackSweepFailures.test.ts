@@ -23,7 +23,11 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { logger } from 'firebase-functions/v2'
-import { purgeOldFeedbackSweep, purgeOldFeedbackFailedCount } from '../../functions/src/admin/purgeOldFeedback'
+import {
+  purgeOldFeedbackSweep,
+  purgeOldFeedbackFailedCount,
+  purgeOldFeedbackUnfinishedCount,
+} from '../../functions/src/admin/purgeOldFeedback'
 import { runWithRetentionAlert, RETENTION_PURGE_FAILED_LOG_MARKER } from '../../functions/src/admin/retentionPurgeAlert'
 
 // 25 months ago — safely older than the sweep's 24-month cutoff.
@@ -96,6 +100,7 @@ describe('purgeOldFeedbackSweep — re-read failure handling (issue #433)', () =
       purged: 2,
       failed: 1,
       closeFailed: false,
+      unfinished: 0,
     })
 
     expect(recursiveDelete).toHaveBeenCalledTimes(2)
@@ -129,6 +134,7 @@ describe('purgeOldFeedbackSweep — re-read failure handling (issue #433)', () =
       purged: 2,
       failed: 1,
       closeFailed: false,
+      unfinished: 0,
     })
     expect(recursiveDelete).toHaveBeenCalledTimes(3)
     expect(bulkWriter.close).toHaveBeenCalledTimes(1)
@@ -146,6 +152,7 @@ describe('purgeOldFeedbackSweep — re-read failure handling (issue #433)', () =
       purged: 2,
       failed: 0,
       closeFailed: false,
+      unfinished: 0,
     })
     expect(recursiveDelete).toHaveBeenCalledTimes(2)
     const deletedPaths = recursiveDelete.mock.calls.map((call) => (call[0] as { path: string }).path)
@@ -167,6 +174,7 @@ describe('purgeOldFeedbackSweep — re-read failure handling (issue #433)', () =
       purged: 2,
       failed: 1,
       closeFailed: true,
+      unfinished: 0,
     })
     expect(close).toHaveBeenCalledTimes(1)
   })
@@ -218,7 +226,7 @@ describe('purgeOldFeedback end-to-end with runWithRetentionAlert (issue #433)', 
       purgeOldFeedbackFailedCount,
     )
 
-    expect(result).toEqual({ purged: 2, failed: 1, closeFailed: false })
+    expect(result).toEqual({ purged: 2, failed: 1, closeFailed: false, unfinished: 0 })
 
     const markerCalls = errorSpy.mock.calls.filter(
       (call) => typeof call[0] === 'string' && call[0].includes(RETENTION_PURGE_FAILED_LOG_MARKER),
@@ -232,5 +240,141 @@ describe('purgeOldFeedbackFailedCount', () => {
   it('folds failed count and closeFailed into a single number', () => {
     expect(purgeOldFeedbackFailedCount({ failed: 0, closeFailed: false })).toBe(0)
     expect(purgeOldFeedbackFailedCount({ failed: 2, closeFailed: true })).toBe(3)
+  })
+})
+
+describe('purgeOldFeedbackUnfinishedCount', () => {
+  it('passes the sweep result\'s unfinished count straight through', () => {
+    expect(purgeOldFeedbackUnfinishedCount({ unfinished: 0 })).toBe(0)
+    expect(purgeOldFeedbackUnfinishedCount({ unfinished: 7 })).toBe(7)
+  })
+})
+
+/**
+ * Time budget and consecutive-failure circuit breaker — issue #435. Same
+ * fake-db harness as the re-read failure suite above; `opts.deadlineExceeded`
+ * and the 5-consecutive-failure counter are new, everything else about the
+ * sweep is unchanged.
+ */
+describe('purgeOldFeedbackSweep — time budget and consecutive-failure abort (issue #435)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('deadline already exceeded before the loop starts: every ticket is unfinished, nothing is touched', async () => {
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1'),
+      makeTicketDoc('operatorFeedback/ticket-2'),
+      makeTicketDoc('operatorFeedback/ticket-3'),
+    ]
+    const { db, recursiveDelete, bulkWriter } = makeFakeDb(docs)
+
+    const result = await purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0], {
+      deadlineExceeded: () => true,
+    })
+
+    expect(result).toEqual({ purged: 0, failed: 0, closeFailed: false, unfinished: 3 })
+    expect(recursiveDelete).not.toHaveBeenCalled()
+    // The BulkWriter is still closed even though nothing was ever deleted —
+    // it was created up front, before the loop the deadline short-circuits.
+    expect(bulkWriter.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('deadline trips mid-loop: earlier tickets are purged, the rest are unfinished, not failed', async () => {
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1'),
+      makeTicketDoc('operatorFeedback/ticket-2'),
+      makeTicketDoc('operatorFeedback/ticket-3'),
+      makeTicketDoc('operatorFeedback/ticket-4'),
+    ]
+    const { db, recursiveDelete } = makeFakeDb(docs)
+
+    // Exceeded starting from the 3rd loop iteration (index 2) onward — the
+    // first two tickets get a normal pass through the loop.
+    let calls = 0
+    const deadlineExceeded = () => {
+      calls += 1
+      return calls > 2
+    }
+
+    const result = await purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0], {
+      deadlineExceeded,
+    })
+
+    expect(result).toEqual({ purged: 2, failed: 0, closeFailed: false, unfinished: 2 })
+    expect(recursiveDelete).toHaveBeenCalledTimes(2)
+  })
+
+  it('5 consecutive failures abort the rest of the run', async () => {
+    const rereadError = new Error('14 UNAVAILABLE: transient')
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-2', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-3', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-4', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-5', { rereadRejectsWith: rereadError }),
+      // Would succeed if the sweep ever reached it — it must not.
+      makeTicketDoc('operatorFeedback/ticket-6'),
+    ]
+    const errorSpy = vi.spyOn(logger, 'error')
+    const { db, recursiveDelete, bulkWriter } = makeFakeDb(docs)
+
+    const result = await purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0])
+
+    expect(result).toEqual({ purged: 0, failed: 5, closeFailed: false, unfinished: 1 })
+    expect(recursiveDelete).not.toHaveBeenCalled()
+    expect(bulkWriter.close).toHaveBeenCalledTimes(1)
+
+    const abortCalls = errorSpy.mock.calls.filter(
+      (call) => typeof call[0] === 'string' && call[0].includes('aborting after 5 consecutive failures'),
+    )
+    expect(abortCalls).toHaveLength(1)
+  })
+
+  it('4 failures followed by a success reset the counter — the run is not aborted', async () => {
+    const rereadError = new Error('14 UNAVAILABLE: transient')
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-2', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-3', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-4', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-5'),
+      // Another 4 failures after the reset — still not 5 in a row overall.
+      makeTicketDoc('operatorFeedback/ticket-6', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-7', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-8', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-9', { rereadRejectsWith: rereadError }),
+    ]
+    const errorSpy = vi.spyOn(logger, 'error')
+    const { db, recursiveDelete } = makeFakeDb(docs)
+
+    const result = await purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0])
+
+    expect(result).toEqual({ purged: 1, failed: 8, closeFailed: false, unfinished: 0 })
+    expect(recursiveDelete).toHaveBeenCalledTimes(1)
+    const abortCalls = errorSpy.mock.calls.filter(
+      (call) => typeof call[0] === 'string' && call[0].includes('aborting after 5 consecutive failures'),
+    )
+    expect(abortCalls).toHaveLength(0)
+  })
+
+  it('a skipped (reopened) ticket also resets the consecutive-failure counter', async () => {
+    const rereadError = new Error('14 UNAVAILABLE: transient')
+    const docs = [
+      makeTicketDoc('operatorFeedback/ticket-1', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-2', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-3', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-4', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-5', { reopened: true }),
+      makeTicketDoc('operatorFeedback/ticket-6', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-7', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-8', { rereadRejectsWith: rereadError }),
+      makeTicketDoc('operatorFeedback/ticket-9', { rereadRejectsWith: rereadError }),
+    ]
+    const { db } = makeFakeDb(docs)
+
+    const result = await purgeOldFeedbackSweep(db as unknown as Parameters<typeof purgeOldFeedbackSweep>[0])
+
+    expect(result).toEqual({ purged: 0, failed: 8, closeFailed: false, unfinished: 0 })
   })
 })

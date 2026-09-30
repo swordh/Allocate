@@ -60,10 +60,13 @@ export type HeartbeatJob = RetentionPurgeJob | 'companyDeletionSweep' | 'strande
  *     watchdog's `unfinished` grace window and the job's ACTUAL deployed
  *     Cloud Run timeout can never silently drift apart. Practically: changing
  *     a value here changes the deployed function's timeout on the next
- *     deploy, not just the watchdog's expectations — a value bump for #435
- *     (revisiting whether the three retention jobs' 60s is enough headroom
- *     as their collections grow) is a real behavior change, not just a
- *     bigger alerting window.
+ *     deploy, not just the watchdog's expectations — issue #435 raised the
+ *     three retention jobs from 60s to 540s so they now match
+ *     `company/sweep.ts`'s existing timeout, giving them the same headroom as
+ *     their collections grow. `./retentionPurgeAlert.ts`'s `retentionDeadline`
+ *     reads this same `timeoutSeconds` (minus a margin) to give each sweep a
+ *     wall-clock budget to stop cleanly BEFORE the platform kills it — see
+ *     that file's docblock.
  *
  * Retention jobs run weekly (`purgeOldAuditLogs`, `purgeOldFeedback`,
  * `purgeCompanyDeletionLogs` all schedule for a specific day/time). 8 days
@@ -81,9 +84,9 @@ export type HeartbeatJob = RetentionPurgeJob | 'companyDeletionSweep' | 'strande
  * `onSchedule` config.
  */
 export const JOB_HEARTBEAT_CONFIG: Record<HeartbeatJob, { maxAgeMs: number; timeoutSeconds: number }> = {
-  purgeOldFeedback: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 60 },
-  purgeOldAuditLogs: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 60 },
-  purgeCompanyDeletionLogs: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 60 },
+  purgeOldFeedback: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 540 },
+  purgeOldAuditLogs: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 540 },
+  purgeCompanyDeletionLogs: { maxAgeMs: 8 * 24 * 60 * 60 * 1000, timeoutSeconds: 540 },
   companyDeletionSweep: { maxAgeMs: 6 * 60 * 60 * 1000, timeoutSeconds: 540 },
   strandedAccountSweep: { maxAgeMs: 2 * 24 * 60 * 60 * 1000, timeoutSeconds: 300 },
 };

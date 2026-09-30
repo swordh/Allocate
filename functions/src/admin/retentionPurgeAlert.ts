@@ -1,4 +1,5 @@
 import { logger } from 'firebase-functions/v2';
+import { JOB_HEARTBEAT_CONFIG } from './jobHeartbeat';
 
 /**
  * Filter marker for the Cloud Monitoring log-based alert policies (alpha,
@@ -47,6 +48,57 @@ export const RETENTION_PURGE_FAILED_LOG_MARKER = 'RETENTION_PURGE_FAILED';
 export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purgeCompanyDeletionLogs';
 
 /**
+ * Seconds of headroom `retentionDeadline` reserves before a sweep's real
+ * `onSchedule` `timeoutSeconds` (`./jobHeartbeat.ts`'s `JOB_HEARTBEAT_CONFIG`
+ * — issue #435). The platform SIGKILLs a Cloud Run function the instant its
+ * timeout elapses, mid-write if that's where it happens to be — no chance to
+ * finish the write in flight, close a `BulkWriter`, or log anything at all.
+ * A budget that only fired AT the timeout would just move the same cliff a
+ * few statements later; the margin exists so the sweep can notice it's out
+ * of time, stop looping, and still get its "complete" log line and its
+ * `unfinished` count out the door before the platform pulls the plug. 60s is
+ * generous for the slowest single unit of work any of the three sweeps does
+ * (one `batch.commit()`, one `recursiveDelete()` on a ticket, one redaction
+ * chunk) — see each sweep's own deadline check for why that unit, not
+ * anything smaller, is what has to fit inside the margin.
+ */
+export const RETENTION_BUDGET_MARGIN_SECONDS = 60;
+
+/**
+ * Builds a `deadlineExceeded` predicate for a sweep's `opts` (see
+ * `purgeOldFeedback.ts`, `purgeAuditLogs.ts` and `../company/purgeLogs.ts`,
+ * issue #435): a closure that turns true once the sweep has been running
+ * for `JOB_HEARTBEAT_CONFIG[job].timeoutSeconds - RETENTION_BUDGET_MARGIN_SECONDS`
+ * seconds, measured from `startMs`.
+ *
+ * `startMs` and `nowFn` are both parameters, not `Date.now()` baked in
+ * directly, purely so tests can move the clock without a fake timer: a test
+ * passes a fixed `startMs` and a `nowFn` that returns whatever instant it
+ * wants to assert the boundary at. Production callers pass neither and get
+ * a real wall-clock deadline anchored to the moment the `onSchedule` handler
+ * started running (created BEFORE `withJobHeartbeat`, per each wrapper's own
+ * comment, so the budget covers the heartbeat's own write too).
+ *
+ * Deliberately reads `JOB_HEARTBEAT_CONFIG` — the same source of truth
+ * `./jobHeartbeat.ts` uses for the actual deployed `timeoutSeconds` — rather
+ * than taking a duration directly, so the budget can never silently drift
+ * from the real timeout the way two independently-maintained numbers could.
+ * `jobHeartbeat.ts` only takes a TYPE from this module (`RetentionPurgeJob`,
+ * via `import type`), which TypeScript elides at compile time — this value
+ * import running the other direction does not create a runtime circular
+ * dependency between the two compiled modules.
+ */
+export function retentionDeadline(
+  job: RetentionPurgeJob,
+  startMs: number = Date.now(),
+  nowFn: () => number = Date.now,
+): () => boolean {
+  const budgetMs = (JOB_HEARTBEAT_CONFIG[job].timeoutSeconds - RETENTION_BUDGET_MARGIN_SECONDS) * 1000;
+  const deadlineMs = startMs + budgetMs;
+  return () => nowFn() >= deadlineMs;
+}
+
+/**
  * Runs a retention sweep and logs `RETENTION_PURGE_FAILED_LOG_MARKER`
  * exactly once, as a plain single-line string, whenever that sweep didn't
  * fully succeed — either because it reports a nonzero failure count, or
@@ -85,11 +137,27 @@ export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purg
  * `./jobHeartbeat.ts` and the watchdog in `./checkJobHeartbeats.ts` (issue
  * #430), which alarms from a job's own start/ok/error timestamps rather
  * than from anything this helper logs.
+ *
+ * `unfinishedCount` (issue #435) is the fourth, OPTIONAL parameter: a
+ * sweep's own time budget (`retentionDeadline` above) can stop it cleanly
+ * before the platform's real timeout, leaving some rows untouched but still
+ * resolving normally rather than throwing — that outcome is neither a
+ * per-row failure nor a crash, so it needed its own signal rather than being
+ * folded into `failedCount`. When a caller passes it and the resolved
+ * `unfinishedCount(result)` is greater than zero, the marker line gains a
+ * trailing ` unfinished=M` — appended ONLY when M > 0, so the line's format
+ * is byte-for-byte unchanged for every caller that omits this parameter or
+ * whose sweep always finishes within budget (existing tests assert the exact
+ * string and must keep passing). The marker now fires on `failed > 0 ||
+ * unfinished > 0` — a budget cutoff with zero per-row failures still has to
+ * be visible, because rows were left un-purged past their retention deadline
+ * with nothing else that would report it.
  */
 export async function runWithRetentionAlert<T>(
   job: RetentionPurgeJob,
   run: () => Promise<T>,
   failedCount: (result: T) => number,
+  unfinishedCount?: (result: T) => number,
 ): Promise<T> {
   let result: T;
   try {
@@ -103,8 +171,10 @@ export async function runWithRetentionAlert<T>(
   }
 
   const failed = failedCount(result);
-  if (failed > 0) {
-    logger.error(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=${job} failed=${failed}`);
+  const unfinished = unfinishedCount ? unfinishedCount(result) : 0;
+  if (failed > 0 || unfinished > 0) {
+    const suffix = unfinished > 0 ? ` unfinished=${unfinished}` : '';
+    logger.error(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=${job} failed=${failed}${suffix}`);
   }
 
   return result;
