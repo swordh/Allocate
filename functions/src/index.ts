@@ -28,3 +28,6 @@ export { strandedAccountSweep } from './company/strandedAccountSweep';
 
 // ─── Billing email reminder (fix/stripe-anonymise-billing-contact) ────────────
 export { billingEmailReminder } from './company/billingEmailReminder';
+
+// ─── Job heartbeat watchdog (issue #430) ───────────────────────────────────────
+export { checkJobHeartbeats } from './admin/checkJobHeartbeats';

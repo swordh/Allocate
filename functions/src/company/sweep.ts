@@ -10,6 +10,7 @@ import { appUrl } from '../appUrl';
 import { claimRequestedLease, claimStaleLease } from './lease';
 import { mailExpireAt } from '../email/mailRetention';
 import { AUDIT_LOG_HMAC_KEY } from '../audit/userIdHash';
+import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from '../admin/jobHeartbeat';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -244,11 +245,16 @@ export const companyDeletionSweep = onSchedule(
     secrets: [STRIPE_SECRET_KEY, AUDIT_LOG_HMAC_KEY],
     // Same sizing as onCompanyDeletionCreated — this sweep also runs
     // runCompanyPurge synchronously, both for newly-overdue requests and
-    // for resuming a stuck one.
-    timeoutSeconds: 540,
+    // for resuming a stuck one. Sourced from JOB_HEARTBEAT_CONFIG (issue
+    // #430) rather than a bare literal so the watchdog's `unfinished` rule
+    // and this function's own timeout can never drift apart — value
+    // unchanged (540).
+    timeoutSeconds: JOB_HEARTBEAT_CONFIG.companyDeletionSweep.timeoutSeconds,
     memory: '1GiB',
   },
   async () => {
-    await runCompanyDeletionSweep(getFirestore());
+    // `withJobHeartbeat` wraps the whole handler, outermost — issue #430.
+    // See `../admin/purgeAuditLogs.ts`'s matching comment.
+    await withJobHeartbeat(getFirestore(), 'companyDeletionSweep', () => runCompanyDeletionSweep(getFirestore()));
   },
 );

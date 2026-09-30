@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { GrpcStatus, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { runWithRetentionAlert } from './retentionPurgeAlert';
+import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from './jobHeartbeat';
 
 /**
  * GDPR Art. 5(1)(e) storage limitation: `operatorFeedback` tickets carry a
@@ -223,13 +224,21 @@ export function purgeOldFeedbackFailedCount(r: { failed: number; closeFailed: bo
 }
 
 export const purgeOldFeedback = onSchedule(
-  { schedule: 'every monday 03:30', region: 'europe-west1' },
+  {
+    schedule: 'every monday 03:30',
+    region: 'europe-west1',
+    timeoutSeconds: JOB_HEARTBEAT_CONFIG.purgeOldFeedback.timeoutSeconds,
+  },
   async () => {
-    const { purged, failed, closeFailed } = await runWithRetentionAlert(
-      'purgeOldFeedback',
-      () => purgeOldFeedbackSweep(getFirestore()),
-      purgeOldFeedbackFailedCount,
-    );
-    logger.info('purgeOldFeedback: sweep complete', { purged, failed, closeFailed });
+    // `withJobHeartbeat` wraps the whole handler, outermost — issue #430.
+    // See `purgeOldAuditLogs.ts`'s matching comment for why.
+    await withJobHeartbeat(getFirestore(), 'purgeOldFeedback', async () => {
+      const { purged, failed, closeFailed } = await runWithRetentionAlert(
+        'purgeOldFeedback',
+        () => purgeOldFeedbackSweep(getFirestore()),
+        purgeOldFeedbackFailedCount,
+      );
+      logger.info('purgeOldFeedback: sweep complete', { purged, failed, closeFailed });
+    });
   }
 );

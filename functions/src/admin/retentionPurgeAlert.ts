@@ -85,7 +85,10 @@ export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purg
  * NOT covered: a run that never happens at all (Cloud Scheduler itself
  * failing to invoke the function, or the function being deleted/misconfig-
  * ured) produces no log line for this helper to catch, successful or
- * otherwise — tracked separately as issue #430.
+ * otherwise — that gap is closed separately, by the heartbeat mechanism in
+ * `./jobHeartbeat.ts` and the watchdog in `./checkJobHeartbeats.ts` (issue
+ * #430), which alarms from a job's own start/ok/error timestamps rather
+ * than from anything this helper logs.
  */
 export async function runWithRetentionAlert<T>(
   job: RetentionPurgeJob,
