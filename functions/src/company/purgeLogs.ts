@@ -669,6 +669,22 @@ export async function purgeCompanyDeletionLogsSweep(
   return result;
 }
 
+/**
+ * `unfinished` count fed to both `runWithRetentionAlert`'s `unfinishedCount`
+ * and the `onSchedule` wrapper's own throw condition below (issue #435) — a
+ * single function rather than the same `unfinishedRows + skippedRules.length`
+ * expression written out twice, so the two call sites can't quietly drift
+ * apart. Mirrors `purgeOldFeedback.ts`'s `purgeOldFeedbackFailedCount` /
+ * `purgeOldFeedbackUnfinishedCount` pattern: `unfinishedRows` is rows a rule
+ * started but couldn't finish before the time budget ran out, and
+ * `skippedRules.length` is rules that never even got a `.get()` — see
+ * `PurgeCompanyDeletionLogsResult`'s own docblock for why neither field can
+ * stand in for the other.
+ */
+export function purgeCompanyDeletionLogsUnfinishedCount(r: { unfinishedRows: number; skippedRules: string[] }): number {
+  return r.unfinishedRows + r.skippedRules.length;
+}
+
 export const purgeCompanyDeletionLogs = onSchedule(
   {
     schedule: 'every monday 04:00',
@@ -694,7 +710,7 @@ export const purgeCompanyDeletionLogs = onSchedule(
         'purgeCompanyDeletionLogs',
         () => purgeCompanyDeletionLogsSweep(getFirestore(), Timestamp.now(), { deadlineExceeded }),
         (r) => r.failedRows,
-        (r) => r.unfinishedRows + r.skippedRules.length,
+        purgeCompanyDeletionLogsUnfinishedCount,
       );
       // The sweep swallows failures on purpose (the other rows still have to be
       // done). Throwing HERE is what makes them visible as a failed scheduled
@@ -717,7 +733,7 @@ export const purgeCompanyDeletionLogs = onSchedule(
       // exactly that state, so consistency with the existing `failedRows`
       // behavior means it has to throw too, not just alert. The rows
       // themselves are untouched and eligible again next Monday either way.
-      const unfinished = result.unfinishedRows + result.skippedRules.length;
+      const unfinished = purgeCompanyDeletionLogsUnfinishedCount(result);
       if (result.failedRows > 0 || unfinished > 0) {
         throw new Error(
           `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted, ${unfinished} row(s)/rule(s) left unfinished by the time budget; ${result.redacted} of ${result.eligible} due rows redacted`,

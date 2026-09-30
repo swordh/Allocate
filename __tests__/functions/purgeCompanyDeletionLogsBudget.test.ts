@@ -20,7 +20,7 @@
  * semantics at all.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { purgeCompanyDeletionLogsSweep } from '../../functions/src/company/purgeLogs'
+import { purgeCompanyDeletionLogsSweep, purgeCompanyDeletionLogsUnfinishedCount } from '../../functions/src/company/purgeLogs'
 
 const TOTAL_IDENTITY_DOCS = 500 // BATCH_LIMIT (490) + 10, forcing exactly two chunks.
 
@@ -204,5 +204,16 @@ describe('purgeCompanyDeletionLogsSweep — time budget (issue #435)', () => {
     expect(docs[2].ref.update).not.toHaveBeenCalled()
     expect(docs[3].ref.update).not.toHaveBeenCalled()
     expect(docs[4].ref.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('purgeCompanyDeletionLogsUnfinishedCount', () => {
+  it('folds unfinishedRows and skippedRules.length into a single number — the same expression the onSchedule wrapper used to write out twice', () => {
+    expect(purgeCompanyDeletionLogsUnfinishedCount({ unfinishedRows: 0, skippedRules: [] })).toBe(0)
+    expect(purgeCompanyDeletionLogsUnfinishedCount({ unfinishedRows: 10, skippedRules: [] })).toBe(10)
+    expect(purgeCompanyDeletionLogsUnfinishedCount({ unfinishedRows: 0, skippedRules: ['contacts_completed'] })).toBe(1)
+    expect(
+      purgeCompanyDeletionLogsUnfinishedCount({ unfinishedRows: 10, skippedRules: ['contacts_completed', 'contacts_failed'] }),
+    ).toBe(12)
   })
 })
