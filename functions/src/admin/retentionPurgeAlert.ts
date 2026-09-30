@@ -7,24 +7,20 @@ import { logger } from 'firebase-functions/v2';
  * directory/its neighbor — `purgeOldFeedback.ts`, `purgeAuditLogs.ts` and
  * `../company/purgeLogs.ts` — each via `runWithRetentionAlert` below. The
  * policies match on
- * `textPayload:"RETENTION_PURGE_FAILED" OR jsonPayload.message:"RETENTION_PURGE_FAILED"`.
+ * `resource.type="cloud_run_revision" AND textPayload:"RETENTION_PURGE_FAILED"`.
  *
- * UNVERIFIED for this runtime, unlike the two markers this pattern is
- * borrowed from: `lib/memberAnonymisationAlert.ts` and
- * `lib/accountDeletionAlert.ts` confirmed on alpha that a Next.js structured
- * console entry whose only field is `message` lands in `textPayload`, not
- * `jsonPayload`. That confirmation does not carry over here — these three
- * jobs run as Cloud Run functions via `firebase-functions/v2`'s own
- * `logger`, a different logging path than the Next.js App Hosting console
- * those two markers were checked against, and nobody has yet confirmed
- * which payload field a plain-string `logger.error()` call lands in for
- * THAT runtime. It may well be the same (`textPayload`), or it may not —
- * hence the filter covers both `textPayload` and `jsonPayload.message`
- * rather than assuming one. Confirm the actual field on alpha once this is
- * deployed (same method as issue #419's verification: trigger a failure,
- * read the raw log entry in Cloud Logging) and narrow the filter, and this
- * comment, accordingly — don't treat the filter's current "match either"
- * shape as itself proof the answer is already known.
+ * VERIFIED on alpha 2026-09-30: a plain-string `logger.error()` call from
+ * `firebase-functions/v2`'s `logger`, in these Cloud Run (gen2) functions,
+ * lands in `textPayload`, not `jsonPayload` — confirmed by triggering a real
+ * `JOB_STALE` finding from `checkJobHeartbeats` (same logger path, same
+ * runtime) and reading the raw entry in Cloud Logging. A `logger.error` call
+ * arrives as `Error: <message>` followed by the stack trace, all as ONE log
+ * entry (not split per line) on `run.googleapis.com/stderr`; the `:`
+ * substring operator still matches that, but the filter must not anchor the
+ * marker to the start of the line — the message is prefixed with `Error: `,
+ * not bare. The alpha policy (one per environment, covering all three
+ * jobs) was narrowed to the `textPayload`-only filter above; the beta and
+ * prod policies are created with this narrowed filter at promotion.
  *
  * Keep the log a plain string, and don't rename this constant or change its
  * value without updating all three alert policies (alpha, beta, prod) —
