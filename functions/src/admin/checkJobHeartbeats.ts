@@ -8,16 +8,12 @@ import { JOB_HEARTBEAT_CONFIG, type HeartbeatJob } from './jobHeartbeat';
  * #430) that fires when a scheduled job looks unhealthy by its own
  * heartbeat, regardless of whether the job itself ever logged anything.
  * Matches on
- * `textPayload:"JOB_STALE" OR jsonPayload.message:"JOB_STALE"` — see
- * `RETENTION_PURGE_FAILED_LOG_MARKER` (`./retentionPurgeAlert.ts`) for why
- * the filter covers both payload fields: whether a plain-string
- * `logger.error()` call from this runtime lands in `textPayload` or
- * `jsonPayload.message` is UNVERIFIED here too, for the exact same reason —
- * nobody has confirmed it for `firebase-functions/v2`'s `logger` the way
- * `lib/memberAnonymisationAlert.ts` / `lib/accountDeletionAlert.ts` confirmed
- * it for Next.js App Hosting's console. Confirm on alpha once deployed
- * (trigger a stale/unfinished/failed finding, read the raw log entry) and
- * narrow the filter and this comment accordingly.
+ * `resource.type="cloud_run_revision" AND textPayload:"JOB_STALE"` —
+ * VERIFIED on alpha 2026-09-30 by triggering a real finding and reading the
+ * raw log entry; see `RETENTION_PURGE_FAILED_LOG_MARKER`
+ * (`./retentionPurgeAlert.ts`) for the full detail on why the filter targets
+ * `textPayload` unanchored (the `Error: <message>` prefix + stack trace, all
+ * one entry).
  *
  * Keep the log a plain string, and don't rename this constant or change its
  * value without updating the alert policy in every environment — a rename
@@ -37,13 +33,15 @@ export const JOB_STALE_LOG_MARKER = 'JOB_STALE';
  * how many of those findings actually got a `JOB_STALE` line this run after
  * the 24h dedupe filter (`filterDeduped`'s `toLog`). `logged` can be lower
  * than `findings` when a finding is being suppressed as a repeat within the
- * dedupe window — that's expected, not a bug. Not currently wired
- * to an alert policy (an ABSENCE-style policy on this line would need to
- * tolerate the same 23.5h cap this whole mechanism exists to work around —
- * see `checkJobHeartbeats`'s docblock) but kept as a single stable string
- * so one could be added later, and so a human reading Cloud Logging can
- * positively confirm the watchdog itself is alive rather than inferring it
- * from the absence of `JOB_STALE` lines.
+ * dedupe window — that's expected, not a bug. Feeds the log-based metric
+ * `job_heartbeat_check_ok` (filter `resource.type="cloud_run_revision" AND
+ * resource.labels.service_name="checkjobheartbeats" AND
+ * textPayload:"JOB_HEARTBEAT_CHECK_OK"`) and a metric-absence alert policy on
+ * that metric, duration 84600s (23.5h — the max Cloud Monitoring allows) per
+ * environment. The watchdog's own 6h run interval is what makes that cap
+ * workable: renaming this marker, or renaming the function itself (which
+ * changes `service_name`), breaks that alert silently with no local signal
+ * anything is wrong.
  */
 export const JOB_HEARTBEAT_CHECK_OK_LOG_MARKER = 'JOB_HEARTBEAT_CHECK_OK';
 
