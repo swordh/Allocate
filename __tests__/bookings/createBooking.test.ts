@@ -219,6 +219,29 @@ describe('createBooking', () => {
       expect(result).toEqual({ error: 'startDate must be today or a future date.' })
     })
 
+    it('rejects a startDate that is only in the past in the company\'s own timezone', async () => {
+      // 2026-06-14 23:30 UTC = 2026-06-15 01:30 Europe/Stockholm — the
+      // company's "today" is already the 15th, so the 14th must be rejected
+      // even though the server's own UTC clock still reads the 14th.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-06-14T23:30:00.000Z'))
+
+      wireTransaction({
+        [`companies/${COMPANY_ID}`]: {
+          ...ACTIVE_COMPANY_DATA,
+          preferences: { timezone: 'Europe/Stockholm' },
+        },
+      })
+
+      const result = await createBooking(
+        makeFormData({ startDate: '2026-06-14', endDate: '2026-06-16' }),
+      )
+
+      expect(result).toEqual({ error: 'startDate must be today or a future date.' })
+
+      vi.useRealTimers()
+    })
+
     it('rejects notes longer than 2000 characters', async () => {
       const result = await createBooking(makeFormData({ notes: 'x'.repeat(2001) }))
       expect(result).toEqual({ error: 'Notes must be 2000 characters or fewer' })
