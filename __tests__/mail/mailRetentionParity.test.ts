@@ -13,8 +13,8 @@
  * There's actually a THIRD copy of the two TTL constants:
  * `tools/lib/mailExpireAtCompute.js`, the backfill script's pure `expireAt`
  * picker — it can't import either TS module (a plain Node CJS script, no
- * bundler), so it's a third literal `90 * 24 * 60 * 60 * 1000` /
- * `30 * 24 * 60 * 60 * 1000` pair. It has no `mailExpireAt`/`sentMailExpireAt`
+ * bundler), so it's a third literal pair of `MAIL_TTL_MS` /
+ * `MAIL_SENT_TTL_MS` values (both 30 days since #406). It has no `mailExpireAt`/`sentMailExpireAt`
  * of its own (its `computeExpireAtMillis` takes plain millis and picks an
  * ANCHOR — sentAt/failedAt/createTime — rather than always adding to "now",
  * which is a different job, not just a different runtime), so only its two

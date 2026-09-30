@@ -1,10 +1,12 @@
 /**
- * `deliverMail` (issue #325, mail retention) — the `expireAt` field a queued
- * mail doc is stamped with by its writer (90 days out, see
- * `mailRetention.ts`) must be rolled FORWARD to the shorter 30-day
- * post-delivery TTL the moment delivery actually succeeds, and left
- * untouched on the retry/error branches — an undelivered mail keeps its
- * original 90-day clock so there's still time to investigate it.
+ * `deliverMail` (issue #325/#406, mail retention) — the `expireAt` field a
+ * queued mail doc is stamped with by its writer (30 days out from queue
+ * time, see `mailRetention.ts`) is re-anchored to `sentAt` via
+ * `sentMailExpireAt` the moment delivery actually succeeds — both are 30
+ * days since #406, so this no longer shortens the window, but `sentAt`
+ * remains the correct anchor for a delivered mail. The retry/error branches
+ * leave `expireAt` untouched, so an undelivered mail keeps its original
+ * 30-day clock from when it was queued, giving time to investigate it.
  *
  * `sendEmail` (./send) is mocked so no real Resend call happens. Every mail
  * doc here is "raw" (no `template`, but `subject`/`html` set directly, see

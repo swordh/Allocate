@@ -1,40 +1,47 @@
 /**
- * One-off backfill: stamps `expireAt` (the Firestore TTL field, issue #325)
- * onto every EXISTING `mail/{id}` document that doesn't already have one.
+ * One-off (re-runnable) backfill for `expireAt` (the Firestore TTL field,
+ * issue #325, extended by #406) across every `mail/{id}` document.
  *
  * Every writer of a `mail` doc now sets `expireAt` at write time (see
- * `lib/mail-retention.ts` / `functions/src/email/mailRetention.ts`), but that
- * only covers documents created AFTER this PR deploys. Every mail doc queued
- * before then has no `expireAt` at all and would otherwise sit in Firestore
- * forever — exactly the unbounded-retention problem issue #325 exists to
- * close. This script closes the gap for the pre-existing backlog.
+ * `lib/mail-retention.ts` / `functions/src/email/mailRetention.ts`), but a
+ * document written before this script's `expireAt`-stamping logic first
+ * shipped has none at all, and a document written between issue #325's
+ * original 90-day rule and #406's shorter 30-day-for-everything rule
+ * carries a stale 90-day value. Both cases need this script:
  *
- * ── Per-document `expireAt` ──────────────────────────────────────────────
+ *   - Docs with NO `expireAt` are stamped with today's computed value (same
+ *     as the original #325 backfill).
+ *   - Docs that ALREADY have an `expireAt` are recomputed with
+ *     `computeExpireAtMillis` (now 30 days everywhere) and updated ONLY
+ *     when the existing value is LATER than the freshly computed one — the
+ *     value is never extended. See
+ *     `tools/lib/mailExpireAtCompute.js`'s `pickShortenedExpireAtMillis`,
+ *     the pure, unit-tested helper this script defers the decision to.
+ *
+ * ── Per-document computed `expireAt` ──────────────────────────────────────
  * See `tools/lib/mailExpireAtCompute.js`'s own docblock for the full
  * reasoning; in short:
  *   1. `status === 'sent'` with a `sentAt` Timestamp -> `sentAt` + 30 days.
- *   2. Otherwise, a `failedAt` Timestamp -> `failedAt` + 90 days.
- *   3. Otherwise, the document's own Firestore `createTime` + 90 days.
+ *   2. Otherwise, a `failedAt` Timestamp -> `failedAt` + 30 days.
+ *   3. Otherwise, the document's own Firestore `createTime` + 30 days.
  * Never `createdAt` — six of the twelve writers never set it, and where it
  * exists it's an ISO string, not a Timestamp; `createTime` is a property
  * every Firestore document already has and answers the same question.
  *
- * ── Only touches docs missing `expireAt` ─────────────────────────────────
- * Idempotent by construction: a doc already carrying `expireAt` (freshly
- * queued by this PR's own writers, or already backfilled by an earlier run
- * of this exact script) is filtered out client-side and never rewritten.
- *
- * ── Why no `where('expireAt', '==', null)` ───────────────────────────────
- * Firestore has no "field does not exist" query operator, so — same
+ * ── Why the whole collection, not a `where('expireAt', ...)` query ───────
+ * Firestore has no "field does not exist" query operator, and a range query
+ * on `expireAt` would still miss docs with no `expireAt` field at all — same
  * reasoning as `tools/migrate_viewer_to_crew.js`'s "Why no where(...)"
- * section — this script pages through the WHOLE `mail` collection ordered by
- * `__name__` and filters `expireAt === undefined` client-side, rather than
- * requiring an index for a query Firestore can't actually express anyway.
+ * section — so this script pages through the WHOLE `mail` collection ordered
+ * by `__name__` and decides per-document client-side, rather than requiring
+ * an index for a query Firestore can't actually express anyway.
  *
  * ── Output is COUNTS ONLY — never an address, name or doc id ─────────────
- * The summary this script prints breaks the backlog down by status and by
- * how soon the computed `expireAt` would fall (already expired / <30 days /
- * 30-90 days) — nothing else. No recipient address, no template data, no
+ * The summary this script prints breaks the backlog down by status, by how
+ * soon the computed `expireAt` would fall (already expired / <30 days /
+ * over 30 days — the last of which should always read 0, see
+ * `classifyBucket`'s docblock), and by action taken (stamped / shortened /
+ * unchanged) — nothing else. No recipient address, no template data, no
  * document id, in either dry-run or apply mode. This mirrors
  * `tools/cleanup_orphan_members.js`'s PII stance (see `tools/lib/mask_pii.js`)
  * taken one step further: this script needs no masked identifiers at all,
@@ -43,10 +50,12 @@
  * ── WARNING: TTL deletes fast once applied ───────────────────────────────
  * Firestore's TTL service typically reclaims an expired document within
  * about 24 hours of it becoming eligible — NOT instantly. Any document this
- * script marks as "already expired" (its computed `expireAt` is already in
- * the past) will be deleted by Firestore within roughly a day of this
- * script's `--yes` run, not at some future date. Point-in-time recovery
- * (PITR, enabled on every environment as of the "PITR och Firestore-region"
+ * script marks (or re-marks, after shortening) as "already expired" (its
+ * newly computed `expireAt` is already in the past) will be deleted by
+ * Firestore within roughly a day of this script's `--yes` run, not at some
+ * future date. That is the intended effect of shortening a stale 90-day
+ * value under #406 — it IS a deletion. Point-in-time recovery (PITR,
+ * enabled on every environment as of the "PITR och Firestore-region"
  * decision) only reaches back 7 days — there is NO way to recover a mail doc
  * TTL has already reclaimed once that window has passed. Run `--yes` only
  * after a dry run has been reviewed.
@@ -76,7 +85,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { computeExpireAtMillis, classifyBucket } = require('./lib/mailExpireAtCompute');
+const { computeExpireAtMillis, classifyBucket, pickShortenedExpireAtMillis } = require('./lib/mailExpireAtCompute');
 
 // ── Arguments ────────────────────────────────────────────────────────────────
 
@@ -169,14 +178,20 @@ function timestampMillis(data, field) {
 
 /**
  * Pages through the ENTIRE `mail` collection (ordered by `__name__`,
- * `PAGE_SIZE` at a time — see the module docblock's "Why no where(...)"
- * section) and returns `{ ref, expireAtMillis, status }` for every doc
- * that's missing `expireAt`. Never returns an address, template data, or
- * anything else identifying — only what's needed to write the field and
- * bucket it for the summary.
+ * `PAGE_SIZE` at a time — see the module docblock's "Why the whole
+ * collection" section) and returns `{ ref, expireAtMillis, status, action }`
+ * for every doc that needs a write — either because it has no `expireAt`
+ * yet ("stamped") or because its existing `expireAt` is later than the
+ * freshly computed value ("shortened"). A doc whose existing `expireAt` is
+ * already <= the computed value ("unchanged") is not returned at all — see
+ * `pickShortenedExpireAtMillis` in `tools/lib/mailExpireAtCompute.js`, the
+ * pure helper this defers the decision to. Never returns an address,
+ * template data, or anything else identifying — only what's needed to write
+ * the field and bucket it for the summary.
  */
-async function findDocsMissingExpireAt() {
+async function findDocsToUpdate() {
   const matches = [];
+  const unchangedByStatus = new Map();
   let cursor = null;
   let scanned = 0;
 
@@ -193,19 +208,30 @@ async function findDocsMissingExpireAt() {
     scanned += snap.docs.length;
     for (const doc of snap.docs) {
       const data = doc.data();
-      if (data.expireAt !== undefined) continue;
+      const status = typeof data.status === 'string' ? data.status : 'unknown';
 
-      const expireAtMillis = computeExpireAtMillis({
+      const computedExpireAtMillis = computeExpireAtMillis({
         status: data.status,
         sentAtMillis: timestampMillis(data, 'sentAt'),
         failedAtMillis: timestampMillis(data, 'failedAt'),
         createTimeMillis: doc.createTime.toMillis(),
       });
 
+      const decision = pickShortenedExpireAtMillis({
+        existingExpireAtMillis: timestampMillis(data, 'expireAt'),
+        computedExpireAtMillis,
+      });
+
+      if (decision.action === 'unchanged') {
+        unchangedByStatus.set(status, (unchangedByStatus.get(status) ?? 0) + 1);
+        continue;
+      }
+
       matches.push({
         ref: doc.ref,
-        expireAtMillis,
-        status: typeof data.status === 'string' ? data.status : 'unknown',
+        expireAtMillis: decision.expireAtMillis,
+        status,
+        action: decision.action,
       });
     }
 
@@ -213,7 +239,8 @@ async function findDocsMissingExpireAt() {
     cursor = snap.docs[snap.docs.length - 1];
   }
 
-  console.log(`  scanned ${scanned} 'mail' docs, ${matches.length} missing 'expireAt'`);
+  const unchangedTotal = Array.from(unchangedByStatus.values()).reduce((a, b) => a + b, 0);
+  console.log(`  scanned ${scanned} 'mail' docs, ${matches.length} to write, ${unchangedTotal} already correct (unchanged)`);
   return matches;
 }
 
@@ -260,15 +287,17 @@ async function main() {
   console.log(`  Mode    : ${mode}`);
   console.log('');
 
-  const docs = await findDocsMissingExpireAt();
+  const docs = await findDocsToUpdate();
 
   const now = Date.now();
   const byStatus = new Map();
   const byBucket = new Map();
-  for (const { status, expireAtMillis } of docs) {
+  const byAction = new Map();
+  for (const { status, expireAtMillis, action } of docs) {
     byStatus.set(status, (byStatus.get(status) ?? 0) + 1);
     const bucket = classifyBucket(expireAtMillis, now);
     byBucket.set(bucket, (byBucket.get(bucket) ?? 0) + 1);
+    byAction.set(action, (byAction.get(action) ?? 0) + 1);
   }
 
   console.log('  ── Counts by status ─────────────────────────────────────────────────');
@@ -276,10 +305,15 @@ async function main() {
   for (const [status, count] of byStatus) console.log(`  ${status.padEnd(10)} : ${count}`);
   console.log('');
 
+  console.log('  ── Counts by action ─────────────────────────────────────────────────');
+  console.log(`  stamped   (had no expireAt)                    : ${byAction.get('stamped') ?? 0}`);
+  console.log(`  shortened (existing expireAt was later)        : ${byAction.get('shortened') ?? 0}`);
+  console.log('');
+
   console.log('  ── Counts by computed expireAt bucket ───────────────────────────────');
   console.log(`  already expired (TTL will reclaim within ~24h of apply) : ${byBucket.get('already_expired') ?? 0}`);
-  console.log(`  <30 days out                                            : ${byBucket.get('under_30d') ?? 0}`);
-  console.log(`  30-90 days out                                          : ${byBucket.get('30_to_90d') ?? 0}`);
+  console.log(`  <=30 days out                                           : ${byBucket.get('under_30d') ?? 0}`);
+  console.log(`  over 30 days out (should always be 0)                   : ${byBucket.get('over_30d_unexpected') ?? 0}`);
   console.log('');
 
   if (!APPLY) {
