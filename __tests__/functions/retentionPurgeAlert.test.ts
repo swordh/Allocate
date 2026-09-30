@@ -34,8 +34,7 @@ describe('runWithRetentionAlert', () => {
     expect(errorSpy).toHaveBeenCalledTimes(1)
     const [arg] = errorSpy.mock.calls[0]
     expect(typeof arg).toBe('string')
-    expect(arg as string).toContain(RETENTION_PURGE_FAILED_LOG_MARKER)
-    expect(arg as string).not.toContain('\n')
+    expect(arg).toBe(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=purgeOldFeedback failed=2`)
   })
 
   it('failed = 0 — logs nothing', async () => {
@@ -68,12 +67,16 @@ describe('runWithRetentionAlert', () => {
     expect(errorSpy).toHaveBeenCalledTimes(1)
     const [arg] = errorSpy.mock.calls[0]
     expect(typeof arg).toBe('string')
-    expect(arg as string).toContain(RETENTION_PURGE_FAILED_LOG_MARKER)
+    expect(arg).toBe(
+      `${RETENTION_PURGE_FAILED_LOG_MARKER} job=purgeCompanyDeletionLogs error=permission-denied: could not commit batch`,
+    )
   })
 
   it('a multi-line/long error message is collapsed to a single line and truncated', async () => {
     const errorSpy = vi.spyOn(logger, 'error')
     const longMessage = `first line\nsecond line\t\twith tabs\n${'x'.repeat(400)}`
+    const collapsed = longMessage.replace(/\s+/g, ' ').trim()
+    const expectedTruncated = `${collapsed.slice(0, 300)}…`
 
     await expect(
       runWithRetentionAlert(
@@ -87,6 +90,7 @@ describe('runWithRetentionAlert', () => {
 
     expect(errorSpy).toHaveBeenCalledTimes(1)
     const [arg] = errorSpy.mock.calls[0] as [string]
+    expect(arg).toBe(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=purgeOldFeedback error=${expectedTruncated}`)
     expect(arg).not.toContain('\n')
     // Marker + job= + error= prefix plus a ~300-char truncated body — well
     // short of the ~500+ chars the raw message would have produced.

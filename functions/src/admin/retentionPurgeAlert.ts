@@ -9,13 +9,22 @@ import { logger } from 'firebase-functions/v2';
  * policies match on
  * `textPayload:"RETENTION_PURGE_FAILED" OR jsonPayload.message:"RETENTION_PURGE_FAILED"`.
  *
- * Same reasoning as `lib/memberAnonymisationAlert.ts` and
- * `lib/accountDeletionAlert.ts`'s markers: the `textPayload` half is the
- * one that actually matches — a firebase-functions `logger.error(string)`
- * call whose only field is `message` is stored by Cloud Logging as
- * `textPayload`, not `jsonPayload`. The `jsonPayload.message` half only
- * matters if this marker is ever logged alongside object fields, which
- * `runWithRetentionAlert` deliberately never does — see its own docblock.
+ * UNVERIFIED for this runtime, unlike the two markers this pattern is
+ * borrowed from: `lib/memberAnonymisationAlert.ts` and
+ * `lib/accountDeletionAlert.ts` confirmed on alpha that a Next.js structured
+ * console entry whose only field is `message` lands in `textPayload`, not
+ * `jsonPayload`. That confirmation does not carry over here — these three
+ * jobs run as Cloud Run functions via `firebase-functions/v2`'s own
+ * `logger`, a different logging path than the Next.js App Hosting console
+ * those two markers were checked against, and nobody has yet confirmed
+ * which payload field a plain-string `logger.error()` call lands in for
+ * THAT runtime. It may well be the same (`textPayload`), or it may not —
+ * hence the filter covers both `textPayload` and `jsonPayload.message`
+ * rather than assuming one. Confirm the actual field on alpha once this is
+ * deployed (same method as issue #419's verification: trigger a failure,
+ * read the raw log entry in Cloud Logging) and narrow the filter, and this
+ * comment, accordingly — don't treat the filter's current "match either"
+ * shape as itself proof the answer is already known.
  *
  * Keep the log a plain string, and don't rename this constant or change its
  * value without updating all three alert policies (alpha, beta, prod) —
@@ -30,6 +39,16 @@ import { logger } from 'firebase-functions/v2';
  * `'use server'` constraint pulling it out of its own module either.
  */
 export const RETENTION_PURGE_FAILED_LOG_MARKER = 'RETENTION_PURGE_FAILED';
+
+/**
+ * The only three jobs allowed to feed `runWithRetentionAlert`'s `job`
+ * parameter. A union rather than `string` on purpose: the marker line is
+ * grepped/read by a human in Cloud Logging, not machine-parsed, so a typo'd
+ * or renamed job label would silently stop matching whatever someone
+ * expects to see there with no compiler error to catch it. Add a job here
+ * when a fourth retention sweep needs the same alert.
+ */
+export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purgeCompanyDeletionLogs';
 
 /**
  * Runs a retention sweep and logs `RETENTION_PURGE_FAILED_LOG_MARKER`
@@ -69,7 +88,7 @@ export const RETENTION_PURGE_FAILED_LOG_MARKER = 'RETENTION_PURGE_FAILED';
  * otherwise — tracked separately as issue #430.
  */
 export async function runWithRetentionAlert<T>(
-  job: string,
+  job: RetentionPurgeJob,
   run: () => Promise<T>,
   failedCount: (result: T) => number,
 ): Promise<T> {
