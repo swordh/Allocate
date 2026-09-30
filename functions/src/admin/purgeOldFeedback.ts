@@ -1,6 +1,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { GrpcStatus, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { runWithRetentionAlert } from './retentionPurgeAlert';
 
 /**
  * GDPR Art. 5(1)(e) storage limitation: `operatorFeedback` tickets carry a
@@ -67,28 +68,31 @@ import { GrpcStatus, getFirestore, type Firestore } from 'firebase-admin/firesto
  * is naturally self-healing: a ticket whose delete permanently failed is
  * simply still sitting in Firestore afterward, still matches
  * `closedAt < cutoff`, and gets tried again next Monday with no operator
- * action needed — same posture as `purgeOldAuditLogsSweep` in this same
- * directory, which has never thrown either. Throwing here instead would
+ * action needed — unlike `purgeOldAuditLogsSweep` in this same directory,
+ * which propagates a throwing `batch.commit()` straight out (it has no
+ * per-row failure path to swallow into). Throwing here instead would
  * mark the ENTIRE weekly run as failed over what is very likely a handful
  * of transient documents out of a much larger batch, inviting Cloud
  * Scheduler retries that redo the whole query-and-delete pass for no
  * benefit (everything already deleted is already gone; redoing it is a
  * cheap no-op, but the noise is not). `failed > 0` is logged at
  * `logger.error` so the outcome is visible to anyone reading Cloud Logging
- * for this function — but NO alert currently fires on it. This project's
- * log-based alert policies match a literal marker string in a different
- * function each — `ACCOUNT_DELETION_STUCK` (`lib/accountDeletionAlert.ts`)
- * and `MEMBER_ANONYMISATION_STUCK` (`lib/memberAnonymisationAlert.ts`,
- * issue #419); nothing here reuses either or defines a new one. A log-based
- * alert on this message is a reasonable follow-up, not something this
- * change does.
+ * for this function, and also feeds the `RETENTION_PURGE_FAILED` alert
+ * marker (issue #416, `./retentionPurgeAlert.ts`) via the `onSchedule`
+ * wrapper below, alongside `closeFailed` — together with
+ * `ACCOUNT_DELETION_STUCK` (`lib/accountDeletionAlert.ts`) and
+ * `MEMBER_ANONYMISATION_STUCK` (`lib/memberAnonymisationAlert.ts`, issue
+ * #419), that marker is the third of this project's log-based alert
+ * policies, not something this function defines itself.
  */
-export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: number; failed: number }> {
+export async function purgeOldFeedbackSweep(
+  db: Firestore,
+): Promise<{ purged: number; failed: number; closeFailed: boolean }> {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 24);
 
   const snap = await db.collection('operatorFeedback').where('closedAt', '<', cutoff).get();
-  if (snap.empty) return { purged: 0, failed: 0 };
+  if (snap.empty) return { purged: 0, failed: 0, closeFailed: false };
 
   const bulkWriter = db.bulkWriter();
   // Same policy as `runSubtreePhase` (functions/src/company/purge.ts):
@@ -142,6 +146,7 @@ export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: nu
     }
   }
 
+  let closeFailed = false;
   try {
     await bulkWriter.close();
   } catch (err) {
@@ -151,9 +156,11 @@ export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: nu
     // fail." A rejection surfacing HERE instead would mean something failed
     // outside that accounting (e.g. after the last per-ticket call
     // returned but before the writer's internal queue fully drained).
-    // Logged, not re-counted into `failed`, precisely because it can't be
-    // attributed to a specific ticket the way the per-ticket catch above
-    // can.
+    // Logged, and reflected in `closeFailed` (not folded into `failed`
+    // itself), precisely because it can't be attributed to a specific
+    // ticket the way the per-ticket catch above can — the `onSchedule`
+    // wrapper below folds it into the retention alert's failure count.
+    closeFailed = true;
     logger.error('purgeOldFeedback: bulkWriter close reported an additional failure', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -165,7 +172,7 @@ export async function purgeOldFeedbackSweep(db: Firestore): Promise<{ purged: nu
     });
   }
 
-  return { purged, failed };
+  return { purged, failed, closeFailed };
 }
 
 /**
@@ -183,7 +190,11 @@ export function isStillEligibleForPurge(closedAt: unknown, cutoffMillis: number)
 export const purgeOldFeedback = onSchedule(
   { schedule: 'every monday 03:30', region: 'europe-west1' },
   async () => {
-    const { purged, failed } = await purgeOldFeedbackSweep(getFirestore());
-    logger.info('purgeOldFeedback: sweep complete', { purged, failed });
+    const { purged, failed, closeFailed } = await runWithRetentionAlert(
+      'purgeOldFeedback',
+      () => purgeOldFeedbackSweep(getFirestore()),
+      (r) => r.failed + (r.closeFailed ? 1 : 0),
+    );
+    logger.info('purgeOldFeedback: sweep complete', { purged, failed, closeFailed });
   }
 );

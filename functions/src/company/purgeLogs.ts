@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
+import { runWithRetentionAlert } from '../admin/retentionPurgeAlert';
 
 /**
  * Firestore's own WriteBatch cap is 500 operations; 490 leaves headroom and
@@ -576,11 +577,17 @@ export async function purgeCompanyDeletionLogsSweep(
 export const purgeCompanyDeletionLogs = onSchedule(
   { schedule: 'every monday 04:00', region: 'europe-west1' },
   async () => {
-    const result = await purgeCompanyDeletionLogsSweep(getFirestore());
+    const result = await runWithRetentionAlert(
+      'purgeCompanyDeletionLogs',
+      () => purgeCompanyDeletionLogsSweep(getFirestore()),
+      (r) => r.failedRows,
+    );
     // The sweep swallows failures on purpose (the other rows still have to be
     // done). Throwing HERE is what makes them visible as a failed scheduled
-    // execution rather than a line in a log nobody reads; the rows themselves
-    // are simply retried next Monday.
+    // execution, in addition to the `RETENTION_PURGE_FAILED` alert marker
+    // `runWithRetentionAlert` above already logged for the same
+    // `failedRows > 0` condition (issue #416, `../admin/retentionPurgeAlert.ts`)
+    // — the rows themselves are simply retried next Monday either way.
     //
     // The condition is `failedRows`, not `failedBatches`: a chunk that failed
     // and was then rescued document by document left nothing un-redacted, and
