@@ -10,21 +10,21 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { MAIL_SENT_TTL_MS, MAIL_TTL_MS, mailExpireAt, sentMailExpireAt } from '../../src/email/mailRetention';
 
 describe('MAIL_TTL_MS / MAIL_SENT_TTL_MS', () => {
-  it('is 90 days for the default (queued/retry/error) TTL', () => {
-    expect(MAIL_TTL_MS).toBe(90 * 24 * 60 * 60 * 1000);
+  it('is 30 days for the default (queued/retry/error) TTL', () => {
+    expect(MAIL_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
   });
 
   it('is 30 days for the post-delivery (sent) TTL', () => {
     expect(MAIL_SENT_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
   });
 
-  it('the sent TTL is shorter than the default TTL', () => {
-    expect(MAIL_SENT_TTL_MS).toBeLessThan(MAIL_TTL_MS);
+  it('the sent TTL equals the default TTL (issue #406: every status gets 30 days)', () => {
+    expect(MAIL_SENT_TTL_MS).toBe(MAIL_TTL_MS);
   });
 });
 
 describe('mailExpireAt', () => {
-  it('returns now + 90 days', () => {
+  it('returns now + 30 days', () => {
     const now = Timestamp.fromMillis(1_760_000_000_000);
     expect(mailExpireAt(now).toMillis()).toBe(1_760_000_000_000 + MAIL_TTL_MS);
   });
@@ -42,8 +42,8 @@ describe('sentMailExpireAt', () => {
     expect(sentMailExpireAt(now).toMillis()).toBe(1_760_000_000_000 + MAIL_SENT_TTL_MS);
   });
 
-  it('rolls the expiry EARLIER than the original 90-day queue-time expireAt would have been for the same now', () => {
+  it('equals the queue-time expireAt for the same now (issue #406: both are 30 days; sent re-anchors to sentAt, not a shorter window)', () => {
     const now = Timestamp.fromMillis(1_760_000_000_000);
-    expect(sentMailExpireAt(now).toMillis()).toBeLessThan(mailExpireAt(now).toMillis());
+    expect(sentMailExpireAt(now).toMillis()).toBe(mailExpireAt(now).toMillis());
   });
 });

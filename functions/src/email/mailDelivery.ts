@@ -109,13 +109,13 @@ export async function deliverMail(
   try {
     const rendered = renderMail(mail);
     const providerId = await sendEmail(apiKey, { to, ...rendered });
-    // Issue #325 (mail retention): a delivered mail's recipient address has
-    // no reason to outlive it by anywhere near as long as an undelivered
-    // one under investigation — roll `expireAt` forward to the shorter
-    // sent-mail TTL the moment delivery actually succeeds. The retry and
-    // error branches below deliberately leave `expireAt` untouched, so a
-    // mail that never gets delivered still expires on its original 90-day
-    // clock from when it was queued.
+    // Issue #325/#406 (mail retention): the moment delivery actually
+    // succeeds, re-anchor `expireAt` from the original queue time to
+    // `sentAt` via `sentMailExpireAt` — both are 30 days since #406, so this
+    // no longer shortens the window, but `sentAt` is still the right anchor
+    // for a delivered mail. The retry and error branches below deliberately
+    // leave `expireAt` untouched, so a mail that never gets delivered still
+    // expires on its original 30-day clock from when it was queued.
     const sentAt = Timestamp.now();
     await snap.ref.update({ status: 'sent', sentAt, providerId, expireAt: sentMailExpireAt(sentAt) });
     logger.info('deliverMail: sent', { mailId, template: mail['template'] ?? 'raw', providerId });
