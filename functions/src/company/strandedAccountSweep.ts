@@ -7,6 +7,7 @@ import {
   TRIGGERED_BY_STRANDED_ACCOUNT_SPARED,
 } from '../deletionAuditLogTriggers';
 import { AUDIT_LOG_HMAC_KEY, hashUserIdForAudit } from '../audit/userIdHash';
+import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from '../admin/jobHeartbeat';
 
 /**
  * Enforcement sweep for issue #252 step 6 — the "Hård ordningsregel" in
@@ -360,10 +361,15 @@ export const strandedAccountSweep = onSchedule(
     schedule: 'every 24 hours',
     region: 'europe-west1',
     secrets: [AUDIT_LOG_HMAC_KEY],
-    timeoutSeconds: 300,
+    // Sourced from JOB_HEARTBEAT_CONFIG (issue #430) rather than a bare
+    // literal so the watchdog's `unfinished` rule and this function's own
+    // timeout can never drift apart — value unchanged (300).
+    timeoutSeconds: JOB_HEARTBEAT_CONFIG.strandedAccountSweep.timeoutSeconds,
     memory: '256MiB',
   },
   async () => {
-    await runStrandedAccountSweep(getFirestore());
+    // `withJobHeartbeat` wraps the whole handler, outermost — issue #430.
+    // See `../admin/purgeAuditLogs.ts`'s matching comment.
+    await withJobHeartbeat(getFirestore(), 'strandedAccountSweep', () => runStrandedAccountSweep(getFirestore()));
   },
 );

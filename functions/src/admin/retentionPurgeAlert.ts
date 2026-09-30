@@ -1,4 +1,5 @@
 import { logger } from 'firebase-functions/v2';
+import { JOB_HEARTBEAT_CONFIG } from './jobHeartbeat';
 
 /**
  * Filter marker for the Cloud Monitoring log-based alert policies (alpha,
@@ -7,24 +8,20 @@ import { logger } from 'firebase-functions/v2';
  * directory/its neighbor — `purgeOldFeedback.ts`, `purgeAuditLogs.ts` and
  * `../company/purgeLogs.ts` — each via `runWithRetentionAlert` below. The
  * policies match on
- * `textPayload:"RETENTION_PURGE_FAILED" OR jsonPayload.message:"RETENTION_PURGE_FAILED"`.
+ * `resource.type="cloud_run_revision" AND textPayload:"RETENTION_PURGE_FAILED"`.
  *
- * UNVERIFIED for this runtime, unlike the two markers this pattern is
- * borrowed from: `lib/memberAnonymisationAlert.ts` and
- * `lib/accountDeletionAlert.ts` confirmed on alpha that a Next.js structured
- * console entry whose only field is `message` lands in `textPayload`, not
- * `jsonPayload`. That confirmation does not carry over here — these three
- * jobs run as Cloud Run functions via `firebase-functions/v2`'s own
- * `logger`, a different logging path than the Next.js App Hosting console
- * those two markers were checked against, and nobody has yet confirmed
- * which payload field a plain-string `logger.error()` call lands in for
- * THAT runtime. It may well be the same (`textPayload`), or it may not —
- * hence the filter covers both `textPayload` and `jsonPayload.message`
- * rather than assuming one. Confirm the actual field on alpha once this is
- * deployed (same method as issue #419's verification: trigger a failure,
- * read the raw log entry in Cloud Logging) and narrow the filter, and this
- * comment, accordingly — don't treat the filter's current "match either"
- * shape as itself proof the answer is already known.
+ * VERIFIED on alpha 2026-09-30: a plain-string `logger.error()` call from
+ * `firebase-functions/v2`'s `logger`, in these Cloud Run (gen2) functions,
+ * lands in `textPayload`, not `jsonPayload` — confirmed by triggering a real
+ * `JOB_STALE` finding from `checkJobHeartbeats` (same logger path, same
+ * runtime) and reading the raw entry in Cloud Logging. A `logger.error` call
+ * arrives as `Error: <message>` followed by the stack trace, all as ONE log
+ * entry (not split per line) on `run.googleapis.com/stderr`; the `:`
+ * substring operator still matches that, but the filter must not anchor the
+ * marker to the start of the line — the message is prefixed with `Error: `,
+ * not bare. The alpha policy (one per environment, covering all three
+ * jobs) was narrowed to the `textPayload`-only filter above; the beta and
+ * prod policies are created with this narrowed filter at promotion.
  *
  * Keep the log a plain string, and don't rename this constant or change its
  * value without updating all three alert policies (alpha, beta, prod) —
@@ -49,6 +46,57 @@ export const RETENTION_PURGE_FAILED_LOG_MARKER = 'RETENTION_PURGE_FAILED';
  * when a fourth retention sweep needs the same alert.
  */
 export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purgeCompanyDeletionLogs';
+
+/**
+ * Seconds of headroom `retentionDeadline` reserves before a sweep's real
+ * `onSchedule` `timeoutSeconds` (`./jobHeartbeat.ts`'s `JOB_HEARTBEAT_CONFIG`
+ * — issue #435). The platform SIGKILLs a Cloud Run function the instant its
+ * timeout elapses, mid-write if that's where it happens to be — no chance to
+ * finish the write in flight, close a `BulkWriter`, or log anything at all.
+ * A budget that only fired AT the timeout would just move the same cliff a
+ * few statements later; the margin exists so the sweep can notice it's out
+ * of time, stop looping, and still get its "complete" log line and its
+ * `unfinished` count out the door before the platform pulls the plug. 60s is
+ * generous for the slowest single unit of work any of the three sweeps does
+ * (one `batch.commit()`, one `recursiveDelete()` on a ticket, one redaction
+ * chunk) — see each sweep's own deadline check for why that unit, not
+ * anything smaller, is what has to fit inside the margin.
+ */
+export const RETENTION_BUDGET_MARGIN_SECONDS = 60;
+
+/**
+ * Builds a `deadlineExceeded` predicate for a sweep's `opts` (see
+ * `purgeOldFeedback.ts`, `purgeAuditLogs.ts` and `../company/purgeLogs.ts`,
+ * issue #435): a closure that turns true once the sweep has been running
+ * for `JOB_HEARTBEAT_CONFIG[job].timeoutSeconds - RETENTION_BUDGET_MARGIN_SECONDS`
+ * seconds, measured from `startMs`.
+ *
+ * `startMs` and `nowFn` are both parameters, not `Date.now()` baked in
+ * directly, purely so tests can move the clock without a fake timer: a test
+ * passes a fixed `startMs` and a `nowFn` that returns whatever instant it
+ * wants to assert the boundary at. Production callers pass neither and get
+ * a real wall-clock deadline anchored to the moment the `onSchedule` handler
+ * started running (created BEFORE `withJobHeartbeat`, per each wrapper's own
+ * comment, so the budget covers the heartbeat's own write too).
+ *
+ * Deliberately reads `JOB_HEARTBEAT_CONFIG` — the same source of truth
+ * `./jobHeartbeat.ts` uses for the actual deployed `timeoutSeconds` — rather
+ * than taking a duration directly, so the budget can never silently drift
+ * from the real timeout the way two independently-maintained numbers could.
+ * `jobHeartbeat.ts` only takes a TYPE from this module (`RetentionPurgeJob`,
+ * via `import type`), which TypeScript elides at compile time — this value
+ * import running the other direction does not create a runtime circular
+ * dependency between the two compiled modules.
+ */
+export function retentionDeadline(
+  job: RetentionPurgeJob,
+  startMs: number = Date.now(),
+  nowFn: () => number = Date.now,
+): () => boolean {
+  const budgetMs = (JOB_HEARTBEAT_CONFIG[job].timeoutSeconds - RETENTION_BUDGET_MARGIN_SECONDS) * 1000;
+  const deadlineMs = startMs + budgetMs;
+  return () => nowFn() >= deadlineMs;
+}
 
 /**
  * Runs a retention sweep and logs `RETENTION_PURGE_FAILED_LOG_MARKER`
@@ -85,12 +133,31 @@ export type RetentionPurgeJob = 'purgeOldFeedback' | 'purgeOldAuditLogs' | 'purg
  * NOT covered: a run that never happens at all (Cloud Scheduler itself
  * failing to invoke the function, or the function being deleted/misconfig-
  * ured) produces no log line for this helper to catch, successful or
- * otherwise — tracked separately as issue #430.
+ * otherwise — that gap is closed separately, by the heartbeat mechanism in
+ * `./jobHeartbeat.ts` and the watchdog in `./checkJobHeartbeats.ts` (issue
+ * #430), which alarms from a job's own start/ok/error timestamps rather
+ * than from anything this helper logs.
+ *
+ * `unfinishedCount` (issue #435) is the fourth, OPTIONAL parameter: a
+ * sweep's own time budget (`retentionDeadline` above) can stop it cleanly
+ * before the platform's real timeout, leaving some rows untouched but still
+ * resolving normally rather than throwing — that outcome is neither a
+ * per-row failure nor a crash, so it needed its own signal rather than being
+ * folded into `failedCount`. When a caller passes it and the resolved
+ * `unfinishedCount(result)` is greater than zero, the marker line gains a
+ * trailing ` unfinished=M` — appended ONLY when M > 0, so the line's format
+ * is byte-for-byte unchanged for every caller that omits this parameter or
+ * whose sweep always finishes within budget (existing tests assert the exact
+ * string and must keep passing). The marker now fires on `failed > 0 ||
+ * unfinished > 0` — a budget cutoff with zero per-row failures still has to
+ * be visible, because rows were left un-purged past their retention deadline
+ * with nothing else that would report it.
  */
 export async function runWithRetentionAlert<T>(
   job: RetentionPurgeJob,
   run: () => Promise<T>,
   failedCount: (result: T) => number,
+  unfinishedCount?: (result: T) => number,
 ): Promise<T> {
   let result: T;
   try {
@@ -104,8 +171,10 @@ export async function runWithRetentionAlert<T>(
   }
 
   const failed = failedCount(result);
-  if (failed > 0) {
-    logger.error(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=${job} failed=${failed}`);
+  const unfinished = unfinishedCount ? unfinishedCount(result) : 0;
+  if (failed > 0 || unfinished > 0) {
+    const suffix = unfinished > 0 ? ` unfinished=${unfinished}` : '';
+    logger.error(`${RETENTION_PURGE_FAILED_LOG_MARKER} job=${job} failed=${failed}${suffix}`);
   }
 
   return result;

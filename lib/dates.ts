@@ -55,17 +55,24 @@ export function toDateString(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-/** Today's civil date in the company's zone, as "YYYY-MM-DD". */
-export function todayInTimezone(timezone: string): string {
+/**
+ * Today's civil date in the company's zone, as "YYYY-MM-DD".
+ *
+ * `now` defaults to the current instant but can be passed explicitly so a
+ * caller that also needs the time-of-day (e.g. formatTimeInZone) derives
+ * both from the same captured `Date`, instead of two separate `new Date()`
+ * reads that could straddle a clock tick.
+ */
+export function todayInTimezone(timezone: string, now: Date = new Date()): string {
   try {
     // en-CA formats as YYYY-MM-DD, which is exactly the shape we store.
     return new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date())
+    }).format(now)
   } catch {
     // An unknown zone must not take a whole view down; fall back to UTC.
-    return new Date().toISOString().slice(0, 10)
+    return now.toISOString().slice(0, 10)
   }
 }
 

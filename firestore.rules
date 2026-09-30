@@ -115,6 +115,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Scheduled job heartbeats (issue #430) ─────────────────────────────────
+    // `jobHeartbeats/{job}` holds only a job name (the doc id) and three
+    // Timestamp fields (lastStartAt/lastOkAt/lastErrorAt) — no PII. Written
+    // by `functions/src/admin/jobHeartbeat.ts` around every scheduled
+    // retention/sweep job and read by the watchdog in
+    // `functions/src/admin/checkJobHeartbeats.ts`. Admin-SDK only — never
+    // readable or writable by a client.
+    match /jobHeartbeats/{doc} {
+      allow read, write: if false;
+    }
+
     // ── Account deletion failure trace (issue #337) ───────────────────────────
     // One doc per uid, `accountDeletionFailures/{uid}` — a minimal, durable
     // trace of a self-service `deleteAccount` (actions/account.ts) attempt
