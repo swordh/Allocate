@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { wireDb, queryFor, makeTransaction, type DocMap } from '../helpers/firestore'
+import { wireDb, queryFor, filterValue, makeTransaction, type DocMap, type QueryResolver } from '../helpers/firestore'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
@@ -156,7 +156,8 @@ describe('leaveCompany', () => {
     })
   })
 
-  it('leaving a NON-active company writes the same membership deletes but skips claims/revoke/custom-token entirely', async () => {
+  it('leaving a NON-active company writes the same membership deletes but skips claims/revoke/custom-token entirely, and still queues the receipt mail', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.allocate.at'
     const OTHER_COMPANY_ID = 'company-B'
     const OTHER_PATH = `companies/${OTHER_COMPANY_ID}/members/${UID}`
     const OTHER_META_PATH = `companies/${OTHER_COMPANY_ID}/_meta/memberCounts`
@@ -174,8 +175,22 @@ describe('leaveCompany', () => {
       [OTHER_META_PATH]: { members: 5, admins: 2 },
       [`companies/${OTHER_COMPANY_ID}`]: { name: 'Other Co' },
     }
-    wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: queryFor(() => true, []) })
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query: queryFor(() => true, []) })
     const tx = wireTransaction(docs)
+
+    // Capture the 'mail' collection's `add` spy the same way
+    // resendInvitation.test.ts does, since wireDb hands out a fresh chain
+    // per `collection()` call — leaveCompany's docblock claims "always a
+    // queued receipt email" regardless of whether the left company was
+    // active, so this must hold on the non-active path too.
+    const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
+    const mailAdd = vi.fn().mockResolvedValue({ id: 'mail-1' })
+    const collectionWithMailAdd = vi.fn((path: string) => {
+      const chain = innerCollection(path)
+      if (path === 'mail') chain['add'] = mailAdd
+      return chain
+    })
+    ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithMailAdd
 
     const result = await leaveCompany(OTHER_COMPANY_ID)
 
@@ -186,6 +201,12 @@ describe('leaveCompany', () => {
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
     expect(adminAuth.revokeRefreshTokens).not.toHaveBeenCalled()
     expect(adminAuth.createCustomToken).not.toHaveBeenCalled()
+
+    expect(mailAdd).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'leaver@example.com',
+      template: 'leftCompany',
+      companyId: OTHER_COMPANY_ID,
+    }))
   })
 
   it('decrements admins too when the leaver was an admin', async () => {
@@ -342,5 +363,261 @@ describe('leaveCompany', () => {
 
     expect(successes).toHaveLength(1)
     expect(blocked).toHaveLength(1)
+  })
+
+  // Anonymisation failure handling (issue #419): the membership transaction
+  // has already committed by the time anonymizeMemberReferencesWithRetry
+  // runs. Leaving the ACTIVE company still needs its claims repoint, its
+  // (security-relevant) revokeRefreshTokens, the custom token for
+  // sessionRefresh, and the receipt mail — none of those may be skipped
+  // just because anonymisation threw. See the comment at the call site in
+  // leaveCompany, and lib/memberAnonymisationAlert.ts for the retry +
+  // support-alert design.
+  it('retries once and succeeds on the second attempt — no support alert, flow completes', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.allocate.at'
+    const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path === `companies/${COMPANY_ID}/bookings` && filterValue(ctx, 'userId') === UID) {
+        return [{ id: 'booking-1', path: BOOKING_PATH, data: { userId: UID } }]
+      }
+      return []
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    // wireDb hands out ONE shared batch stub — mockRejectedValueOnce so only
+    // the first (of two, across the retry) commit fails.
+    wired.batch.commit.mockRejectedValueOnce(new Error('transient commit failure'))
+
+    const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
+    const mailAdd = vi.fn().mockResolvedValue({ id: 'mail-1' })
+    const collectionWithMailAdd = vi.fn((path: string) => {
+      const chain = innerCollection(path)
+      if (path === 'mail') chain['add'] = mailAdd
+      return chain
+    })
+    ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithMailAdd
+
+    const resultPromise = leaveCompany(COMPANY_ID)
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await resultPromise
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.commit).toHaveBeenCalledTimes(2)
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(UID)
+    expect(mailAdd).toHaveBeenCalledWith(expect.objectContaining({ to: 'leaver@example.com', template: 'leftCompany' }))
+
+    const firstFailureCall = errorSpy.mock.calls.find(
+      (c) => (c[1] as { action?: string } | undefined)?.action === 'leave_company_anonymise_failed',
+    )
+    expect(firstFailureCall).toBeDefined()
+
+    const markerCall = errorSpy.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('MEMBER_ANONYMISATION_STUCK'),
+    )
+    expect(markerCall).toBeUndefined()
+
+    vi.useRealTimers()
+  })
+
+  it('logs the support-alert marker exactly once when both anonymisation attempts fail, and the flow still completes', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.allocate.at'
+    const BOOKING_PATH = `companies/${COMPANY_ID}/bookings/booking-1`
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+      // No remaining memberships — redirectCompanyId: null path.
+    }
+    const query: QueryResolver = (ctx) => {
+      // Real match for the bookings anonymisation scan — proves the failing
+      // call actually reached real work rather than throwing immediately.
+      if (ctx.path === `companies/${COMPANY_ID}/bookings` && filterValue(ctx, 'userId') === UID) {
+        return [{ id: 'booking-1', path: BOOKING_PATH, data: { userId: UID } }]
+      }
+      return []
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    // wireDb hands out ONE shared batch stub — mockRejectedValue (not
+    // -Once) so BOTH the initial attempt and the retry fail.
+    wired.batch.commit.mockRejectedValue(new Error('batch commit failed'))
+
+    // Capture the 'mail' collection's `add` spy the same way
+    // resendInvitation.test.ts does, since wireDb hands out a fresh chain
+    // per `collection()` call.
+    const innerCollection = wired.collection as unknown as (path: string) => Record<string, unknown>
+    const mailAdd = vi.fn().mockResolvedValue({ id: 'mail-1' })
+    const collectionWithMailAdd = vi.fn((path: string) => {
+      const chain = innerCollection(path)
+      if (path === 'mail') chain['add'] = mailAdd
+      return chain
+    })
+    ;(adminDb as unknown as Record<string, unknown>)['collection'] = collectionWithMailAdd
+
+    const resultPromise = leaveCompany(COMPANY_ID)
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await resultPromise
+
+    expect(result.error).toBeUndefined()
+    expect(result.left).toEqual({
+      sessionRefresh: { redirectCompanyId: null, customToken: 'custom-token-for-leaver' },
+    })
+
+    // Proves the anonymisation pass really reached the failing commit.
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: BOOKING_PATH }),
+      { userId: null, userName: null },
+    )
+    expect(wired.batch.commit).toHaveBeenCalledTimes(2)
+
+    // Everything after the anonymisation call must still have run.
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, { activeCompanyId: null, role: null })
+    expect(adminAuth.revokeRefreshTokens).toHaveBeenCalledWith(UID)
+    expect(adminAuth.createCustomToken).toHaveBeenCalledWith(UID)
+    expect(mailAdd).toHaveBeenCalledWith(expect.objectContaining({ to: 'leaver@example.com', template: 'leftCompany' }))
+
+    // First attempt: existing structured failure log, unchanged shape.
+    const errorCall = errorSpy.mock.calls.find(
+      (c) => (c[1] as { action?: string } | undefined)?.action === 'leave_company_anonymise_failed',
+    )
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1]).toMatchObject({
+      companyId: COMPANY_ID,
+      error: 'batch commit failed',
+    })
+
+    // Second attempt: single-line MEMBER_ANONYMISATION_STUCK marker, logged
+    // exactly once, carrying the FULL cid and uid (no truncation).
+    const markerCalls = errorSpy.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('MEMBER_ANONYMISATION_STUCK'),
+    )
+    expect(markerCalls).toHaveLength(1)
+    const markerLine = markerCalls[0]![0] as string
+    expect(markerLine).toBe(
+      `[actions/team] MEMBER_ANONYMISATION_STUCK source=leave_company cid=${COMPANY_ID} uid=${UID} attempts=2 error=batch commit failed`,
+    )
+    expect(markerCalls[0]).toHaveLength(1) // a single plain string, no object argument
+
+    vi.useRealTimers()
+  })
+
+  // Issue #338 PR 1: leaveCompany shares anonymizeMemberReferences with
+  // removeMember (see that file's docblock) — same operatorFeedback scan,
+  // scoped to this company via the companyId equality filter.
+  it('nulls submittedBy/userName on an operatorFeedback ticket the leaver filed in this company (issue #338 PR 1)', async () => {
+    const TICKET_PATH = 'operatorFeedback/SUP-4242'
+    const docs: DocMap = {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+    const query: QueryResolver = (ctx) => {
+      if (ctx.path !== 'operatorFeedback') return []
+      const submittedBy = filterValue(ctx, 'submittedBy')
+      const companyId = filterValue(ctx, 'companyId')
+      if (submittedBy !== UID || companyId !== COMPANY_ID) return []
+      return [{ id: 'SUP-4242', path: TICKET_PATH, data: { submittedBy: UID, companyId: COMPANY_ID, userName: 'Leaver' } }]
+    }
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: TICKET_PATH }),
+      { submittedBy: null, userName: null },
+    )
+  })
+})
+
+// ── Invitation anonymisation (issue #419) ───────────────────────────────────
+//
+// Same anonymizeMemberReferences pass removeMember exercises
+// (__tests__/team/removeMember.test.ts) — companies/{cid}/invitations
+// carries the leaver's uid in three roles that must be nulled.
+
+describe('leaveCompany — invitation anonymisation', () => {
+  const INVITATIONS_PATH = `companies/${COMPANY_ID}/invitations`
+
+  function baseDocs(): DocMap {
+    return {
+      [SELF_PATH]: { role: 'crew' },
+      [META_PATH]: { members: 5, admins: 2 },
+      [COMPANY_ID_PATH]: { name: 'Acme' },
+    }
+  }
+
+  it('nulls email and acceptedBy on the invitation that brought the leaver in', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'acceptedBy') === UID
+        ? [{ id: 'inv-1', path: `${INVITATIONS_PATH}/inv-1`, data: { email: 'leaver@example.com', acceptedBy: UID, status: 'accepted' } }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-1' }),
+      { acceptedBy: null, email: null },
+    )
+  })
+
+  it('nulls invitedBy and invitedByName on invitations the leaver sent, leaving the recipient email untouched', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'invitedBy') === UID
+        ? [{
+            id: 'inv-2',
+            path: `${INVITATIONS_PATH}/inv-2`,
+            data: { email: 'someone-else@example.com', invitedBy: UID, invitedByName: 'Leaver', status: 'pending' },
+          }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      { invitedBy: null, invitedByName: null },
+    )
+    expect(wired.batch.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-2' }),
+      expect.objectContaining({ email: expect.anything() }),
+    )
+  })
+
+  it('nulls revokedBy on an invitation the leaver revoked', async () => {
+    const docs = baseDocs()
+    const query: QueryResolver = (ctx) =>
+      ctx.path === INVITATIONS_PATH && filterValue(ctx, 'revokedBy') === UID
+        ? [{ id: 'inv-3', path: `${INVITATIONS_PATH}/inv-3`, data: { revokedBy: UID, status: 'revoked' } }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query })
+    wireTransaction(docs)
+
+    const result = await leaveCompany(COMPANY_ID)
+
+    expect(result.error).toBeUndefined()
+    expect(wired.batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'inv-3' }),
+      { revokedBy: null },
+    )
   })
 })

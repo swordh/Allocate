@@ -13,6 +13,7 @@ initializeApp();
 export { acceptInvitationByToken } from './auth/acceptInvitation';
 export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
+export { purgeOldFeedback } from './admin/purgeOldFeedback';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
 export { onMailQueued } from './email/onMailQueued';
 export { retryFailedMail } from './email/retryFailedMail';

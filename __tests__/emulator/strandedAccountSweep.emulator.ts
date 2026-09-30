@@ -207,4 +207,46 @@ describe('strandedAccountSweep', () => {
     const badUserSnap = await adminDb.doc(`users/${badUid}`).get()
     expect(badUserSnap.exists).toBe(true)
   })
+
+  // Issue #294: `processCandidateTransaction` calls `hashUserIdForAudit`
+  // INSIDE `db.runTransaction` — a throw there (e.g. a missing
+  // AUDIT_LOG_HMAC_KEY) must abort the whole transaction, leaving nothing
+  // committed, rather than deleting the account without an audit trail.
+  // `emulatorSetup.ts` pins AUDIT_LOG_HMAC_KEY process-wide for every other
+  // test in this suite, so this test unsets it locally and restores it
+  // afterward.
+  it('AUDIT_LOG_HMAC_KEY missing: the transaction commits nothing for a due candidate', async () => {
+    const uid = 'due-hmac-key-missing'
+    await seedStrandedUser(uid, { scheduledFor: PAST(), requestId: 'req-hmac-missing' })
+    vi.stubEnv('AUDIT_LOG_HMAC_KEY', '')
+
+    const db = getTestFunctionsDb()
+    let result
+    try {
+      result = await runStrandedAccountSweep(db)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    // The per-candidate try/catch in runStrandedAccountSweep (see the
+    // "one user failing" test above) catches the throw and counts it as
+    // failed, same as any other per-candidate error — it does not crash
+    // the sweep or get miscounted as deleted/spared/skipped.
+    expect(result).toEqual({ deleted: 0, deletedAuthFailed: 0, spared: 0, skipped: 0, failed: 1 })
+
+    // User doc, its pendingDeletion field, and Auth record are all exactly
+    // as they were before this run — the transaction wrote NOTHING.
+    const userSnap = await adminDb.doc(`users/${uid}`).get()
+    expect(userSnap.exists).toBe(true)
+    expect(userSnap.data()?.pendingDeletion).toBeTruthy()
+    const authUser = await adminAuth.getUser(uid)
+    expect(authUser).toBeTruthy()
+
+    // No deletionAuditLog row for this request either.
+    const auditSnap = await adminDb
+      .collection('deletionAuditLog')
+      .where('requestId', '==', 'req-hmac-missing')
+      .get()
+    expect(auditSnap.size).toBe(0)
+  })
 })

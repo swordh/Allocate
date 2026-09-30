@@ -8,6 +8,7 @@ import { runCompanyPurge } from './purge';
 import { formatDateFull, formatDateShort, buildCancelUrl, formatRequesterDisplay } from './format';
 import { claimRequestedLease } from './lease';
 import { mailExpireAt } from '../email/mailRetention';
+import { AUDIT_LOG_HMAC_KEY } from '../audit/userIdHash';
 
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 
@@ -184,7 +185,7 @@ export const onCompanyDeletionCreated = onDocumentCreated(
   {
     document: 'companyDeletions/{requestId}',
     region: 'europe-west1',
-    secrets: [STRIPE_SECRET_KEY],
+    secrets: [STRIPE_SECRET_KEY, AUDIT_LOG_HMAC_KEY],
     // Sized for the `mode: 'immediate'` branch, which runs the purge
     // synchronously in this same invocation — see runCompanyPurge's own
     // docblock for why these numbers (540s / 1GiB) in particular.

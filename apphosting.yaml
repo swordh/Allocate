@@ -40,3 +40,7 @@ env:
     secret: STRIPE_PRICE_BASIC_YEARLY
     availability:
       - RUNTIME
+  - variable: AUDIT_LOG_HMAC_KEY
+    secret: AUDIT_LOG_HMAC_KEY
+    availability:
+      - RUNTIME

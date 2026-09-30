@@ -1,12 +1,12 @@
 'use server'
 
-import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { FieldValue, Timestamp, WriteBatch } from 'firebase-admin/firestore'
+import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
 import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
+import { hashUserIdForAudit } from '@/lib/auditLogHash'
 import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
-import { iso, type TimestampLike } from '@/lib/firestore-timestamps'
+import { isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
 import { mailExpireAt } from '@/lib/mail-retention'
 import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
@@ -360,6 +360,26 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
+  // issue #294: fail fast on a missing/misconfigured AUDIT_LOG_HMAC_KEY
+  // BEFORE the lock below, BEFORE any read or write this function makes.
+  // `hashUserIdForAudit` (lib/auditLogHash.ts) throws when the key is
+  // missing — every later call site in this file relies on it already
+  // having succeeded once, so if it's going to fail, it must fail here,
+  // where nothing has been touched yet, rather than partway through step 3
+  // after companies have already been removed (see `writeDeletionFailureAudit`
+  // and the SUCCESS-row write below, neither of which is a place a
+  // configuration error should ever be discovered for the first time). The
+  // computed hash itself is discarded — this call exists purely as a
+  // pre-flight check, same spirit as `acquireAccountDeletionLock` below.
+  try {
+    hashUserIdForAudit(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_audit_hash_missing' })
+    await recordAccountDeletionFailure(uid, { path: 'audit_hash_missing', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
   // issue #349: acquire the per-uid lock before any of the work below — see
   // acquireAccountDeletionLock's docblock. A failure to even acquire it
   // (anything other than the lock being held) is treated like every other
@@ -430,9 +450,17 @@ function errorCodeOf(err: unknown): string {
 const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 /**
- * Durable, minimal trace of a `deleteAccount` attempt that returned
- * `COULD_NOT_VERIFY_ERROR` — issue #337 step 1. Before this, every such
- * return left nothing behind an operator could see: no way to tell who is
+ * Durable, minimal trace of a `deleteAccount` attempt that failed —
+ * originally issue #337 step 1, covering only the early return-a-vague-error
+ * paths (lock/preflight/memberships-read/commit-loop, all of which return
+ * `COULD_NOT_VERIFY_ERROR`-shaped messages). This PR extends the same trace
+ * to `runAccountDeletion`'s two remaining failure points: the phase-3
+ * anonymisation catch, which returns 'Failed to delete account', and the
+ * step-4 Auth-record-delete catch, which — unlike every other path here —
+ * still returns SUCCESS (`{}`) to the caller, because Firestore's side of
+ * the deletion already committed; the trace this call writes is the only
+ * place that failure is visible at all. Before this, every one of these
+ * returns left nothing behind an operator could see: no way to tell who is
  * stuck, where, or how often, beyond a `console.error` line in App Hosting's
  * 30-day log retention. One doc per uid at `accountDeletionFailures/{uid}`
  * (Admin SDK only — see firestore.rules), overwritten on every retry rather
@@ -454,11 +482,12 @@ const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
  * `writeDeletionFailureAudit`'s `collection().add()`, this doc is a single,
  * mutable row per uid, not an append-only log.
  *
- * Raw uid, not `errorCodeOf`'s sha256-hash-elsewhere convention
- * (`deletionAuditLog`'s `userIdHash`): the entire point of this doc is that
- * an operator can look up the person who's stuck, which a one-way hash would
- * make impossible. No name, no email — see `types/operator.ts`'s
- * `StuckAccountDeletionRow` for the full shape this doc is read back as.
+ * Raw uid, not `deletionAuditLog`'s hash-elsewhere convention (its
+ * `userIdHash`, now an HMAC-keyed hash — see `lib/auditLogHash.ts`, issue
+ * #294): the entire point of this doc is that an operator can look up the
+ * person who's stuck, which a one-way hash would make impossible. No name,
+ * no email — see `types/operator.ts`'s `StuckAccountDeletionRow` for the
+ * full shape this doc is read back as.
  */
 async function recordAccountDeletionFailure(
   uid: string,
@@ -553,7 +582,7 @@ async function writeDeletionFailureAudit(
   },
 ): Promise<void> {
   try {
-    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    const userIdHash = hashUserIdForAudit(uid)
     await adminDb.collection('deletionAuditLog').add({
       userIdHash,
       failedAt: FieldValue.serverTimestamp(),
@@ -1049,6 +1078,16 @@ async function runAccountDeletion(
   }
 
   // ── 3. Anonymize all user data ──────────────────────────────────────────────
+  // Follow-up to issues #337/#338 (PR #413): `currentCompanyId` tracks
+  // whichever company the loop
+  // below is working on, so the catch block can pass it to
+  // `recordAccountDeletionFailure` as `companyIds` — same idea as step 2's
+  // `[companyId]` a few hundred lines up, just without a transaction scope of
+  // its own to close over. `null` both before the loop starts and after it
+  // ends (including during the operatorFeedback pass, which iterates tickets
+  // across companies rather than one company at a time) — a failure in
+  // either of those spots legitimately has no single company to blame.
+  let currentCompanyId: string | null = null
   try {
     let batch = adminDb.batch()
     let opCount = 0
@@ -1121,6 +1160,8 @@ async function runAccountDeletion(
       // anonymises the customer — the two things the tail of this loop body
       // would otherwise have done for this company.
       if (immediatelyDeletedCompanyIds.has(companyId)) continue
+
+      currentCompanyId = companyId
 
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const equipmentRef = adminDb.collection(`companies/${companyId}/equipment`)
@@ -1376,6 +1417,78 @@ async function runAccountDeletion(
       }
     }
 
+    // Reset before the operatorFeedback pass below: that pass queries across
+    // every company the user has ever filed a ticket in, not the one company
+    // the loop above just finished with, so a failure inside it has no
+    // single company to attribute — see `currentCompanyId`'s declaration
+    // comment above the try block.
+    currentCompanyId = null
+
+    // operatorFeedback (issue #338 PR 1): ONE global query across every
+    // company this user has ever submitted a ticket in, not per-`companyIds`
+    // like the loop above — this also catches a ticket filed in a company
+    // she already left before this deletion run, whose id no longer appears
+    // in `companyIds` at all.
+    //
+    // Written outside the batch above, one ticket at a time, on purpose: a
+    // company on `immediatelyDeletedCompanyIds` starts an async
+    // `runCompanyPurge` (functions/src/company/purge.ts) that deletes this
+    // exact ticket — `operatorFeedback` is one of purge's ORPHAN_COLLECTIONS
+    // — possibly mid-run of this very function. A `batch.update()` against a
+    // document that no longer exists fails with NOT_FOUND and aborts the
+    // ENTIRE WriteBatch, which is exactly the halfway-abort the
+    // `immediatelyDeletedCompanyIds` skip earlier in this function exists to
+    // prevent (see that comment) — folding these into the same batch would
+    // reintroduce that failure mode for a collection the batch loop above
+    // never touches. Individual `ref.update()` calls confine a NOT_FOUND to
+    // the one ticket that raced the purge, which is skipped and tolerated;
+    // any OTHER error is a real failure and is rethrown, landing in the
+    // catch below exactly like a failure from the batch would.
+    //
+    // MUST run BEFORE `batch.commit()` below, not after (code review on PR
+    // #413 caught this the first time round). The batch that follows deletes
+    // `users/{uid}`, every `users/{uid}/memberships/*` doc and
+    // `accountDeletionFailures/{uid}`, and writes the SUCCESS
+    // `deletionAuditLog` row — once that commits, this deletion IS success,
+    // as far as every other reader of this user's data is concerned. A
+    // non-NOT_FOUND failure in this loop running AFTER that commit would
+    // write a `writeDeletionFailureAudit('anonymisation', ...)` row that
+    // directly contradicts the SUCCESS row committed moments earlier in the
+    // very same run (`completedCompanies === totalCompanies`, yet also a
+    // 'failed' outcome) — nothing would ever be recorded as both a success
+    // and a failure for the same attempt. Running this loop first means any
+    // failure here is caught by the SAME catch block every other step-3
+    // failure already uses, before anything downstream of it has committed —
+    // exactly the same reasoning as the `immediatelyDeletedCompanyIds` skip
+    // two paragraphs up, just at the scale of "this whole function's step 3"
+    // rather than one company's writes. A retry after such a failure is
+    // clean: any ticket this loop already nulled before the throw no longer
+    // matches `where('submittedBy', '==', uid)` on the next attempt, the same
+    // idempotence the batch's own deletes/creates already rely on.
+    //
+    // Step 3's catch below now also calls `recordAccountDeletionFailure`
+    // (path 'anonymisation') alongside the pre-existing
+    // `writeDeletionFailureAudit` call, so a failure here — same as any other
+    // step-3 failure — both traces to `accountDeletionFailures/{uid}` for the
+    // operator view AND pages the `ACCOUNT_DELETION_STUCK` alert. That used
+    // to be a gap covering the whole of step 3, not something specific to
+    // operatorFeedback; it isn't anymore (see the phase-3 catch block below).
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    for (const doc of feedbackSnap.docs) {
+      const companyId = doc.data().companyId as string | undefined
+      // Skip outright, don't even attempt: this ticket's company is already
+      // scheduled for purge this run, so the update is racing a delete that
+      // is guaranteed to win eventually even if it hasn't yet — attempting it
+      // only spends a round trip on a write whose outcome doesn't matter.
+      if (companyId && immediatelyDeletedCompanyIds.has(companyId)) continue
+      try {
+        await doc.ref.update({ submittedBy: null, userName: null })
+      } catch (updateErr) {
+        if ((updateErr as { code?: unknown } | undefined)?.code === GrpcStatus.NOT_FOUND) continue
+        throw updateErr
+      }
+    }
+
     // Delete membership docs (users/{uid}/memberships/*). Deliberately left
     // in this WriteBatch rather than folded into step 2's per-company
     // transaction: this loop iterates ALL of the user's membership docs
@@ -1413,12 +1526,14 @@ async function runAccountDeletion(
       opCount = 0
     }
 
-    // Deletion audit log (sha256 hash only — no PII stored). The SUCCESS
-    // shape: `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only
-    // ever appear on a `writeDeletionFailureAudit` row (issue #358), which is
+    // Deletion audit log (HMAC-keyed hash of the uid, not a plain sha256 —
+    // see lib/auditLogHash.ts, issue #294; still personal data, not
+    // anonymous — pseudonymisation, not anonymisation). The SUCCESS shape:
+    // `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only ever
+    // appear on a `writeDeletionFailureAudit` row (issue #358), which is
     // written outside this batch, from each phase's own `catch` block, never
     // here.
-    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    const userIdHash = hashUserIdForAudit(uid)
     batch.set(adminDb.collection('deletionAuditLog').doc(), {
       userIdHash,
       deletedAt: FieldValue.serverTimestamp(),
@@ -1441,6 +1556,22 @@ async function runAccountDeletion(
       errorCode: errorCodeOf(err),
       completedCompanies,
       totalCompanies: companyIds.length,
+    })
+    // This PR: also trace to `accountDeletionFailures/{uid}` and emit the
+    // `ACCOUNT_DELETION_STUCK` marker — `writeDeletionFailureAudit` above is
+    // an append-only, operator-invisible-until-queried log; this is what
+    // actually pages support@ (see `recordAccountDeletionFailure`'s
+    // docblock) and what the operator "stuck deletions" list reads. Before
+    // this PR, a step-3 failure — the one that returns 'Failed to delete
+    // account' to the user, the same wording as the stuck-alert paths above
+    // — was the one failure mode in this function invisible to both.
+    // `currentCompanyId` is whichever company the loop above was on when it
+    // threw, or `null` if the throw happened during the operatorFeedback
+    // pass (see that variable's declaration comment).
+    await recordAccountDeletionFailure(uid, {
+      path: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      companyIds: currentCompanyId ? [currentCompanyId] : [],
     })
     return { error: 'Failed to delete account' }
   }
@@ -1491,6 +1622,19 @@ async function runAccountDeletion(
       completedCompanies,
       totalCompanies: companyIds.length,
     })
+    // This PR: also trace to `accountDeletionFailures/{uid}` / page the
+    // `ACCOUNT_DELETION_STUCK` alert — same reasoning as the phase-3 catch
+    // above, but note the asymmetry here: this function still returns `{}`
+    // (success) to the CALLER below, because Firestore's side of the
+    // deletion already committed in step 3. The trace this call (re)writes
+    // is therefore the only place this failure is visible at all — not the
+    // return value, which a client can't use to detect it, and the success
+    // batch a few lines up already deleted whatever trace doc existed before
+    // this attempt, so this recreates one rather than adding to it. A retry
+    // resolves cleanly: memberships are already gone, so step 2 no-ops, step
+    // 3's batch clears this trace doc again, and `deleteUser` runs a second
+    // time.
+    await recordAccountDeletionFailure(uid, { path: 'auth_delete', errorCode: errorCodeOf(err), companyIds: [] })
   }
 
   return {}
@@ -1524,8 +1668,8 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
     const traceData = traceSnap.data()
     const accountDeletionFailure = traceSnap.exists && traceData
       ? {
-          firstAt: iso(traceData.firstAt as TimestampLike),
-          lastAt: iso(traceData.lastAt as TimestampLike),
+          firstAt: isoOrNull(traceData.firstAt as TimestampLike),
+          lastAt: isoOrNull(traceData.lastAt as TimestampLike),
           attempts: typeof traceData.attempts === 'number' ? traceData.attempts : 0,
           lastPath: traceData.lastPath ?? null,
           lastErrorCode: traceData.lastErrorCode ?? null,
@@ -1555,7 +1699,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
             startDate:   b.startDate ?? null,
             endDate:     b.endDate ?? null,
             status:      b.status ?? null,
-            createdAt:   b.createdAt ?? null,
+            createdAt:   isoOrNull(b.createdAt as TimestampLike),
           }
         })
 
@@ -1564,8 +1708,87 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
           companyName: companyData.name ?? null,
           plan:        companyData.subscription?.plan ?? null,
           role:        membership.role ?? null,
-          joinedAt:    membership.joinedAt ?? null,
+          joinedAt:    isoOrNull(membership.joinedAt as TimestampLike),
           bookings,
+        }
+      })
+    )
+
+    // Feedback tickets (issue #415, GDPR Art. 15/20): the user's own support
+    // tickets in the top-level `operatorFeedback` collection
+    // (actions/submitFeedback.ts), plus each ticket's status/priority-change
+    // history — the `kind: 'event'` entries in its `notes` subcollection
+    // (see types/operator.ts's `FeedbackTimelineEntry` doc comment). Same
+    // query deleteAccount's anonymisation pass uses (~line 1455 above), and
+    // this read sits inside the SAME try block as every other read in this
+    // function — same "a failure here fails the whole export" policy as the
+    // `accountDeletionFailure` trace above, no partial-export fallback.
+    //
+    // Deliberately EXCLUDED (decided 2026-09-28):
+    //   - `kind: 'note'` entries — free-text operator notes DO concern this
+    //     user, but they're the operator's own assessment of her, not
+    //     something she authored. Whether they belong in HER export is an
+    //     Art. 15(4) balancing call ("shall not adversely affect the rights
+    //     and freedoms of others") that can't be made automatically, note by
+    //     note, at export time — a note might quote a colleague, name
+    //     another customer, or contain the operator's private read on a
+    //     dispute. So the automated self-service export leaves them out
+    //     entirely, and an explicit request for them is handled manually
+    //     (note-by-note review before release) rather than by this function.
+    //     This question is still open; the filter below is EQUALITY
+    //     (`kind === 'event'`), not a negation of 'note': legacy docs written
+    //     before `kind` existed have no field at all and must be treated as
+    //     notes (see types/operator.ts), so `!== 'note'` would wrongly
+    //     include them.
+    //   - `createdBy` on every event (and on notes, moot since notes are
+    //     excluded entirely) — the operator's email address, third-party PII
+    //     that never belongs in this user's own export regardless of which
+    //     entry kinds are included. This one is settled, not open.
+    // A ticket already anonymised by #413 (its `submittedBy` nulled when she
+    // leaves the company or deletes her account) is intentionally NOT
+    // exported here — not a gap: once nulled, the ticket no longer carries
+    // her uid, so the query below correctly stops finding it, the same
+    // anonymisation working as intended.
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    const feedbackTickets = await Promise.all(
+      feedbackSnap.docs.map(async (ticketDoc) => {
+        const t = ticketDoc.data()
+
+        const eventsSnap = await adminDb
+          .collection(`operatorFeedback/${ticketDoc.id}/notes`)
+          .where('kind', '==', 'event')
+          .get()
+
+        // No `orderBy` (avoids needing a composite index for this one-off
+        // export path) — sorted in memory instead, ascending by `createdAt`.
+        // An entry with no `createdAt` (`at: null`) sorts LAST, not first —
+        // `?? ''` would otherwise put it first, since an empty string
+        // collates before every real ISO date string.
+        const statusHistory = eventsSnap.docs
+          .map((eventDoc) => {
+            const e = eventDoc.data()
+            return {
+              text: e.text ?? null,
+              at:   isoOrNull(e.createdAt as TimestampLike),
+            }
+          })
+          .sort((a, b) => {
+            if (a.at === null && b.at === null) return 0
+            if (a.at === null) return 1
+            if (b.at === null) return -1
+            return a.at.localeCompare(b.at)
+          })
+
+        return {
+          ticketId:    ticketDoc.id,
+          type:        t.type ?? null,
+          title:       t.title ?? null,
+          description: t.description ?? null,
+          status:      t.status ?? null,
+          priority:    t.priority ?? null,
+          companyName: t.companyName ?? null,
+          submittedAt: isoOrNull(t.submittedAt as TimestampLike),
+          statusHistory,
         }
       })
     )
@@ -1576,10 +1799,11 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
         name:            userData.name ?? null,
         email:           userData.email ?? null,
         activeCompanyId: userData.activeCompanyId ?? null,
-        createdAt:       userData.createdAt ?? null,
+        createdAt:       isoOrNull(userData.createdAt as TimestampLike),
       },
       accountDeletionFailure,
       companies,
+      feedbackTickets,
     }
 
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'data_exported' })

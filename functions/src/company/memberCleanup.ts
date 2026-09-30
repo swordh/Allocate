@@ -1,9 +1,9 @@
-import { createHash } from 'crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import { TRIGGERED_BY_STRANDED_MEMBER_SCHEDULED } from '../deletionAuditLogTriggers';
 import { toRole } from '../auth/role';
+import { hashUserIdForAudit } from '../audit/userIdHash';
 
 /** Thirty days, per "Del 3" of the design brief and "Fattade beslut" in the plan. */
 export const STRANDED_MEMBER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -191,10 +191,22 @@ export async function cleanupOneMember(
     return { uid, accountStatus: 'scheduled', claimsUpdated, pendingDeletionScheduledFor: existingPendingDeletion.scheduledFor };
   }
 
+  // `hashUserIdForAudit` BEFORE the `userRef.set` below, not after: the
+  // idempotency guard above (`existingPendingDeletion.requestId ===
+  // requestId`) treats "pendingDeletion already points at this requestId" as
+  // proof the audit row was already written too, and short-circuits without
+  // writing a second one. If the hash were computed after `userRef.set`
+  // and then threw (e.g. AUDIT_LOG_HMAC_KEY missing), the schedule would be
+  // written but the audit row would not — and every retry after that would
+  // hit the idempotency guard and silently skip the audit write forever,
+  // never surfacing the failure again. Computing (and possibly throwing)
+  // first keeps that invariant true: this uid is left with NEITHER write,
+  // so a retry redoes both together.
+  const userIdHash = hashUserIdForAudit(uid);
+
   const scheduledFor = Timestamp.fromMillis(Date.now() + STRANDED_MEMBER_WINDOW_MS);
   await userRef.set({ pendingDeletion: { scheduledFor, requestId } }, { merge: true });
 
-  const userIdHash = createHash('sha256').update(uid).digest('hex');
   await db.collection('deletionAuditLog').add({
     userIdHash,
     // `scheduledAt` — when this SCHEDULE was written, not when anything was

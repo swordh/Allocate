@@ -61,7 +61,11 @@ export async function validateInviteToken(input: string): Promise<InviteValidati
     token,
     companyName,
     role: invite.role,
-    email: invite.email,
+    // A still-`pending` invite always has an email — it's only nulled by
+    // anonymizeMemberReferences (issue #419) once accepted, and `accepted`
+    // is already excluded above — but the field's type is `string | null`,
+    // so fall back defensively rather than assert.
+    email: invite.email ?? '',
     expiresAt: invite.expiresAt ?? null,
     daysLeft: invite.expiresAt ? daysLeftFrom(invite.expiresAt) : null,
   }

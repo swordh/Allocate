@@ -22,7 +22,8 @@
  * the only source of truth left.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createHmac } from 'crypto'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   wireDb,
   filterValue,
@@ -67,6 +68,11 @@ vi.mock('firebase-admin/firestore', () => ({
     // module graph is shared, so it must resolve.
     delete: () => '__delete',
   },
+  // issue #338 PR 1: the operatorFeedback NOT_FOUND-tolerance check compares
+  // against GrpcStatus.NOT_FOUND (real value: 5) — real module's own enum,
+  // not re-derived here, so a mismatch with the real constant would show up
+  // as a broken import rather than a silently-wrong magic number.
+  GrpcStatus: { NOT_FOUND: 5 },
   // issue #252 step 5: deleteAccount now stamps `requestedAt`/`scheduledFor`/
   // `purgeAfter` on the `mode: 'immediate'` ledger row it writes for a
   // sole-member company. Fixed instant so assertions can compare exactly.
@@ -133,6 +139,13 @@ import { adminDb } from '@/lib/firebase-admin'
 import { formatDateFull } from '@/lib/companyDeletionCancelWrites'
 
 const UID = 'user-1'
+
+/** issue #294: every test in this file drives `deleteAccount`, which now
+ *  fails fast (before anything is deleted) if `AUDIT_LOG_HMAC_KEY` is
+ *  missing — see the top-level `beforeEach` below. The exact value here has
+ *  no significance beyond being non-empty and shared with the dedicated
+ *  "equals createHmac(...)" assertion further down. */
+const TEST_AUDIT_HMAC_KEY = 'test-audit-hmac-key-do-not-use-in-prod'
 
 /** What the user sees when the guard itself couldn't be evaluated (a read
  * failed) — distinct from the sole-admin message below, and from the
@@ -422,12 +435,23 @@ function stubSession(overrides?: Partial<{ uid: string; activeCompanyId: string 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // issue #294: `deleteAccount` now computes an HMAC-keyed audit hash
+  // BEFORE anything else, and fails closed if the key is missing — see the
+  // dedicated `describe` block below for that behaviour itself. Every other
+  // test in this file needs the key present, same as it needs Stripe
+  // defaults below, or it would fail at the very first line for a reason
+  // unrelated to what it's actually testing.
+  vi.stubEnv('AUDIT_LOG_HMAC_KEY', TEST_AUDIT_HMAC_KEY)
   mockDeleteSession.mockResolvedValue(undefined)
   mockDeleteUser.mockResolvedValue(undefined)
   // Default: no Stripe customer to retrieve/update. Individual Stripe tests
   // override this per case.
   mockStripeRetrieve.mockResolvedValue({ deleted: true })
   mockStripeUpdate.mockResolvedValue({})
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 // ── Guard: pre-flight + commit-loop ────────────────────────────────────────────
@@ -1614,6 +1638,241 @@ describe('deleteAccount — companies scheduled for immediate deletion', () => {
   })
 })
 
+// ── issue #338 PR 1: operatorFeedback anonymisation ─────────────────────────
+//
+// One GLOBAL query (`where('submittedBy', '==', uid)`, no companyId filter)
+// — deliberately not scoped to `companyIds`, so it also catches a ticket
+// filed in a company the user already left before this run. Written outside
+// the main WriteBatch, one ticket at a time: a company on
+// `immediatelyDeletedCompanyIds` starts an async purge
+// (functions/src/company/purge.ts) that deletes this exact ticket
+// (`operatorFeedback` is one of its ORPHAN_COLLECTIONS), so a `.update()`
+// against it can race a concurrent delete. Folding it into the batch would
+// reintroduce the exact halfway-abort the `immediatelyDeletedCompanyIds` skip
+// already exists to prevent for bookings/equipment/etc — see that comment.
+
+/**
+ * Routes `adminDb.collection('operatorFeedback')` to a chain that actually
+ * applies `.where(field, op, value)` against each ticket's own `data` —
+ * unlike a chain that just returns every ticket regardless of the filter
+ * arguments, this is what lets a test prove `.where('submittedBy', '==', uid)`
+ * is doing real work: a ticket in the fixture list whose `data.submittedBy`
+ * doesn't match the query's value is excluded, exactly as real Firestore
+ * would exclude it, rather than the mock silently handing back everything it
+ * was given. Same "capture the normal implementation, override one path"
+ * pattern as `stubAuditLogCollection`/`stubLockCollection` above.
+ *
+ * Only `==` is supported — the one operator `deleteAccount` ever uses against
+ * this collection; anything else throws immediately so a future query change
+ * here doesn't silently pass every filter.
+ *
+ * `updateImpl` lets a test script one specific ticket's `.update()` to reject
+ * (NOT_FOUND, or any other error) instead of resolving. Returns a `Map` keyed
+ * by ticket id so a test can grab a specific ref without depending on the
+ * fixture array's order.
+ */
+function stubFeedbackCollection(
+  wired: ReturnType<typeof wireDb>,
+  tickets: Array<{ id: string; data: Record<string, unknown>; updateImpl?: () => Promise<unknown> }>,
+) {
+  const refs = new Map(
+    tickets.map((t) => [
+      t.id,
+      {
+        path: `operatorFeedback/${t.id}`,
+        id: t.id,
+        update: t.updateImpl ? vi.fn(t.updateImpl) : vi.fn().mockResolvedValue(undefined),
+      },
+    ]),
+  )
+
+  function makeChain(filters: Array<{ field: string; op: string; value: unknown }>): Record<string, unknown> {
+    return {
+      where: (field: string, op: string, value: unknown) => makeChain([...filters, { field, op, value }]),
+      get: async () => {
+        const matching = tickets.filter((t) =>
+          filters.every((f) => {
+            if (f.op !== '==') throw new Error(`stubFeedbackCollection: unsupported operator "${f.op}"`)
+            return t.data[f.field] === f.value
+          }),
+        )
+        return {
+          empty: matching.length === 0,
+          size: matching.length,
+          docs: matching.map((t) => ({ id: t.id, data: () => t.data, ref: refs.get(t.id)! })),
+        }
+      },
+    }
+  }
+
+  const chain = makeChain([])
+  const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+  vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+    if (path === 'operatorFeedback') return chain
+    return resolveCollectionNormally(path)
+  }) as unknown as typeof adminDb.collection)
+  return refs
+}
+
+describe('deleteAccount — operatorFeedback anonymisation (issue #338 PR 1)', () => {
+  it('nulls submittedBy/userName on every operatorFeedback ticket this uid submitted, including one in a company already left', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const refs = stubFeedbackCollection(wired, [
+      { id: 'BUG-1111', data: { submittedBy: UID, companyId: 'company-A', userName: 'Deleter' } },
+      // 'company-old' is NOT in this run's companyIds at all — the global
+      // query (no companyId filter) is what's supposed to still catch this.
+      { id: 'SUP-2222', data: { submittedBy: UID, companyId: 'company-old', userName: 'Deleter' } },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(refs.get('BUG-1111')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+    expect(refs.get('SUP-2222')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+  })
+
+  // Test gap flagged in PR #413 review: nothing previously proved
+  // `.where('submittedBy', '==', uid)` was doing real filtering work — the
+  // old mock chain returned every fixture ticket regardless of the query's
+  // filter arguments, so this would have passed even if the filter were
+  // dropped or pointed at the wrong field entirely.
+  it('does not touch an operatorFeedback ticket submitted by a DIFFERENT uid', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const refs = stubFeedbackCollection(wired, [
+      { id: 'BUG-1111', data: { submittedBy: UID, companyId: 'company-A', userName: 'Deleter' } },
+      { id: 'BUG-9999', data: { submittedBy: 'someone-else', companyId: 'company-A', userName: 'Other' } },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(refs.get('BUG-1111')!.update).toHaveBeenCalledWith({ submittedBy: null, userName: null })
+    expect(refs.get('BUG-9999')!.update).not.toHaveBeenCalled()
+  })
+
+  it('skips a ticket in a company scheduled for immediate deletion this run, without attempting the write', async () => {
+    stubSession({ activeCompanyId: 'company-A' })
+
+    const docs: DocMap = {
+      'companies/company-A': { name: 'Solo AB', createdBy: UID },
+      [`companies/company-A/members/${UID}`]: { role: 'admin', name: 'Solo', email: 'solo@example.com' },
+      'companies/company-A/_meta/memberCounts': { members: 1, admins: 1 },
+    }
+    const query: QueryResolver = (ctx) =>
+      ctx.path === `users/${UID}/memberships`
+        ? [{ id: 'm0', path: `users/${UID}/memberships/m0`, data: { companyId: 'company-A', role: 'admin' } }]
+        : []
+    const wired = wireDb(adminDb as unknown as Record<string, unknown>, { docs, query, collectionGroup: () => [] })
+    const tx = makeTransaction(docs)
+    vi.mocked(adminDb.runTransaction).mockImplementation(
+      (cb: unknown) => (cb as (tx: unknown) => Promise<unknown>)(tx),
+    )
+    const refs = stubFeedbackCollection(wired, [
+      { id: 'BUG-3333', data: { submittedBy: UID, companyId: 'company-A', userName: 'Solo' } },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    // The company IS scheduled for deletion (same assertion as the
+    // bookings/equipment MUTATION GUARD above)…
+    expect(tx.set.mock.calls.some(([ref]) => (ref as DocRefStub).path.startsWith('companyDeletions/'))).toBe(true)
+    // …and its ticket was never touched — proves the
+    // `immediatelyDeletedCompanyIds.has(companyId)` skip applies here too,
+    // not just to the batch-based bookings/equipment scans.
+    expect(refs.get('BUG-3333')!.update).not.toHaveBeenCalled()
+  })
+
+  it('tolerates NOT_FOUND (code 5) on one ticket update — a concurrent purge already deleted it — and deletion still succeeds', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-4444',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('no entity'), { code: 5 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(mockDeleteUser).toHaveBeenCalledWith(UID)
+  })
+
+  // MUTATION GUARD: removing the `code === GrpcStatus.NOT_FOUND` catch (or
+  // the try/catch entirely) around the individual `ref.update()` call must
+  // fail this test — any OTHER error is a real failure and must abort the
+  // deletion via the same 'anonymisation' failure path a batch-commit
+  // failure already uses.
+  it('MUTATION GUARD: a non-NOT_FOUND error from a ticket update propagates and fails the deletion', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-5555',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('permission denied'), { code: 7 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const row = auditChain.add.mock.calls[0]![0] as Record<string, unknown>
+    expect(row).toMatchObject({ failedStep: 'anonymisation', errorCode: '7' })
+  })
+
+  // BLOCKER fixed per PR #413 review: this pass used to run AFTER the main
+  // `batch.commit()`, which already deletes users/{uid}, every
+  // users/{uid}/memberships/* doc and accountDeletionFailures/{uid}, and
+  // writes the SUCCESS deletionAuditLog row. A failure in THIS loop
+  // afterwards would then write a *contradictory* 'failed' audit row
+  // alongside an already-committed SUCCESS row for the same run. Asserting
+  // `wired.batch.commit` was never called is the direct proof that nothing
+  // downstream of it — user doc delete, membership deletes, the SUCCESS
+  // audit row queued via `batch.set` — was ever actually applied: they were
+  // queued into the batch object, as production code does throughout step 3,
+  // but `.commit()` itself never ran.
+  it('a ticket update failure happens BEFORE the main batch commits — no user doc/membership deletes, no SUCCESS audit row applied', async () => {
+    stubSession()
+    const { wired } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    stubAuditLogCollection(wired)
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-6666',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('permission denied'), { code: 7 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(wired.batch.commit).not.toHaveBeenCalled()
+  })
+})
+
 // ── issue #358: durable audit trail for a FAILED deletion ──────────────────
 //
 // Before this, a failed `runAccountDeletion` left nothing in Firestore at
@@ -1689,7 +1948,9 @@ describe('deleteAccount — issue #358 durable audit trail on failure', () => {
       outcome: 'failed',
       triggeredBy: 'user_self',
     })
-    expect(row.userIdHash).toEqual(expect.any(String))
+    // issue #294: exact HMAC-SHA256 value, not merely "some string" — pins
+    // the algorithm and key, not just that a hash-shaped value was written.
+    expect(row.userIdHash).toBe(createHmac('sha256', TEST_AUDIT_HMAC_KEY).update(UID).digest('hex'))
     expect(row.userIdHash).not.toContain(UID)
     // No PII: no name/email fields, and the thrown error's own MESSAGE text
     // (which could contain anything, as simulated above) never makes it into
@@ -2604,6 +2865,25 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
     return tx.set.mock.calls.find(([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`)
   }
 
+  it('audit_hash_missing: fails before the lock, records the path, and deletes nothing (issue #294)', async () => {
+    stubSession()
+    const { tx } = wireScenario({ memberships: [] })
+    // Simulate a missing/misconfigured secret — overrides the file-wide
+    // beforeEach stub for this one test only.
+    vi.stubEnv('AUDIT_LOG_HMAC_KEY', '')
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe(COULD_NOT_VERIFY_ERROR)
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'audit_hash_missing', lastCompanyIds: [] })
+    // Nothing was deleted: this must fail before the per-uid lock is even
+    // acquired, let alone before any membership/user/Auth deletion.
+    expect(mockDeleteUser).not.toHaveBeenCalled()
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+  })
+
   it('lock_acquire: records the path, errorCode, and empty companyIds', async () => {
     stubSession()
     const { wired, tx } = wireScenario({
@@ -2936,5 +3216,194 @@ describe('deleteAccount — issue #337 stuck-deletion trace', () => {
     expect(stuckCall).toBeUndefined()
 
     consoleErrorSpy.mockRestore()
+  })
+
+  // ── Extension (this PR): phase 3 (anonymisation) and step 4 (auth_delete) ──
+  //
+  // Everything above this point covers the five ORIGINAL failure paths (lock/
+  // preflight×2/memberships/commit-loop), which all return a
+  // COULD_NOT_VERIFY_ERROR-shaped message and already called
+  // `recordAccountDeletionFailure`. Phase 3's catch and step 4's catch used to
+  // call only `writeDeletionFailureAudit` (issue #358's append-only log) —
+  // never this trace, so neither ever reached the operator "stuck deletions"
+  // list nor paged the `ACCOUNT_DELETION_STUCK` alert. These tests pin the
+  // fix.
+
+  it('anonymisation: a per-company query rejecting inside the phase-3 loop records that company as the failing one', async () => {
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'crew' }],
+      companies: { 'company-A': { memberRole: 'crew', metaCounts: { members: 3, admins: 1 } } },
+    })
+    // Fail the very first per-company read phase 3 issues (bookings by
+    // userId) with a `code`-bearing error — same shape as a real Firestore
+    // failure — so the loop throws while `currentCompanyId` is still set to
+    // 'company-A'.
+    const resolveCollectionNormally = wired.collection.getMockImplementation() as unknown as (path: string) => unknown
+    vi.mocked(adminDb.collection).mockImplementation(((path: string) => {
+      if (path === 'companies/company-A/bookings') {
+        return {
+          where: () => ({
+            get: async () => {
+              throw Object.assign(new Error('Firestore unavailable'), { code: 'unavailable' })
+            },
+          }),
+        }
+      }
+      return resolveCollectionNormally(path)
+    }) as unknown as typeof adminDb.collection)
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'anonymisation',
+      lastErrorCode: 'unavailable',
+      lastCompanyIds: ['company-A'],
+    })
+  })
+
+  it('anonymisation: a non-NOT_FOUND operatorFeedback update failure records an empty companyIds — no single company to blame', async () => {
+    // Same fixture as the pre-existing "MUTATION GUARD: a non-NOT_FOUND error
+    // from a ticket update propagates and fails the deletion" test above
+    // (issue #338 PR 1 describe block) — reused here to assert on the trace
+    // that test itself doesn't check. `currentCompanyId` is reset to `null`
+    // before the operatorFeedback pass runs (see its declaration comment in
+    // actions/account.ts), even though the per-company loop just finished
+    // with 'company-A' — the failure here isn't attributable to any one
+    // company the way a per-company query failure is.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    stubFeedbackCollection(wired, [
+      {
+        id: 'BUG-5555',
+        data: { submittedBy: UID, companyId: 'company-A' },
+        updateImpl: () => Promise.reject(Object.assign(new Error('permission denied'), { code: 7 })),
+      },
+    ])
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'anonymisation',
+      lastErrorCode: '7',
+      lastCompanyIds: [],
+    })
+  })
+
+  it('anonymisation: the final batch.commit() rejecting is traced with a single-line ACCOUNT_DELETION_STUCK log containing path=anonymisation', async () => {
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    wired.batch.commit.mockRejectedValueOnce(Object.assign(new Error('commit failed'), { code: 'aborted' }))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({ lastPath: 'anonymisation', lastErrorCode: 'aborted' })
+    // No prior trace doc exists for this uid in this fixture, and the batch
+    // that queued `accountDeletionFailures/{uid}`'s delete never actually
+    // committed (that's the whole premise of this test — `batch.commit()`
+    // itself is what rejected) — so this is a fresh trace, not one riding on
+    // top of a delete that landed in an earlier BATCH_LIMIT rotation chunk.
+    expect((call![1] as { attempts: number }).attempts).toBe(1)
+
+    const stuckCalls = consoleErrorSpy.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes(ACCOUNT_DELETION_STUCK_LOG_MARKER),
+    )
+    expect(stuckCalls).toHaveLength(1)
+    // Single string argument, not the `console.error('[tag]', {obj})` shape
+    // — a second argument would land on its own Cloud Logging entry and
+    // defeat the single-line `textPayload` match the alert policies rely on.
+    expect(stuckCalls[0]).toHaveLength(1)
+    const line = stuckCalls[0]![0] as string
+    expect(line).toContain('path=anonymisation')
+    expect(line).not.toContain('\n')
+
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('auth_delete: adminAuth.deleteUser rejecting (non-user-not-found) is traced with an empty companyIds', async () => {
+    stubSession()
+    const { tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('auth delete failed'), { code: 'auth/internal-error' }),
+    )
+
+    const result = await deleteAccount()
+
+    // Step 4's catch never surfaces an error to the caller — this is the
+    // same asymmetry `writeDeletionFailureAudit`'s "auth_delete" test above
+    // pins: the deletion still reports success even though this trace now
+    // records the failure.
+    expect(result.error).toBeUndefined()
+    const call = findTraceWrite(tx)
+    expect(call).toBeDefined()
+    expect(call![1]).toMatchObject({
+      lastPath: 'auth_delete',
+      lastErrorCode: 'auth/internal-error',
+      lastCompanyIds: [],
+    })
+  })
+
+  it('auth_delete: adminAuth.deleteUser rejecting with auth/user-not-found writes NO trace — the record is already gone, not a failure', async () => {
+    stubSession()
+    const { tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    mockDeleteUser.mockRejectedValueOnce(
+      Object.assign(new Error('There is no user record corresponding to this identifier'), { code: 'auth/user-not-found' }),
+    )
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBeUndefined()
+    expect(findTraceWrite(tx)).toBeUndefined()
+  })
+
+  it('ordering: the failure deletionAuditLog add() happens before the accountDeletionFailures trace transaction (phase-3 anonymisation failure)', async () => {
+    // Mirrors the commit_loop ordering this suite already relies on
+    // implicitly — `writeDeletionFailureAudit` (a standalone `.add()`,
+    // issue #358) must run and complete before `recordAccountDeletionFailure`
+    // (its own `runTransaction`, issue #337) is even called, since
+    // `runAccountDeletion`'s catch block awaits the first before starting the
+    // second. Reuses the same batch.commit-throws fixture as the
+    // single-line-log test above.
+    stubSession()
+    const { wired, tx } = wireScenario({
+      memberships: [{ companyId: 'company-A', role: 'admin' }],
+      companies: { 'company-A': { memberRole: 'admin', metaCounts: { members: 5, admins: 2 } } },
+    })
+    const auditChain = stubAuditLogCollection(wired)
+    wired.batch.commit.mockRejectedValueOnce(Object.assign(new Error('commit failed'), { code: 'aborted' }))
+
+    const result = await deleteAccount()
+
+    expect(result.error).toBe('Failed to delete account')
+    expect(auditChain.add).toHaveBeenCalledOnce()
+    const traceCallIndex = tx.set.mock.calls.findIndex(
+      ([ref]) => (ref as DocRefStub).path === `accountDeletionFailures/${UID}`,
+    )
+    expect(traceCallIndex).toBeGreaterThanOrEqual(0)
+    const auditOrder = auditChain.add.mock.invocationCallOrder[0]!
+    const traceOrder = tx.set.mock.invocationCallOrder[traceCallIndex]!
+    expect(auditOrder).toBeLessThan(traceOrder)
   })
 })

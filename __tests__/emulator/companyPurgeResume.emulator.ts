@@ -10,12 +10,13 @@
  * `runCompanyPurge` once and checking it goes straight to subtree/orphans/
  * finalize.
  */
-import { createHash } from 'crypto'
+import { createHmac } from 'crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { adminDb } from '@/lib/firebase-admin'
 import { runCompanyPurge } from '../../functions/src/company/purge'
 import { getTestFunctionsDb } from '../../functions/src/testSupport/emulatorInit'
 import { seedRequestedDeletion, seedMember } from './companyDeletionFixtures'
+import { AUDIT_LOG_HMAC_TEST_KEY } from './constants'
 
 describe('runCompanyPurge — resume', () => {
   it('resumes from the subtree phase without redoing stripe/invitations/members', async () => {
@@ -167,7 +168,7 @@ describe('runCompanyPurge — resume', () => {
       { pendingDeletion: { scheduledFor: ledgerBefore.scheduledFor, requestId } },
       { merge: true },
     )
-    const uid1Hash = createHash('sha256').update('resume-members-uid-1').digest('hex')
+    const uid1Hash = createHmac('sha256', AUDIT_LOG_HMAC_TEST_KEY).update('resume-members-uid-1').digest('hex')
     await adminDb.collection('deletionAuditLog').add({
       userIdHash: uid1Hash,
       requestId,

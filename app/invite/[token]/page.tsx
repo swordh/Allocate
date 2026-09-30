@@ -82,7 +82,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
       companyName={companyName}
       invitedEmail={mirror.email}
       role={invite.role as InvitationRole}
-      inviterName={invite.invitedByName}
+      inviterName={invite.invitedByName ?? 'A teammate'}
       daysLeft={daysLeft}
       accountExists={accountExists}
     />
