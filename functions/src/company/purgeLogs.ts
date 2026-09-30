@@ -1,8 +1,16 @@
 import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
-import { runWithRetentionAlert } from '../admin/retentionPurgeAlert';
+import { runWithRetentionAlert, retentionDeadline } from '../admin/retentionPurgeAlert';
 import { withJobHeartbeat, JOB_HEARTBEAT_CONFIG } from '../admin/jobHeartbeat';
+
+/**
+ * Options threaded through from the `onSchedule` wrapper — issue #435, same
+ * shape and default as the other two retention sweeps' opts.
+ */
+export interface PurgeCompanyDeletionLogsSweepOpts {
+  deadlineExceeded?: () => boolean;
+}
 
 /**
  * Firestore's own WriteBatch cap is 500 operations; 490 leaves headroom and
@@ -28,6 +36,17 @@ export interface RedactionRuleResult {
    * are picked up again next run; everything else on the row is untouched.
    */
   failedRows: number;
+  /**
+   * Rows this rule found eligible and had a built update ready for, but
+   * never got to write because the sweep's time budget ran out first (issue
+   * #435, `../admin/retentionPurgeAlert.ts`'s `retentionDeadline`) — a
+   * cutoff before a chunk's `batch.commit()`, or mid-way through that
+   * chunk's per-document fallback. Distinct from `failedRows`: nothing about
+   * these rows' writes was attempted and rejected, the sweep simply ran out
+   * of time. Picked up again next run, same as `failedRows`, but must not be
+   * counted as a failure in logs or the throw condition below.
+   */
+  unfinishedRows: number;
 }
 
 export interface PurgeCompanyDeletionLogsResult {
@@ -43,6 +62,18 @@ export interface PurgeCompanyDeletionLogsResult {
   redacted: number;
   failedBatches: number;
   failedRows: number;
+  /** Sum of every rule's `unfinishedRows` — see that field's docblock. */
+  unfinishedRows: number;
+  /**
+   * Rule names the sweep never even STARTED because the time budget was
+   * already exhausted before their turn came up (issue #435) — as opposed to
+   * a rule that started and ran out of time partway through, which instead
+   * shows up in that rule's own `unfinishedRows`. A skipped rule's `.get()`
+   * never runs, so there is no eligible/redacted count to report for it at
+   * all; its name here is the only record that it was due to run this sweep
+   * and didn't. Always empty on a run that finishes within budget.
+   */
+  skippedRules: string[];
   byRule: Record<string, RedactionRuleResult>;
 }
 
@@ -402,6 +433,23 @@ const REDACTION_RULES: LedgerRedactionRule[] = [
  *      nothing but the same weekly log line to show for it. A per-document
  *      `update()` is still a single atomic write, so the field blanking and
  *      the marker still land together or not at all.
+ *
+ * `deadlineExceeded` (issue #435) is checked in two places, never inside
+ * layer 1's build loop — building an update is synchronous, in-memory work
+ * with no Firestore round trip, so there is nothing there worth cutting
+ * short:
+ *
+ *   - before every chunk's `batch.commit()`. A trip here means NOTHING in
+ *     that chunk (or any chunk after it) has been written yet, so every
+ *     remaining update — this chunk included — becomes `unfinishedRows` and
+ *     the loop stops. No batch is left half-committed; `batch.commit()`
+ *     itself is atomic, so the only question this check answers is whether
+ *     to start one at all.
+ *   - before every per-document write inside layer 2's fallback. A failed
+ *     chunk can already be mid-retry when the budget runs out; the documents
+ *     not yet retried at that point go to `unfinishedRows`, not `failedRows`
+ *     — they were never attempted, so counting them as a write failure would
+ *     misreport what actually happened to them.
  */
 async function runRedactionRule(
   db: Firestore,
@@ -409,6 +457,7 @@ async function runRedactionRule(
   now: Timestamp,
   eligibleIds: Set<string>,
   redactedIds: Set<string>,
+  deadlineExceeded: () => boolean,
 ): Promise<RedactionRuleResult> {
   // Firestore has no "field is absent" query, and a rule's marker field is
   // absent (not null) on every row that hasn't been redacted by it yet —
@@ -440,6 +489,7 @@ async function runRedactionRule(
     batches: 0,
     failedBatches: 0,
     failedRows: 0,
+    unfinishedRows: 0,
   };
   for (const doc of eligibleDocs) eligibleIds.add(doc.id);
 
@@ -468,6 +518,15 @@ async function runRedactionRule(
   }
 
   for (let start = 0; start < updates.length; start += BATCH_LIMIT) {
+    if (deadlineExceeded()) {
+      result.unfinishedRows += updates.length - start;
+      logger.info('purgeCompanyDeletionLogsSweep: time budget exceeded, stopping rule before next chunk', {
+        rule: rule.name,
+        unfinishedRows: result.unfinishedRows,
+      });
+      break;
+    }
+
     const chunk = updates.slice(start, start + BATCH_LIMIT);
     const batch = db.batch();
     for (const update of chunk) batch.update(update.ref, update.data);
@@ -490,7 +549,17 @@ async function runRedactionRule(
         error: err instanceof Error ? err.message : String(err),
       });
 
-      for (const update of chunk) {
+      for (let i = 0; i < chunk.length; i++) {
+        if (deadlineExceeded()) {
+          result.unfinishedRows += chunk.length - i;
+          logger.info('purgeCompanyDeletionLogsSweep: time budget exceeded mid per-document fallback', {
+            rule: rule.name,
+            unfinishedRows: result.unfinishedRows,
+          });
+          break;
+        }
+
+        const update = chunk[i];
         try {
           await update.ref.update(update.data);
           result.redacted += 1;
@@ -525,6 +594,13 @@ async function runRedactionRule(
  * `now` is a parameter so windows can be tested at their exact boundary and
  * markers can be asserted by value; production never passes it.
  *
+ * `opts.deadlineExceeded` (issue #435) is checked once more HERE, before
+ * each rule's turn — on top of the two checks already inside
+ * `runRedactionRule` itself. A rule that has not started yet has not issued
+ * its `.get()`, so there is no per-row count to attribute anything to; it is
+ * simply skipped outright and named in `skippedRules`, rather than forcing a
+ * query it has no time left to act on.
+ *
  * Exported as a plain function of `(db)` like every other function in this
  * neighborhood — see `runCompanyPurge`'s docblock in
  * functions/src/company/purge.ts for the pattern and why the `onSchedule`
@@ -533,7 +609,9 @@ async function runRedactionRule(
 export async function purgeCompanyDeletionLogsSweep(
   db: Firestore,
   now: Timestamp = Timestamp.now(),
+  opts: PurgeCompanyDeletionLogsSweepOpts = {},
 ): Promise<PurgeCompanyDeletionLogsResult> {
+  const deadlineExceeded = opts.deadlineExceeded ?? (() => false);
   const byRule: Record<string, RedactionRuleResult> = {};
   // Distinct rows, counted across rules — see the docblock on
   // `PurgeCompanyDeletionLogsResult.eligible`.
@@ -541,12 +619,23 @@ export async function purgeCompanyDeletionLogsSweep(
   const redactedIds = new Set<string>();
   let failedBatches = 0;
   let failedRows = 0;
+  let unfinishedRows = 0;
+  const skippedRules: string[] = [];
 
   for (const rule of REDACTION_RULES) {
-    const ruleResult = await runRedactionRule(db, rule, now, eligibleIds, redactedIds);
+    if (deadlineExceeded()) {
+      skippedRules.push(rule.name);
+      logger.info('purgeCompanyDeletionLogsSweep: time budget exceeded, skipping rule entirely', {
+        rule: rule.name,
+      });
+      continue;
+    }
+
+    const ruleResult = await runRedactionRule(db, rule, now, eligibleIds, redactedIds, deadlineExceeded);
     byRule[rule.name] = ruleResult;
     failedBatches += ruleResult.failedBatches;
     failedRows += ruleResult.failedRows;
+    unfinishedRows += ruleResult.unfinishedRows;
 
     logger.info('purgeCompanyDeletionLogsSweep: rule complete', {
       rule: rule.name,
@@ -555,6 +644,7 @@ export async function purgeCompanyDeletionLogsSweep(
       batches: ruleResult.batches,
       failedBatches: ruleResult.failedBatches,
       failedRows: ruleResult.failedRows,
+      unfinishedRows: ruleResult.unfinishedRows,
     });
   }
 
@@ -563,6 +653,8 @@ export async function purgeCompanyDeletionLogsSweep(
     redacted: redactedIds.size,
     failedBatches,
     failedRows,
+    unfinishedRows,
+    skippedRules,
     byRule,
   };
   logger.info('purgeCompanyDeletionLogsSweep: complete', {
@@ -570,6 +662,8 @@ export async function purgeCompanyDeletionLogsSweep(
     rowsRedacted: result.redacted,
     failedBatches,
     failedRows,
+    unfinishedRows,
+    skippedRules,
   });
 
   return result;
@@ -586,6 +680,10 @@ export const purgeCompanyDeletionLogs = onSchedule(
     timeoutSeconds: JOB_HEARTBEAT_CONFIG.purgeCompanyDeletionLogs.timeoutSeconds,
   },
   async () => {
+    // Deadline created at handler start, BEFORE `withJobHeartbeat` — issue
+    // #435, same reasoning as the other two sweeps' wrappers.
+    const deadlineExceeded = retentionDeadline('purgeCompanyDeletionLogs');
+
     // `withJobHeartbeat` wraps the WHOLE handler, outermost — issue #430.
     // In particular it sits OUTSIDE the `if (result.failedRows > 0) throw`
     // below: that throw must still land in `lastErrorAt`, not be missed
@@ -594,8 +692,9 @@ export const purgeCompanyDeletionLogs = onSchedule(
     await withJobHeartbeat(getFirestore(), 'purgeCompanyDeletionLogs', async () => {
       const result = await runWithRetentionAlert(
         'purgeCompanyDeletionLogs',
-        () => purgeCompanyDeletionLogsSweep(getFirestore()),
+        () => purgeCompanyDeletionLogsSweep(getFirestore(), Timestamp.now(), { deadlineExceeded }),
         (r) => r.failedRows,
+        (r) => r.unfinishedRows + r.skippedRules.length,
       );
       // The sweep swallows failures on purpose (the other rows still have to be
       // done). Throwing HERE is what makes them visible as a failed scheduled
@@ -609,9 +708,19 @@ export const purgeCompanyDeletionLogs = onSchedule(
       // raising an alarm for it would train whoever reads these to ignore the
       // one that matters. `failedRows` is exactly "rows whose data is still
       // there and should not be".
-      if (result.failedRows > 0) {
+      //
+      // Issue #435 extends the condition to `|| unfinished > 0`: unlike the
+      // other two retention sweeps (which only feed the marker on a budget
+      // cutoff and otherwise resolve quietly, per the issue's decision), this
+      // job already treats "rows that should have been redacted and weren't"
+      // as a failed scheduled execution — a time-budget cutoff leaves rows in
+      // exactly that state, so consistency with the existing `failedRows`
+      // behavior means it has to throw too, not just alert. The rows
+      // themselves are untouched and eligible again next Monday either way.
+      const unfinished = result.unfinishedRows + result.skippedRules.length;
+      if (result.failedRows > 0 || unfinished > 0) {
         throw new Error(
-          `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted; ${result.redacted} of ${result.eligible} due rows redacted`,
+          `purgeCompanyDeletionLogs: ${result.failedRows} row(s) could not be redacted, ${unfinished} row(s)/rule(s) left unfinished by the time budget; ${result.redacted} of ${result.eligible} due rows redacted`,
         );
       }
     });
