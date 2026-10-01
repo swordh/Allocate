@@ -2,7 +2,9 @@
 
 import 'server-only'
 import type { ActionCodeSettings } from 'firebase-admin/auth'
+import { Timestamp } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
+import { mailExpireAt } from '@/lib/mail-retention'
 
 /** Canonical error code from a FirebaseAuthError (e.g. 'auth/user-not-found'). */
 function firebaseErrorCode(err: unknown): string {
@@ -40,14 +42,24 @@ function toActionUrl(firebaseLink: string, fallbackMode: string): string {
   return out.toString()
 }
 
-/** Enqueues a mail doc for the onMailQueued Cloud Function to send via Resend. */
+/**
+ * Enqueues a mail doc for the onMailQueued Cloud Function to send via Resend.
+ * No `companyId` here — these are account-level flows (verify/reset/change
+ * email) with no company in scope, not an oversight. `priority: 'normal'`
+ * means an exhausted retry budget just logs like any other failure; nothing
+ * queued from this file is critical the way `companyDeleted` is.
+ */
 async function queueMail(to: string, template: string, data: Record<string, unknown>): Promise<void> {
   await adminDb.collection('mail').add({
     to,
     template,
     data,
     status: 'queued',
+    priority: 'normal',
     createdAt: new Date().toISOString(),
+    // Issue #325 (mail retention): no `now` already in scope here, so a
+    // fresh one is taken at write time — see lib/mail-retention.ts.
+    expireAt: mailExpireAt(Timestamp.now()),
   })
 }
 

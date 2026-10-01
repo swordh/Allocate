@@ -1,20 +1,305 @@
 'use server'
 
-import { createHash } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { FieldValue, WriteBatch } from 'firebase-admin/firestore'
+import { FieldValue, GrpcStatus, Timestamp, WriteBatch } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/firebase-admin'
-import { getVerifiedSession } from '@/lib/dal'
+import { ACCOUNT_DELETION_STUCK_LOG_MARKER } from '@/lib/accountDeletionAlert'
+import { hashUserIdForAudit } from '@/lib/auditLogHash'
+import { getVerifiedSession, verifyAuthenticatedSession, type AuthenticatedSession } from '@/lib/dal'
+import { isoOrNull, type TimestampLike } from '@/lib/firestore-timestamps'
 import { normalizeEmail } from '@/lib/invite-recipients'
-import { memberCountDelta } from '@/lib/companyStats'
+import { mailExpireAt } from '@/lib/mail-retention'
+import { memberCountsDelta, readMemberCounts } from '@/lib/companyStats'
+import {
+  confirmSoleMember,
+  getDeletionOutcomes,
+  type CompanyDeletionOutcome,
+} from '@/lib/queries/deletionOutcomes'
+import { formatDateFull, toIso } from '@/lib/companyDeletionCancelWrites'
 import { stripe } from '@/lib/stripe'
+import type { CompanyDeletionState } from '@/types'
+import type { AccountDeletionFailurePath } from '@/types/operator'
 import { deleteSession } from './auth'
 
 const BATCH_LIMIT = 490
 
+/**
+ * 24 months, for the `purgeAfter` field on a `companyDeletions` ledger row —
+ * when its IDENTITY fields become eligible for redaction (PR G), not when the
+ * row is deleted. Same value and same meaning as the constant of the same
+ * name in actions/companyDeletion.ts; both are the plan's "revisionsloggen
+ * bevarar läsbar identitet i 24 månader". Duplicated rather than shared
+ * because a `'use server'` module can only export async functions, so neither
+ * file can export it to the other.
+ */
+const IDENTITY_RETENTION_MS = 730 * 24 * 60 * 60 * 1000
+
 async function commitAndReset(batch: WriteBatch): Promise<WriteBatch> {
   await batch.commit()
   return adminDb.batch()
+}
+
+/**
+ * Trim + case-insensitive comparison for the Stripe customer `name` /
+ * deleting-user display-name match (step 3's Stripe block, below) — deliberately
+ * NOT `normalizeEmail` (lib/invite-recipients), which is email-specific
+ * (lowercases the whole string, no trimming semantics of its own beyond
+ * that). Display names carry incidental leading/trailing whitespace far more
+ * often than emails do (a stray space typed into a Checkout card-name field),
+ * so trimming here is load-bearing, not decorative.
+ */
+function normalizeDisplayName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+// issue #349: the CONFIRM button can fire 2-3 near-simultaneous invocations
+// of `deleteAccount` for the same uid (observed ~14ms apart in the network
+// log). `deleteAccount` is partially destructive and only idempotent against
+// a *sequential* retry, not a *concurrent* one, so two overlapping runs can
+// race (e.g. one reads a membership another has already deleted). This lock
+// is what actually closes that window — the client-side `disabled` state
+// (AccountSettingsForm.tsx) helps but isn't atomic against a fast double
+// click.
+const LOCK_TTL_MS = 5 * 60 * 1000
+
+const ACCOUNT_DELETION_IN_PROGRESS_ERROR =
+  'Account deletion is already in progress. Please wait a moment and try again.'
+
+/**
+ * Acquires a per-uid lock via `accountDeletionLocks/{uid}`, using
+ * `DocumentReference.create()` rather than a transaction: `create()` is
+ * already atomic (it fails with ALREADY_EXISTS if the doc exists) without
+ * adding an `adminDb.runTransaction` call, which would otherwise inflate the
+ * transaction-count assertions `__tests__/account/deleteAccount.test.ts`
+ * makes against the per-company commit loop below.
+ *
+ * `LOCK_TTL_MS` guards against a permanently stuck lock if a process dies
+ * before reaching `releaseAccountDeletionLock`'s `finally` (e.g. a killed
+ * instance mid-anonymisation) — a lock older than that is taken over.
+ */
+async function acquireAccountDeletionLock(uid: string): Promise<boolean> {
+  const lockRef = adminDb.collection('accountDeletionLocks').doc(uid)
+  try {
+    await lockRef.create({ startedAt: FieldValue.serverTimestamp() })
+    return true
+  } catch (err) {
+    const code = (err as { code?: number }).code
+    if (code !== 6) throw err // not ALREADY_EXISTS — an unexpected failure, not a held lock
+
+    const snap = await lockRef.get()
+    const startedAt = (snap.data()?.startedAt as Timestamp | undefined)?.toMillis()
+    if (startedAt === undefined || Date.now() - startedAt > LOCK_TTL_MS) {
+      await lockRef.set({ startedAt: FieldValue.serverTimestamp() })
+      return true
+    }
+
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_lock_held' })
+    return false
+  }
+}
+
+async function releaseAccountDeletionLock(uid: string): Promise<void> {
+  try {
+    await adminDb.collection('accountDeletionLocks').doc(uid).delete()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_lock_release_failed' })
+  }
+}
+
+/** Typed sentinel thrown inside `deleteAccount`'s per-company transaction,
+ * mapped to a user-facing string in the catch block — same pattern as
+ * `actions/equipment.ts`'s `createEquipment` and `actions/team.ts`'s
+ * `updateMemberRole`/`removeMember`. */
+type DeleteAccountGuardError = Error & { code: 'sole-admin' | 'deletion-pending' }
+
+function guardError(code: DeleteAccountGuardError['code'], message: string): DeleteAccountGuardError {
+  return Object.assign(new Error(message), { code })
+}
+
+/** Every guard code that means "refused on purpose", not "something broke" — see the catch block below. */
+const REFUSAL_CODES: ReadonlySet<string> = new Set(['sole-admin', 'deletion-pending'])
+
+// Distinct from the sole-admin message below: this is what the user sees
+// when the guard itself couldn't be evaluated (a read failed, a transaction
+// couldn't be completed) — "nothing was deleted" is the fact this message
+// needs to convey, as opposed to "you were blocked on purpose." It is also
+// what `deleteAccount` shows for a `getDeletionOutcomes` result of
+// `'unknown'` — see that type's docblock for why `unknown` must never be
+// confused with `blocked`: one hands the user something to do, the other
+// means the system couldn't tell.
+const COULD_NOT_VERIFY_ERROR =
+  'Could not verify your company administrators right now. Nothing was deleted — please try again in a moment.'
+
+/**
+ * How many people, besides the caller, work at a `blocked` company — phrased
+ * for `buildBlockedClause` below. A `blocked` outcome always has at least one
+ * other member (that's what distinguishes it from `close`), so `otherCount`
+ * is never expected to be 0 here; the 0 branch exists only as a defensive
+ * fallback, not a case this function's callers should ever hit in practice.
+ *
+ * No "there" in any branch — the caller embeds this after "where ...", and
+ * "where" already establishes the location. An earlier version returned
+ * "no one else works"/"N other people work" and the caller ALSO appended
+ * " there" after it, producing "where 3 other people work there" — two
+ * location words doing the job of one. Read every branch below out loud
+ * before touching it again.
+ */
+function otherPeoplePhrase(otherCount: number): string {
+  if (otherCount <= 0) return 'no one else works'
+  if (otherCount === 1) return '1 other person works'
+  return `${otherCount} other people work`
+}
+
+/**
+ * Sentence for the `blocked` companies in a `deleteAccount` rejection: the
+ * caller is the sole admin, but other members exist, so promoting one of
+ * them (Settings → Team) is a real, actionable way out. Returns a single
+ * sentence group covering however many `blocked` companies were passed —
+ * never just the first — so a user blocked in two companies at once isn't
+ * sent to fix one, retry, and get blocked again by a company they were never
+ * told about (issue #252 point 1: "a user in several companies at once"
+ * needs a per-company account, not the worst single outcome).
+ */
+function buildBlockedClause(companies: CompanyDeletionOutcome[]): string {
+  if (companies.length === 1) {
+    const company = companies[0]!
+    const otherCount = Math.max(company.memberCount - 1, 0)
+    return `you are the only administrator of ${company.companyName}, where ${otherPeoplePhrase(otherCount)}. Make someone else an administrator under Settings → Team, then try again.`
+  }
+
+  const perCompany = companies
+    .map((company) => `${company.companyName} (${otherPeoplePhrase(Math.max(company.memberCount - 1, 0))})`)
+    .join('; ')
+  return `you are the only administrator of ${companies.length} companies — ${perCompany}. Make someone else an administrator in each one under Settings → Team, then try again.`
+}
+
+/**
+ * Builds the message for `deleteAccount`'s sole-admin block from one or more
+ * `getDeletionOutcomes` results (lib/queries/deletionOutcomes.ts) whose
+ * outcome is `blocked`.
+ *
+ * REMOVED HERE in issue #252 step 5 (PR F2): a `buildCloseClause` that told a
+ * sole member to "open Help & feedback and we'll take care of it", because
+ * removing a company together with its last member's account wasn't
+ * implemented. It is implemented now — `deleteAccount`'s commit loop creates
+ * a `mode: 'immediate'` company deletion for exactly that case — so `close`
+ * is no longer a blocking outcome and no longer reaches this function. That
+ * message was the last remnant of the dead end issue #252 exists to remove;
+ * do not re-add a clause here for `close`.
+ *
+ * `blocked` is now the only outcome this builds for, and it keeps the
+ * per-company reporting the designbrief requires: a user who is the sole
+ * admin of two companies is told about both, not sent to fix one and then
+ * blocked again by a company nobody mentioned.
+ */
+function buildSoleAdminMessage(blocking: CompanyDeletionOutcome[]): string {
+  // `otherAdminCount` (lib/queries/deletionOutcomes.ts) is 0 for every
+  // company reaching this function BY DEFINITION: `blocked` means the caller
+  // is the sole admin (so `admins <= 1` — no OTHER admin exists), and
+  // `close` means the caller is the sole member (so `admins <= 1` too, since
+  // a company can't have more admins than members). Neither clause builder
+  // below needs the value for its wording (the sentences describe total
+  // headcount, not admin headcount), but the field is still part of what
+  // `getDeletionOutcomes` returns, and a company that reaches here with a
+  // NON-zero `otherAdminCount` would mean that definition broke somewhere
+  // upstream — worth knowing about even though nothing here would act on it
+  // differently. Logged, not thrown: this function only builds a string, and
+  // a data anomaly here is not a reason to fail the whole rejection message.
+  for (const company of blocking) {
+    if (company.otherAdminCount !== 0) {
+      console.error('[actions/account]', {
+        companyId: company.companyId,
+        outcome: company.outcome,
+        otherAdminCount: company.otherAdminCount,
+        action: 'sole_admin_message_unexpected_other_admin_count',
+      })
+    }
+  }
+
+  const blockedCompanies = blocking.filter((company) => company.outcome === 'blocked')
+  if (blockedCompanies.length === 0) return COULD_NOT_VERIFY_ERROR
+
+  return `Cannot delete account: ${buildBlockedClause(blockedCompanies)}`
+}
+
+/**
+ * Issue #383: a `close` company (the caller is its only member) already
+ * carrying a `companies/{cid}.deletion` — a `mode: 'window'` deletion
+ * requested earlier while she was still a member — must refuse rather than
+ * write a second, competing `companyDeletions` ledger row over the existing
+ * one. All three `CompanyDeletionState` values refuse, each with its own
+ * actionable wording.
+ */
+/** `state` is untyped input off a Firestore doc, not a value this code minted — malformed data must fall through to the generic branch, not throw or return undefined. */
+function buildPendingDeletionMessage(
+  companyName: string,
+  deletion: { state: CompanyDeletionState | string | undefined; scheduledFor: string; timezone: string },
+): string {
+  const name = companyName || 'Your company'
+  const genericMessage = `${name} already has a deletion in progress. Contact support via Help & feedback before deleting your account.`
+
+  switch (deletion.state) {
+    case 'requested': {
+      const scheduledDate = new Date(deletion.scheduledFor)
+      if (!deletion.scheduledFor || Number.isNaN(scheduledDate.getTime())) return genericMessage
+      // Issue #361 — the company's own zone (lib/queries/deletionOutcomes.ts
+      // reads it alongside `state`/`scheduledFor`), not this account
+      // deleter's browser zone.
+      return `${name} is already scheduled for deletion on ${formatDateFull(deletion.scheduledFor, deletion.timezone)}. Cancel it in company settings, or wait until it completes, then delete your account.`
+    }
+    case 'executing':
+      return `${name} is being deleted right now. Try again in a few minutes.`
+    case 'failed':
+      return `Deleting ${name} did not finish. Contact support via Help & feedback before deleting your account.`
+    default:
+      return genericMessage
+  }
+}
+
+/**
+ * Structured, per-company result of `getAccountDeletionPreview` below.
+ * Deliberately two-level: `status: 'error'` is the TOP-LEVEL failure (the
+ * membership list itself couldn't be read — nothing to show at all), kept
+ * distinct from a per-company `outcome: 'unknown'` inside `companies`, which
+ * means every OTHER company's outcome is still trustworthy and only this one
+ * company's read failed. Collapsing the two would force the UI to treat "we
+ * know nothing" and "we know everything except this one company" the same
+ * way, which is exactly the "blocked and unknown look identical" problem the
+ * designbrief calls out for the existing `{ error: string }` shape.
+ */
+export type AccountDeletionPreview = { status: 'ready'; companies: CompanyDeletionOutcome[] } | { status: 'error' }
+
+/**
+ * Read-only, per-company preview of what `deleteAccount` would do — issue
+ * #252 step 6 PR 2, designbrief "Del 1": "Förstå exakt vad som händer med
+ * varje företag hen tillhör, innan raderingen påbörjas." A thin wrapper
+ * around `getDeletionOutcomes` (lib/queries/deletionOutcomes.ts, already
+ * read-only) that turns a thrown error into the same `'error'` shape
+ * `deleteAccount`'s own pre-flight falls back to (COULD_NOT_VERIFY_ERROR).
+ *
+ * ADVISORY ONLY — never authoritative, and must never become authoritative.
+ * `deleteAccount`'s commit loop re-reads live, per company, inside the
+ * transaction that actually deletes the membership (`confirmSoleMember`
+ * exists specifically because a counter can drift between two reads). This
+ * function's result can be stale the instant it's returned — a colleague
+ * could leave or a counter could heal in the time between rendering this
+ * preview and the user pressing confirm. Do not add logic anywhere that
+ * lets `deleteAccount` skip or shortcut its own guard because a preview
+ * already looked safe; that guard is the actual protection, this is only
+ * what the user reads beforehand.
+ */
+export async function getAccountDeletionPreview(): Promise<AccountDeletionPreview> {
+  const session = await getVerifiedSession()
+
+  try {
+    const companies = await getDeletionOutcomes(session.uid)
+    return { status: 'ready', companies }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { error: message, action: 'account_deletion_preview_failed' })
+    return { status: 'error' }
+  }
 }
 
 export async function updateUserProfile(data: {
@@ -35,45 +320,775 @@ export async function updateUserProfile(data: {
   }
 }
 
+/**
+ * Deletes the caller's own account (GDPR Art. 17): erases/anonymises their
+ * PII across every company they belong to, then deletes their Firebase Auth
+ * record.
+ *
+ * Uses `verifyAuthenticatedSession` (auth-only), not `getVerifiedSession`:
+ * this must keep working for a signed-in user with NO active company — the
+ * "delete my account" path /no-company offers a stranded member (issue #362,
+ * GDPR Art. 17 — a companyless user previously had no way to exercise her
+ * right to erasure at all, since `getVerifiedSession` would redirect her to
+ * /no-company before this function ever ran, and /no-company is exactly the
+ * page she's redirected to). The checks that still apply are the ones
+ * `verifyAuthenticatedSession` itself performs: a valid, non-revoked session
+ * cookie and a verified email. Every sole-admin/company-membership guard
+ * below still runs in full — `runAccountDeletion` reads the user's
+ * memberships directly from Firestore (`users/{uid}/memberships`), not from
+ * the session's `activeCompanyId` claim, so a companyless session skips
+ * nothing it shouldn't.
+ *
+ * A thin wrapper around `runAccountDeletion` (see that function's docblock
+ * for the three phases) that holds the issue #349 per-uid lock
+ * (`acquireAccountDeletionLock`/`releaseAccountDeletionLock` above) for the
+ * duration of the run, so at most one deletion can be in flight per uid at a
+ * time.
+ *
+ * Known, accepted overlap with `functions/src/company/strandedAccountSweep.ts`:
+ * that sweep independently deletes a stranded member's account once
+ * `pendingDeletion.scheduledFor` passes. If she calls this function herself
+ * around the same time the sweep is processing her uid, both sides can end
+ * up racing to delete the same `users/{uid}` doc and Auth record. This is
+ * safe, not just tolerated — both `runAccountDeletion` and the sweep's own
+ * delete path treat a missing `users/{uid}` doc and a missing Auth user as
+ * expected outcomes of a retry/race, not errors, so the worst case is two
+ * `deletionAuditLog` rows for one account rather than a thrown error or a
+ * partially-deleted state. Not something to fix here.
+ */
 export async function deleteAccount(): Promise<{ error?: string }> {
-  const session = await getVerifiedSession()
+  const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
-  // ── 1. Sole-admin guard ────────────────────────────────────────────────────
-  // Block if this user is the only admin of ANY company they belong to.
+  // issue #294: fail fast on a missing/misconfigured AUDIT_LOG_HMAC_KEY
+  // BEFORE the lock below, BEFORE any read or write this function makes.
+  // `hashUserIdForAudit` (lib/auditLogHash.ts) throws when the key is
+  // missing — every later call site in this file relies on it already
+  // having succeeded once, so if it's going to fail, it must fail here,
+  // where nothing has been touched yet, rather than partway through step 3
+  // after companies have already been removed (see `writeDeletionFailureAudit`
+  // and the SUCCESS-row write below, neither of which is a place a
+  // configuration error should ever be discovered for the first time). The
+  // computed hash itself is discarded — this call exists purely as a
+  // pre-flight check, same spirit as `acquireAccountDeletionLock` below.
+  try {
+    hashUserIdForAudit(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_audit_hash_missing' })
+    await recordAccountDeletionFailure(uid, { path: 'audit_hash_missing', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
+  // issue #349: acquire the per-uid lock before any of the work below — see
+  // acquireAccountDeletionLock's docblock. A failure to even acquire it
+  // (anything other than the lock being held) is treated like every other
+  // unexpected read failure in this file: log it, tell the caller nothing
+  // was deleted, never let it throw out of a Server Action.
+  let lockAcquired: boolean
+  try {
+    lockAcquired = await acquireAccountDeletionLock(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_lock_acquire_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'lock_acquire', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+  if (!lockAcquired) {
+    return { error: ACCOUNT_DELETION_IN_PROGRESS_ERROR }
+  }
+
+  // Released in `finally` so it always comes off, on every return path of
+  // `runAccountDeletion` below, including success — unlike `users/{uid}`,
+  // `accountDeletionLocks/{uid}` is a separate doc that the anonymisation
+  // batch never touches.
+  try {
+    return await runAccountDeletion(session, uid)
+  } finally {
+    await releaseAccountDeletionLock(uid)
+  }
+}
+
+/** `failedStep` values for `writeDeletionFailureAudit` below — which of
+ *  `runAccountDeletion`'s phases (see that function's own docblock) the
+ *  failure happened in. */
+type DeletionFailureStep = 'membership_removal' | 'anonymisation' | 'auth_delete'
+
+/** Hard cap on a persisted `errorCode`'s length — a defence-in-depth
+ *  backstop, not an expected case: every `code` this codebase's
+ *  Firestore/Auth errors actually carry is a short enum-like string (e.g.
+ *  'permission-denied', 'auth/user-not-found') or a small gRPC status
+ *  number, far under 64 chars. */
+const ERROR_CODE_MAX_LENGTH = 64
+
+/**
+ * The Firestore/Auth error's `code` field, or `'unknown'` when the thrown
+ * value doesn't carry one THIS FUNCTION CAN TRUST. Deliberately NEVER
+ * `error.message` — see `writeDeletionFailureAudit`'s docblock for why a
+ * message is unsafe to persist here.
+ *
+ * Only a `string` or `number` `code` is accepted — anything else (an
+ * object, an array, a nested error) is rejected outright rather than run
+ * through `String()`, which would happily stringify arbitrary structured
+ * data. `code` is meant to be a short, closed-vocabulary value; the moment
+ * it isn't a primitive, treating it as trustworthy reopens the exact hole
+ * this function otherwise exists to close by NOT persisting `error.message`
+ * — a permissive extractor here would just leak the same class of data
+ * through a different field. The length cap is a second, independent
+ * backstop against the same risk, for a `code` that is a primitive but
+ * unexpectedly long.
+ */
+function errorCodeOf(err: unknown): string {
+  const code = (err as { code?: unknown } | undefined)?.code
+  if (typeof code !== 'string' && typeof code !== 'number') return 'unknown'
+  const str = String(code)
+  return str.length > ERROR_CODE_MAX_LENGTH ? str.slice(0, ERROR_CODE_MAX_LENGTH) : str
+}
+
+/** How long an `accountDeletionFailures/{uid}` trace survives with no new
+ *  attempt — the doc's `expireAt` TTL field, rolled forward on every write. */
+const ACCOUNT_DELETION_FAILURE_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
+/**
+ * Durable, minimal trace of a `deleteAccount` attempt that failed —
+ * originally issue #337 step 1, covering only the early return-a-vague-error
+ * paths (lock/preflight/memberships-read/commit-loop, all of which return
+ * `COULD_NOT_VERIFY_ERROR`-shaped messages). This PR extends the same trace
+ * to `runAccountDeletion`'s two remaining failure points: the phase-3
+ * anonymisation catch, which returns 'Failed to delete account', and the
+ * step-4 Auth-record-delete catch, which — unlike every other path here —
+ * still returns SUCCESS (`{}`) to the caller, because Firestore's side of
+ * the deletion already committed; the trace this call writes is the only
+ * place that failure is visible at all. Before this, every one of these
+ * returns left nothing behind an operator could see: no way to tell who is
+ * stuck, where, or how often, beyond a `console.error` line in App Hosting's
+ * 30-day log retention. One doc per uid at `accountDeletionFailures/{uid}`
+ * (Admin SDK only — see firestore.rules), overwritten on every retry rather
+ * than appended: `firstAt`/`attempts` accumulate across retries, `lastAt`/
+ * `lastPath`/`lastErrorCode`/`lastCompanyIds` describe only the most recent
+ * one. Cleared entirely — not merely left to expire — the moment a deletion
+ * for that uid actually succeeds (see the final anonymisation batch below);
+ * `expireAt` (a Firestore TTL field) is the backstop for a uid that never
+ * retries and never succeeds either.
+ *
+ * Best-effort, same shape as `writeDeletionFailureAudit` above: its own
+ * try/catch, logs and swallows, and — critically — is AWAITED by every
+ * caller before that caller returns, because a Server Action's process can
+ * be torn down the instant it returns a value to the client, which would
+ * otherwise race a fire-and-forget write into oblivion.
+ *
+ * A `runTransaction`, not a plain `set`, because `attempts`/`firstAt` must
+ * read-then-write relative to whatever this uid's doc already holds; unlike
+ * `writeDeletionFailureAudit`'s `collection().add()`, this doc is a single,
+ * mutable row per uid, not an append-only log.
+ *
+ * Raw uid, not `deletionAuditLog`'s hash-elsewhere convention (its
+ * `userIdHash`, now an HMAC-keyed hash — see `lib/auditLogHash.ts`, issue
+ * #294): the entire point of this doc is that an operator can look up the
+ * person who's stuck, which a one-way hash would make impossible. No name,
+ * no email — see `types/operator.ts`'s `StuckAccountDeletionRow` for the
+ * full shape this doc is read back as.
+ */
+async function recordAccountDeletionFailure(
+  uid: string,
+  params: { path: AccountDeletionFailurePath; errorCode: string | null; companyIds: string[] },
+): Promise<void> {
+  try {
+    const now = Timestamp.now()
+    const expireAt = Timestamp.fromMillis(now.toMillis() + ACCOUNT_DELETION_FAILURE_TTL_MS)
+    const ref = adminDb.collection('accountDeletionFailures').doc(uid)
+
+    const attempts = await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref)
+      const existing = snap.data() as { firstAt?: Timestamp; attempts?: number } | undefined
+      const nextAttempts = (typeof existing?.attempts === 'number' ? existing.attempts : 0) + 1
+
+      tx.set(ref, {
+        firstAt: existing?.firstAt ?? now,
+        lastAt: now,
+        attempts: nextAttempts,
+        lastPath: params.path,
+        lastErrorCode: params.errorCode,
+        lastCompanyIds: params.companyIds,
+        expireAt,
+      })
+
+      return nextAttempts
+    })
+
+    // Plain-string log, deliberately NOT the `console.error('[tag]', {obj})`
+    // shape every other log line in this file uses: the alert policies match
+    // `textPayload:"ACCOUNT_DELETION_STUCK"`, and Cloud Logging only stores a
+    // structured entry as `textPayload` when `message` is its only field —
+    // see lib/accountDeletionAlert.ts. This line only fires once the transaction above has actually
+    // committed — a trace write that itself failed is covered by the
+    // existing `account_deletion_failure_trace_failed` log in the catch
+    // block below, not this one; logging "stuck" for a trace we never
+    // managed to record would be its own kind of lie.
+    console.error(
+      `[actions/account] ${ACCOUNT_DELETION_STUCK_LOG_MARKER} path=${params.path} attempts=${attempts} uid=${uid.slice(0, 8)}...`,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      error: message,
+      action: 'account_deletion_failure_trace_failed',
+    })
+  }
+}
+
+/**
+ * Durable, standalone audit-log row for a FAILED `runAccountDeletion`
+ * attempt — issue #358. Before this, `deletionAuditLog` had exactly one
+ * write path: the success row at the end of phase 3's WriteBatch (`batch.set`
+ * below, `triggeredBy: 'user_self'`, no `outcome`/`failedStep`/`errorCode` —
+ * a successful deletion needs none of those). A deletion that failed left
+ * nothing behind but a `console.error` line carrying a truncated uid, living
+ * in App Hosting's 30-day log retention rather than in Allocate's own data.
+ * GDPR Art. 5(2)/Art. 30 require being able to SHOW that a deletion request
+ * was received and what happened to it, even — especially — when it failed;
+ * issue #347 is the concrete case this closes: every user in the system had
+ * their deletion silently rejected for a stretch of time, with zero durable
+ * trace of any of it.
+ *
+ * MUST NEVER go through the WriteBatch that just failed — a batch that never
+ * committed writes nothing, including its own failure record, so folding
+ * this into it would just inherit the exact problem it exists to fix. This
+ * is a standalone `collection().add()` call, deliberately outside any batch
+ * or transaction, called from each `catch` block below only after that
+ * block's own batch/transaction has already been given up on.
+ *
+ * Own try/catch: if THIS write also fails, that must never mask the
+ * caller's original error — the reason `runAccountDeletion` is already
+ * returning an error to the user — and must never throw out of a Server
+ * Action. Logged the same way every other swallowed failure in this file is
+ * (truncated uid, a dedicated `action` tag) and then dropped.
+ *
+ * No name, no email, ever. `errorCode` is `errorCodeOf(err)` above — never
+ * `err.message`, which can and does embed arbitrary values (a document path,
+ * a validation detail, occasionally user-supplied text) that may themselves
+ * be or contain PII. `completedCompanies`/`totalCompanies` are what make a
+ * partially-completed, now-stranded user identifiable without the live-PII
+ * inventory query issue #357 needed before this row existed.
+ */
+async function writeDeletionFailureAudit(
+  uid: string,
+  params: {
+    failedStep: DeletionFailureStep
+    errorCode: string
+    completedCompanies: number
+    totalCompanies: number
+  },
+): Promise<void> {
+  try {
+    const userIdHash = hashUserIdForAudit(uid)
+    await adminDb.collection('deletionAuditLog').add({
+      userIdHash,
+      failedAt: FieldValue.serverTimestamp(),
+      triggeredBy: 'user_self',
+      outcome: 'failed',
+      failedStep: params.failedStep,
+      errorCode: params.errorCode,
+      completedCompanies: params.completedCompanies,
+      totalCompanies: params.totalCompanies,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      error: message,
+      action: 'delete_account_failure_audit_failed',
+    })
+  }
+}
+
+/**
+ * Three phases:
+ *   1. Pre-flight sole-admin guard — read-only, best-effort, exists only to
+ *      fail fast with a clear message; never authoritative on its own.
+ *   2. Commit loop — one `runTransaction` per company, sequential: the
+ *      authoritative guard, the company-side member doc delete, and the
+ *      memberCounts delta (lib/companyStats.ts) all happen together. Skips a
+ *      company outright if it no longer exists (a stale membership pointer),
+ *      and is idempotent against a retry whose member doc is already gone.
+ *      For a company whose sole member this is, the same transaction ALSO
+ *      writes a `mode: 'immediate'` deletion request — see that branch.
+ *   3. Anonymisation — a chunked WriteBatch over bookings/equipment/units/
+ *      invitations/Stripe, followed by session + Auth-record deletion. Only
+ *      reached if every company in phase 2 succeeded or was safely skipped,
+ *      and it skips any company phase 2 scheduled for immediate deletion.
+ *
+ * NOT side-effect free on failure. Phase 2 can start an irreversible company
+ * purge before a later company's transaction fails, in which case this
+ * function returns an error while a company is already being deleted. See the
+ * long note in phase 2's catch block; it is the one thing about this function
+ * that a reader is most likely to get wrong.
+ *
+ * Only ever called by `deleteAccount` above, which holds the issue #349
+ * per-uid lock for the duration of this call — nothing here needs to worry
+ * about a concurrent invocation for the same uid.
+ */
+async function runAccountDeletion(
+  session: AuthenticatedSession,
+  uid: string,
+): Promise<{ error?: string }> {
+  // ── 1. Pre-flight sole-admin guard (read-only, best-effort) ────────────────
+  // Exists purely to return a clear rejection before doing ANY work, for the
+  // common case. It is deliberately not authoritative — the commit loop in
+  // step 2 below re-checks per company, live, inside the transaction that
+  // also deletes that company's membership, which is the only place this
+  // guard can be both correct and race-free. A wrong answer here (stale in
+  // either direction) is always caught by step 2: a false "safe" here gets
+  // rejected for real by step 2 on the actual blocking company; a false
+  // "blocked" here just means a legitimate deletion returns this error and
+  // the user retries, which is safe because retrying is idempotent (see the
+  // `!memberSnap.exists` branch in step 2).
+  //
+  // issue #252 point 1: this used to compute its own admin counts inline and
+  // return one generic, un-named message. `getDeletionOutcomes`
+  // (lib/queries/deletionOutcomes.ts) is that same computation — per-company
+  // membership pointer skipping, `_meta/memberCounts` read, aggregate
+  // fallback — pulled out so `deleteAccount` isn't the only caller who can
+  // ever know it, and so the message below can name the blocking compan(y/ies)
+  // instead of saying "one of your companies."
+  let outcomes: CompanyDeletionOutcome[]
+  try {
+    outcomes = await getDeletionOutcomes(uid)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_preflight_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'preflight_read', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
+  // 'unknown' means a per-company read failed inside getDeletionOutcomes —
+  // kept out of the blocking set below on purpose (see that type's
+  // docblock): a company we couldn't evaluate is not evidence the user is
+  // blocked, but it's also not evidence they're safe, so this fails closed
+  // with the same "try again" message the top-level catch above uses, rather
+  // than silently treating an unreadable company as safe to leave.
+  if (outcomes.some((o) => o.outcome === 'unknown')) {
+    const unknownOutcomes = outcomes.filter((o) => o.outcome === 'unknown')
+    const unknownCompanyIds = unknownOutcomes.map((o) => o.companyId)
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_account_preflight_unknown_outcome' })
+    // This branch isn't a caught throw — there is no `err` to run through
+    // errorCodeOf — so `errorCode` instead carries the DISTINCT
+    // `unknownReason` values getDeletionOutcomes already attached to each
+    // unknown outcome (lib/queries/deletionOutcomes.ts), sorted and joined
+    // with ',' so two companies failing for the same reason don't repeat it.
+    // `null` only if somehow none of them carry a reason at all.
+    const unknownReasons = [...new Set(unknownOutcomes.map((o) => o.unknownReason).filter(Boolean))].sort()
+    await recordAccountDeletionFailure(uid, {
+      path: 'preflight_unknown',
+      errorCode: unknownReasons.length > 0 ? unknownReasons.join(',') : null,
+      companyIds: unknownCompanyIds,
+    })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+
+  // `close` is NO LONGER blocking (issue #252 step 5, PR F2). A company whose
+  // only member is deleting her account is now removed along with it, via a
+  // `mode: 'immediate'` deletion request created by the commit loop below.
+  // `blocked` — sole admin with colleagues still in the company — remains the
+  // one genuine block, and it stays a block for the reason it always was:
+  // other people's work is in there and somebody has to own it.
+  const blocking = outcomes.filter((o) => o.outcome === 'blocked')
+  if (blocking.length > 0) {
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      companyIds: blocking.map((b) => b.companyId),
+      action: 'delete_account_blocked_sole_admin',
+    })
+    return { error: buildSoleAdminMessage(blocking) }
+  }
+
+  // issue #383: a `close` company already mid-deletion (a `mode: 'window'`
+  // request from before she became its sole member, e.g. via
+  // requestCompanyDeletion) must refuse here rather than reach the commit
+  // loop below — `close` companies are processed LAST there, so a
+  // loop-only guard would refuse only after every other membership had
+  // already been irreversibly removed.
+  const pendingCloseCompanies = outcomes.filter((o) => o.outcome === 'close' && o.pendingDeletion)
+  if (pendingCloseCompanies.length > 0) {
+    console.error('[actions/account]', {
+      uid: uid.slice(0, 8) + '...',
+      companyIds: pendingCloseCompanies.map((o) => o.companyId),
+      action: 'delete_account_blocked_pending_deletion',
+    })
+    // Every pending-close company, not just the first — same reasoning as
+    // buildSoleAdminMessage above: a user refused on one company must not
+    // retry and get refused again by a second one nobody told her about.
+    const message = pendingCloseCompanies
+      .map((o) => buildPendingDeletionMessage(o.companyName, o.pendingDeletion!))
+      .join(' ')
+    return { error: message }
+  }
+
+  // ── 2. Commit loop: one transaction per company ────────────────────────────
+  // Deletes companies/{cid}/members/{uid} and applies the memberCounts delta
+  // for each company the user belongs to, one transaction per company,
+  // sequentially, and entirely BEFORE the big anonymisation batch in step 3.
+  // This is the authoritative guard — see step 1's comment — and it is also
+  // what fixes a pre-existing bug (issue #252 point 2): a leftover
+  // users/{uid}/memberships/{cid} doc pointing at a company that no longer
+  // exists used to be counted as a live admin membership by the old guard,
+  // which could never see a second admin appear for a company that will
+  // never exist again — permanently blocking account deletion. The
+  // `!companySnap.exists` branch below fixes that by skipping such a company
+  // outright.
+  //
+  // Re-read here rather than reach into `getDeletionOutcomes`'s internal
+  // read above: that function is a read-only display computation for step 1
+  // and intentionally doesn't hand back its raw membership snapshot — this
+  // loop needs the authoritative, current list of companies to iterate and
+  // delete from, not a helper built for showing the user a message. A second
+  // read of a small per-user collection (bounded by how many companies one
+  // person can join) is cheap next to the rest of this function's work.
+  // Wrapped (issue #337 step 1) — this used to throw straight out of the
+  // Server Action on a transient Firestore error, with no trace at all: the
+  // one read in this file that reached Firestore without a surrounding
+  // try/catch. Same failure class as every other read here, so it gets the
+  // same COULD_NOT_VERIFY_ERROR / recordAccountDeletionFailure treatment.
   let membershipsSnap: FirebaseFirestore.QuerySnapshot
   try {
     membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
-    const adminMemberships = membershipsSnap.docs.filter(m => m.data().role === 'admin')
-
-    if (adminMemberships.length > 0) {
-      const adminCounts = await Promise.all(
-        adminMemberships.map(async (m) => {
-          const companyId = m.data().companyId as string
-          const countSnap = await adminDb
-            .collectionGroup('memberships')
-            .where('companyId', '==', companyId)
-            .where('role', '==', 'admin')
-            .count()
-            .get()
-          return { companyId, count: countSnap.data().count }
-        })
-      )
-      const blocking = adminCounts.find(c => c.count <= 1)
-      if (blocking) {
-        console.error('[actions/account] deleteAccount blocked: sole admin', { uid: uid.slice(0, 8) + '...' })
-        return { error: 'Cannot delete account: you are the only admin of one of your companies. Transfer ownership first.' }
-      }
-    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[actions/account]', { error: message, action: 'delete_account_guard_failed' })
-    return { error: 'Failed to delete account' }
+    console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_memberships_read_failed' })
+    await recordAccountDeletionFailure(uid, { path: 'memberships_read', errorCode: errorCodeOf(err), companyIds: [] })
+    return { error: COULD_NOT_VERIFY_ERROR }
+  }
+  const unorderedCompanyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
+
+  // Companies the pre-flight thinks will be `close` are processed LAST.
+  //
+  // Ordering only — the authoritative decision is still made per company,
+  // live, inside each transaction below, and a company that lands here by a
+  // stale pre-flight reading simply gets handled in a different position.
+  // What this buys: creating a `mode: 'immediate'` request starts a purge
+  // that cannot be undone, while every other company in this loop is a
+  // reversible membership removal. If one of those fails transiently, the
+  // loop returns an error — and doing the destructive work last means no
+  // company has been torn down at the point that happens. The existing
+  // "compensation is deliberately not attempted" note below still applies,
+  // but the cost of a partial run is now much higher than it was when every
+  // step was just a membership delete, so the cheap ordering is worth having.
+  const closeFirstGuess = new Set(
+    outcomes.filter((o) => o.outcome === 'close').map((o) => o.companyId),
+  )
+  const companyIds = [
+    ...unorderedCompanyIds.filter((id) => !closeFirstGuess.has(id)),
+    ...unorderedCompanyIds.filter((id) => closeFirstGuess.has(id)),
+  ]
+
+  let completedCompanies = 0
+  /** Companies this run has scheduled for immediate deletion — skipped by the anonymisation loop in step 3. */
+  const immediatelyDeletedCompanyIds = new Set<string>()
+
+  for (const companyId of companyIds) {
+    // Generated outside runTransaction so a transaction retry reuses the same
+    // ids and the same instant instead of minting new ones per attempt.
+    const requestId = adminDb.collection('companyDeletions').doc().id
+    const requestNow = Timestamp.now()
+    const purgeAfter = Timestamp.fromMillis(requestNow.toMillis() + IDENTITY_RETENTION_MS)
+
+    try {
+      await adminDb.runTransaction(async (tx) => {
+        const companyRef = adminDb.doc(`companies/${companyId}`)
+        const memberRef = adminDb.doc(`companies/${companyId}/members/${uid}`)
+
+        // Reads first, in any order — readMemberCounts no longer writes
+        // during its read phase (see lib/companyStats.ts's `applyHeal`
+        // docblock). `applyHeal()` below is the one thing that must come
+        // after every read here and before every write.
+        const [companySnap, counts, memberSnap] = await Promise.all([
+          tx.get(companyRef),
+          readMemberCounts(tx, companyId),
+          tx.get(memberRef),
+        ])
+
+        // Stale membership pointer: see this function's own comment above —
+        // there is no company left to guard or delete a membership from.
+        if (!companySnap.exists) return
+
+        // Idempotence / partial-failure recovery: if an earlier, failed
+        // attempt at this loop already deleted this company's member doc and
+        // committed its delta, a retry lands here with the member doc
+        // already gone. Returning early — WITHOUT reapplying
+        // memberCountsDelta — is what stops the retry from decrementing
+        // `admins`/`members` a second time. Skipping this check would drive
+        // `_meta/memberCounts` stale-LOW for this company on every retry,
+        // which fails closed (blocks a future removal/deletion here) rather
+        // than stale-HIGH, but it's still wrong and entirely avoidable.
+        if (!memberSnap.exists) return
+
+        const role = memberSnap.data()!.role as string | undefined
+
+        // `close` is checked FIRST, independent of role — mirroring
+        // lib/queries/deletionOutcomes.ts's getDeletionOutcomes, which
+        // classifies `close` purely from `counts.members <= 1`. An earlier
+        // version of this guard only ever reached `close` through the
+        // `role === 'admin' && counts.admins <= 1` branch below, which
+        // silently relied on an INVARIANT it doesn't itself enforce: that a
+        // company's sole member is always its admin. That invariant holds
+        // today only because `updateMemberRole` (actions/team.ts) refuses to
+        // demote a company's last admin — enforced in a completely different
+        // file. This transaction is the AUTHORITATIVE, last-word guard
+        // (step 1's own pre-flight comment); it must reach the right answer
+        // on its own reads, not by trusting discipline upheld elsewhere. If
+        // that invariant is ever weakened, a non-admin sole member must
+        // still block here exactly like an admin one does, and checking
+        // `members <= 1` first, unconditionally, is what guarantees that.
+        //
+        // ── The one calculation in step 5 that must not be wrong ───────────
+        //
+        // `counts.members` comes from `_meta/memberCounts`, a denormalised
+        // counter. Everywhere else in this codebase a stale-LOW counter fails
+        // closed: it blocks something that should have gone through, the user
+        // retries, nothing is lost. Here it would do the opposite. `members
+        // <= 1` now authorises tearing a company down with no window and no
+        // undo, so a counter wrongly stuck at 1 for a five-person company
+        // would delete four other people's bookings, equipment and history,
+        // with nothing to retry.
+        //
+        // `confirmSoleMember` (lib/queries/deletionOutcomes.ts) is the
+        // protection, and it is passed `tx` so the live aggregate read is
+        // part of THIS transaction's read set — a member joining between the
+        // read and the commit aborts and retries rather than being deleted.
+        // The live count wins over the counter, always. A live count that is
+        // too HIGH just means this company falls through to the ordinary
+        // branches below and the account deletion is refused or proceeds
+        // normally — harmless. A live count that is too low is what this
+        // read exists to make impossible.
+        //
+        // If a future refactor is tempted to drop this second read because
+        // "we already have the count": don't. The failure it prevents is
+        // silent right up until the day it isn't.
+        let liveMembers = counts.members
+        if (liveMembers <= 1) {
+          liveMembers = await confirmSoleMember(companyId, counts.members, tx)
+        }
+
+        if (liveMembers <= 1) {
+          // The designbrief's "ensam medlem i eget företag": the company goes
+          // with the account, immediately and without a window. There is
+          // nobody left a window could protect, and the account deletion that
+          // causes it is itself immediate and irreversible.
+          //
+          // `mode: 'immediate'` is set HERE AND NOWHERE ELSE in this
+          // codebase. `requestCompanyDeletion` (actions/companyDeletion.ts)
+          // always writes `'window'`, even for a one-member company — it is
+          // the ACTION that picks the tempo, never a member count. This
+          // branch is the sole exception, and it is one because the action
+          // performed was an account deletion, not a company deletion.
+          //
+          // Writing the ledger row is what starts the purge:
+          // `onCompanyDeletionCreated` (functions/src/company/onDeletionCreated.ts)
+          // claims the lease and runs it. Nothing is purged from this
+          // process, which is deliberate — a Next.js request must never be
+          // the thing holding a whole company's destruction open.
+          const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+
+          // issue #383, authoritative: an executing purge must not get writes
+          // here — memberCountsDelta's set+merge below could recreate
+          // `_meta/memberCounts` on a company that is being torn down.
+          const existingDeletion = companySnap.data()?.deletion as
+            | { state?: CompanyDeletionState; scheduledFor?: unknown }
+            | undefined
+          if (existingDeletion) {
+            const existingPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+            throw guardError(
+              'deletion-pending',
+              buildPendingDeletionMessage(companyName, {
+                state: existingDeletion.state,
+                scheduledFor: toIso(existingDeletion.scheduledFor),
+                timezone: typeof existingPreferences?.timezone === 'string' ? existingPreferences.timezone : 'UTC',
+              }),
+            )
+          }
+
+          const memberData = memberSnap.data() ?? {}
+          const requesterName = (memberData.name as string | undefined) || session.email || 'Account holder'
+          const requesterEmail = (memberData.email as string | undefined) || session.email || ''
+          // Snapshotted at request time (issue #361) — same convention as
+          // requestCompanyDeletion's own read in actions/companyDeletion.ts.
+          // Matters here even though `mode: 'immediate'` never sends the
+          // requested/reminder mail: `companyDeleted` still reads this
+          // ledger's `timezone` from purge.ts's finalize phase, and by then
+          // the company document (and its `preferences`) is long gone.
+          const companyPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+          const timezone = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
+
+          counts.applyHeal()
+
+          tx.set(adminDb.doc(`companyDeletions/${requestId}`), {
+            requestId,
+            companyId,
+            companyName,
+            mode: 'immediate',
+            state: 'requested',
+            timezone,
+            requestedAt: requestNow,
+            requestedByUid: uid,
+            requestedByName: requesterName,
+            requestedByEmail: requesterEmail,
+            // Immediate mode has no window, so "scheduled for" is now. The
+            // sweep's overdue query matches it from the first tick, which is
+            // the intended safety net: if the trigger never fires, the sweep
+            // picks it up. `claimRequestedLease` makes the two harmless.
+            scheduledFor: requestNow,
+            attempts: 0,
+            purgeAfter,
+            // Seeded here, not left for the purge's members phase to fill in
+            // (functions/src/company/purge.ts's runMembersPhase, which
+            // normally builds formerMemberContacts by reading
+            // companies/{companyId}/members). `tx.delete(memberRef)` below
+            // removes that very member doc in this same transaction, so by
+            // the time the purge's async members phase runs there is nothing
+            // left there to read her name/email from — she would never be
+            // added to formerMemberContacts, and finalize's companyDeleted
+            // mail is only ever queued to uids that ARE in that list (issue
+            // #351). `accountStatus: 'already_gone'` is correct by
+            // construction: this branch is the one place her account is
+            // itself deleted, synchronously, later in this same call.
+            formerMemberContacts: [
+              { uid, name: requesterName, email: requesterEmail, accountStatus: 'already_gone' },
+            ],
+          })
+
+          tx.update(companyRef, {
+            deletion: {
+              state: 'requested',
+              requestId,
+              requestedAt: requestNow,
+              requestedByName: requesterName,
+              scheduledFor: requestNow,
+              mode: 'immediate',
+            },
+          })
+
+          tx.delete(memberRef)
+          memberCountsDelta(tx, companyId, { members: -1, admins: role === 'admin' ? -1 : 0 })
+
+          immediatelyDeletedCompanyIds.add(companyId)
+          return
+        }
+
+        if (role === 'admin' && counts.admins <= 1) {
+          // Same message shape as the pre-flight (buildSoleAdminMessage),
+          // built from what this transaction already read rather than a
+          // fixed string — this is the authoritative guard (step 1's own
+          // comment), so if it ever disagrees with a stale pre-flight
+          // answer, the user should still see a message naming the right
+          // company and count, not a generic fallback.
+          const companyName = (companySnap.data()?.name as string | undefined) ?? ''
+          const blockingOutcome: CompanyDeletionOutcome = {
+            companyId,
+            companyName,
+            role: 'admin',
+            // `liveMembers`, not `counts.members`: when the counter read low
+            // enough to trigger `confirmSoleMember` above, the live number is
+            // the one that just decided this company is NOT being deleted, so
+            // it is also the one the user should be told about. Quoting the
+            // stale counter here would produce "you are the only
+            // administrator of Acme, where no one else works" for a company
+            // with four colleagues in it — which reads as a bug in the
+            // sentence, not as the counter drift it actually is.
+            memberCount: liveMembers,
+            otherAdminCount: Math.max(counts.admins - 1, 0),
+            outcome: 'blocked',
+          }
+          throw guardError('sole-admin', buildSoleAdminMessage([blockingOutcome]))
+        }
+
+        // Only now that neither early return nor the guard above has fired —
+        // a throw discards this whole transaction, including an unpersisted
+        // heal, which is fine: the next reader heals it again from the same
+        // live aggregate.
+        counts.applyHeal()
+
+        tx.delete(memberRef)
+        memberCountsDelta(tx, companyId, { members: -1, admins: role === 'admin' ? -1 : 0 })
+      })
+
+      completedCompanies += 1
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      const message = err instanceof Error ? err.message : String(err)
+
+      // Compensation is deliberately not attempted here: the member doc's
+      // content IS the PII this function exists to erase, so re-creating it
+      // to "undo" a partial run would be self-defeating. Whichever companies
+      // already had their membership removed stay that way; the caller sees
+      // one clear error and can retry, which is safe because of the two
+      // early returns above.
+      //
+      // READ THIS BEFORE TRUSTING THE PARAGRAPH ABOVE: as of issue #252 step
+      // 5, a `deleteAccount` that returns an error is NOT side-effect free.
+      // "Nothing was deleted" was true when every step of this loop was a
+      // reversible membership removal. It stopped being true the moment the
+      // loop gained the `mode: 'immediate'` branch: writing that ledger row
+      // starts `runCompanyPurge` asynchronously, through
+      // `onCompanyDeletionCreated`, and NOTHING here can call it back. So if
+      // the loop passes a `close` company and then fails on a later one, the
+      // user is told her account could not be deleted while one of her
+      // companies is already, irreversibly, on its way out.
+      //
+      // That behaviour is the right one — trying to unwind a purge that has
+      // begun deleting subcollections would be far worse than letting it
+      // finish. What must not happen is a future reader concluding from the
+      // paragraph above that a failed call left the world untouched. The
+      // `closeFirstGuess` ordering where `companyIds` is built is the
+      // mitigation: it makes the irreversible work happen last, so a
+      // transient failure on an ordinary company almost always lands before
+      // any company has been scheduled. "Almost always" is not "never", and
+      // that gap is the honest statement of this function's failure mode.
+      console.error('[actions/account]', {
+        uid: uid.slice(0, 8) + '...',
+        companyId,
+        error: message,
+        action: 'delete_account_partial_membership_removal',
+        completed: completedCompanies,
+        total: companyIds.length,
+      })
+
+      // A REFUSAL_CODES throw ('sole-admin', 'deletion-pending') is a valid,
+      // expected refusal — the guard doing exactly its job — not a failure to
+      // record. Every other code here is an actual failure (a transient
+      // Firestore error, a permissions problem) that left the caller in an
+      // unknown, possibly-partial state, which is exactly what issue #358
+      // needs a durable trace of.
+      const isRefusal = code !== undefined && REFUSAL_CODES.has(code)
+      if (!isRefusal) {
+        await writeDeletionFailureAudit(uid, {
+          failedStep: 'membership_removal',
+          errorCode: errorCodeOf(err),
+          completedCompanies,
+          totalCompanies: companyIds.length,
+        })
+        await recordAccountDeletionFailure(uid, { path: 'commit_loop', errorCode: errorCodeOf(err), companyIds: [companyId] })
+      }
+
+      // `message` here is `guardError`'s own message — already the
+      // fully-built, company-named string, not a fixed constant (see the
+      // throw sites above) — so it's used directly rather than mapped to one.
+      return { error: isRefusal ? message : COULD_NOT_VERIFY_ERROR }
+    }
   }
 
-  // ── 2. Anonymize all user data ─────────────────────────────────────────────
+  // ── 3. Anonymize all user data ──────────────────────────────────────────────
+  // Follow-up to issues #337/#338 (PR #413): `currentCompanyId` tracks
+  // whichever company the loop
+  // below is working on, so the catch block can pass it to
+  // `recordAccountDeletionFailure` as `companyIds` — same idea as step 2's
+  // `[companyId]` a few hundred lines up, just without a transaction scope of
+  // its own to close over. `null` both before the loop starts and after it
+  // ends (including during the operatorFeedback pass, which iterates tickets
+  // across companies rather than one company at a time) — a failure in
+  // either of those spots legitimately has no single company to blame.
+  let currentCompanyId: string | null = null
   try {
-    const companyIds = membershipsSnap.docs.map(d => d.data().companyId as string).filter(Boolean)
     let batch = adminDb.batch()
     let opCount = 0
 
@@ -95,7 +1110,59 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       }
     }
 
+    // Same rotation as addOp/addDelete above, but for a `.set()` — needed for
+    // the `mail/{id}` docs the Stripe-billing-contact block below queues:
+    // `addOp` calls `batch.update()`, which throws NOT_FOUND against a mail
+    // doc id that doesn't exist yet (it's freshly minted via `.doc()`, never
+    // read back), so those writes need `.set()` instead while still sharing
+    // the same `batch`/`opCount` closure and BATCH_LIMIT rotation as every
+    // other write in this loop.
+    async function addSet(ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) {
+      batch.set(ref, data)
+      opCount++
+      if (opCount >= BATCH_LIMIT) {
+        batch = await commitAndReset(batch)
+        opCount = 0
+      }
+    }
+
+    // Deleting user's display name, for the Stripe name-match check below
+    // (GDPR finding: Checkout's `customer_update: { name: 'auto' }`,
+    // actions/subscription.ts, can leave a Stripe customer's `name` holding
+    // the payer's own personal name rather than the company's). No earlier
+    // read in this function carries it for the general case — step 2's
+    // per-company transaction reads `companies/{cid}/members/{uid}.name`
+    // only inside the sole-member/immediate branch, and that member doc is
+    // already deleted by the time this loop runs for every OTHER company
+    // (see the "Company member doc" comment below). `users/{uid}` is read
+    // fresh here instead: one read, not per-company, and the doc still
+    // exists — it isn't deleted until the very end of this same batch.
+    const deletingUserSnap = await adminDb.doc(`users/${uid}`).get()
+    const deletingUserName = deletingUserSnap.data()?.name as string | undefined
+
     for (const companyId of companyIds) {
+      // A company scheduled for IMMEDIATE deletion in step 2 is skipped here
+      // entirely, and that is a correctness requirement, not an optimisation.
+      //
+      // Creating that ledger row starts `runCompanyPurge` through
+      // `onCompanyDeletionCreated`, typically within a second — while this
+      // loop is still running. Every `batch.update()` below targets a
+      // document the purge is concurrently deleting, and a WriteBatch whose
+      // update hits a document that no longer exists fails the ENTIRE batch
+      // with NOT_FOUND. That would abort this user's account deletion
+      // halfway: her memberships gone, her company being purged, her Auth
+      // record still there, and an error message telling her nothing worked.
+      //
+      // Skipping costs nothing, either. Anonymising fields on documents that
+      // are about to be deleted outright achieves the same end state by a
+      // longer route, and the purge's own Stripe phase
+      // (functions/src/company/purge.ts) cancels the subscription and
+      // anonymises the customer — the two things the tail of this loop body
+      // would otherwise have done for this company.
+      if (immediatelyDeletedCompanyIds.has(companyId)) continue
+
+      currentCompanyId = companyId
+
       const bookingsRef = adminDb.collection(`companies/${companyId}/bookings`)
       const equipmentRef = adminDb.collection(`companies/${companyId}/equipment`)
       const companyRef = adminDb.doc(`companies/${companyId}`)
@@ -120,18 +1187,35 @@ export async function deleteAccount(): Promise<{ error?: string }> {
       const byEquipmentApprover = await equipmentRef.where('approverId', '==', uid).get()
       for (const doc of byEquipmentApprover.docs) await addOp(doc.ref, { approverId: null })
 
-      // Units: read all units in company, filter in-code for user references
-      const unitsSnap = await adminDb
-        .collectionGroup('units')
-        .where('companyId', '==', companyId)
-        .get()
-      for (const doc of unitsSnap.docs) {
-        const data = doc.data()
-        const updates: Record<string, null> = {}
-        if (data.createdBy === uid) updates.createdBy = null
-        if (data.updatedBy === uid) updates.updatedBy = null
-        if (data.deactivatedBy === uid) updates.deactivatedBy = null
-        if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+      // Units: iterate equipment subcollections directly — avoids collectionGroup
+      // index requirement. A single-filter collectionGroup('units').where('companyId',
+      // ...) query needs a COLLECTION_GROUP_ASC index on companyId that firestore.indexes.json
+      // never had, so this threw FAILED_PRECONDITION before the query ever ran, making
+      // GDPR Art. 17 deletion fail deterministically for every user (issue #347). No index
+      // is needed here because equipmentRef is already scoped to this company. Same pattern
+      // as anonymizeMemberReferences in actions/team.ts.
+      //
+      // The per-equipment units reads are fired in parallel (basic plan caps
+      // equipment at 100 — lib/plans.ts — so sequential awaits here, stacked
+      // on top of the ~9 other sequential queries this per-company loop
+      // already does, could push a user in several near-limit companies
+      // toward a Server Action timeout). Only the reads are parallelised:
+      // `addOp` mutates the shared `batch`/`opCount` closure state and must
+      // stay called one at a time, so the writes below remain a plain
+      // sequential loop over the resolved snapshots.
+      const allEquipmentSnap = await equipmentRef.get()
+      const unitsSnaps = await Promise.all(
+        allEquipmentSnap.docs.map((eqDoc) => eqDoc.ref.collection('units').get()),
+      )
+      for (const unitsSnap of unitsSnaps) {
+        for (const doc of unitsSnap.docs) {
+          const data = doc.data()
+          const updates: Record<string, null> = {}
+          if (data.createdBy === uid) updates.createdBy = null
+          if (data.updatedBy === uid) updates.updatedBy = null
+          if (data.deactivatedBy === uid) updates.deactivatedBy = null
+          if (Object.keys(updates).length > 0) await addOp(doc.ref, updates)
+        }
       }
 
       // Invitations: this user's PII shows up on invitation docs in three
@@ -180,36 +1264,18 @@ export async function deleteAccount(): Promise<{ error?: string }> {
         }
       }
 
-      // Company member doc: carries this user's name/email (written by
-      // acceptInvitation, onUserCreate and actions/auth.ts) and is readable by
-      // every remaining company member via the firestore.rules wildcard
-      // `companies/{companyId}/{document=**}`. Leaving it behind after account
-      // deletion keeps that PII exposed — GDPR Art. 17. Deleting a doc that
-      // doesn't exist is a no-op in Firestore, so no existence check is needed
-      // here; don't add one.
-      //
-      // Deliberately NOT routed through addDelete(): addDelete carries its own
-      // rotation check and would commit the batch containing this delete —
-      // alone — the instant its own opCount++ crosses BATCH_LIMIT, before
-      // memberCountDelta below ever runs. This loop runs once per company and
-      // accumulates writes from bookings/equipment/units/invitations before
-      // reaching here, so opCount can realistically be near the limit at this
-      // point — unlike removeMember, where the equivalent pair is only the
-      // 2nd/3rd op in a fresh batch and can never cross BATCH_LIMIT by itself.
-      // Both ops below are therefore bare `batch.x()` + manual `opCount++`,
-      // with the single rotation check deferred until after the pair — the
-      // same shape removeMember uses, and the only shape that actually
-      // guarantees the delete and the decrement land in the same commit.
-      batch.delete(adminDb.doc(`companies/${companyId}/members/${uid}`))
-      opCount++
-
-      memberCountDelta(batch, companyId, -1)
-      opCount++
-
-      if (opCount >= BATCH_LIMIT) {
-        batch = await commitAndReset(batch)
-        opCount = 0
-      }
+      // Company member doc (carries this user's name/email — GDPR Art. 17)
+      // and its memberCounts delta are no longer handled here: step 2's
+      // per-company transaction, above, already deleted
+      // companies/{companyId}/members/{uid} and applied the delta before
+      // this anonymisation loop ever started. Doing it there instead of here
+      // is what closes a sync risk this loop used to have: the company-side
+      // member doc used to be deleted here while the user-side membership
+      // doc was deleted later (see the "Delete membership docs" loop below,
+      // after this `for` loop) — potentially in a different WriteBatch chunk
+      // if a large anonymisation run rotated batches in between. Now the
+      // company-side delete is already committed, in its own transaction,
+      // before any of that can happen.
 
       // Company doc: createdBy
       const companySnap = await companyRef.get()
@@ -219,31 +1285,222 @@ export async function deleteAccount(): Promise<{ error?: string }> {
 
       // Stripe customer anonymisation — must run before Auth deletion while
       // stripeCustomerId is still readable. Anonymise rather than delete so
-      // invoices are preserved (Bokföringslagen 7 years).
+      // invoices are preserved (Bokföringslagen 7 years) — BUT only when the
+      // Stripe customer's own email OR name is the deleting user's own. A
+      // company's Stripe customer is shared billing infrastructure, not any
+      // one member's personal record: this used to overwrite it with
+      // 'Deleted User' / 'deleted@allocate.invalid' for EVERY surviving
+      // company the deleting user belonged to, including a crew member who
+      // was never the billing contact — breaking a live subscription's
+      // invoices/receipts for everyone else in that company. (Already hit in
+      // alpha: cus_VIpkpdx4xNrLof, QA Switch Second AB.) Matching on email is
+      // what confines the FULL anonymisation to the one case it's meant for:
+      // the deleting user WAS the billing contact, and now nobody is.
+      //
+      // The name check is a narrower, separate GDPR fix: Checkout creates the
+      // Stripe customer with `customer_update: { name: 'auto' }`
+      // (actions/subscription.ts), which lets Stripe fill `name` with
+      // whatever the payer typed on the card form — routinely her own
+      // personal name, not the company's, even when her email was never the
+      // billing email at all (e.g. she paid once from a personal address
+      // that was never wired into Allocate as the contact). A name-only
+      // match therefore does NOT imply she was the billing contact — it only
+      // means her personal name is sitting on a company's Stripe customer,
+      // which is corrected on its own: replace `name` with the COMPANY's
+      // name (never a placeholder), and touch NOTHING else. No email clear,
+      // no `billing` flag, no admin mail — none of those follow from a name
+      // coincidence the way they follow from an actual missing billing
+      // contact.
       const stripeCustomerId = companySnap.data()?.stripeCustomerId as string | undefined
       if (stripeCustomerId) {
+        let customerEmailMatches = false
+        let customerNameMatches = false
         try {
-          await stripe.customers.update(stripeCustomerId, {
-            email: 'deleted@allocate.invalid',
-            name: 'Deleted User',
-            metadata: { deletedAt: new Date().toISOString() },
-          })
+          const customer = await stripe.customers.retrieve(stripeCustomerId)
+          if (!customer.deleted) {
+            if (customer.email) {
+              customerEmailMatches = normalizeEmail(customer.email) === normalizeEmail(session.email)
+            }
+            if (customer.name && deletingUserName) {
+              customerNameMatches = normalizeDisplayName(customer.name) === normalizeDisplayName(deletingUserName)
+            }
+          }
         } catch (stripeErr) {
           const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
-          console.error('[actions/account] Stripe anonymisation failed', { stripeCustomerId, error: msg })
+          console.error('[actions/account] Stripe customer retrieve failed', { stripeCustomerId, error: msg })
         }
 
-        // Clear the Stripe link from the company doc if the subscription is
-        // already cancelled — it no longer serves a purpose. Keep it for
-        // active/trialing subscriptions so the billing portal still works.
+        if (!customerEmailMatches && customerNameMatches) {
+          // Name-only match — see the docblock above for why this branch
+          // touches only `name`. Skipped entirely (not even attempted) when
+          // the company has no name to fall back to: writing nothing is
+          // always safer than writing a placeholder that looks like a person
+          // just got renamed to it.
+          const companyName = companySnap.data()?.name as string | undefined
+          if (companyName) {
+            try {
+              await stripe.customers.update(stripeCustomerId, { name: companyName })
+            } catch (stripeErr) {
+              const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+              console.error('[actions/account] Stripe customer name correction failed', { stripeCustomerId, error: msg })
+            }
+          }
+        }
+
+        if (customerEmailMatches) {
+          const companyName = companySnap.data()?.name as string | undefined
+          let updateSucceeded = false
+          try {
+            await stripe.customers.update(stripeCustomerId, {
+              email: '',
+              ...(companyName ? { name: companyName } : {}),
+              metadata: { billingEmailRemovedAt: new Date().toISOString() },
+            })
+            updateSucceeded = true
+          } catch (stripeErr) {
+            const msg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr)
+            console.error('[actions/account] Stripe billing-email removal failed', { stripeCustomerId, error: msg })
+          }
+
+          // Only mark the company as missing a billing address — and only
+          // mail its admins about it — once the Stripe side is confirmed
+          // gone. A failed `customers.update` above means Stripe still has
+          // the old email on file; setting the flag anyway would tell admins
+          // to fix a problem that doesn't exist yet, and mail them a link to
+          // a portal where nothing looks wrong.
+          if (updateSucceeded) {
+            const iso = new Date().toISOString()
+            await addOp(companyRef, { 'billing.emailMissingSince': iso, 'billing.lastReminderAt': iso })
+
+            const adminsSnap = await adminDb
+              .collection(`companies/${companyId}/members`)
+              .where('role', '==', 'admin')
+              .get()
+            const appUrlBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.allocate.at').replace(/\/$/, '')
+            const settingsUrl = `${appUrlBase}/settings/subscription`
+            const normalizedDeletingEmail = normalizeEmail(session.email)
+
+            for (const adminDoc of adminsSnap.docs) {
+              const email = adminDoc.data().email as string | undefined
+              // The deleting user's own company-side member doc is already
+              // gone (step 2, above) by the time this loop runs, so this
+              // exclusion is defensive rather than load-bearing — but worth
+              // keeping explicit: nobody should ever get a "your billing
+              // email is missing" mail about the account they just deleted.
+              if (!email || normalizeEmail(email) === normalizedDeletingEmail) continue
+              await addSet(adminDb.collection('mail').doc(), {
+                to: email,
+                template: 'billingEmailMissing',
+                data: { companyName: companyName ?? '', settingsUrl, isReminder: false },
+                status: 'queued',
+                companyId,
+                priority: 'normal',
+                createdAt: iso,
+                // Issue #325 (mail retention): `iso` above is a string, not a
+                // Timestamp, so a fresh one is taken here rather than parsed
+                // back out of it.
+                expireAt: mailExpireAt(Timestamp.now()),
+              })
+            }
+          }
+        }
+
+        // Clear the Stripe link from the company doc only once the
+        // subscription is fully cancelled — it no longer serves a purpose.
+        // A bare `!subStatus` used to trigger this too, which cleared a
+        // perfectly live billing-portal link the moment `subscription.status`
+        // was merely absent/unset, rather than actually cancelled.
         const subStatus = companySnap.data()?.subscription?.status as string | undefined
-        if (!subStatus || subStatus === 'canceled') {
+        if (subStatus === 'canceled') {
           await addOp(companyRef, { stripeCustomerId: '' } as Record<string, null | string>)
         }
       }
     }
 
-    // Delete membership docs
+    // Reset before the operatorFeedback pass below: that pass queries across
+    // every company the user has ever filed a ticket in, not the one company
+    // the loop above just finished with, so a failure inside it has no
+    // single company to attribute — see `currentCompanyId`'s declaration
+    // comment above the try block.
+    currentCompanyId = null
+
+    // operatorFeedback (issue #338 PR 1): ONE global query across every
+    // company this user has ever submitted a ticket in, not per-`companyIds`
+    // like the loop above — this also catches a ticket filed in a company
+    // she already left before this deletion run, whose id no longer appears
+    // in `companyIds` at all.
+    //
+    // Written outside the batch above, one ticket at a time, on purpose: a
+    // company on `immediatelyDeletedCompanyIds` starts an async
+    // `runCompanyPurge` (functions/src/company/purge.ts) that deletes this
+    // exact ticket — `operatorFeedback` is one of purge's ORPHAN_COLLECTIONS
+    // — possibly mid-run of this very function. A `batch.update()` against a
+    // document that no longer exists fails with NOT_FOUND and aborts the
+    // ENTIRE WriteBatch, which is exactly the halfway-abort the
+    // `immediatelyDeletedCompanyIds` skip earlier in this function exists to
+    // prevent (see that comment) — folding these into the same batch would
+    // reintroduce that failure mode for a collection the batch loop above
+    // never touches. Individual `ref.update()` calls confine a NOT_FOUND to
+    // the one ticket that raced the purge, which is skipped and tolerated;
+    // any OTHER error is a real failure and is rethrown, landing in the
+    // catch below exactly like a failure from the batch would.
+    //
+    // MUST run BEFORE `batch.commit()` below, not after (code review on PR
+    // #413 caught this the first time round). The batch that follows deletes
+    // `users/{uid}`, every `users/{uid}/memberships/*` doc and
+    // `accountDeletionFailures/{uid}`, and writes the SUCCESS
+    // `deletionAuditLog` row — once that commits, this deletion IS success,
+    // as far as every other reader of this user's data is concerned. A
+    // non-NOT_FOUND failure in this loop running AFTER that commit would
+    // write a `writeDeletionFailureAudit('anonymisation', ...)` row that
+    // directly contradicts the SUCCESS row committed moments earlier in the
+    // very same run (`completedCompanies === totalCompanies`, yet also a
+    // 'failed' outcome) — nothing would ever be recorded as both a success
+    // and a failure for the same attempt. Running this loop first means any
+    // failure here is caught by the SAME catch block every other step-3
+    // failure already uses, before anything downstream of it has committed —
+    // exactly the same reasoning as the `immediatelyDeletedCompanyIds` skip
+    // two paragraphs up, just at the scale of "this whole function's step 3"
+    // rather than one company's writes. A retry after such a failure is
+    // clean: any ticket this loop already nulled before the throw no longer
+    // matches `where('submittedBy', '==', uid)` on the next attempt, the same
+    // idempotence the batch's own deletes/creates already rely on.
+    //
+    // Step 3's catch below now also calls `recordAccountDeletionFailure`
+    // (path 'anonymisation') alongside the pre-existing
+    // `writeDeletionFailureAudit` call, so a failure here — same as any other
+    // step-3 failure — both traces to `accountDeletionFailures/{uid}` for the
+    // operator view AND pages the `ACCOUNT_DELETION_STUCK` alert. That used
+    // to be a gap covering the whole of step 3, not something specific to
+    // operatorFeedback; it isn't anymore (see the phase-3 catch block below).
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    for (const doc of feedbackSnap.docs) {
+      const companyId = doc.data().companyId as string | undefined
+      // Skip outright, don't even attempt: this ticket's company is already
+      // scheduled for purge this run, so the update is racing a delete that
+      // is guaranteed to win eventually even if it hasn't yet — attempting it
+      // only spends a round trip on a write whose outcome doesn't matter.
+      if (companyId && immediatelyDeletedCompanyIds.has(companyId)) continue
+      try {
+        await doc.ref.update({ submittedBy: null, userName: null })
+      } catch (updateErr) {
+        if ((updateErr as { code?: unknown } | undefined)?.code === GrpcStatus.NOT_FOUND) continue
+        throw updateErr
+      }
+    }
+
+    // Delete membership docs (users/{uid}/memberships/*). Deliberately left
+    // in this WriteBatch rather than folded into step 2's per-company
+    // transaction: this loop iterates ALL of the user's membership docs
+    // regardless of company, including any stale pointer whose company no
+    // longer exists (step 2 skips those via `!companySnap.exists` — the
+    // pointer itself still needs deleting, it's still this user's data). It
+    // also naturally belongs with the rest of this function's user-side
+    // cleanup (the user doc delete and the audit log write immediately
+    // below), which have no equivalent per-company transaction to join. By
+    // the time this runs, step 2 has already either deleted every company's
+    // member doc or returned an error — so every doc this loop deletes here
+    // is safe to remove.
     for (const membershipDoc of membershipsSnap.docs) {
       batch.delete(membershipDoc.ref)
       opCount++
@@ -257,8 +1514,26 @@ export async function deleteAccount(): Promise<{ error?: string }> {
     batch.delete(adminDb.doc(`users/${uid}`))
     opCount++
 
-    // Deletion audit log (sha256 hash only — no PII stored)
-    const userIdHash = createHash('sha256').update(uid).digest('hex')
+    // issue #337: clear this uid's stuck-deletion trace, if any, in the same
+    // batch as the rest of this success — a deletion that reaches this point
+    // has nothing left for an operator to see. `.delete()` on a doc that
+    // never existed is a no-op, so this is safe to run unconditionally
+    // rather than reading the doc first to check.
+    batch.delete(adminDb.doc(`accountDeletionFailures/${uid}`))
+    opCount++
+    if (opCount >= BATCH_LIMIT) {
+      batch = await commitAndReset(batch)
+      opCount = 0
+    }
+
+    // Deletion audit log (HMAC-keyed hash of the uid, not a plain sha256 —
+    // see lib/auditLogHash.ts, issue #294; still personal data, not
+    // anonymous — pseudonymisation, not anonymisation). The SUCCESS shape:
+    // `deletedAt`, no `outcome`/`failedStep`/`errorCode` — those only ever
+    // appear on a `writeDeletionFailureAudit` row (issue #358), which is
+    // written outside this batch, from each phase's own `catch` block, never
+    // here.
+    const userIdHash = hashUserIdForAudit(uid)
     batch.set(adminDb.collection('deletionAuditLog').doc(), {
       userIdHash,
       deletedAt: FieldValue.serverTimestamp(),
@@ -269,6 +1544,35 @@ export async function deleteAccount(): Promise<{ error?: string }> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_account_anonymise_failed' })
+    // issue #358: this is the failure `deletionAuditLog` used to have zero
+    // record of — every company's membership was already removed (step 2
+    // fully succeeded, or this catch wouldn't be reachable), yet the batch
+    // above never committed, so the user doc, membership docs, and the
+    // SUCCESS audit row a few lines up all failed to write together. Written
+    // as its own standalone call, never folded into the batch that just
+    // failed — see writeDeletionFailureAudit's docblock.
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
+    // This PR: also trace to `accountDeletionFailures/{uid}` and emit the
+    // `ACCOUNT_DELETION_STUCK` marker — `writeDeletionFailureAudit` above is
+    // an append-only, operator-invisible-until-queried log; this is what
+    // actually pages support@ (see `recordAccountDeletionFailure`'s
+    // docblock) and what the operator "stuck deletions" list reads. Before
+    // this PR, a step-3 failure — the one that returns 'Failed to delete
+    // account' to the user, the same wording as the stuck-alert paths above
+    // — was the one failure mode in this function invisible to both.
+    // `currentCompanyId` is whichever company the loop above was on when it
+    // threw, or `null` if the throw happened during the operatorFeedback
+    // pass (see that variable's declaration comment).
+    await recordAccountDeletionFailure(uid, {
+      path: 'anonymisation',
+      errorCode: errorCodeOf(err),
+      companyIds: currentCompanyId ? [currentCompanyId] : [],
+    })
     return { error: 'Failed to delete account' }
   }
 
@@ -285,20 +1589,93 @@ export async function deleteAccount(): Promise<{ error?: string }> {
     await adminAuth.deleteUser(uid)
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'account_deleted' })
   } catch (err) {
+    const code = (err as { code?: unknown } | undefined)?.code
+
+    // 'auth/user-not-found' is not a failure of THIS deletion — it means the
+    // goal (no Auth record left) is already reached. The stranded-account
+    // sweep (functions/src/company/strandedAccountSweep.ts) can delete the
+    // same uid's Auth record concurrently, for a user whose
+    // pendingDeletion.scheduledFor has already passed by the time she also
+    // runs deleteAccount herself. Whichever of the two calls `deleteUser`
+    // second lands here, and finding nothing left to delete is success, not
+    // an error worth a failure-audit row (there was nothing this run could
+    // have done differently, and nothing was left in a bad state — the
+    // record is gone either way). Logged at info level, not console.error,
+    // for the same reason: this is an expected race outcome, not a fault.
+    if (code === 'auth/user-not-found') {
+      console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'delete_auth_user_already_gone' })
+      return {}
+    }
+
     const message = err instanceof Error ? err.message : String(err)
     console.error('[actions/account]', { uid: uid.slice(0, 8) + '...', error: message, action: 'delete_auth_user_failed' })
+    // issue #358: the SUCCESS audit row was already committed in step 3, above
+    // — Firestore's side of this deletion is done and durable. This failure
+    // row makes the gap it leaves behind visible: the user doc is gone but
+    // the Firebase Auth record is still alive, so she could still sign in to
+    // an account with none of her data left. `completedCompanies` is every
+    // company by construction here — reaching this line means step 2's loop
+    // ran to completion (a mid-loop failure returns before this point).
+    await writeDeletionFailureAudit(uid, {
+      failedStep: 'auth_delete',
+      errorCode: errorCodeOf(err),
+      completedCompanies,
+      totalCompanies: companyIds.length,
+    })
+    // This PR: also trace to `accountDeletionFailures/{uid}` / page the
+    // `ACCOUNT_DELETION_STUCK` alert — same reasoning as the phase-3 catch
+    // above, but note the asymmetry here: this function still returns `{}`
+    // (success) to the CALLER below, because Firestore's side of the
+    // deletion already committed in step 3. The trace this call (re)writes
+    // is therefore the only place this failure is visible at all — not the
+    // return value, which a client can't use to detect it, and the success
+    // batch a few lines up already deleted whatever trace doc existed before
+    // this attempt, so this recreates one rather than adding to it. A retry
+    // resolves cleanly: memberships are already gone, so step 2 no-ops, step
+    // 3's batch clears this trace doc again, and `deleteUser` runs a second
+    // time.
+    await recordAccountDeletionFailure(uid, { path: 'auth_delete', errorCode: errorCodeOf(err), companyIds: [] })
   }
 
   return {}
 }
 
+// Uses `verifyAuthenticatedSession` (auth-only), not `getVerifiedSession`:
+// this must keep working for a signed-in user with NO active company —
+// the "export my data" path /no-company offers a stranded member (issue
+// #252 step 5, PR F, design brief "Del 3"). `getVerifiedSession` would
+// redirect her away before this function ever ran. Nothing below reads
+// `session.activeCompanyId` — the company list already comes from her
+// `users/{uid}/memberships` collection, not the session claim.
 export async function exportUserData(): Promise<{ json?: string; error?: string }> {
-  const session = await getVerifiedSession()
+  const session = await verifyAuthenticatedSession()
   const uid = session.uid
 
   try {
     const userSnap = await adminDb.collection('users').doc(uid).get()
     const userData = userSnap.data() ?? {}
+
+    // issue #337 step 1, GDPR Art. 15 (lolita's review): a stuck-deletion
+    // trace records the fact that THIS user's own earlier deletion attempt(s)
+    // failed, where, and how often — that's her own data, so it belongs in
+    // her own export like everything else here. Deliberately no new
+    // failure-handling policy: this read sits inside the same try block as
+    // every other read in this function, so a failure here fails the whole
+    // export exactly the way a failing `userSnap`/`membershipsSnap` read
+    // already does — there is no separate partial-export fallback elsewhere
+    // in this function to diverge from.
+    const traceSnap = await adminDb.doc(`accountDeletionFailures/${uid}`).get()
+    const traceData = traceSnap.data()
+    const accountDeletionFailure = traceSnap.exists && traceData
+      ? {
+          firstAt: isoOrNull(traceData.firstAt as TimestampLike),
+          lastAt: isoOrNull(traceData.lastAt as TimestampLike),
+          attempts: typeof traceData.attempts === 'number' ? traceData.attempts : 0,
+          lastPath: traceData.lastPath ?? null,
+          lastErrorCode: traceData.lastErrorCode ?? null,
+          lastCompanyIds: Array.isArray(traceData.lastCompanyIds) ? traceData.lastCompanyIds : [],
+        }
+      : null
 
     const membershipsSnap = await adminDb.collection(`users/${uid}/memberships`).get()
 
@@ -322,7 +1699,7 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
             startDate:   b.startDate ?? null,
             endDate:     b.endDate ?? null,
             status:      b.status ?? null,
-            createdAt:   b.createdAt ?? null,
+            createdAt:   isoOrNull(b.createdAt as TimestampLike),
           }
         })
 
@@ -331,8 +1708,87 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
           companyName: companyData.name ?? null,
           plan:        companyData.subscription?.plan ?? null,
           role:        membership.role ?? null,
-          joinedAt:    membership.joinedAt ?? null,
+          joinedAt:    isoOrNull(membership.joinedAt as TimestampLike),
           bookings,
+        }
+      })
+    )
+
+    // Feedback tickets (issue #415, GDPR Art. 15/20): the user's own support
+    // tickets in the top-level `operatorFeedback` collection
+    // (actions/submitFeedback.ts), plus each ticket's status/priority-change
+    // history — the `kind: 'event'` entries in its `notes` subcollection
+    // (see types/operator.ts's `FeedbackTimelineEntry` doc comment). Same
+    // query deleteAccount's anonymisation pass uses (~line 1455 above), and
+    // this read sits inside the SAME try block as every other read in this
+    // function — same "a failure here fails the whole export" policy as the
+    // `accountDeletionFailure` trace above, no partial-export fallback.
+    //
+    // Deliberately EXCLUDED (decided 2026-09-28):
+    //   - `kind: 'note'` entries — free-text operator notes DO concern this
+    //     user, but they're the operator's own assessment of her, not
+    //     something she authored. Whether they belong in HER export is an
+    //     Art. 15(4) balancing call ("shall not adversely affect the rights
+    //     and freedoms of others") that can't be made automatically, note by
+    //     note, at export time — a note might quote a colleague, name
+    //     another customer, or contain the operator's private read on a
+    //     dispute. So the automated self-service export leaves them out
+    //     entirely, and an explicit request for them is handled manually
+    //     (note-by-note review before release) rather than by this function.
+    //     This question is still open; the filter below is EQUALITY
+    //     (`kind === 'event'`), not a negation of 'note': legacy docs written
+    //     before `kind` existed have no field at all and must be treated as
+    //     notes (see types/operator.ts), so `!== 'note'` would wrongly
+    //     include them.
+    //   - `createdBy` on every event (and on notes, moot since notes are
+    //     excluded entirely) — the operator's email address, third-party PII
+    //     that never belongs in this user's own export regardless of which
+    //     entry kinds are included. This one is settled, not open.
+    // A ticket already anonymised by #413 (its `submittedBy` nulled when she
+    // leaves the company or deletes her account) is intentionally NOT
+    // exported here — not a gap: once nulled, the ticket no longer carries
+    // her uid, so the query below correctly stops finding it, the same
+    // anonymisation working as intended.
+    const feedbackSnap = await adminDb.collection('operatorFeedback').where('submittedBy', '==', uid).get()
+    const feedbackTickets = await Promise.all(
+      feedbackSnap.docs.map(async (ticketDoc) => {
+        const t = ticketDoc.data()
+
+        const eventsSnap = await adminDb
+          .collection(`operatorFeedback/${ticketDoc.id}/notes`)
+          .where('kind', '==', 'event')
+          .get()
+
+        // No `orderBy` (avoids needing a composite index for this one-off
+        // export path) — sorted in memory instead, ascending by `createdAt`.
+        // An entry with no `createdAt` (`at: null`) sorts LAST, not first —
+        // `?? ''` would otherwise put it first, since an empty string
+        // collates before every real ISO date string.
+        const statusHistory = eventsSnap.docs
+          .map((eventDoc) => {
+            const e = eventDoc.data()
+            return {
+              text: e.text ?? null,
+              at:   isoOrNull(e.createdAt as TimestampLike),
+            }
+          })
+          .sort((a, b) => {
+            if (a.at === null && b.at === null) return 0
+            if (a.at === null) return 1
+            if (b.at === null) return -1
+            return a.at.localeCompare(b.at)
+          })
+
+        return {
+          ticketId:    ticketDoc.id,
+          type:        t.type ?? null,
+          title:       t.title ?? null,
+          description: t.description ?? null,
+          status:      t.status ?? null,
+          priority:    t.priority ?? null,
+          companyName: t.companyName ?? null,
+          submittedAt: isoOrNull(t.submittedAt as TimestampLike),
+          statusHistory,
         }
       })
     )
@@ -343,9 +1799,11 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
         name:            userData.name ?? null,
         email:           userData.email ?? null,
         activeCompanyId: userData.activeCompanyId ?? null,
-        createdAt:       userData.createdAt ?? null,
+        createdAt:       isoOrNull(userData.createdAt as TimestampLike),
       },
+      accountDeletionFailure,
       companies,
+      feedbackTickets,
     }
 
     console.log('[actions/account]', { uid: uid.slice(0, 8) + '...', action: 'data_exported' })

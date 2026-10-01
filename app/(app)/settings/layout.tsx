@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { getVerifiedSession } from '@/lib/dal'
+import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
+import { hasFullAccess } from '@/lib/subscriptionAccess'
 import { PageHeader } from '@/components/nav/PageHeader'
 import SettingsTabs from '@/components/settings/SettingsTabs'
 import SettingsSectionMeta from '@/components/settings/SettingsSectionMeta'
@@ -8,6 +9,16 @@ import styles from '@/components/settings/settings-shell.module.css'
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const session = await getVerifiedSession()
   const { role } = session
+
+  // Issue #350 (GDPR) — same Firestore read `app/(app)/layout.tsx` already
+  // made for this request (getCompanyDoc is React.cache()-wrapped, see its
+  // own docblock in lib/dal.ts), so this costs nothing extra. Needed here,
+  // separately from the parent layout, because SettingsTabs must never
+  // render a tab that the parent's `evaluateAppAccess` gate would then
+  // reject — see settingsItemsFor's docblock in components/nav/nav-items.ts.
+  const companyDoc = await getCompanyDoc(session.activeCompanyId)
+  const subscription = companyDoc.data()?.subscription
+  const fullAccess = hasFullAccess(subscription?.status, subscription?.trialEnd ?? null)
 
   return (
     <div className={styles.shell}>
@@ -22,7 +33,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           }
           nav={
             <div className={styles.tabRow}>
-              <SettingsTabs role={role} />
+              <SettingsTabs role={role} hasFullAccess={fullAccess} />
             </div>
           }
         />

@@ -19,12 +19,84 @@ const PRICE_ENV_BY_PLAN: Record<Plan, { month?: string; year?: string }> = {
   },
 }
 
+/**
+ * Closes the Stripe Billing Portal while a company deletion is scheduled or
+ * running (issue #252 step 5). Returns an error message, or `null` to allow.
+ *
+ * This is the one and only product surface #252 step 5 takes away, and it is
+ * not a product restriction — the design brief promises that the company
+ * keeps working for the whole seven days, and it does: bookings, equipment,
+ * invitations and every gate are untouched. The portal is different because
+ * of what a customer can do inside it. Requesting a deletion pauses
+ * collection with `behavior: 'void'`, which is reversible: cancelling the
+ * deletion resumes billing on the same plan and period, "as if nothing
+ * happened" (lib/companyDeletionStripe.ts). Cancelling the SUBSCRIPTION from
+ * inside the portal is not reversible by us — `resumeSubscriptionAfterCancel`
+ * can only report `already_canceled` and log it for an operator. So leaving
+ * the portal open would let a customer walk through a door we promised we
+ * could walk them back out of.
+ *
+ * Presence of the field is the whole check: a cancelled deletion removes
+ * `deletion` entirely (see `CompanyDeletionState` in types/company.ts), so the
+ * portal reopens by itself the moment a deletion is stopped. Nothing needs to
+ * remember to unlock it.
+ *
+ * Reads the company document that every caller here has already fetched
+ * rather than taking a `companyId` and re-reading it — the guard is not worth
+ * an extra Firestore read per portal click.
+ *
+ * ── WHAT THIS GUARD DOES NOT COVER ────────────────────────────────────────
+ *
+ * 1. **An already-open portal tab.** This stops new Billing Portal sessions
+ *    from being created. It cannot touch a session that was issued a minute
+ *    before the deletion was requested — Stripe offers no way to revoke an
+ *    outstanding portal session, and polling for one would be wildly
+ *    disproportionate to the risk. A customer sitting in that tab can still
+ *    cancel the subscription. The consequence is handled rather than
+ *    prevented: `resumeSubscriptionAfterCancel`
+ *    (lib/companyDeletionStripe.ts) returns `already_canceled` and that lands
+ *    on the ledger for a step 6 operator to see and act on. Known and
+ *    accepted; do not read this guard as airtight.
+ *
+ * 2. **Stripe's own `trial_will_end` email.** A trial that lapses during the
+ *    seven-day window still triggers Stripe's "your trial ends in three days,
+ *    add a card" reminder, which is irrelevant — and mildly alarming — to an
+ *    admin whose company is scheduled for deletion. Suppressing it is
+ *    deliberately not built here: it would mean either disabling the
+ *    Dashboard-level reminder for everyone or reaching into `trial_settings`
+ *    per subscription, both of which affect companies that are not being
+ *    deleted. Noted so whoever builds step 6's operator/customer surfaces has
+ *    it on the table rather than rediscovering it from a support ticket.
+ */
+function billingPortalDeletionGuard(companyData: FirebaseFirestore.DocumentData | undefined): string | null {
+  const deletion = companyData?.deletion as { state?: string } | undefined
+  if (!deletion) return null
+  // 'requested' is the only state a "stop the deletion first" message is
+  // TRUE for — only then does an admin have anything left to stop, and
+  // stopping it is what reopens the portal (see this function's own
+  // docblock, "presence of the field is the whole check"). 'executing' and
+  // 'failed' (issue #331/#335: the mirror can now carry 'failed', not just
+  // 'requested'/'executing') both describe a purge that has already started
+  // or already stalled — nothing in the product can stop it from here any
+  // more, so telling the reader to "stop the deletion first" would send her
+  // looking for a control that doesn't exist.
+  if (deletion.state === 'requested') {
+    return 'Billing cannot be changed while this company is scheduled for deletion. Stop the deletion first, and billing resumes on the same plan.'
+  }
+  return "Billing can't be changed while this company is being deleted. Contact support if you need a receipt."
+}
+
 export async function createCheckoutSession(
   interval: 'month' | 'year',
   plan: Plan = 'starter',
 ): Promise<{ url: string } | { error: string }> {
   const session = await getVerifiedSession()
-  if (session.role !== 'admin') return { error: 'Unauthorized' }
+  // Issue #350 — no UI can produce this call for a non-admin any more
+  // (app/subscribe/page.tsx renders NoPlanNotice, not SubscribePage, for
+  // any role but admin), but the action is still directly callable, so the
+  // message stays human-readable rather than a bare 'Unauthorized' for
+  // whoever ends up looking at it (support, logs, a direct call in dev).
+  if (session.role !== 'admin') return { error: 'Only an administrator can change the plan.' }
   console.log('[actions/subscription]', { uid: session.uid.slice(0, 8) + '...', action: 'create_checkout_session', plan, interval })
 
   const priceId = interval === 'month' ? PRICE_ENV_BY_PLAN[plan].month : PRICE_ENV_BY_PLAN[plan].year
@@ -36,6 +108,16 @@ export async function createCheckoutSession(
     const companyRef = adminDb.doc(`companies/${companyId}`)
     const companySnap = await companyRef.get()
     const companyData = companySnap.data() ?? {}
+
+    // Checkout is guarded for a narrower reason than the portal above: the
+    // brief's "Ingen debitering får ske under de sju dagarna" covers a NEW
+    // subscription just as much as a renewal, and a company whose trial lapses
+    // mid-window could otherwise be talked into paying for a workspace that is
+    // scheduled to disappear. Not refunded either (there is no refund logic in
+    // #252 step 5, by decision). Checked before the Stripe customer is created
+    // so the guard costs nothing.
+    const deletionGuard = billingPortalDeletionGuard(companyData)
+    if (deletionGuard) return { error: deletionGuard }
 
     let stripeCustomerId: string = companyData.stripeCustomerId ?? ''
 
@@ -123,6 +205,9 @@ export async function createPortalSession(): Promise<{ url: string } | { error: 
 
     if (!stripeCustomerId) return { error: 'No active subscription found' }
 
+    const deletionGuard = billingPortalDeletionGuard(companySnap.data())
+    if (deletionGuard) return { error: deletionGuard }
+
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/subscription`,
@@ -168,6 +253,12 @@ export async function createPlanChangeSession(
     if (!stripeCustomerId || !stripeSubscriptionId) {
       return { error: 'No active subscription found' }
     }
+
+    // Same guard as createPortalSession — this opens the same portal, just
+    // deep-linked to a plan change. A plan switch during a `void` pause is
+    // exactly the kind of billing change our resume cannot faithfully undo.
+    const deletionGuard = billingPortalDeletionGuard(companyData)
+    if (deletionGuard) return { error: deletionGuard }
 
     // Downgrade guard: nothing stops a plan change today that would strand a
     // company above the target plan's caps. Count current usage and block

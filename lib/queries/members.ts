@@ -2,6 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 import { adminDb } from '@/lib/firebase-admin'
+import { toRole } from '@/lib/roles'
 import type { TeamMember } from '@/types'
 
 function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
@@ -10,7 +11,7 @@ function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
     uid:      data.uid  ?? doc.id,
     name:     data.name ?? '',
     email:    data.email ?? '',
-    role:     data.role ?? 'crew',
+    role:     toRole(data.role, { fn: 'listMembers', path: doc.ref.path }),
     joinedAt: data.joinedAt?.toDate?.()?.toISOString() ?? data.joinedAt ?? '',
   }
 }
@@ -19,9 +20,10 @@ function docToMember(doc: FirebaseFirestore.DocumentSnapshot): TeamMember {
  * One-shot fetch of a company's members, sorted by joinedAt ascending.
  *
  * `joinedAt` is stored as a Firestore Timestamp by every writer
- * (actions/auth.ts, functions/src/auth/onUserCreate.ts,
- * functions/src/auth/acceptInvitation.ts) and is converted to an ISO
- * string here — Timestamp instances are not serializable across the
+ * (actions/auth.ts, functions/src/auth/acceptInvitation.ts — the only
+ * path that turns an invitation into a member doc as of issue #396;
+ * functions/src/auth/onUserCreate.ts is now a no-op) and is converted to
+ * an ISO string here — Timestamp instances are not serializable across the
  * server→client component boundary.
  *
  * Sorting happens in memory rather than via `.orderBy('joinedAt')` on

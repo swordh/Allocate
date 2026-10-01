@@ -59,7 +59,7 @@ const ADMIN_SESSION = {
   activeCompanyId: COMPANY_ID,
 }
 
-const NON_ADMIN_SESSION = { ...ADMIN_SESSION, role: 'viewer' as const }
+const NON_ADMIN_SESSION = { ...ADMIN_SESSION, role: 'crew' as const }
 
 const EQUIPMENT_FIELDS = {
   name: 'ARRI Alexa Mini LF',

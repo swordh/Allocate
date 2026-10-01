@@ -1,0 +1,120 @@
+.wrap {
+  position: relative;
+  display: flex;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-circle);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.trigger:hover {
+  color: var(--text-primary);
+}
+
+.triggerIconOpen {
+  color: var(--text-primary);
+}
+
+.panel {
+  top: 46px;
+  width: 372px;
+  max-width: calc(100vw - 2 * var(--page-margin-mobile));
+  padding: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-medium);
+  animation: slidein 0.14s ease-out;
+}
+
+@keyframes slidein {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 18px;
+}
+
+.name {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.email {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-weak);
+}
+
+.section {
+  padding: 6px 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.sectionLabel {
+  padding: 8px 10px 6px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rowList {
+  display: flex;
+  flex-direction: column;
+}
+
+.actionRow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 11px 10px;
+  font-family: var(--font-ui);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-nav);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.actionRow:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.actionRow:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.error {
+  padding: 8px 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--danger-text);
+}

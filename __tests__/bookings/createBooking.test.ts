@@ -36,7 +36,6 @@ import {
   ADMIN_SESSION,
   COMPANY_ID,
   CREW_SESSION,
-  VIEWER_SESSION,
   makeUnit,
   makeUnitsEquipment,
 } from '../helpers/fixtures'
@@ -156,15 +155,6 @@ describe('createBooking', () => {
   // ── Auth guards ────────────────────────────────────────────────────────────
 
   describe('auth guards', () => {
-    it('returns Unauthorized when session role is viewer', async () => {
-      vi.mocked(getVerifiedSession).mockResolvedValue(VIEWER_SESSION)
-
-      const result = await createBooking(makeFormData())
-
-      expect(result).toEqual({ error: 'Unauthorized' })
-      expect(adminDb.runTransaction).not.toHaveBeenCalled()
-    })
-
     it('allows crew members to create bookings', async () => {
       vi.mocked(getVerifiedSession).mockResolvedValue(CREW_SESSION)
 
@@ -227,6 +217,29 @@ describe('createBooking', () => {
         makeFormData({ startDate: '2000-01-01', endDate: '2000-01-05' }),
       )
       expect(result).toEqual({ error: 'startDate must be today or a future date.' })
+    })
+
+    it('rejects a startDate that is only in the past in the company\'s own timezone', async () => {
+      // 2026-06-14 23:30 UTC = 2026-06-15 01:30 Europe/Stockholm — the
+      // company's "today" is already the 15th, so the 14th must be rejected
+      // even though the server's own UTC clock still reads the 14th.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-06-14T23:30:00.000Z'))
+
+      wireTransaction({
+        [`companies/${COMPANY_ID}`]: {
+          ...ACTIVE_COMPANY_DATA,
+          preferences: { timezone: 'Europe/Stockholm' },
+        },
+      })
+
+      const result = await createBooking(
+        makeFormData({ startDate: '2026-06-14', endDate: '2026-06-16' }),
+      )
+
+      expect(result).toEqual({ error: 'startDate must be today or a future date.' })
+
+      vi.useRealTimers()
     })
 
     it('rejects notes longer than 2000 characters', async () => {

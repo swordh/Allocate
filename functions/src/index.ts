@@ -13,5 +13,21 @@ initializeApp();
 export { acceptInvitationByToken } from './auth/acceptInvitation';
 export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
+export { purgeOldFeedback } from './admin/purgeOldFeedback';
 export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
 export { onMailQueued } from './email/onMailQueued';
+export { retryFailedMail } from './email/retryFailedMail';
+
+// ─── Company deletion (issue #252, step 5, PR E) ──────────────────────────────
+export { onCompanyDeletionCreated } from './company/onDeletionCreated';
+export { companyDeletionSweep } from './company/sweep';
+export { purgeCompanyDeletionLogs } from './company/purgeLogs';
+
+// ─── Stranded account enforcement (issue #252, step 6) ────────────────────────
+export { strandedAccountSweep } from './company/strandedAccountSweep';
+
+// ─── Billing email reminder (fix/stripe-anonymise-billing-contact) ────────────
+export { billingEmailReminder } from './company/billingEmailReminder';
+
+// ─── Job heartbeat watchdog (issue #430) ───────────────────────────────────────
+export { checkJobHeartbeats } from './admin/checkJobHeartbeats';

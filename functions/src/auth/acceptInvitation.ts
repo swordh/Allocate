@@ -1,9 +1,18 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MembershipDocument } from '../types';
-import { memberCountDelta } from '../companyStats';
+import { memberCountsDelta } from '../companyStats';
+import { blockMemberWrite } from '../company/acceptsMembers';
+import { toRole } from './role';
+
+/**
+ * How long an accepted private invitation doc (`companies/{cid}/invitations/{id}`)
+ * survives before Firestore's TTL policy deletes it — issue #410. Nothing
+ * reads an accepted doc again, so this is just cleanup, not a live window.
+ */
+const ACCEPTED_INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Callable function for already-authenticated users accepting an invite via link.
@@ -93,16 +102,33 @@ export const acceptInvitationByToken = onCall(
     }
 
     const inviteData = inviteSnap.data()!;
-    const role: MembershipDocument['role'] = inviteData['role'] ?? 'crew';
+    const role: MembershipDocument['role'] = toRole(inviteData['role'], {
+      fn: 'acceptInvitation',
+      path: inviteRef.path,
+    });
     const displayName = explicitName ?? request.auth.token.name ?? callerEmail;
 
     // ── Transaction ───────────────────────────────────────────────────────────
     let txSucceeded = false;
     try {
       await db.runTransaction(async (tx) => {
-        const existingMember = await tx.get(memberRef);
+        const companyRef = db.doc(`companies/${companyId}`);
+        const [existingMember, companySnap] = await Promise.all([tx.get(memberRef), tx.get(companyRef)]);
         if (existingMember.exists) {
           throw new HttpsError('already-exists', 'You are already a member of this company.');
+        }
+
+        // Refuse to join a company that is gone or on its way out (issue #252
+        // step 5) — see `blockMemberWrite`'s docblock for why this is a
+        // mechanical guard and not a product restriction. Read inside the
+        // transaction, before any write, so a deletion requested between the
+        // page load and this call cannot slip past.
+        const block = blockMemberWrite(companySnap);
+        if (block) {
+          throw new HttpsError(
+            block.code === 'not-found' ? 'not-found' : 'failed-precondition',
+            block.message,
+          );
         }
 
         // 1. Create member under company
@@ -115,16 +141,22 @@ export const acceptInvitationByToken = onCall(
           companyId,
         });
 
-        // 1b. Mirror the new member onto companies/{companyId}.stats.memberCount.
-        // Deliberately inside this transaction, not after it: the outer catch
-        // below swallows HttpsError('already-exists') when onUserCreate wins
-        // the race, and because the increment lives in the same transaction as
-        // the tx.set above, that whole transaction (including this increment)
-        // is discarded on that path rather than committed — so the race can
-        // never double-count. Fragile: if this increment is ever moved outside
-        // the transaction (e.g. to a best-effort write after commit), that
-        // guarantee breaks and the race becomes double-countable.
-        memberCountDelta(tx, db, companyId, 1);
+        // 1b. Apply the member-counts delta: companies/{companyId}/_meta/memberCounts
+        // (members + admins) and its companies/{companyId}.stats.memberCount
+        // mirror. Deliberately inside this transaction, not after it: the
+        // outer catch below swallows HttpsError('already-exists') when a
+        // concurrent call to this same function (e.g. the invite link
+        // double-clicked, or opened in two tabs) wins the race, and because
+        // these increments live in the same transaction as the tx.set above,
+        // that whole transaction (including these increments) is discarded
+        // on that path rather than committed — so the race can never
+        // double-count either counter. (onUserCreate is a no-op as of issue
+        // #396 and is not a party to this race any more — see its doc
+        // comment.)
+        // Fragile: if this call is ever moved outside the transaction (e.g.
+        // to a best-effort write after commit), that guarantee breaks and the
+        // race becomes double-countable.
+        memberCountsDelta(tx, db, companyId, { members: 1, admins: role === 'admin' ? 1 : 0 });
 
         // 2. Create membership under user
         const membership: MembershipDocument = {
@@ -134,22 +166,58 @@ export const acceptInvitationByToken = onCall(
         };
         tx.set(userMembershipRef, membership);
 
-        // 3. Mark invitation accepted
+        // 2b. Clear any scheduled account deletion (types/user.ts,
+        // `PendingAccountDeletion`) in the SAME transaction as the
+        // membership write above, not as a follow-up that could be
+        // skipped. Accepting an invitation is a second route back to
+        // having a company, alongside `setupNewCompany` (actions/auth.ts)
+        // — the reasoning is identical for both: having a company at all
+        // is the cancellation condition ("Avbrottsvillkoret" in
+        // plan/det-k-nns-som-att-stateless-conway.md), not any one specific
+        // way of getting one. Harmless when the field was never set
+        // (`FieldValue.delete()` on an absent field is a no-op).
+        tx.set(userRef, { pendingDeletion: FieldValue.delete() }, { merge: true });
+
+        // 3. Mark invitation accepted. `expireAt` (issue #410) is a concrete
+        // Timestamp, not a serverTimestamp sentinel — Firestore's TTL
+        // service reads the stored value directly. Nothing reads an
+        // accepted private invitation doc again (the team page and
+        // findPendingByEmail both query status=='pending'), and the TTL
+        // policy already declared on the `invitations` collection group
+        // (firestore.indexes.json) covers this private doc too, so it's
+        // deleted 30 days after acceptance.
         tx.update(inviteRef, {
           status: 'accepted',
           acceptedAt: nowIso,
           acceptedBy: uid,
+          expireAt: Timestamp.fromMillis(Date.now() + ACCEPTED_INVITE_TTL_MS),
         });
 
-        // 4. Mark mirror accepted
-        tx.update(mirrorRef, { status: 'accepted' });
+        // 4. Delete the mirror — issue #297. The mirror at invitations/{token}
+        // is a `allow get: if true` public doc that carries the invitee's
+        // email, resolvable by anyone holding the link. Once accepted it can
+        // never be used again, so there's no reason left for it to exist —
+        // updating its `status` (the old behavior) kept that address
+        // publicly readable forever. Deleting it here is safe against the
+        // same double-click/two-tabs race the rest of this function already
+        // handles: the mirror was read OUTSIDE this transaction (above), so
+        // a concurrent second call still reaches the swallowed
+        // `already-exists` path below; any call arriving after this commits
+        // gets `not-found` at the mirror read, same code path as an invite
+        // that was never pending in the first place.
+        tx.delete(mirrorRef);
       });
       txSucceeded = true;
     } catch (err) {
       if (err instanceof HttpsError && err.code === 'already-exists') {
-        // onUserCreate beat us to creating the member doc — that is fine.
-        // We still need to write users/{uid} name+email below.
-        logger.info('acceptInvitationByToken: onUserCreate already created member doc', {
+        // A concurrent call to this same function beat us to creating the
+        // member doc — the classic double-click / two-tabs case, not
+        // onUserCreate (a no-op as of issue #396: it no longer creates
+        // members, so it can't be the other side of this race any more).
+        // That's fine either way — the invite is idempotent from the
+        // caller's point of view. We still need to write users/{uid}
+        // name+email below.
+        logger.info('acceptInvitationByToken: member doc already exists (concurrent accept)', {
           uid: uid.slice(0, 8) + '...',
           companyId,
         });
@@ -159,11 +227,15 @@ export const acceptInvitationByToken = onCall(
     }
 
     // Always write name + email to user root doc — runs regardless of which
-    // path won the race (callable tx or onUserCreate trigger).
-    await userRef.set({ name: displayName, email: callerEmail }, { merge: true });
+    // call won the race. Also clears `pendingDeletion` here, same reasoning
+    // as the in-transaction clear above: it's a harmless no-op when the
+    // field was never set, and it costs nothing to do it unconditionally
+    // rather than branch on which call won.
+    await userRef.set({ name: displayName, email: callerEmail, pendingDeletion: FieldValue.delete() }, { merge: true });
 
     // ── Set custom claims if none exist (only when we ran the full tx) ────────
-    // If onUserCreate won the race, it already set claims — skip to avoid churn.
+    // If the losing side of a concurrent-call race, the winning call already
+    // set claims — skip here to avoid churn.
     if (txSucceeded) {
       const existingClaims = (request.auth.token ?? {}) as Record<string, unknown>;
       if (!existingClaims['activeCompanyId']) {

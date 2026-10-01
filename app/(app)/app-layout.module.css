@@ -10,3 +10,15 @@
     padding: 0 var(--page-margin-mobile);
   }
 }
+
+/* Company-deletion banner (issue #252 step 6, PR 3) — sits above every page's
+   own content, inside .main so it shares its max-width and side padding. */
+.deletionBanner {
+  margin-top: 20px;
+}
+
+@media (max-width: 480px) {
+  .deletionBanner {
+    margin-top: 16px;
+  }
+}

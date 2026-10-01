@@ -26,6 +26,19 @@
  *   node tools/cleanup_orphan_members.js --project=allocate-e0735 --yes      # apply (prod)
  *
  *   node tools/cleanup_orphan_members.js --project=allocate-alpha --company=<id>  # one company
+ *   node tools/cleanup_orphan_members.js --project=allocate-alpha --show-pii       # unmasked
+ *
+ * PII is masked by default in every table this script prints (member doc id,
+ * name, email — see tools/lib/mask_pii.js). Pass --show-pii to print full
+ * values instead. Company id and company name are never masked either way —
+ * they're not personal data about the member.
+ *
+ * Runbook for --show-pii: don't save this output to a file or paste it into
+ * a CI artifact — that just recreates the leak this script exists to clean
+ * up. Agents run this script masked, always; never pass --show-pii from an
+ * agent session, on any environment. To inspect one specific record instead,
+ * open companies/{companyId}/members in the Firebase console and match the
+ * 8-character prefix shown in the masked member doc id column.
  *
  * Credentials, in resolution order:
  *   --project=<id>  Application Default Credentials. Preferred — no long-lived
@@ -41,20 +54,34 @@
  * as an orphan on the next run.
  *
  * Every orphan deleted is a `companies/{cid}/members/{uid}` doc disappearing
- * out from under `companies/{cid}.stats.memberCount` (redesign/fas-5-member-count).
- * After deleting a company's orphans, this script recomputes that company's
- * `stats.memberCount` from `members.count()` and writes it as an absolute
- * value — the same philosophy as tools/backfill_company_stats.js, and
- * deliberately not a `FieldValue.increment()` delta (see the comment on
+ * out from under both `companies/{cid}.stats.memberCount` AND
+ * `companies/{cid}/_meta/memberCounts` (redesign/fas-5-member-count,
+ * issue #252). After deleting a company's orphans, this script recomputes
+ * BOTH `members` and `admins` from the members subcollection and writes them
+ * as absolute values — the same philosophy as tools/backfill_company_stats.js,
+ * and deliberately not a `FieldValue.increment()` delta (see the comment on
  * deleteOrphansAndRecomputeMemberCount for why: a delta against a field that
  * may not exist yet in this environment can go negative). Only companies
  * that actually had orphans deleted get recomputed.
+ *
+ * Recomputing `admins` is not optional here the way it might look at a
+ * glance: an orphan whose deleted user record was an admin (role === 'admin'
+ * on the leftover member doc) is exactly the case where skipping the admin
+ * recount leaves `_meta/memberCounts.admins` stale-HIGH — counting an admin
+ * who no longer has a working session. That is the one dangerous direction
+ * for this counter (see lib/companyStats.ts's module docblock and the
+ * planning notes for issue #252): a stale-low count merely fails closed and
+ * blocks a legitimate removal/deletion, but a stale-high count silently lets
+ * the LAST real admin remove themselves or delete their account, leaving the
+ * company with zero admins. Recomputing both fields absolutely, in the same
+ * batch as the deletes that caused the drift, is what closes that gap.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const { maskId, maskEmail, maskName } = require('./lib/mask_pii');
 
 // ── Arguments ────────────────────────────────────────────────────────────────
 
@@ -69,6 +96,7 @@ const APPLY = flag('yes');
 const ONLY_COMPANY = value('company');
 const SA_PATH = value('sa');
 const PROJECT = value('project');
+const SHOW_PII = flag('show-pii');
 const CONCURRENCY = 5;
 const PAGE_SIZE = 200;
 const DELETE_BATCH_LIMIT = 490;
@@ -78,10 +106,11 @@ const DELETE_BATCH_LIMIT = 490;
 // users/{uid} AFTERWARDS and non-transactionally (`await userRef.set(...)`,
 // outside the transaction). Between those two writes a perfectly legitimate,
 // brand-new member doc exists with no matching users/{uid} doc yet — exactly
-// what this script otherwise calls an orphan. (onUserCreate.ts does not have
-// this window: it writes both docs inside one transaction.) Requiring
-// joinedAt to be older than this window before treating a member as an
-// orphan keeps a slow signup from being deleted mid-flight.
+// what this script otherwise calls an orphan. (acceptInvitationByToken is
+// the only path that creates a member doc at all — onUserCreate.ts is a
+// no-op as of issue #396.) Requiring joinedAt to be older than this window
+// before treating a member as an orphan keeps a slow signup from being
+// deleted mid-flight.
 const SAFETY_WINDOW_MS = 15 * 60 * 1000;
 
 // ── Credentials ──────────────────────────────────────────────────────────────
@@ -196,11 +225,11 @@ async function* chunks(iterable, size) {
  * via `.select()`), so it's done with `Promise.all` across the page rather
  * than serially.
  *
- * joinedAt is written as a Firestore Timestamp by all three writers
- * (acceptInvitation.ts and onUserCreate.ts via `Timestamp.now()`,
- * actions/auth.ts via `FieldValue.serverTimestamp()`, which reads back as a
- * Timestamp) — so `.toMillis()` is safe across all of them once the field
- * is present at all.
+ * joinedAt is written as a Firestore Timestamp by both writers
+ * (acceptInvitation.ts via `Timestamp.now()`, actions/auth.ts via
+ * `FieldValue.serverTimestamp()`, which reads back as a Timestamp) — so
+ * `.toMillis()` is safe across both of them once the field is present at
+ * all. (onUserCreate.ts is a no-op as of issue #396 and writes nothing.)
  */
 async function classifyMembers(companyId) {
   const membersSnap = await db
@@ -254,23 +283,25 @@ async function classifyMembers(companyId) {
  * Deletes orphans company-by-company (chunked within a company at
  * DELETE_BATCH_LIMIT, though in practice a single company's orphan count
  * never approaches that), and after each company's deletes commit,
- * recomputes that company's `stats.memberCount` from `members.count()` and
- * writes it as an ABSOLUTE value via a merge-set.
+ * recomputes that company's `members` AND `admins` counts from the members
+ * subcollection and writes both as ABSOLUTE values — to `_meta/memberCounts`
+ * and, for `members`, to the `stats.memberCount` mirror — via merge-sets.
  *
- * Deliberately NOT `FieldValue.increment(-orphans.length)`: this script runs
- * across alpha/beta/prod, and in whichever of those the memberCount writers
+ * Deliberately NOT `FieldValue.increment()`: this script runs across
+ * alpha/beta/prod, and in whichever of those the member-count writers
  * (lib/companyStats.ts, functions/src/companyStats.ts) haven't deployed yet,
- * `stats.memberCount` may not exist at all. `increment()` treats a missing
- * field as 0, so decrementing it here would leave the mirror negative — and
- * once the writers do deploy, every future delta would compound that error
- * forever. Recomputing from `members.count()` is self-healing regardless of
- * what was there before, and matches tools/backfill_company_stats.js's own
- * philosophy of writing absolute truth rather than deltas.
+ * neither `_meta/memberCounts` nor `stats.memberCount` may exist at all.
+ * `increment()` treats a missing field as 0, so decrementing it here would
+ * leave a counter negative — and once the writers do deploy, every future
+ * delta would compound that error forever. Recomputing from the members
+ * subcollection is self-healing regardless of what was there before, and
+ * matches tools/backfill_company_stats.js's own philosophy of writing
+ * absolute truth rather than deltas.
  *
  * Only companies that actually had at least one orphan deleted get a
- * recompute — every other company's `stats.memberCount` is left untouched,
- * since this script has no way to know whether it's already correct there
- * and shouldn't touch what it didn't just change.
+ * recompute — every other company's counters are left untouched, since this
+ * script has no way to know whether they're already correct and shouldn't
+ * touch what it didn't just change.
  *
  * If a commit throws partway through, the chunks/companies processed so far
  * already happened — the caller needs to know that before the error
@@ -306,10 +337,20 @@ async function deleteOrphansAndRecomputeMemberCount(orphansByCompany) {
 
     // Recompute now that this company's orphans are gone — the members
     // subcollection is the source of truth, same as the backfill tool reads.
-    const countSnap = await db.collection(`companies/${companyId}/members`).count().get();
-    const memberCount = countSnap.data().count;
+    // Both counts are needed: `admins` is the field that goes dangerously
+    // stale-HIGH if an orphaned admin's member doc isn't accounted for (see
+    // the module docblock above).
+    const membersCollection = db.collection(`companies/${companyId}/members`);
+    const [memberCountSnap, adminCountSnap] = await Promise.all([
+      membersCollection.count().get(),
+      membersCollection.where('role', '==', 'admin').count().get(),
+    ]);
+    const memberCount = memberCountSnap.data().count;
+    const adminCount = adminCountSnap.data().count;
 
-    await db.doc(`companies/${companyId}`).set(
+    const recomputeBatch = db.batch();
+    recomputeBatch.set(
+      db.doc(`companies/${companyId}`),
       {
         stats: {
           memberCount,
@@ -318,11 +359,18 @@ async function deleteOrphansAndRecomputeMemberCount(orphansByCompany) {
       },
       { merge: true },
     );
+    recomputeBatch.set(
+      db.doc(`companies/${companyId}/_meta/memberCounts`),
+      { members: memberCount, admins: adminCount, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    await recomputeBatch.commit();
     recomputed += 1;
 
     console.log(
       `  company ${companyId} (${companyIndex}/${companyCount}): deleted ${orphans.length}, ` +
-        `stats.memberCount recomputed to ${memberCount}`,
+        `stats.memberCount recomputed to ${memberCount}, _meta/memberCounts recomputed to ` +
+        `{ members: ${memberCount}, admins: ${adminCount} }`,
     );
   }
 
@@ -338,9 +386,19 @@ async function main() {
   console.log(`  Project : ${projectId}`);
   console.log(`  Auth    : ${credentialSource}`);
   console.log(`  Mode    : ${mode}`);
+  console.log(
+    `  PII     : ${SHOW_PII ? 'FULL — do not save or paste this output' : 'masked (pass --show-pii for full values)'}`,
+  );
   if (ONLY_COMPANY) console.log(`  Company : ${ONLY_COMPANY}`);
   console.log(`  Safety window: ${SAFETY_WINDOW_MS / 60000} min (members newer than this are held back, never auto-deleted)`);
   console.log('');
+
+  if (SHOW_PII) {
+    console.error(
+      'WARNING: --show-pii passed — member names and emails will print in clear text below. ' +
+        'Do not save this output to a file or CI artifact.',
+    );
+  }
 
   // Count companies up front so the operator knows the scope before anything runs.
   const allCompanyIds = [];
@@ -390,11 +448,24 @@ async function main() {
 
   const totalOrphans = allOrphans.length;
 
+  // Company id and company name stay in clear text (not personal data about
+  // the member). member doc id, name and email are masked unless --show-pii
+  // was passed — see tools/lib/mask_pii.js. The masked id column is narrower
+  // (maskId's output is always 11 chars, "xxxxxxxx..." — the full 30-wide pad
+  // is only needed for a raw uid), but idWidth still has to be at least as
+  // wide as the "member doc id" header label (13 chars) — `pad()` truncates
+  // a string that's already >= width, so a width of 11 would cut the header
+  // itself down to "member doc ". The masked ids just get a couple of extra
+  // trailing spaces instead.
   const printTable = (rows) => {
-    console.log('  company id                      company name              member doc id                   name                  email');
+    const idWidth = SHOW_PII ? 30 : 13;
+    console.log(`  company id                      company name              ${pad('member doc id', idWidth)}  name                  email`);
     for (const o of rows) {
+      const memberDocId = SHOW_PII ? o.memberDocId : maskId(o.memberDocId);
+      const name = SHOW_PII ? (o.name ?? '—') : maskName(o.name);
+      const email = SHOW_PII ? (o.email ?? '—') : maskEmail(o.email);
       console.log(
-        `  ${pad(o.companyId, 30)}  ${pad(o.companyName, 24)}  ${pad(o.memberDocId, 30)}  ${pad(o.name ?? '—', 20)}  ${o.email ?? '—'}`,
+        `  ${pad(o.companyId, 30)}  ${pad(o.companyName, 24)}  ${pad(memberDocId, idWidth)}  ${pad(name, 20)}  ${email}`,
       );
     }
   };

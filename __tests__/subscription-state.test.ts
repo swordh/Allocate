@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { toSubState, getSubStateDisplay, getPlanCardCta } from '@/lib/subscription-state'
-import type { Subscription } from '@/types'
+import type { CompanyDeletion, Subscription } from '@/types'
 
 function sub(overrides: Partial<Subscription>): Subscription {
   return {
@@ -77,6 +77,41 @@ describe('getSubStateDisplay', () => {
     expect(d.notice).toContain('Aug 20, 2026')
   })
 
+  it('TRIAL without hasPaymentMethod opt: same as no opts at all', () => {
+    const d = getSubStateDisplay(
+      sub({ status: 'trialing', trialEnd: '2026-08-20T00:00:00.000Z' }),
+      'Nordfilm AB',
+      null,
+      { hasPaymentMethod: false },
+    )
+    expect(d.cta).toBe('ADD PAYMENT METHOD')
+    expect(d.notice).toContain('Add a payment method')
+  })
+
+  it('TRIAL with hasPaymentMethod: notice says the card will be charged, no CTA', () => {
+    const d = getSubStateDisplay(
+      sub({ status: 'trialing', trialEnd: '2026-08-20T00:00:00.000Z' }),
+      'Nordfilm AB',
+      null,
+      { hasPaymentMethod: true },
+    )
+    expect(d.tone).toBe('info')
+    expect(d.cta).toBe('')
+    expect(d.notice).toBe('Your trial ends Aug 20, 2026. Your card will be charged then.')
+  })
+
+  it('hasPaymentMethod is ignored outside TRIAL — ACTIVE still has no notice', () => {
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', null, { hasPaymentMethod: true })
+    expect(d.notice).toBeNull()
+    expect(d.cta).toBe('')
+  })
+
+  it('hasPaymentMethod is ignored outside TRIAL — PAST_DUE keeps its own notice/CTA', () => {
+    const d = getSubStateDisplay(sub({ status: 'past_due' }), 'Nordfilm AB', null, { hasPaymentMethod: true })
+    expect(d.cta).toBe('UPDATE CARD')
+    expect(d.notice).not.toContain('Your card will be charged then.')
+  })
+
   it('PAST_DUE: danger tone, references currentPeriodEnd', () => {
     const d = getSubStateDisplay(sub({ status: 'past_due' }), 'Nordfilm AB')
     expect(d.tone).toBe('danger')
@@ -117,5 +152,225 @@ describe('getPlanCardCta', () => {
     // Regression: on Basic, the Starter card must never read UPGRADE —
     // Starter is cheaper and has lower caps, so choosing it is a downgrade.
     expect(getPlanCardCta('starter', sub({ plan: 'basic' }))).toBe('DOWNGRADE')
+  })
+})
+
+// ── DELETION_PENDING (issue #252 step 5) ──────────────────────────────────────
+
+function deletion(overrides: Partial<CompanyDeletion> = {}): CompanyDeletion {
+  return {
+    state: 'requested',
+    requestId: 'req-1',
+    requestedAt: '2026-09-13T10:00:00.000Z',
+    requestedByName: 'Anna Admin',
+    scheduledFor: '2026-09-20T10:00:00.000Z',
+    mode: 'window',
+    ...overrides,
+  }
+}
+
+describe('getSubStateDisplay — DELETION_PENDING', () => {
+  it('derives the state from company.deletion, overriding an otherwise ACTIVE subscription', () => {
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', deletion())
+    expect(d.key).toBe('DELETION_PENDING')
+    expect(d.label).toBe('DELETION REQUESTED')
+    expect(d.cta).toBe('STOP DELETION')
+  })
+
+  it('says "deletion requested", never "canceled" or "paused"', () => {
+    // The design brief is explicit that these are different messages to an
+    // admin deciding whether to stop it, and that the product shows only the
+    // latter today. `paused` is separately spoken for twice in this codebase.
+    const d = getSubStateDisplay(sub({ status: 'active' }), 'Nordfilm AB', deletion())
+    expect(d.label).not.toContain('CANCEL')
+    expect(d.label).not.toContain('PAUSE')
+    expect(d.notice).toContain('Anna Admin')
+    expect(d.notice).toContain('Nordfilm AB')
+  })
+
+  it('names the no-refund rule, which is the thing users discover too late', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion())
+    expect(d.notice).toContain('not refunded')
+  })
+
+  // ── issue #334 — never show the operator's own email to a customer ────────
+  it('renders "Allocate support (support@allocate.at)" for an operator-initiated request, never the operator email', () => {
+    const d = getSubStateDisplay(
+      sub({}),
+      'Nordfilm AB',
+      deletion({ requestedByName: 'jocke@allocate.at', requestSource: 'operator' }),
+    )
+    expect(d.notice).toContain('Allocate support (support@allocate.at)')
+    expect(d.notice).not.toContain('jocke@allocate.at')
+  })
+
+  it('still renders the requester name for an admin-initiated request', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ requestedByName: 'Anna Admin' }))
+    expect(d.notice).toContain('Anna Admin')
+  })
+
+  it('applies to an executing deletion too — presence of the field is the check', () => {
+    // There is no "cancelled" value in this data model; a cancelled deletion
+    // removes the field. So no state comparison belongs here, and a future
+    // `state === 'requested'` check would silently drop the banner exactly
+    // when a company is being torn down.
+    expect(getSubStateDisplay(sub({}), 'X', deletion({ state: 'executing' })).key).toBe('DELETION_PENDING')
+    expect(getSubStateDisplay(sub({}), 'X', deletion({ state: 'failed' })).key).toBe('DELETION_PENDING')
+  })
+
+  // Issue #331/#335: 'executing'/'failed' must not reuse the 'requested'
+  // copy — that copy claims a scheduled date and "any administrator can
+  // stop it", neither of which is true once the purge has actually started
+  // or stalled.
+  describe('executing overrides label/cycle/notice — no date, no "can stop it" claim', () => {
+    it('labels it DELETION IN PROGRESS', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.label).toBe('DELETION IN PROGRESS')
+      expect(d.cycle).toBe('Deletion in progress')
+    })
+
+    it('the notice makes no promise about when it finishes and quotes no date', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.notice).not.toContain('September')
+      expect(d.notice).not.toMatch(/\bcan stop it\b/i)
+    })
+
+    // Review fix: this used to unconditionally claim "billing paused" /
+    // "no charges are made" — `pauseSubscriptionForDeletion` is best-effort
+    // and its outcome lives on the ledger, not the mirror this function
+    // reads, so this surface cannot actually promise that. Softened to a
+    // "should be" + "contact support" posture instead of a flat guarantee.
+    it('NEGATIVE: does not unconditionally guarantee billing was paused', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'executing' }))
+      expect(d.cycle).not.toContain('billing paused')
+      expect(d.notice).not.toMatch(/no charges are made/i)
+      expect(d.notice?.toLowerCase()).toContain('contact support')
+    })
+  })
+
+  describe('failed overrides label/cycle/notice — no date, points at support', () => {
+    it('labels it DELETION STUCK', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.label).toBe('DELETION STUCK')
+      expect(d.cycle).toBe("Deletion hasn't finished")
+    })
+
+    it('the notice mentions support and quotes no date', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.notice?.toLowerCase()).toContain('support')
+      expect(d.notice).not.toContain('September')
+    })
+
+    // Review fix — same reasoning as the executing case above.
+    it('NEGATIVE: does not unconditionally guarantee billing remains paused', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'failed' }))
+      expect(d.cycle).not.toContain('billing paused')
+      expect(d.notice).not.toMatch(/billing remains paused/i)
+    })
+  })
+
+  it('a requested deletion is completely unaffected by the executing/failed overrides', () => {
+    const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ state: 'requested' }))
+    expect(d.label).toBe('DELETION REQUESTED')
+    expect(d.cycle).toContain('billing paused')
+    expect(d.notice).toContain('Everything keeps working until then')
+  })
+
+  it('applies even with no subscription at all', () => {
+    const d = getSubStateDisplay(null, 'Nordfilm AB', deletion())
+    expect(d.key).toBe('DELETION_PENDING')
+    expect(d.hasSub).toBe(false)
+  })
+
+  it('MUTATION GUARD: toSubState is not the source — it must never return DELETION_PENDING', () => {
+    // If someone routes the new state through toSubState, its locked tests
+    // (in particular Stripe's `paused` → NONE, above) start fighting this
+    // one. The state comes from company.deletion, not the subscription:
+    // pause_collection leaves subscription.status untouched.
+    for (const status of ['active', 'trialing', 'past_due', 'incomplete', 'canceled'] as const) {
+      expect(toSubState(sub({ status }))).not.toBe('DELETION_PENDING')
+    }
+    expect(toSubState(null)).not.toBe('DELETION_PENDING')
+  })
+
+  it('without a deletion, every existing state is completely unchanged', () => {
+    expect(getSubStateDisplay(sub({ status: 'active' }), 'X').key).toBe('ACTIVE')
+    expect(getSubStateDisplay(sub({ status: 'past_due' }), 'X').key).toBe('PAST_DUE')
+    expect(getSubStateDisplay(null, 'X').key).toBe('NONE')
+    expect(getSubStateDisplay(sub({ status: 'active' }), 'X', null).key).toBe('ACTIVE')
+  })
+
+  // ── issue #361 — company-zoned deletion date ──────────────────────────────
+  //
+  // Before this fix, `getSubStateDisplay`'s DELETION_PENDING `cycle`/`notice`
+  // formatted `deletion.scheduledFor` with `formatDate`, which runs
+  // `toLocaleDateString` with no zone in the CLIENT component that renders
+  // this (SubscriptionView.tsx) — the visitor's own browser zone. These
+  // tests pin an instant just before local midnight in Europe/Stockholm
+  // (22:20 UTC, summer time — already the next calendar day there) and
+  // assert the actual date STRING, which the pre-existing DELETION_PENDING
+  // tests above never did.
+  describe('getSubStateDisplay — DELETION_PENDING timezone (issue #361)', () => {
+    const NEAR_MIDNIGHT_ISO = '2026-09-21T22:20:00.000Z'
+
+    it('renders the deletion date in the COMPANY zone, one day ahead of UTC, when a timezone is passed', () => {
+      const d = getSubStateDisplay(
+        sub({}),
+        'Nordfilm AB',
+        deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }),
+        undefined,
+        'Europe/Stockholm',
+      )
+      expect(d.cycle).toContain('22 September 2026')
+      expect(d.notice).toContain('22 September 2026')
+    })
+
+    it('renders the UTC date when the timezone is explicitly UTC', () => {
+      const d = getSubStateDisplay(
+        sub({}),
+        'Nordfilm AB',
+        deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }),
+        undefined,
+        'UTC',
+      )
+      expect(d.cycle).toContain('21 September 2026')
+      expect(d.notice).toContain('21 September 2026')
+    })
+
+    it('falls back to UTC when no timezone is passed at all (existing callers, pre-#361 behavior)', () => {
+      const d = getSubStateDisplay(sub({}), 'Nordfilm AB', deletion({ scheduledFor: NEAR_MIDNIGHT_ISO }))
+      expect(d.cycle).toContain('21 September 2026')
+      expect(d.notice).toContain('21 September 2026')
+    })
+
+    it('does NOT zone the billing-cycle dates (trialEnd/currentPeriodEnd) — those stay viewer-local by design', () => {
+      // ACTIVE's `cycle` reads `currentPeriodEnd`, formatted by `formatDate`
+      // (en-US, no timeZone) — passing a company timezone must not change
+      // that. Computed via the SAME un-zoned `toLocaleDateString` call
+      // `formatDate` itself makes, rather than a hardcoded day-of-month —
+      // this test must pass on any machine's own local clock, not just one
+      // that happens to sit in UTC.
+      const unzoned = new Date(NEAR_MIDNIGHT_ISO).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      const withCompanyZone = getSubStateDisplay(
+        sub({ status: 'active', currentPeriodEnd: NEAR_MIDNIGHT_ISO }),
+        'Nordfilm AB',
+        null,
+        undefined,
+        'Europe/Stockholm',
+      )
+      const withoutTimezoneArg = getSubStateDisplay(
+        sub({ status: 'active', currentPeriodEnd: NEAR_MIDNIGHT_ISO }),
+        'Nordfilm AB',
+      )
+      expect(withCompanyZone.key).toBe('ACTIVE')
+      expect(withCompanyZone.cycle).toContain(unzoned)
+      // Passing (or omitting) a company timezone must not change this
+      // billing date at all — same render either way.
+      expect(withCompanyZone.cycle).toBe(withoutTimezoneArg.cycle)
+    })
   })
 })

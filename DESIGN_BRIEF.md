@@ -8,11 +8,10 @@ Detta dokument beskriver alla vyer och mail i Allocate som behöver design. För
 
 ## Roller & behörigheter
 
-Allocate har tre användarroller:
+Allocate har två användarroller:
 
 - **Admin** – full tillgång, inklusive alla inställningar
 - **Crew** – kan skapa och hantera bokningar
-- **Viewer** – kan bara se bokningar, inte skapa
 
 Det finns även en separat **Operator**-roll för intern administration av plattformen.
 
@@ -197,7 +196,7 @@ Formulär för att skapa en bokning. Uppbyggt i tre numrerade sektioner: **PROJE
 **Tillstånd:**
 - Validering av alla fält innan formuläret skickas
 - Kontrollerar tillgänglighet / konflikter ("checking…")
-- Ej tillgängligt för Viewer (omdirigeras)
+- Kräver inloggning som medlem i företaget
 
 ---
 
@@ -257,7 +256,7 @@ Sida för att hantera företagets utrustningsinventarie.
 
 ## Inställningar
 
-Inställningar har en navigering med flikar/undersidor. Admin-sidor är ej tillgängliga för Crew och Viewer.
+Inställningar har en navigering med flikar/undersidor. Admin-sidor är ej tillgängliga för Crew.
 
 ### 12. Inställningar – Konto
 
@@ -311,7 +310,7 @@ Inställningar för företaget.
 Hantera teammedlemmar.
 
 **Innehåll:**
-- Lista med befintliga medlemmar: namn, e-post, roll (Admin/Crew/Viewer), datum de gick med
+- Lista med befintliga medlemmar: namn, e-post, roll (Admin/Crew), datum de gick med
 - Formulär för att bjuda in ny medlem: e-post + roll
 
 **Åtgärder:**
@@ -519,7 +518,7 @@ Mail som skickas när en admin bjuder in en ny användare till sitt företag.
 
 **Innehåll:**
 - Avsändarens namn och vilket företag inbjudan gäller
-- Rollen som användaren bjuds in som (Admin, Crew eller Viewer)
+- Rollen som användaren bjuds in som (Admin eller Crew)
 - CTA-knapp: "Acceptera inbjudan"
 - Fallback-länk om knappen inte fungerar
 - Notering: "Om du inte förväntade dig detta kan du ignorera detta mail"
@@ -527,7 +526,7 @@ Mail som skickas när en admin bjuder in en ny användare till sitt företag.
 **Data som behövs:**
 - Företagsnamn
 - Avsändarens namn
-- Roll (Admin / Crew / Viewer)
+- Roll (Admin / Crew)
 - Länk till inbjudningssidan
 
 ---

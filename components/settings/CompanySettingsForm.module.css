@@ -134,6 +134,42 @@
   display: none;
 }
 
+/* ── Danger zone ───────────────────────────────────────────────────────── */
+
+.buttonsRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.deleteConfirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  border: 1px solid var(--danger-border);
+  padding: 18px;
+  max-width: 640px;
+}
+
+.deleteText {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: var(--lh-body);
+}
+
+.deleteInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.deleteInput {
+  width: 200px;
+}
+
 @media (max-width: 768px) {
   .stickyBar {
     display: flex;
@@ -150,6 +186,26 @@
 
   .stickyBar .saveNote {
     flex: 1;
+  }
+
+  .buttonsRow {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .deleteConfirm {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    max-width: none;
+  }
+
+  .deleteInputRow {
+    flex-direction: column;
+  }
+
+  .deleteInput {
+    width: auto;
   }
 
   .saveRow {

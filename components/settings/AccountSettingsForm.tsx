@@ -1,28 +1,82 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateUserProfile, deleteAccount, exportUserData } from '@/actions/account'
+import { signOut } from 'firebase/auth'
+import {
+  updateUserProfile,
+  deleteAccount,
+  exportUserData,
+  getAccountDeletionPreview,
+  type AccountDeletionPreview,
+} from '@/actions/account'
 import { deleteSession } from '@/actions/auth'
 import { requestEmailChange, requestPasswordReset } from '@/actions/auth-email'
 import { auth } from '@/lib/firebase'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
-import Chip from '@/components/ui/Chip'
+import Chip, { type ChipTone } from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
+import LeaveCompanyFlow from './LeaveCompanyFlow'
+import LeaveCompanyEntry from './LeaveCompanyEntry'
 import { BOOKING_VIEW_OPTIONS, BOOKING_VIEW_LABELS, type BookingViewOption } from '@/constants/company'
+import type { CompanyDeletionOutcome, DeletionOutcome } from '@/lib/queries/deletionOutcomes'
 import styles from './AccountSettingsForm.module.css'
+
+// ── Account-deletion preview copy (issue #252 step 6 PR 2) ─────────────────
+//
+// One entry per `DeletionOutcome` (lib/queries/deletionOutcomes.ts). Kept as
+// small lookup tables rather than inline in the JSX so `close`'s wording is
+// easy to audit in one place: per the designbrief, this is the ONE outcome
+// whose copy must never mention a deadline, a 7-day window, or support being
+// able to stop it — none of that applies here, and PR 1 just introduced all
+// three phrases elsewhere in this app's company-deletion copy, which is
+// exactly the context a "quick" wording pass on this outcome could bleed in
+// from by habit.
+const PREVIEW_LABELS: Record<DeletionOutcome, string> = {
+  leave: 'STAYS OPEN',
+  blocked: 'NEEDS ACTION',
+  close: 'DELETED WITH ACCOUNT',
+  unknown: 'COULD NOT CHECK',
+}
+
+const PREVIEW_CHIP_TONE: Record<DeletionOutcome, ChipTone> = {
+  leave: 'neutral',
+  blocked: 'danger',
+  close: 'danger',
+  unknown: 'neutral',
+}
+
+function previewBody(company: CompanyDeletionOutcome): string {
+  switch (company.outcome) {
+    case 'leave':
+      return "You'll leave this company. It carries on without you."
+    case 'blocked': {
+      const otherCount = Math.max(company.memberCount - 1, 0)
+      const people = otherCount === 1 ? '1 other person works' : `${otherCount} other people work`
+      return `You're the only administrator here, where ${people}. Make someone else an administrator first, then you'll be able to delete your account.`
+    }
+    case 'close':
+      // No mention of a deadline, a window, or support stopping it — none of
+      // that applies to this outcome. See this table's own comment above.
+      return "You're its only member, so it will be permanently deleted the moment your account is — immediately, with no way to undo it."
+    case 'unknown':
+      return "Something went wrong reading this company. That's a technical problem, not something blocking you — try again in a moment."
+  }
+}
 
 interface AccountSettingsFormProps {
   name: string
   email: string
   defaultBookingView?: BookingViewOption
+  activeCompanyId: string
 }
 
 export default function AccountSettingsForm({
   name: initialName,
   email,
   defaultBookingView: initialView,
+  activeCompanyId,
 }: AccountSettingsFormProps) {
   const router = useRouter()
 
@@ -37,6 +91,24 @@ export default function AccountSettingsForm({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // issue #349: `setDeleting(true)` isn't synchronous, so a fast double click
+  // can fire handleDeleteAccount twice before `disabled` re-renders. This ref
+  // is set synchronously, before any `await`, closing that window on the
+  // client — the server-side lock (actions/account.ts) is the real guard.
+  const deletingRef = useRef(false)
+
+  // Per-company consequence preview (issue #252 step 6 PR 2). Fetched fresh
+  // every time the delete panel opens, and again on demand via "REFRESH" —
+  // e.g. after the user hands over admin rights on /settings/team and comes
+  // back. Advisory only: see getAccountDeletionPreview's own docblock. Never
+  // used to enable/disable the CONFIRM button below — a stale "safe" or
+  // stale "blocked" reading here must not change what deleteAccount does.
+  const [preview, setPreview] = useState<AccountDeletionPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  // Which company the "My companies" section (issue #352) is showing the
+  // leave-company flow for, if any.
+  const [leavingCompany, setLeavingCompany] = useState<CompanyDeletionOutcome | null>(null)
 
   const [signingOut, setSigningOut] = useState(false)
 
@@ -142,8 +214,27 @@ export default function AccountSettingsForm({
     URL.revokeObjectURL(url)
   }
 
+  async function loadPreview() {
+    setPreviewLoading(true)
+    const result = await getAccountDeletionPreview()
+    setPreview(result)
+    setPreviewLoading(false)
+  }
+
+  // Fetched once on mount rather than lazily on delete-panel open (as it
+  // used to be pre-#352): the same per-company membership list now also
+  // backs the "My companies" section below, which is visible unconditionally,
+  // not just after expressing intent to delete. REFRESH buttons throughout
+  // (including inside the delete panel) re-run this on demand — e.g. after
+  // leaving/promoting on another tab, or after the delete panel's own
+  // "GO TO TEAM →" round trip.
+  useEffect(() => {
+    loadPreview()
+  }, [])
+
   async function handleDeleteAccount() {
-    if (confirmInput !== 'DELETE') return
+    if (confirmInput !== 'DELETE' || deletingRef.current) return
+    deletingRef.current = true
     setDeleting(true)
     setDeleteError(null)
 
@@ -152,10 +243,30 @@ export default function AccountSettingsForm({
     if (result.error) {
       setDeleteError(result.error)
       setDeleting(false)
+      deletingRef.current = false
     } else {
+      // Best-effort: the server-side session cookie is already gone
+      // (deleteAccount clears it) and the Auth user record no longer exists
+      // either, but the client SDK's own in-memory user/token state
+      // survives until signOut() clears it — without this, a stale
+      // `auth.currentUser` can linger past the redirect. Never let a
+      // failure here block the redirect; there's nothing left to sign out
+      // of that matters once the account itself is deleted.
+      try {
+        await signOut(auth)
+      } catch (err) {
+        console.error('Post-deletion sign out failed:', err)
+      }
       router.push('/login')
     }
   }
+
+  // Derived purely for the extra warning sentence next to the DELETE input
+  // below — never used to gate the CONFIRM button. See loadPreview's and
+  // getAccountDeletionPreview's docblocks: this preview can be stale, and
+  // deleteAccount's own guard (not this component) is what actually decides.
+  const closingCompanies =
+    preview?.status === 'ready' ? preview.companies.filter((c) => c.outcome === 'close') : []
 
   return (
     <div className={styles.container}>
@@ -263,6 +374,41 @@ export default function AccountSettingsForm({
         </div>
       </div>
 
+      {/* My companies (issue #352) — one row per membership, each with its
+          own "Leave …" entry point. Shares the same fetched CompanyDeletionOutcome[]
+          the delete-account panel below already uses (loadPreview effect above) —
+          `outcome` doesn't map 1:1 onto leave-company UX (`close` here just
+          means "leave routes into the deletion flow", not "delete my
+          account"), but the underlying role/memberCount/adminCount read is
+          identical, so a second query would be pure duplication. */}
+      <div className={styles.row}>
+        <div>
+          <div className={styles.rowLabel}>My companies</div>
+          <div className={styles.rowHelp}>
+            Step out of a company yourself. No administrator has to remove you.
+          </div>
+        </div>
+        <div className={styles.rowControl}>
+          {previewLoading && !preview && <p className={styles.previewStatus}>Checking your companies…</p>}
+          {preview?.status === 'ready' && preview.companies.length === 0 && (
+            <p className={styles.previewStatus}>You are not a member of any company.</p>
+          )}
+          {preview?.status === 'ready' && preview.companies.length > 0 && (
+            <div className={styles.companiesList}>
+              {preview.companies.map((company) => (
+                <LeaveCompanyEntry
+                  key={company.companyId}
+                  companyName={company.companyName || 'Untitled company'}
+                  outcome={company.outcome}
+                  memberCount={company.memberCount}
+                  onOpen={() => setLeavingCompany(company)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Password & data */}
       <div className={styles.row}>
         <div>
@@ -329,29 +475,134 @@ export default function AccountSettingsForm({
       )}
 
       {deleteOpen && (
-        <div className={styles.deleteConfirm}>
-          <span className={styles.deleteText}>Type DELETE to permanently remove your account.</span>
-          <div className={styles.deleteInputRow}>
-            <Input
-              value={confirmInput}
-              onChange={(e) => {
-                setConfirmInput(e.target.value)
-                setDeleteError(null)
-              }}
-              placeholder="DELETE"
-              className={styles.deleteInput}
-            />
-            <Button
-              variant="danger-solid"
-              size="sm"
-              onClick={handleDeleteAccount}
-              disabled={confirmInput !== 'DELETE' || deleting}
+        <div className={styles.deletePanel}>
+          {/* Per-company consequence preview — designbrief "Del 1": "Förstå
+              exakt vad som händer med varje företag hen tillhör, innan
+              raderingen påbörjas." Every company gets its own line; this is
+              never collapsed into a single worst-case message. */}
+          {previewLoading && !preview && (
+            <p className={styles.previewStatus}>Checking your companies…</p>
+          )}
+
+          {preview?.status === 'error' && (
+            <ErrorBanner
+              tone="neutral"
+              action={
+                <button
+                  type="button"
+                  className={styles.dismissBtn}
+                  onClick={loadPreview}
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? 'CHECKING…' : 'RETRY'}
+                </button>
+              }
             >
-              {deleting ? 'DELETING…' : 'CONFIRM'}
-            </Button>
+              Could not check your companies right now. That&apos;s a technical problem — it doesn&apos;t mean
+              you&apos;re blocked. Try again, or delete anyway and we&apos;ll check for real at that point.
+            </ErrorBanner>
+          )}
+
+          {preview?.status === 'ready' && preview.companies.length > 0 && (
+            <ul className={styles.previewList}>
+              {preview.companies.map((company) => (
+                <li key={company.companyId} className={styles.previewItem}>
+                  <div className={styles.previewHeader}>
+                    <span className={styles.previewCompany}>{company.companyName || 'Untitled company'}</span>
+                    <Chip size="sm" tone={PREVIEW_CHIP_TONE[company.outcome]} interactive={false}>
+                      {PREVIEW_LABELS[company.outcome]}
+                    </Chip>
+                  </div>
+                  <p className={styles.previewBody}>{previewBody(company)}</p>
+                  {company.outcome === 'blocked' && (
+                    <div className={styles.previewActions}>
+                      <Button variant="secondary" size="sm" href="/settings/team">
+                        GO TO TEAM →
+                      </Button>
+                      <button
+                        type="button"
+                        className={styles.dismissBtn}
+                        onClick={loadPreview}
+                        disabled={previewLoading}
+                      >
+                        {previewLoading ? 'CHECKING…' : 'REFRESH'}
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className={styles.deleteConfirm}>
+            <span className={styles.deleteText} id="deleteConfirmHelp">
+              Type DELETE to permanently remove your account.
+              {closingCompanies.length > 0 && (
+                <>
+                  {' '}
+                  {/* Hedged on WHICH companies, not on what happens to them: this
+                      reads from `preview`, which can go stale the moment a tab
+                      elsewhere changes something (see getAccountDeletionPreview's
+                      and loadPreview's own docblocks). "As last checked" is
+                      honest about that without softening the consequence itself —
+                      deleteAccount's own guard decides for real, live, when
+                      CONFIRM is pressed; this sentence never claims to. */}
+                  As last checked, this also permanently deletes{' '}
+                  {closingCompanies.length === 1
+                    ? closingCompanies[0]!.companyName || 'the company above'
+                    : `${closingCompanies.length} companies`}{' '}
+                  — immediately, no undo.{' '}
+                  <button
+                    type="button"
+                    className={styles.dismissBtn}
+                    onClick={loadPreview}
+                    disabled={previewLoading}
+                  >
+                    {previewLoading ? 'CHECKING…' : 'REFRESH'}
+                  </button>
+                </>
+              )}
+            </span>
+            <div className={styles.deleteInputRow}>
+              <Input
+                value={confirmInput}
+                onChange={(e) => {
+                  setConfirmInput(e.target.value)
+                  setDeleteError(null)
+                }}
+                placeholder="DELETE"
+                className={styles.deleteInput}
+                aria-label="Type DELETE to confirm account deletion"
+                aria-describedby="deleteConfirmHelp"
+              />
+              <Button
+                variant="danger-solid"
+                size="sm"
+                onClick={handleDeleteAccount}
+                disabled={confirmInput !== 'DELETE' || deleting}
+              >
+                {deleting ? 'DELETING…' : 'CONFIRM'}
+              </Button>
+            </div>
+            {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
           </div>
-          {deleteError && <ErrorBanner tone="danger">{deleteError}</ErrorBanner>}
         </div>
+      )}
+
+      {leavingCompany && (
+        <LeaveCompanyFlow
+          key={leavingCompany.companyId}
+          companyId={leavingCompany.companyId}
+          companyName={leavingCompany.companyName || 'this company'}
+          isActiveCompany={leavingCompany.companyId === activeCompanyId}
+          email={email}
+          outcome={leavingCompany.outcome}
+          memberCount={leavingCompany.memberCount}
+          onClose={() => {
+            setLeavingCompany(null)
+            loadPreview()
+          }}
+        />
       )}
     </div>
   )

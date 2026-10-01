@@ -7,16 +7,25 @@ import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
 import { deleteSession } from '@/actions/auth'
 import { useSupportContext } from '@/lib/support-context'
+import { useCompanySwitch } from '@/lib/useCompanySwitch'
+import type { UserCompany } from '@/lib/queries/companies'
 import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
+import CompanySwitchOverlay from '@/components/ui/CompanySwitchOverlay'
+import CompanyRow from './CompanyRow'
 import { useBookingFilters } from '@/hooks/useBookingFilters'
-import { TOP_NAV, settingsItemsForRole } from './nav-items'
+import { TOP_NAV, settingsItemsFor } from './nav-items'
 import styles from './MobileMenu.module.css'
 
 interface MobileMenuProps {
   role: Role
   name: string
   email: string
+  companyName: string
+  activeCompanyId: string
+  companies: UserCompany[]
+  /** Issue #350 — mirrors SettingsTabs so the sheet never offers a tab (Team/Preferences) the layout guard would then bounce. */
+  hasFullAccess: boolean
 }
 
 /**
@@ -27,21 +36,31 @@ interface MobileMenuProps {
  * design's own `sc-if value="{{ menuOpen }}"` — so it never contributes
  * keyboard tab stops when hidden.
  */
-export function MobileMenu({ role, name, email }: MobileMenuProps) {
+export function MobileMenu({ role, name, email, companyName, activeCompanyId, companies, hasFullAccess }: MobileMenuProps) {
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'menu' | 'companies'>('menu')
   const [signingOut, setSigningOut] = useState(false)
+  const [switchingName, setSwitchingName] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
   const sheetRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const { showCancelled, onlyMine, toggleCancelled, toggleOnlyMine } = useBookingFilters()
   const { openHelp } = useSupportContext()
+  const { status, error, switchTo } = useCompanySwitch()
 
   // Auto-close when the route changes.
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // While open: lock body scroll, move focus into the sheet, close on Escape,
-  // and return focus to the trigger on close.
+  // The sheet always opens on the main view — reset whenever it closes (and
+  // therefore also before the next open), same as the design's `view` state.
+  useEffect(() => {
+    if (!open) setView('menu')
+  }, [open])
+
+  // While open: lock body scroll, move focus into the sheet, close on Escape
+  // (or step back from the company sub-view first), and return focus to the
+  // trigger on close.
   useEffect(() => {
     if (!open) return
     const trigger = triggerRef.current
@@ -49,7 +68,12 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
     sheetRef.current?.focus()
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'Escape') return
+      setView((v) => {
+        if (v === 'companies') return 'menu'
+        setOpen(false)
+        return v
+      })
     }
     document.addEventListener('keydown', onKeyDown)
 
@@ -60,11 +84,26 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
     }
   }, [open])
 
+  // On success switchTo() navigates away (window.location.href) — this
+  // component unmounts, so reopening on the company sub-view here only
+  // matters on failure, per spec ("dismiss the overlay, keep the user where
+  // they are, show one inline message in the sheet").
+  async function handleCompanyRowClick(company: UserCompany) {
+    setOpen(false)
+    if (company.id === activeCompanyId) return
+    setSwitchingName(company.name)
+    const result = await switchTo(company.id)
+    if (!result.ok) {
+      setView('companies')
+      setOpen(true)
+    }
+  }
+
   const isBookings = pathname.startsWith('/bookings')
   const isEquipment = pathname.startsWith('/equipment')
   const isSettings = pathname.startsWith('/settings')
 
-  const settingsItems = settingsItemsForRole(role)
+  const settingsItems = settingsItemsFor(role, hasFullAccess)
 
   // Closing this sheet re-focuses the hamburger (see the [open] effect above)
   // before SupportModal mounts and steals focus into its subject field —
@@ -123,6 +162,34 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
           >
             <div className={styles.handle} aria-hidden="true" />
 
+            {view === 'companies' ? (
+              <div className={styles.companiesView}>
+                <div className={styles.companiesHeader}>
+                  <button
+                    type="button"
+                    className={styles.backBtn}
+                    onClick={() => setView('menu')}
+                    aria-label="Back"
+                  >
+                    <Glyph char="‹" />
+                  </button>
+                  <p className={styles.groupLabel}>Switch company</p>
+                </div>
+                {error && <p className={styles.companyError}>{error}</p>}
+                <div className={styles.companyList}>
+                  {companies.map((company) => (
+                    <CompanyRow
+                      key={company.id}
+                      name={company.name}
+                      active={company.id === activeCompanyId}
+                      variant="list"
+                      onClick={() => handleCompanyRowClick(company)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Primary nav */}
             <div className={styles.primaryNav}>
               {TOP_NAV.map((item) => {
@@ -216,6 +283,28 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
               </div>
             )}
 
+            {/* Company (issue #352). Only the active company shows here —
+                tapping it swaps this sheet's content to the SWITCH COMPANY
+                sub-view (view==='companies') rather than opening anything
+                new. A single-membership user gets inert text, no chevron. */}
+            <div className={styles.group}>
+              <p className={styles.groupLabel}>Company</p>
+              {companies.length > 1 ? (
+                <button
+                  type="button"
+                  className={styles.navRow}
+                  onClick={() => setView('companies')}
+                >
+                  <span className={styles.companyRowName}>{companyName}</span>
+                  <Glyph char="›" />
+                </button>
+              ) : (
+                <div className={`${styles.navRow} ${styles.companyRowStatic}`}>
+                  <span className={styles.companyRowName}>{companyName}</span>
+                </div>
+              )}
+            </div>
+
             {/* Signed in as */}
             <div className={styles.group}>
               <p className={styles.groupLabel}>Signed in as</p>
@@ -243,9 +332,13 @@ export function MobileMenu({ role, name, email }: MobileMenuProps) {
                 </Link>
               </div>
             )}
+              </>
+            )}
           </div>
         </div>
       )}
+
+      {status === 'switching' && switchingName && <CompanySwitchOverlay targetCompanyName={switchingName} />}
     </>
   )
 }

@@ -12,7 +12,7 @@ import 'server-only'
  * app/operator/customers/[companyId]/page.tsx — hoisted here as the one copy.
  */
 
-type TimestampLike = { toDate?: () => Date; toMillis?: () => number } | string | null | undefined
+export type TimestampLike = { toDate?: () => Date; toMillis?: () => number } | string | null | undefined
 
 /** Firestore Timestamp (or already-ISO string) -> ISO string. `''` if absent. */
 export function iso(value: TimestampLike): string {

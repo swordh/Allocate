@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
 
 vi.mock('@/lib/firebase-admin', () => ({
   adminDb: {
@@ -133,7 +134,7 @@ describe('inviteUsers — batch writes', () => {
     stubSession()
     const { batch } = wire({ memberCount: 0, limit: 100 })
 
-    await inviteUsers(['newperson@example.com'], 'viewer')
+    await inviteUsers(['newperson@example.com'], 'crew')
 
     expect(batch.set).toHaveBeenCalledWith(
       expect.anything(),
@@ -143,11 +144,27 @@ describe('inviteUsers — batch writes', () => {
         status: 'queued',
         data: expect.objectContaining({
           companyName: 'Nordfilm AB',
-          role: 'viewer',
+          role: 'crew',
           acceptUrl: expect.stringContaining('/invite/'),
         }),
       }),
     )
+  })
+
+  it('mirror set includes expireAt as a Timestamp matching expiresAt — issue #297', async () => {
+    stubSession()
+    const { batch } = wire({ memberCount: 0, limit: 100 })
+
+    await inviteUsers(['newperson@example.com'], 'crew')
+
+    const setCalls = batch.set.mock.calls as [unknown, Record<string, unknown>][]
+    const mirrorPayload = setCalls
+      .map(([, data]) => data)
+      .find((data) => data.status === 'pending' && 'companyId' in data)
+
+    expect(mirrorPayload).toBeDefined()
+    expect(mirrorPayload?.expiresAt).toBeTypeOf('string')
+    expect(mirrorPayload?.expireAt).toEqual(Timestamp.fromDate(new Date(mirrorPayload?.expiresAt as string)))
   })
 
   it('mixes new and skipped addresses within a single batch, seat guard counts only the new ones', async () => {

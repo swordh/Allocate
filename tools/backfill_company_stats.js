@@ -2,11 +2,14 @@
  * Backfill: recompute the derived stats map on every company document.
  *
  * Writes companies/{id}.stats (equipmentCount, bookingsCreated,
- * bookingsCancelled, lastBookingAt, memberCount) and
- * companies/{id}/_meta/equipmentCount from the actual subcollection contents,
- * as absolute values. Both land in one batch per company, so a run can never
- * leave the counter and the mirror disagreeing. memberCount has no _meta
- * counterpart — it has exactly one home, unlike equipmentCount.
+ * bookingsCancelled, lastBookingAt, memberCount), companies/{id}/_meta/equipmentCount,
+ * and companies/{id}/_meta/memberCounts (members + admins) from the actual
+ * subcollection contents, as absolute values. All three land in one batch per
+ * company, so a run can never leave a counter and its mirror disagreeing.
+ * memberCounts is authoritative for the sole-admin guards in
+ * removeMember/updateMemberRole/deleteAccount (lib/companyStats.ts) the same
+ * way _meta/equipmentCount is authoritative for the equipment plan limit —
+ * both diff lines below are flagged as such, not as cosmetic drift.
  *
  * RUN ORDER MATTERS. The stats writers must already be deployed to the target
  * environment. FieldValue.increment treats a missing field as 0, so deploying
@@ -122,12 +125,13 @@ const db = getFirestore();
 async function computeStats(companyId) {
   const company = db.collection('companies').doc(companyId);
 
-  const [equipment, bookings, cancelled, lastBooking, members] = await Promise.all([
+  const [equipment, bookings, cancelled, lastBooking, members, admins] = await Promise.all([
     company.collection('equipment').where('active', '==', true).count().get(),
     company.collection('bookings').count().get(),
     company.collection('bookings').where('status', '==', 'cancelled').count().get(),
     company.collection('bookings').orderBy('createdAt', 'desc').limit(1).get(),
     company.collection('members').count().get(),
+    company.collection('members').where('role', '==', 'admin').count().get(),
   ]);
 
   return {
@@ -136,15 +140,17 @@ async function computeStats(companyId) {
     bookingsCancelled: cancelled.data().count,
     lastBookingAt: lastBooking.empty ? null : lastBooking.docs[0].get('createdAt'),
     memberCount: members.data().count,
+    adminCount: admins.data().count,
   };
 }
 
 async function readStored(companyId) {
   const company = db.collection('companies').doc(companyId);
 
-  const [companySnap, counterSnap] = await Promise.all([
+  const [companySnap, counterSnap, memberCountsSnap] = await Promise.all([
     company.get(),
     company.collection('_meta').doc('equipmentCount').get(),
+    company.collection('_meta').doc('memberCounts').get(),
   ]);
 
   const stats = companySnap.get('stats') || {};
@@ -157,6 +163,10 @@ async function readStored(companyId) {
       memberCount: stats.memberCount ?? null,
     },
     counter: counterSnap.exists ? counterSnap.get('count') : null,
+    memberCounts: {
+      members: memberCountsSnap.exists ? memberCountsSnap.get('members') : null,
+      admins: memberCountsSnap.exists ? memberCountsSnap.get('admins') : null,
+    },
     name: companySnap.get('name') || '(unnamed)',
   };
 }
@@ -179,6 +189,19 @@ function diff(stored, truth) {
   // serious than a stale mirror — call it out separately.
   if (stored.counter !== truth.equipmentCount) {
     out.push(`_meta counter: ${stored.counter ?? 'MISSING'} → ${truth.equipmentCount}`);
+  }
+  // _meta/memberCounts is authoritative for the sole-admin guards
+  // (lib/companyStats.ts readMemberCounts) — flagged separately from the
+  // stats.memberCount mirror above for the same reason as the equipment
+  // counter: a mismatch here is a guard-correctness issue, not cosmetic
+  // drift. A fresh company's _meta/memberCounts.admins may legitimately be
+  // ahead of stats.memberCount's non-admin-aware mirror, so these two
+  // sections can disagree with each other without either being wrong.
+  if (stored.memberCounts.members !== truth.memberCount) {
+    out.push(`_meta memberCounts.members: ${stored.memberCounts.members ?? 'MISSING'} → ${truth.memberCount}`);
+  }
+  if (stored.memberCounts.admins !== truth.adminCount) {
+    out.push(`_meta memberCounts.admins: ${stored.memberCounts.admins ?? 'MISSING'} → ${truth.adminCount}`);
   }
   return out;
 }
@@ -212,6 +235,12 @@ async function write(companyId, truth) {
   batch.set(
     company.collection('_meta').doc('equipmentCount'),
     { count: truth.equipmentCount, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+
+  batch.set(
+    company.collection('_meta').doc('memberCounts'),
+    { members: truth.memberCount, admins: truth.adminCount, updatedAt: FieldValue.serverTimestamp() },
     { merge: true },
   );
 

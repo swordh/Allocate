@@ -35,7 +35,6 @@ export function makeSession(role: Role, overrides: Partial<SessionClaims> = {}):
 
 export const ADMIN_SESSION: SessionClaims = makeSession('admin')
 export const CREW_SESSION: SessionClaims = makeSession('crew')
-export const VIEWER_SESSION: SessionClaims = makeSession('viewer')
 
 // ── Equipment ─────────────────────────────────────────────────────────────────
 

@@ -25,6 +25,46 @@ export interface DocRefStub {
   path: string
   id: string
   get: () => Promise<DocSnapStub>
+  /**
+   * Direct (non-batched, non-transactional) writes on a document reference.
+   *
+   * Spies rather than no-ops so a test can assert what production code wrote
+   * outside a batch or transaction — `recordStripeOutcome`
+   * (lib/companyDeletionStripe.ts) is the case that forced these to exist: it
+   * annotates the ledger with `adminDb.doc(...).update(...)` and swallows its
+   * own errors, so before these spies were here the call threw
+   * "update is not a function", was caught, and the test saw nothing at all
+   * rather than a failure. A missing method on a stub that production code
+   * deliberately try/catches is invisible; that is worth knowing about
+   * generally, not just here.
+   *
+   * They resolve rather than mutate `docs` — nothing in this suite reads its
+   * own writes back through the same map, and making them write-through would
+   * quietly change what every existing test's later reads return.
+   */
+  update: ReturnType<typeof vi.fn>
+  set: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+  /**
+   * `deleteAccount`'s per-uid lock (issue #349, actions/account.ts) uses
+   * `DocumentReference.create()` for its atomic acquire — real Firestore
+   * throws `{ code: 6 }` (ALREADY_EXISTS) if the doc exists, but this stub
+   * always resolves, same as `update`/`set`/`delete` above. A test that needs
+   * to exercise the "lock already held" path overrides this per-call, e.g.
+   * `vi.mocked(adminDb.doc).mockReturnValueOnce({ ...ref, create: vi.fn().mockRejectedValue(...) })`.
+   */
+  create: ReturnType<typeof vi.fn>
+  /**
+   * `eqDoc.ref.collection('units')` — issue #347's fix (actions/account.ts,
+   * actions/team.ts) walks equipment subcollections directly instead of a
+   * collectionGroup query, so a doc ref needs to hand back a query chain
+   * rooted at its own path. Resolved by whatever `QueryResolver` the ref was
+   * built with (see `makeDocRef`'s `resolver` param) — a ref that came from
+   * `wireDb` or from a query result carries the real one; a ref built
+   * without one (e.g. a bare `makeDocSnap` in an older test) falls back to
+   * "no docs", same as `wireDb`'s own default.
+   */
+  collection: (id: string) => ReturnType<typeof makeQueryChain>
 }
 
 export interface DocSnapStub {
@@ -59,28 +99,42 @@ export interface QueryDocInput {
 /** Decides which documents a query returns, given its path and captured filters. */
 export type QueryResolver = (ctx: QueryContext) => QueryDocInput[]
 
-function makeDocRef(path: string, docs: DocMap): DocRefStub {
+/** A resolver that always answers "no docs" — the default for refs built without one. */
+const noDocsResolver: QueryResolver = () => []
+
+function makeDocRef(path: string, docs: DocMap, resolver: QueryResolver = noDocsResolver): DocRefStub {
   const id = path.split('/').pop() ?? path
   const ref: DocRefStub = {
     path,
     id,
-    get: async () => makeDocSnap(path, docs),
+    get: async () => makeDocSnap(path, docs, resolver),
+    update: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+    create: vi.fn().mockResolvedValue(undefined),
+    collection: (subId: string) => {
+      const subPath = `${path}/${subId}`
+      const chain = makeQueryChain(subPath, resolver, docs) as Record<string, unknown>
+      chain['doc'] = (docId?: string) =>
+        makeDocRef(docId ? `${subPath}/${docId}` : `${subPath}/auto-id`, docs, resolver)
+      return chain as ReturnType<typeof makeQueryChain>
+    },
   }
   return ref
 }
 
-export function makeDocSnap(path: string, docs: DocMap): DocSnapStub {
+export function makeDocSnap(path: string, docs: DocMap, resolver: QueryResolver = noDocsResolver): DocSnapStub {
   const data = docs[path] ?? null
   const id = path.split('/').pop() ?? path
   return {
     exists: data !== null,
     id,
     data: () => data ?? undefined,
-    ref: makeDocRef(path, docs),
+    ref: makeDocRef(path, docs, resolver),
   }
 }
 
-export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}) {
+export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}, resolver: QueryResolver = noDocsResolver) {
   return {
     empty: inputs.length === 0,
     size: inputs.length,
@@ -89,7 +143,7 @@ export function makeQuerySnap(inputs: QueryDocInput[], docs: DocMap = {}) {
       data: () => d.data,
       // deleteAccount does batch.delete(doc.ref) and batch.update(doc.ref, ...),
       // so query results must carry a usable reference.
-      ref: makeDocRef(d.path ?? d.id, docs),
+      ref: makeDocRef(d.path ?? d.id, docs, resolver),
     })),
   }
 }
@@ -105,24 +159,99 @@ export function makeBatch() {
   }
 }
 
+// ── Transaction ───────────────────────────────────────────────────────────────
+
+export interface TransactionStub {
+  get: ReturnType<typeof vi.fn>
+  set: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+}
+
+/**
+ * A `Transaction` stub for code under `adminDb.runTransaction(async (tx) => ...)`.
+ *
+ * `tx.get(ref)` handles three distinct kinds of `ref`:
+ *
+ *   - A plain doc ref (has both `.path` AND `.id`) — resolved against the
+ *     SAME `docs` map `wireDb` uses, so a test can wire one `DocMap` and have
+ *     it answer both transactional and non-transactional reads. Used by
+ *     `lib/companyStats.ts`'s `readMemberCounts`, among others.
+ *   - A filtered `Query` chain from `makeQueryChain` (HAS a `.path` — it's a
+ *     collection path — but no `.id`, unlike a real doc ref) — e.g.
+ *     `tx.get(db.collection('companies/{cid}/members').where('role','==','admin'))`
+ *     in `functions/src/company/purge.ts`'s catch block and this file's own
+ *     `markStuckCompanyDeletionFailed` (actions/operatorCompanyDeletion.ts).
+ *     The `.id` check is what disambiguates this from the doc-ref case above
+ *     despite both having a `.path` string — routed into the `.get()` branch
+ *     below, which resolves it through whatever `query` resolver `wireDb`
+ *     was given, same as a non-transactional `.get()` would.
+ *   - An `AggregateQuery`-shaped stub (no `.path`, but has its own `.get()`) —
+ *     exactly what `makeQueryChain`'s `.count()` already returns for
+ *     `adminDb.collection(path).count()` / `.where(...).count()`. Real
+ *     `Transaction.get(AggregateQuery)` takes the query and resolves it
+ *     itself; here that resolution already lives on the stub object (bound to
+ *     whatever `query` resolver `wireDb` was given), so `tx.get` just awaits
+ *     it — no separate aggregate-routing logic needs to be duplicated here.
+ *
+ * Pair with `wireDb`'s `docs` map (pass the same object to both) and wire
+ * `adminDb.runTransaction` in the test:
+ *
+ *   const docs: DocMap = { ... }
+ *   const wired = wireDb(adminDb, { docs, query })
+ *   const tx = makeTransaction(docs)
+ *   vi.mocked(adminDb.runTransaction).mockImplementation(
+ *     (cb) => cb(tx) as never,
+ *   )
+ */
+export function makeTransaction(docs: DocMap = {}): TransactionStub {
+  return {
+    get: vi.fn(async (ref: { id?: string; path?: string; get?: () => unknown }) => {
+      if (ref && typeof ref.path === 'string' && typeof ref.id === 'string') {
+        return makeDocSnap(ref.path, docs)
+      }
+      if (ref && typeof ref.get === 'function') {
+        return ref.get()
+      }
+      throw new Error('makeTransaction: tx.get() called with an unrecognized ref shape')
+    }),
+    set: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  }
+}
+
 // ── Query chain ───────────────────────────────────────────────────────────────
 
 /**
- * A chainable query stub. Every `.where()` returns the same chain with the
- * clause recorded, so the resolver sees all filters regardless of chain depth —
- * unlike a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }`, which
- * silently throws the moment production code adds a third filter.
+ * A chainable query stub. `.where()` returns a NEW chain carrying the parent's
+ * filters plus the new clause — never mutates the parent's own filter list —
+ * so the resolver sees the right filters regardless of chain depth, the same
+ * way a hand-rolled `{ where: () => ({ where: () => ({ get }) }) }` would, but
+ * without throwing the moment production code adds a third filter.
+ *
+ * This immutability is load-bearing, not cosmetic: real Firestore
+ * `Query`/`CollectionReference` objects are immutable — `.where()` returns a
+ * new query rather than mutating the one it was called on — and more than
+ * one production code path relies on exactly that (lib/companyStats.ts's
+ * `readMemberCounts`, and `lib/queries/deletionOutcomes.ts`'s
+ * `readCompanyCounts`): both take ONE collection reference and derive TWO
+ * independent queries from it — an unfiltered `.count()` and a
+ * `.where('role','==','admin').count()` — run concurrently via `Promise.all`.
+ * A mock that pushed into one shared array would make the "unfiltered" count
+ * retroactively pick up the admin filter too (both `count().get()` calls read
+ * the array lazily, after both synchronous `.where()`/`.count()` calls have
+ * already run), silently halving the reported member count in exactly that
+ * scenario. Branching instead of mutating is what makes those two counts
+ * independent here the same way they are against real Firestore.
  */
-function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap) {
-  const filters: Filter[] = []
-
-  const run = () => makeQuerySnap(resolver({ path, filters }), docs)
+function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap, filters: Filter[] = []) {
+  const run = () => makeQuerySnap(resolver({ path, filters }), docs, resolver)
 
   const chain: Record<string, unknown> = {
     path,
     where(field: string, op: string, value: unknown) {
-      filters.push({ field, op, value })
-      return chain
+      return makeQueryChain(path, resolver, docs, [...filters, { field, op, value }])
     },
     orderBy: () => chain,
     limit: () => chain,
@@ -130,6 +259,14 @@ function makeQueryChain(path: string, resolver: QueryResolver, docs: DocMap) {
     count: () => ({
       get: async () => ({ data: () => ({ count: run().docs.length }) }),
     }),
+    // `CollectionReference.add()` — a standalone, non-batched, non-
+    // transactional write, distinct from `.doc().set()`. Added for
+    // `writeDeletionFailureAudit` (actions/account.ts, issue #358), which
+    // deliberately writes this way so a failure-audit row never rides along
+    // in the WriteBatch that just failed. A spy, like `DocRefStub`'s
+    // `update`/`set`/`delete`, so a test can assert what was written without
+    // it going through the shared `docs` map.
+    add: vi.fn().mockResolvedValue(undefined),
   }
 
   return chain
@@ -168,14 +305,18 @@ export function wireDb(
   const resolveQuery = query ?? noDocs
   const resolveGroup = collectionGroup ?? noDocs
 
-  const docFn = vi.fn((path: string) => makeDocRef(path, docs))
+  // Refs handed out here carry `resolveQuery` so a `.collection()` called on
+  // one of them (e.g. `eqDoc.ref.collection('units')` in the #347 fix) is
+  // resolved by the same query resolver `wireDb`'s own collection chains use,
+  // rather than silently falling back to "no docs".
+  const docFn = vi.fn((path: string) => makeDocRef(path, docs, resolveQuery))
 
   // A collection reference is both a query root and a doc factory. Path-form
   // reads — adminDb.collection('users/{uid}/memberships').get() — go through
   // the same resolver as filtered ones, with an empty filter list.
   const collectionFn = vi.fn((path: string) => {
     const chain = makeQueryChain(path, resolveQuery, docs) as Record<string, unknown>
-    chain['doc'] = (id?: string) => makeDocRef(id ? `${path}/${id}` : `${path}/auto-id`, docs)
+    chain['doc'] = (id?: string) => makeDocRef(id ? `${path}/${id}` : `${path}/auto-id`, docs, resolveQuery)
     return chain
   })
 

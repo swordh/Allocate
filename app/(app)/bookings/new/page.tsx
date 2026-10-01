@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
 import { getCompany } from '@/lib/queries/company'
@@ -8,10 +7,6 @@ import { todayInTimezone } from '@/lib/dates'
 
 export default async function NewBookingPage() {
   const session = await getVerifiedSession()
-
-  if (session.role === 'viewer') {
-    redirect('/bookings')
-  }
 
   const [equipment, company] = await Promise.all([
     getEquipment(session.activeCompanyId),

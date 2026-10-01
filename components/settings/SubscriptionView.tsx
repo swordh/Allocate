@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPortalSession, createPlanChangeSession } from '@/actions/subscription'
+import { cancelCompanyDeletion } from '@/actions/companyDeletion'
 import { getSubStateDisplay, getPlanCardCta } from '@/lib/subscription-state'
+import { canCancelCompanyDeletionInProduct } from '@/lib/companyDeletionUi'
 import { PLAN_CATALOG, PLAN_ORDER, type PlanId } from '@/lib/plans'
 import Button from '@/components/ui/Button'
 import Chip from '@/components/ui/Chip'
 import ErrorBanner from '@/components/ui/ErrorBanner'
-import type { Subscription, BillingInterval } from '@/types'
+import type { Subscription, BillingInterval, CompanyDeletion, CompanyBilling } from '@/types'
 import styles from './SubscriptionView.module.css'
 
 interface SubscriptionViewProps {
@@ -16,6 +18,31 @@ interface SubscriptionViewProps {
   companyName: string
   equipmentCount: number
   memberCount: number
+  /** Present when the caller's company has a deletion scheduled (issue #252 step 6). */
+  deletion?: CompanyDeletion | null
+  /**
+   * Present when the company's Stripe customer has no billing email set —
+   * see `CompanyBilling` in types/company.ts. This page is already
+   * admin-only (`app/(app)/settings/subscription/page.tsx` redirects any
+   * other role before rendering it), so no extra role check is needed here
+   * for the notice below.
+   */
+  billing?: CompanyBilling | null
+  /**
+   * Whether Stripe already has a payment method on file for a trialing
+   * subscription — see `lib/trialPaymentMethod.ts`. Passed straight through
+   * to `getSubStateDisplay`, which swaps the TRIAL notice/CTA when true.
+   * Ignored for every other subscription state.
+   */
+  hasPaymentMethod?: boolean
+  /**
+   * The company's own `preferences.timezone` (issue #361) — threaded
+   * straight through to `getSubStateDisplay`, which uses it ONLY for
+   * `deletion.scheduledFor` in the `DELETION_PENDING` notice/cycle text.
+   * `formatShortDate` below (Stripe's own billing-cycle dates) is
+   * deliberately unaffected — see `getSubStateDisplay`'s own docblock.
+   */
+  timezone?: string
 }
 
 function formatShortDate(iso: string | null | undefined): string {
@@ -45,13 +72,28 @@ export default function SubscriptionView({
   companyName,
   equipmentCount,
   memberCount,
+  deletion = null,
+  billing = null,
+  hasPaymentMethod = false,
+  timezone,
 }: SubscriptionViewProps) {
   const router = useRouter()
   const [cycle, setCycle] = useState<BillingInterval>(subscription?.interval ?? 'month')
   const [loading, setLoading] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const display = getSubStateDisplay(subscription, companyName)
+  const display = getSubStateDisplay(subscription, companyName, deletion, { hasPaymentMethod }, timezone)
+
+  // Whether `cancelCompanyDeletion()` would actually succeed right now — see
+  // `canCancelCompanyDeletionInProduct`. `DELETION_PENDING`'s shared notice
+  // (lib/subscription-state.ts) says "any administrator can stop it", which
+  // is only true while state is 'requested'; once the sweep has claimed the
+  // request (`executing`) or a purge attempt failed, that sentence would be a
+  // lie, so this view overrides both the CTA and the notice text below
+  // rather than render a "STOP DELETION" button that is guaranteed to fail.
+  const deletionCancelable = display.key === 'DELETION_PENDING' && canCancelCompanyDeletionInProduct(deletion)
+  const deletionNoLongerCancelable = display.key === 'DELETION_PENDING' && !deletionCancelable
 
   async function goToStripe(result: { url: string } | { error: string }) {
     if ('url' in result) {
@@ -68,7 +110,27 @@ export default function SubscriptionView({
     await goToStripe(await createPortalSession())
   }
 
+  async function handleCancelDeletion() {
+    setCancelling(true)
+    setError(null)
+    const result = await cancelCompanyDeletion()
+    setCancelling(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    // The company document's `deletion` field is gone server-side the moment
+    // this resolves (`applyCancelWrites` deletes it, never sets a 'canceled'
+    // value). Re-fetching is what makes the banner disappear — there is no
+    // local state to flip, because absence of the field is the only signal.
+    router.refresh()
+  }
+
   async function handleNoticeCta() {
+    if (display.key === 'DELETION_PENDING') {
+      if (deletionCancelable) await handleCancelDeletion()
+      return
+    }
     if (display.key === 'NONE') {
       router.push('/subscribe')
       return
@@ -111,12 +173,27 @@ export default function SubscriptionView({
         <ErrorBanner
           tone={display.tone}
           action={
-            <Button variant="primary" size="sm" onClick={handleNoticeCta} disabled={loading}>
-              {display.cta}
-            </Button>
+            deletionNoLongerCancelable || display.cta === '' ? undefined : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleNoticeCta}
+                disabled={loading || cancelling}
+              >
+                {display.key === 'DELETION_PENDING' && cancelling ? 'STOPPING…' : display.cta}
+              </Button>
+            )
           }
         >
-          {display.notice}
+          {deletionNoLongerCancelable
+            ? `The deletion of ${companyName} has already started and can no longer be stopped here. Contact support.`
+            : display.notice}
+        </ErrorBanner>
+      )}
+
+      {billing?.emailMissingSince && (
+        <ErrorBanner tone="info">
+          Billing email missing — invoices and receipts can&apos;t be sent. Add a billing email in Manage billing.
         </ErrorBanner>
       )}
 

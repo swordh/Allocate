@@ -2,8 +2,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Role } from '@/types'
-import { useSupportContext } from '@/lib/support-context'
 import Button from '@/components/ui/Button'
+import CompanyMenu from './CompanyMenu'
 import { TOP_NAV } from './nav-items'
 import styles from './PrimaryNav.module.css'
 
@@ -15,6 +15,9 @@ const ENV_LABELS: Record<string, string> = {
 
 interface PrimaryNavProps {
   role: Role
+  name: string
+  email: string
+  activeCompanyId: string
 }
 
 /**
@@ -22,10 +25,9 @@ interface PrimaryNavProps {
  * Uses usePathname() for live active-link detection on client-side navigation.
  * The nav itself is the same for every role — Settings is always visible.
  */
-export default function PrimaryNav({ role }: PrimaryNavProps) {
+export default function PrimaryNav({ role, name, email, activeCompanyId }: PrimaryNavProps) {
   const pathname = usePathname()
   const isActive = (path: string) => pathname.startsWith(path)
-  const { helpOpen, openHelp } = useSupportContext()
 
   return (
     <nav className={styles.nav}>
@@ -53,16 +55,10 @@ export default function PrimaryNav({ role }: PrimaryNavProps) {
 
         <div className={styles.actions}>
           <div className={styles.iconGroup}>
-            <button
-              className={`${styles.helpBtn} ${helpOpen ? styles.helpBtnOpen : ''}`}
-              onClick={() => openHelp()}
-              aria-label="Help & feedback"
-              aria-haspopup="dialog"
-              aria-expanded={helpOpen}
-              title="Help & feedback  (Shift+?)"
-            >
-              ?
-            </button>
+            {/* Help & feedback used to sit here as its own "?" button. It is a
+                row inside CompanyMenu now (issue #352), and the Shift+? shortcut
+                still opens the same panel from anywhere. */}
+            <CompanyMenu name={name} email={email} activeCompanyId={activeCompanyId} />
           </div>
 
           {/* NEW BOOKING on every screen, per the design. The equipment page

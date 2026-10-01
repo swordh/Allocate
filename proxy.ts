@@ -8,8 +8,21 @@ const PUBLIC_PATHS = [
   '/login',
   '/signup',
   '/forgot-password',
+  // Operator (internal staff) sign-in — the only entry point into
+  // app/operator/(protected)/**. Gated server-side by the operatorSignIn
+  // action (actions/operator-auth.ts), not by this proxy: a signed-out
+  // request must reach the page itself before any check runs.
+  '/operator/login',
   '/auth/action',
   '/invite',
+  // The company-deletion cancellation link is opened from an email, often in
+  // a browser that was never signed in — and for the one-person company that
+  // case is the ONLY way back, since there may be no account left to sign in
+  // with. The token in the URL is the authorisation (one-time, expiring,
+  // readable by no client), and the page itself only reads: cancelling
+  // requires submitting the form. See
+  // app/company-deletion/cancel/[token]/page.tsx.
+  '/company-deletion',
   '/api/auth/session',
   '/privacy',
   '/terms',
@@ -17,14 +30,18 @@ const PUBLIC_PATHS = [
 
 /**
  * Auth guard for all application routes.
- * Runs in Edge Runtime — must stay lightweight (no Node.js APIs).
+ * Runs in the Node.js runtime (Next 16: Proxy always does — there is no
+ * Edge option for proxy.ts). Still kept deliberately lightweight: it runs on
+ * every matched request, so a presence check only, not a Firestore round trip.
  *
  * This middleware performs a presence check only: if the __session cookie
  * is missing, redirect to /login. Full cryptographic verification of the
  * session cookie happens in the DAL (lib/dal.ts → getVerifiedSession),
- * which runs in the Node.js runtime inside Server Components and Server Actions.
+ * which runs inside Server Components and Server Actions instead.
  *
- * CRITICAL: Keep this fast. Never import firebase-admin here.
+ * CRITICAL: Keep this fast. Never import firebase-admin here — that's a
+ * cost/latency choice (avoid a Firestore round trip on every request), not
+ * a runtime restriction.
  * Role checks and company scoping happen in Server Components and Server Actions via the DAL.
  *
  * CRITICAL: Server Actions are NOT separate route entries — the matcher below

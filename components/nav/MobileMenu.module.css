@@ -249,6 +249,60 @@
   color: var(--text-pale);
 }
 
+/* ── Company (issue #352) ─────────────────────────────────────────────────── */
+
+.companyRowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companyRowStatic {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+/* ── SWITCH COMPANY sub-view — replaces the sheet's main-view sections while
+   view==='companies' (MobileMenu.tsx), not a new screen. ────────────────── */
+
+.companiesView {
+  display: flex;
+  flex-direction: column;
+}
+
+.companiesHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 16px;
+}
+
+.backBtn {
+  display: flex;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.companyList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.companyError {
+  margin: 0 4px 12px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--danger-text);
+}
+
 /* ── Signed in as ──────────────────────────────────────────────────────────── */
 
 .signedInRow {

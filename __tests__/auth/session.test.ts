@@ -25,20 +25,26 @@ const {
   mockCreateSessionCookie,
   mockSetCustomUserClaims,
   mockRevokeRefreshTokens,
+  mockCreateCustomToken,
   mockMembershipGet,
   mockCookieGet,
   mockCookieSet,
   mockCookieDelete,
+  mockCompanyDocGet,
 } = vi.hoisted(() => ({
   mockVerifySessionCookie:  vi.fn(),
   mockVerifyIdToken:        vi.fn(),
   mockCreateSessionCookie:  vi.fn(),
   mockSetCustomUserClaims:  vi.fn(),
   mockRevokeRefreshTokens:  vi.fn(),
+  mockCreateCustomToken:    vi.fn(),
   mockMembershipGet:        vi.fn(),
   mockCookieGet:            vi.fn(),
   mockCookieSet:            vi.fn(),
   mockCookieDelete:         vi.fn(),
+  // getVerifiedSession's companies/{id} existence check (lib/dal.ts,
+  // issue #252 step 5, PR F) — `adminDb.doc('companies/…').get()`.
+  mockCompanyDocGet:        vi.fn(),
 }))
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -57,9 +63,10 @@ vi.mock('@/lib/firebase-admin', () => {
       createSessionCookie:  mockCreateSessionCookie,
       setCustomUserClaims:  mockSetCustomUserClaims,
       revokeRefreshTokens:  mockRevokeRefreshTokens,
+      createCustomToken:    mockCreateCustomToken,
     },
     adminDb: {
-      doc:        vi.fn(),
+      doc:        vi.fn().mockReturnValue({ get: mockCompanyDocGet }),
       collection: vi.fn().mockReturnValue(usersCollectionRef),
     },
   }
@@ -82,7 +89,7 @@ vi.mock('next/navigation', () => ({
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
-import { getVerifiedSession } from '@/lib/dal'
+import { getVerifiedSession, getSessionWithoutCompany } from '@/lib/dal'
 import { createSession, switchCompany } from '@/actions/auth'
 
 // ── Tests: getVerifiedSession ─────────────────────────────────────────────────
@@ -94,6 +101,9 @@ import { createSession, switchCompany } from '@/actions/auth'
 describe('getVerifiedSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Happy-path default for the companies/{id} existence check (lib/dal.ts)
+    // — most tests below don't care about it, only the two guard tests do.
+    mockCompanyDocGet.mockResolvedValue({ exists: true })
   })
 
   it('redirects to /login when the __session cookie is missing', async () => {
@@ -109,28 +119,53 @@ describe('getVerifiedSession', () => {
     await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/login')
   })
 
-  it('redirects to /login when activeCompanyId is absent from the decoded token', async () => {
+  // Issue #252 step 5, PR F: this used to redirect to /login, which bounced
+  // a company-less user forever — signing in re-issues a valid session
+  // cookie that still carries no company claim. See "Del 3" of the design
+  // brief and lib/dal.ts's docblock on getVerifiedSession.
+  it('redirects to /no-company when activeCompanyId is absent from the decoded token', async () => {
     mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
     mockVerifySessionCookie.mockResolvedValue({
       uid:   'user-1',
       email: 'user@example.com',
       // activeCompanyId intentionally absent — catches the signup→setup race
       role:  'admin',
+      email_verified: true,
     })
 
-    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/login')
+    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/no-company')
   })
 
-  it('redirects to /login when activeCompanyId is an empty string', async () => {
+  it('redirects to /no-company when activeCompanyId is an empty string', async () => {
     mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
     mockVerifySessionCookie.mockResolvedValue({
       uid:             'user-1',
       email:           'user@example.com',
       activeCompanyId: '', // empty — treated as missing
       role:            'admin',
+      email_verified:  true,
     })
 
-    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/login')
+    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/no-company')
+  })
+
+  // Issue #252 step 5, PR F: Server Actions use the Admin SDK, which
+  // bypasses Firestore Security Rules — nothing else stops a stale
+  // activeCompanyId claim from being used against a company that no longer
+  // exists (e.g. the #252 purge deleted it after this session cookie was
+  // issued but before it was revoked). See lib/dal.ts's docblock.
+  it('redirects to /no-company when the claimed company no longer exists', async () => {
+    mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-1',
+      email:           'user@example.com',
+      activeCompanyId: 'company-deleted',
+      role:            'admin',
+      email_verified:  true,
+    })
+    mockCompanyDocGet.mockResolvedValue({ exists: false })
+
+    await expect(getVerifiedSession()).rejects.toThrow('REDIRECT:/no-company')
   })
 
   it('returns SessionClaims when cookie is valid and all required claims are present', async () => {
@@ -219,6 +254,127 @@ describe('getVerifiedSession', () => {
 
     expect(claims.uid).toBe('user-4')
     expect(claims.activeCompanyId).toBe('company-legacy')
+  })
+
+  // ── role normalisation (issue #397/#398) ──────────────────────────────────
+  //
+  // A role claim, once present, is routed through lib/roles.ts's toRole
+  // before it ever reaches SessionClaims — a stale 'viewer' claim (the role
+  // removed in #397) or any other invalid value must act as crew
+  // immediately, without a token refresh, and both are logged the same way.
+  // Absence of the claim entirely is untouched — that's the /no-company
+  // path's territory, not this guard's.
+
+  it('normalises a stale viewer role claim to crew and warns', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockCookieGet.mockReturnValue({ value: 'viewer-claim-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-9',
+      email:           'stale@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'viewer',
+      email_verified:  true,
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.role).toBe('crew')
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('normalises a garbage role claim to crew', async () => {
+    mockCookieGet.mockReturnValue({ value: 'garbage-claim-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-10',
+      email:           'garbage@example.com',
+      activeCompanyId: 'company-abc',
+      role:            'owner',
+      email_verified:  true,
+    })
+
+    const claims = await getVerifiedSession()
+
+    expect(claims.role).toBe('crew')
+  })
+})
+
+// ── Tests: getSessionWithoutCompany ─────────────────────────────────────────────
+//
+// Issue #252 step 5, PR F. The counterpart to getVerifiedSession used ONLY by
+// /no-company: must let a company-less session through instead of redirecting
+// it away, but must bounce her to /bookings the moment she has a working
+// company again — this page has nothing left to offer her at that point.
+
+describe('getSessionWithoutCompany', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('redirects to /login when the __session cookie is missing', async () => {
+    mockCookieGet.mockReturnValue(undefined)
+
+    await expect(getSessionWithoutCompany()).rejects.toThrow('REDIRECT:/login')
+  })
+
+  it('redirects to /verify-email when email_verified is false', async () => {
+    mockCookieGet.mockReturnValue({ value: 'unverified-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:            'user-5',
+      email:          'unverified@example.com',
+      email_verified: false,
+    })
+
+    await expect(getSessionWithoutCompany()).rejects.toThrow('REDIRECT:/verify-email')
+  })
+
+  it('returns the session, unredirected, when there is no activeCompanyId at all', async () => {
+    mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-6',
+      email:           'stranded@example.com',
+      email_verified:  true,
+      // activeCompanyId intentionally absent
+    })
+
+    const session = await getSessionWithoutCompany()
+
+    expect(session.uid).toBe('user-6')
+    expect(session.activeCompanyId).toBeUndefined()
+  })
+
+  // Mutation check for the branch above: a dangling claim (points at a
+  // company that no longer exists) must be treated the SAME as no claim at
+  // all — she still needs /no-company, not a bounce back to a company that
+  // isn't there. If the "company still exists" check were dropped, this and
+  // the "bounces to /bookings" test below would both still pass for the
+  // wrong reason; together they pin the exact condition.
+  it('returns the session, unredirected, when activeCompanyId points at a deleted company', async () => {
+    mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-7',
+      email:           'stranded2@example.com',
+      activeCompanyId: 'company-deleted',
+      email_verified:  true,
+    })
+    mockCompanyDocGet.mockResolvedValue({ exists: false })
+
+    const session = await getSessionWithoutCompany()
+
+    expect(session.uid).toBe('user-7')
+    expect(session.activeCompanyId).toBe('company-deleted')
+  })
+
+  it('redirects to /bookings when activeCompanyId points at a company that exists', async () => {
+    mockCookieGet.mockReturnValue({ value: 'valid-session-token' })
+    mockVerifySessionCookie.mockResolvedValue({
+      uid:             'user-8',
+      email:           'has-company@example.com',
+      activeCompanyId: 'company-live',
+      email_verified:  true,
+    })
+    mockCompanyDocGet.mockResolvedValue({ exists: true })
+
+    await expect(getSessionWithoutCompany()).rejects.toThrow('REDIRECT:/bookings')
   })
 })
 
@@ -335,18 +491,23 @@ describe('switchCompany', () => {
       role:            'admin',
       email_verified:  true,
     })
+    // getVerifiedSession's companies/{id} existence check (lib/dal.ts) —
+    // 'company-old' must resolve as existing for switchCompany to reach its
+    // own logic at all.
+    mockCompanyDocGet.mockResolvedValue({ exists: true })
 
     mockSetCustomUserClaims.mockResolvedValue(undefined)
     mockRevokeRefreshTokens.mockResolvedValue(undefined)
+    mockCreateCustomToken.mockResolvedValue('custom-token-for-user-switch')
   })
 
-  it('calls revokeRefreshTokens with the correct uid after a successful company switch', async () => {
+  it('calls revokeRefreshTokens with the correct uid after a successful company switch, and returns a custom token', async () => {
     mockMembershipGet.mockResolvedValue({
       exists: true,
       data:   () => ({ role: 'admin' }),
     })
 
-    await switchCompany('company-new')
+    const result = await switchCompany('company-new')
 
     expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
       activeCompanyId: 'company-new',
@@ -354,6 +515,12 @@ describe('switchCompany', () => {
     })
     expect(mockRevokeRefreshTokens).toHaveBeenCalledOnce()
     expect(mockRevokeRefreshTokens).toHaveBeenCalledWith('user-switch')
+    // Not void — see switchCompany's docblock: the caller must
+    // signInWithCustomToken with this, not getIdToken(true), because
+    // revokeRefreshTokens above just invalidated the caller's own refresh
+    // token too.
+    expect(mockCreateCustomToken).toHaveBeenCalledWith('user-switch')
+    expect(result).toEqual({ customToken: 'custom-token-for-user-switch' })
   })
 
   it('does NOT call revokeRefreshTokens when the membership document does not exist', async () => {
@@ -365,5 +532,54 @@ describe('switchCompany', () => {
     await expect(switchCompany('company-nonexistent')).rejects.toThrow('Failed to switch company')
 
     expect(mockRevokeRefreshTokens).not.toHaveBeenCalled()
+  })
+
+  // Issue #398: switchCompany used to default a MISSING role straight to
+  // 'viewer' (`membershipData.role ?? 'viewer'`) and otherwise trusted
+  // whatever string was on the membership doc verbatim. A missing role, an
+  // invalid one, and the now-removed legacy 'viewer' (#397) must all come
+  // out as 'crew' via toRole.
+  it('coerces a missing membership role to crew, not viewer', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({}), // no `role` field at all
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
+  })
+
+  it('coerces an invalid membership role to crew', async () => {
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({ role: 'owner' }),
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
+  })
+
+  it('coerces a legacy viewer membership role to crew and warns', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockMembershipGet.mockResolvedValue({
+      exists: true,
+      data:   () => ({ role: 'viewer' }),
+    })
+
+    await switchCompany('company-new')
+
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('user-switch', {
+      activeCompanyId: 'company-new',
+      role:            'crew',
+    })
+    expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 })

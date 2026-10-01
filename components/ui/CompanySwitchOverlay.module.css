@@ -1,0 +1,67 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 34px;
+  background: var(--surface-sunken);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.name {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: var(--fw-display);
+  color: var(--text-primary);
+}
+
+.track {
+  width: 100%;
+  height: 3px;
+  background: var(--fill-medium);
+}
+
+.bar {
+  height: 100%;
+  background: var(--accent);
+  animation: growbar 1.1s ease-out forwards;
+}
+
+@keyframes growbar {
+  from { width: 6%; }
+  to   { width: 96%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+    width: 96%;
+  }
+}
+
+.footnote {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}

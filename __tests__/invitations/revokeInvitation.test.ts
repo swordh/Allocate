@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Timestamp } from 'firebase-admin/firestore'
 
 vi.mock('@/lib/firebase-admin', () => ({
   adminDb: { doc: vi.fn(), collection: vi.fn(), batch: vi.fn() },
@@ -87,7 +88,7 @@ describe('revokeInvitation', () => {
     expect(result.error).toBe('Invitation not found')
   })
 
-  it('writes revoked status to both the private doc and the mirror', async () => {
+  it('marks the private doc revoked and deletes the mirror', async () => {
     stubSession('admin')
     const { batch } = wire({
       [`companies/${COMPANY_ID}/invitations/${INVITE_ID}`]: {
@@ -104,9 +105,20 @@ describe('revokeInvitation', () => {
       expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${INVITE_ID}` }),
       expect.objectContaining({ status: 'revoked', revokedBy: 'admin-1' }),
     )
+    // Issue #410: a revoked private doc is never read again, so it gets a
+    // concrete `expireAt` Timestamp for the TTL policy to clean it up 30
+    // days later.
     expect(batch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `companies/${COMPANY_ID}/invitations/${INVITE_ID}` }),
+      expect.objectContaining({ expireAt: expect.any(Timestamp) }),
+    )
+    // Issue #297: the mirror is deleted, not marked 'revoked' — it's a
+    // publicly readable doc carrying the invitee's email, and a revoked
+    // invite can never be used again.
+    expect(batch.delete).toHaveBeenCalledWith(expect.objectContaining({ path: `invitations/${TOKEN}` }))
+    expect(batch.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: `invitations/${TOKEN}` }),
-      { status: 'revoked' },
+      expect.anything(),
     )
     expect(batch.commit).toHaveBeenCalledOnce()
   })

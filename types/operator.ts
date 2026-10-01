@@ -23,6 +23,15 @@ export const FEEDBACK_TYPES: FeedbackType[] = ['feature_request', 'bug_report', 
 export const FEEDBACK_STATUSES: FeedbackStatus[] = ['open', 'in_progress', 'done', 'wont_fix']
 export const FEEDBACK_PRIORITIES: FeedbackPriority[] = ['low', 'medium', 'high']
 
+// issue #338 PR 2: the two statuses that count as "closed" for retention
+// purposes — `closedAt` (actions/operator/(protected)/feedback/actions.ts's
+// `updateFeedbackStatus`) is set when a ticket transitions INTO one of these
+// and cleared when it transitions back OUT to `open`/`in_progress`.
+// `functions/src/admin/purgeOldFeedback.ts` purges tickets 24 months after
+// `closedAt`. Exported as the single source of truth so the setter and the
+// purge query can never drift apart on which statuses count as closed.
+export const CLOSED_FEEDBACK_STATUSES: FeedbackStatus[] = ['done', 'wont_fix']
+
 // Design's uppercase labels (23/24 Operator - Feedback). `wont_fix` reads as
 // "NO ACTION" in the design, not "Won't fix" — this is the one source of
 // truth for that label, used by both the setter buttons and the event text
@@ -196,4 +205,149 @@ export type PlanFilter = (typeof PLANS)[number]
 export const PLAN_FILTER_LABELS: Record<PlanFilter, string> = {
   starter: 'Starter',
   basic: 'Basic',
+}
+
+// ─── Company deletion — operator views (issue #252 step 6, PR 4) ──────────
+//
+// Read-only shapes for the two site-wide deletion list entries and the
+// per-company history. Sourced from `companyDeletions/{requestId}` — the
+// ledger, never `companies/{cid}.deletion` — per the plan's "läs ledgern,
+// inte spegeln": the mirror does not survive a completed purge, so a view
+// built on it would be blind to that outcome even now that (issue #331)
+// `applyFailedTransition` also mirrors `'failed'` onto `companies/{cid}
+// .deletion.state` — a completed row still has no mirror to read at all.
+
+/**
+ * One row of `companyDeletions/{requestId}`, projected down to what the
+ * list and detail views render. Every timestamp is already an ISO string —
+ * conversion from Firestore `Timestamp` happens once, in the server page,
+ * via lib/firestore-timestamps.ts.
+ *
+ * The identity fields keep the `null` (redacted) vs `undefined` (never
+ * happened) distinction from `CompanyDeletionRecord` verbatim — see
+ * lib/operatorDeletionView.ts's `identityDisplay`. Do not default either to
+ * `''` or `'—'` anywhere upstream of that function; that is precisely the
+ * collapse the design brief forbids.
+ */
+export interface CompanyDeletionRow {
+  requestId: string
+  companyId: string
+  /** Snapshot at request time — may be the only surviving name once the
+   *  company document itself is gone. */
+  companyName: string
+  mode: 'immediate' | 'window'
+  state: 'requested' | 'executing' | 'completed' | 'canceled' | 'failed'
+
+  requestedAt: string                 // ISO string
+  requestedByUid: string | null | undefined
+  requestedByName: string | null | undefined
+  requestedByEmail: string | null | undefined
+  scheduledFor: string                // ISO string
+
+  canceledAt?: string                 // ISO string
+  canceledByUid?: string | null
+  canceledByName?: string | null
+  canceledByEmail?: string | null
+  cancelSource?: 'admin_ui' | 'cancel_link' | 'operator'
+
+  completedAt?: string                // ISO string
+
+  stripePause?: { at: string; effect: string; error?: string }
+  stripeResume?: { at: string; effect: string; error?: string }
+
+  operatorActions?: {
+    action: string
+    // `string` = known, `null` = redacted (24-month retention job), `undefined`
+    // = this entry never carried an actor (a malformed/legacy doc — every
+    // writer in actions/operatorCompanyDeletion.ts is required to set both
+    // explicitly). Widened from `string | null` once
+    // lib/operatorDeletionQueries.ts stopped coalescing an omitted field to
+    // `null` — see that file's `mapDeletionDoc` for why the coalescing had to
+    // go, and identityDisplay (lib/operatorDeletionView.ts) for how the three
+    // states render differently.
+    byUid: string | null | undefined
+    byName: string | null | undefined
+    at: string
+    note?: string
+  }[]
+
+  phase?: 'stripe' | 'invitations' | 'members' | 'subtree' | 'orphans' | 'finalize'
+  completedPhases?: string[]
+  phaseCounts?: Record<string, number>
+
+  attempts: number
+  lastHeartbeatAt?: string            // ISO string
+  lastError?: string | null
+
+  /** See `CompanyDeletionFailureReason` in types/company.ts. Absent unless `state === 'failed'`. */
+  failureReason?: 'attempts_exhausted' | 'no_progress' | 'operator'
+  failedAt?: string                   // ISO string
+  failedNotifiedAt?: string           // ISO string
+  failedNotifiedCount?: number
+
+  /** Consecutive no-progress stale-lease resumes at the moment this row was read — "n of 3 resumes made no progress" in the history view. See lease.ts. */
+  noProgressResumes?: number
+  progressUnits?: number
+}
+
+export const DELETION_SEGMENTS = ['active', 'stuck', 'all'] as const
+export type DeletionSegment = (typeof DELETION_SEGMENTS)[number]
+
+export const DELETION_SEGMENT_LABELS: Record<DeletionSegment, string> = {
+  // The support entry point: "someone got in touch, something's wrong" —
+  // start from everything currently in flight.
+  active: 'In progress',
+  // The self-discovery entry point: nobody has to report this for it to be
+  // findable. See lib/operatorDeletionView.ts's `isStuckDeletion`.
+  stuck: 'Stuck or failed',
+  all: 'All history',
+}
+
+// ─── Stuck account deletions — operator view (issue #337 step 1) ──────────
+//
+// `deleteAccount` (actions/account.ts) can return `COULD_NOT_VERIFY_ERROR`
+// ("try again") at several points without leaving any durable trace beyond a
+// `console.error` line. `accountDeletionFailures/{uid}` (one doc per user,
+// Admin SDK only — see the rules comment) is the minimal record of that:
+// where it failed, how often, and which companies were involved, so an
+// operator can see who is stuck instead of only ever hearing about it
+// secondhand. Read-only here — this step ships no operator action or bypass.
+
+/** Mirrors the `path` values `recordAccountDeletionFailure` (actions/account.ts) writes.
+ *  'anonymisation' and 'auth_delete' cover `runAccountDeletion`'s phase-3 and
+ *  step-4 catch blocks respectively — added in the same PR that closed the
+ *  gap where those two failure points traced only to `deletionAuditLog`
+ *  (via `writeDeletionFailureAudit`), never here, so neither showed up in
+ *  the operator "stuck deletions" list nor paged the `ACCOUNT_DELETION_STUCK`
+ *  alert. */
+export type AccountDeletionFailurePath =
+  | 'audit_hash_missing'
+  | 'lock_acquire'
+  | 'preflight_read'
+  | 'preflight_unknown'
+  | 'commit_loop'
+  | 'memberships_read'
+  | 'anonymisation'
+  | 'auth_delete'
+
+export const ACCOUNT_DELETION_FAILURE_PATH_LABELS: Record<AccountDeletionFailurePath, string> = {
+  audit_hash_missing: 'Audit hash key missing',
+  lock_acquire: 'Lock acquire',
+  preflight_read: 'Preflight read',
+  preflight_unknown: 'Preflight unknown outcome',
+  commit_loop: 'Commit loop',
+  memberships_read: 'Memberships read',
+  anonymisation: 'Anonymisation',
+  auth_delete: 'Auth record delete',
+}
+
+/** One `accountDeletionFailures/{uid}` doc, projected for the operator list — timestamps already ISO strings. */
+export interface StuckAccountDeletionRow {
+  uid: string
+  firstAt: string
+  lastAt: string
+  attempts: number
+  lastPath: AccountDeletionFailurePath
+  lastErrorCode: string | null
+  lastCompanyIds: string[]
 }

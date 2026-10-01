@@ -1,0 +1,111 @@
+.wrapper {
+  min-height: 100vh;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 34px;
+  padding: 72px 100px 90px;
+}
+
+.logo {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-bold);
+  font-size: 19px;
+  letter-spacing: 0.025em;
+  color: var(--text-primary);
+}
+
+.card {
+  border: 1px solid var(--border-medium);
+  padding: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 560px;
+}
+
+/* The left edge carries the tone, matching the status rail the subscription
+   view uses for its own states — a deletion that is still stoppable reads as
+   urgent, one that is already resolved does not. */
+.card[data-tone='danger'] {
+  border-left: 3px solid var(--danger);
+}
+
+.card[data-tone='accent'] {
+  border-left: 3px solid var(--accent);
+}
+
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+}
+
+.card[data-tone='danger'] .eyebrow {
+  color: var(--danger);
+}
+
+.card[data-tone='accent'] .eyebrow {
+  color: var(--accent);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1.08;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.fineprint {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .wrapper {
+    padding: 24px 22px 40px;
+    align-items: stretch;
+    gap: 24px;
+  }
+
+  .logo {
+    align-self: flex-start;
+  }
+
+  .card {
+    padding: 24px;
+    max-width: none;
+  }
+
+  .heading {
+    font-size: 24px;
+  }
+}

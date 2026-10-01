@@ -6,12 +6,14 @@ import { revalidatePath } from 'next/cache'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { bookingCreated, bookingCancelled } from '@/lib/companyStats'
+import { todayInTimezone, formatTimeInZone } from '@/lib/dates'
 import type { BookingItem, Subscription } from '@/types'
 
 // ── Internal Firestore document shapes ──────────────────────────────────────
 
 interface CompanyDocumentInternal {
   subscription: Subscription
+  preferences?: { timezone?: unknown }
 }
 
 interface EquipmentDocumentInternal {
@@ -43,9 +45,10 @@ interface BookingDocumentInternal {
   cancelledBy: null
 }
 
-// ── Conflict detection (inlined from Cloud Functions business logic) ──────────
-// These helpers mirror functions/src/bookings/conflictDetection.ts exactly.
-// They cannot be imported from there because functions/ is a separate package.
+// ── Conflict detection ──────────────────────────────────────────────────────
+// These are the authoritative conflict-detection helpers for the booking
+// server actions. There is no equivalent in functions/src/bookings/ (it only
+// holds autoStatusUpdate.ts) — this logic lives here, not mirrored from there.
 
 interface ConflictDetailInternal {
   equipmentId: string
@@ -404,7 +407,6 @@ export async function createBooking(
   formData: FormData,
 ): Promise<{ bookingId: string } | { error: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   // userName is not stored on bookings — read from user profile at display time
   // (GDPR Art. 5(1)(c) data minimisation; anonymised on account deletion).
@@ -433,8 +435,8 @@ export async function createBooking(
 
   if (endDate < startDate) return { error: 'End date must be on or after start date' }
 
-  const todayStr = new Date().toISOString().slice(0, 10)
-  if (startDate < todayStr) return { error: 'startDate must be today or a future date.' }
+  // Past-date guard lives inside the transaction below — it needs the
+  // company's timezone, which is only available once companySnap is read.
 
   const notes = (formData.get('notes') as string | null) ?? ''
   if (typeof notes !== 'string') return { error: 'notes must be a string.' }
@@ -465,6 +467,14 @@ export async function createBooking(
       const { status: subStatus } = company.subscription
       if (subStatus !== 'active' && subStatus !== 'trialing') {
         throw new Error('Subscription is not active. Reactivate your plan to create bookings.')
+      }
+
+      // "Today" must be read in the company's own timezone — a company near
+      // a day boundary in UTC must not have a same-day booking rejected (or
+      // a past one waved through) because the server happens to sit in UTC.
+      const tz = typeof company.preferences?.timezone === 'string' ? company.preferences.timezone : 'UTC'
+      if (startDate < todayInTimezone(tz)) {
+        throw new Error('startDate must be today or a future date.')
       }
 
       // 2. Validate each equipment item; collect requiresApproval / approverId.
@@ -589,7 +599,6 @@ export async function updateBooking(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 
@@ -822,7 +831,6 @@ export async function updateBooking(
 
 export async function cancelBooking(bookingId: string): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 
@@ -888,8 +896,13 @@ export async function checkOutBooking(bookingId: string): Promise<{ error?: stri
 
   try {
     await adminDb.runTransaction(async (tx) => {
+      const companyRef = adminDb.doc(`companies/${companyId}`)
       const bookingRef = adminDb.doc(`companies/${companyId}/bookings/${bookingId}`)
-      const bookingSnap = await tx.get(bookingRef)
+      const [companySnap, bookingSnap] = await Promise.all([tx.get(companyRef), tx.get(bookingRef)])
+
+      if (!companySnap.exists) {
+        throw new Error('Company not found.')
+      }
 
       if (!bookingSnap.exists) {
         throw new Error('Booking not found.')
@@ -901,31 +914,51 @@ export async function checkOutBooking(bookingId: string): Promise<{ error?: stri
         throw new Error('Only confirmed bookings can be checked out.')
       }
 
-      const todayStr = new Date().toISOString().slice(0, 10)
+      // Capture "now" once and derive both the civil date and the HH:MM from
+      // that single instant, in the company's own timezone (see rule 2 in
+      // the lib/dates.ts docblock) — a server sitting in UTC must not
+      // misjudge either near a day boundary, and two separate `new Date()`
+      // reads could straddle a clock tick and disagree with each other.
+      const companyPreferences = companySnap.data()?.preferences as { timezone?: unknown } | undefined
+      const tz = typeof companyPreferences?.timezone === 'string' ? companyPreferences.timezone : 'UTC'
+      const now = new Date()
+      const today = todayInTimezone(tz, now)
+      const nowTime = formatTimeInZone(now.toISOString(), tz)
+
+      const nowInstant = `${today}T${nowTime}`
+      const startInstant = `${booking.startDate}T${booking.startTime || '00:00'}`
+
       const updatePayload: Record<string, unknown> = {
         status: 'checked_out',
         updatedAt: FieldValue.serverTimestamp(),
       }
 
-      if (todayStr < booking.startDate) {
-        // Early checkout — verify no conflicts in the adjusted period
-        const result = await detectConflictsReadOnly(
+      if (nowInstant < startInstant) {
+        // Early checkout — the booking's own start moves earlier, to now, so
+        // conflict detection must cover that earlier period at this specific
+        // time, not just the civil date (a same-day booking starting later
+        // today must still block).
+        const newEndTime = booking.endTime ?? '23:59'
+        const conflictResult = await detectConflictsInTransaction(
+          tx,
           adminDb,
           companyId,
           booking.items,
-          todayStr,
+          today,
           booking.endDate,
           bookingId,
+          nowTime,
+          newEndTime,
         )
-        if (result.hasConflict) {
+        if (conflictResult.hasConflict) {
+          const names = conflictResult.conflicts.map((c) => c.equipmentName).join(', ')
           throw new Error(
-            'Cannot check out early: equipment is already booked by another booking during this period.',
+            `Cannot check out early: ${names} already booked by another booking before this booking's start.`,
           )
         }
-        updatePayload.startDate = todayStr
-        if (booking.startTime) {
-          updatePayload.startTime = new Date().toTimeString().slice(0, 5)
-        }
+        updatePayload.startDate = today
+        updatePayload.startTime = nowTime
+        updatePayload.endTime = newEndTime
       }
 
       tx.update(bookingRef, updatePayload)
@@ -990,7 +1023,6 @@ export async function approveBooking(
   rejectionReason?: string,
 ): Promise<{ error?: string }> {
   const session = await getVerifiedSession()
-  if (session.role === 'viewer') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
 

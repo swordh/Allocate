@@ -13,6 +13,22 @@ export interface OperatorSession {
 }
 
 /**
+ * The one operator check — provider:true custom claim AND email allowlist.
+ * Shared by getOperatorSession (session-cookie path) and the /operator/login
+ * server action (fresh-ID-token path, before any session cookie exists), so
+ * both gates stay identical by construction instead of by copy-paste.
+ *
+ * Deliberately takes only the two claims it needs rather than a full
+ * DecodedIdToken, so it works for both a verifySessionCookie() result and a
+ * verifyIdToken() result without a type union.
+ */
+export function isOperator(claims: { provider?: unknown; email?: string | null }): boolean {
+  if (claims.provider !== true) return false
+  const email = claims.email ?? ''
+  return OPERATOR_ALLOWLIST.includes(email)
+}
+
+/**
  * Verifies the __session cookie and checks for provider:true custom claim.
  * Also enforces an email allowlist for extra security.
  * Redirects to /login if the cookie is missing, invalid, or unauthorized.
@@ -49,21 +65,14 @@ export const getOperatorSession = cache(async (): Promise<OperatorSession> => {
   try {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true)
 
-    if (decoded['provider'] !== true) {
-      console.error('[operator-dal] session_missing_provider_claim')
-      redirect('/login')
-    }
-
-    const email = decoded.email ?? ''
-
-    if (!OPERATOR_ALLOWLIST.includes(email)) {
-      console.error('[operator-dal] session_email_not_in_allowlist')
+    if (!isOperator(decoded)) {
+      console.error('[operator-dal] session_failed_operator_check')
       redirect('/login')
     }
 
     return {
       uid: decoded.uid,
-      email,
+      email: decoded.email ?? '',
     }
   } catch (err) {
     // Re-throw Next.js redirect errors so they propagate to the framework.

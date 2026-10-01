@@ -55,17 +55,24 @@ export function toDateString(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-/** Today's civil date in the company's zone, as "YYYY-MM-DD". */
-export function todayInTimezone(timezone: string): string {
+/**
+ * Today's civil date in the company's zone, as "YYYY-MM-DD".
+ *
+ * `now` defaults to the current instant but can be passed explicitly so a
+ * caller that also needs the time-of-day (e.g. formatTimeInZone) derives
+ * both from the same captured `Date`, instead of two separate `new Date()`
+ * reads that could straddle a clock tick.
+ */
+export function todayInTimezone(timezone: string, now: Date = new Date()): string {
   try {
     // en-CA formats as YYYY-MM-DD, which is exactly the shape we store.
     return new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date())
+    }).format(now)
   } catch {
     // An unknown zone must not take a whole view down; fall back to UTC.
-    return new Date().toISOString().slice(0, 10)
+    return now.toISOString().slice(0, 10)
   }
 }
 
@@ -216,5 +223,33 @@ export function formatStampInZone(iso: string, timezone: string): string {
     return `${formatDayShort(parts)} · ${formatTimeInZone(iso, timezone)}`
   } catch {
     return `${formatDayShort(d.toISOString().slice(0, 10))} · ${formatTimeInZone(iso, timezone)}`
+  }
+}
+
+/**
+ * An ISO timestamp → "22 September 2026" in the company's zone.
+ *
+ * Added for the company-deletion banner (issue #252 step 6, PR 3): the
+ * scheduled deletion instant must read as the same calendar date the
+ * company's own bookings use, not whichever date the viewer's browser
+ * happens to sit in. Booking dates are civil dates interpreted in the
+ * company's `preferences.timezone` (see the file docblock) — a member near a
+ * day boundary who read this in browser-local time could see a date one day
+ * off from the one their bookings are dated in, which is exactly the
+ * mistake this banner exists to prevent.
+ */
+export function formatDateFullInZone(iso: string, timezone: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone, day: 'numeric', month: 'long', year: 'numeric',
+    }).format(d)
+  } catch {
+    // An unknown zone must not take the banner down — fall back to UTC,
+    // matching todayInTimezone's fallback above.
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
+    }).format(d)
   }
 }
