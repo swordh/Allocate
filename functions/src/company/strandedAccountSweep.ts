@@ -289,8 +289,8 @@ async function processCandidate(db: Firestore, uid: string, now: Timestamp): Pro
  * `runCompanyDeletionSweep` (sweep.ts) and `purgeCompanyDeletionLogsSweep`
  * (purgeLogs.ts): directly callable from an emulator test with no scheduler
  * invocation, and no logic lives inside the `onSchedule` closure below
- * (unlike `autoBookingStatusUpdate.ts` — see that file's own docblock for
- * why that's the anti-pattern here).
+ * (logic inside the closure is the anti-pattern here: untestable without a
+ * live scheduler invocation).
  *
  * IDEMPOTENT AND RESUMABLE BY CONSTRUCTION: running this sweep twice in a
  * row deletes nothing extra. A deleted candidate's `users/{uid}` document is

@@ -14,8 +14,8 @@ const RESEND_API_KEY = defineSecret('RESEND_API_KEY');
  * timestamp, and this sweep is what actually redelivers it.
  *
  * All logic lives in `runMailRetrySweep(db, apiKey)` — kept out of this
- * closure on purpose, unlike `autoBookingStatusUpdate`, so it's callable
- * directly from an emulator test without a scheduler invocation.
+ * closure on purpose, so it's callable directly from an emulator test
+ * without a scheduler invocation.
  */
 export const retryFailedMail = onSchedule(
   { schedule: 'every 10 minutes', region: 'europe-west1', secrets: [RESEND_API_KEY] },

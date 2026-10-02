@@ -62,6 +62,8 @@ export default defineConfig({
       // 'firebase-functions/v2/scheduler' into `<v2-stub-path>/scheduler`,
       // a path that doesn't exist. Confirmed the hard way — see this
       // branch's own PR notes.
+      'firebase-functions/v2/firestore': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2-firestore.ts'),
+      'firebase-functions/v2/tasks': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2-tasks.ts'),
       'firebase-functions/v2/scheduler': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2-scheduler.ts'),
       'firebase-functions/params': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-params.ts'),
       'firebase-functions/v2': path.resolve(__dirname, '__tests__/__mocks__/firebase-functions-v2.ts'),

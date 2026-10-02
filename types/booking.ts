@@ -1,11 +1,16 @@
 // Status machine:
 //   pending    → waiting for approval (requiresApproval bookings only)
 //   confirmed  → approved / no approval needed; equipment reserved but not yet collected
-//   checked_out → equipment physically handed over
-//   returned   → equipment back; booking closed
+//   checked_out → equipment physically handed over (manually, or automatically at
+//                 the start time when the company has auto check-out on — #329)
+//   returned   → equipment back; booking closed (manually, or automatically at the
+//                 end time when the company has auto check-in on — #329)
 //   cancelled  → terminal state; equipment released
 // Note: there is no 'ready' status — 'confirmed' is the canonical pre-checkout state.
 export type BookingStatus = 'pending' | 'confirmed' | 'checked_out' | 'returned' | 'cancelled'
+// Who performed a check-out / check-in. Deliberately no user id — traceability is
+// "a person did it" vs "the automation did", nothing more (#329).
+export type BookingStatusSource = 'manual' | 'auto'
 export type ApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected'
 
 // One entry per equipment item included in the booking.
@@ -38,4 +43,8 @@ export interface Booking {
   rejectionReason: string | null // set when approvalStatus === 'rejected'
   cancelledAt: string | null     // ISO string; set when status === 'cancelled'
   cancelledBy: string | null     // userId who cancelled
+  checkedOutAt?: string | null   // ISO string; set when the booking was checked out (absent on older bookings)
+  checkOutSource?: BookingStatusSource  // how it was checked out
+  returnedAt?: string | null     // ISO string; set when the booking was checked in (absent on older bookings)
+  returnSource?: BookingStatusSource    // how it was checked in
 }

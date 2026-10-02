@@ -1,4 +1,4 @@
-export type { Booking, BookingStatus, ApprovalStatus, BookingItem } from './booking'
+export type { Booking, BookingStatus, BookingStatusSource, ApprovalStatus, BookingItem } from './booking'
 export type { Equipment, EquipmentUnit, EquipmentStatus, TrackingType, CustomField, CustomFieldText, CustomFieldValue, CustomFieldBoolean, CustomFieldList, CustomFieldType, Category, CategoryFieldTemplate } from './equipment'
 export { DEFAULT_EQUIPMENT_CATEGORIES } from './equipment'
 export type { Company, Subscription, SubscriptionStatus, Plan, BillingInterval, CompanyPreferences, CompanyStats, CompanyDeletion, CompanyDeletionState, CompanyDeletionMode, CompanyDeletionRecord, CompanyDeletionLedgerState, CompanyDeletionPhase, CompanyDeletionCancelSource, CompanyDeletionRequestSource, CompanyDeletionFailureReason, CompanyDeletionOperatorAction, CompanyDeletionCancelToken, CompanyDeletionStripeOutcome, CompanyBilling } from './company'

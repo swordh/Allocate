@@ -28,6 +28,14 @@
   line-height: var(--lh-body);
 }
 
+.toggleCell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  min-height: 32px;
+}
+
 .chipRow {
   display: flex;
   gap: 8px;

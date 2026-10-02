@@ -28,6 +28,10 @@ function docToBooking(doc: FirebaseFirestore.DocumentSnapshot): Booking {
     rejectionReason: data.rejectionReason ?? null,
     cancelledAt:     data.cancelledAt?.toDate?.()?.toISOString() ?? data.cancelledAt ?? null,
     cancelledBy:     data.cancelledBy     ?? null,
+    checkedOutAt:    data.checkedOutAt?.toDate?.()?.toISOString() ?? data.checkedOutAt ?? null,
+    checkOutSource:  data.checkOutSource  ?? undefined,
+    returnedAt:      data.returnedAt?.toDate?.()?.toISOString() ?? data.returnedAt ?? null,
+    returnSource:    data.returnSource    ?? undefined,
   } as Booking
 }
 
