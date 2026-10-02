@@ -54,6 +54,8 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
         bookingTimeSlotMinutes: prefs.bookingTimeSlotMinutes ?? 15,
         autoCheckout:           prefs.autoCheckout           ?? false,
         autoCheckin:            prefs.autoCheckin            ?? false,
+        autoCheckoutSince:      prefs.autoCheckoutSince?.toDate?.()?.toISOString() ?? prefs.autoCheckoutSince ?? null,
+        autoCheckinSince:       prefs.autoCheckinSince?.toDate?.()?.toISOString()  ?? prefs.autoCheckinSince  ?? null,
         defaultBookingView:     prefs.defaultBookingView     ?? 'list',
         timezone:               typeof prefs.timezone === 'string' ? prefs.timezone : 'UTC',
       }

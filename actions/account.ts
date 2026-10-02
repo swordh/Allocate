@@ -1700,6 +1700,8 @@ export async function exportUserData(): Promise<{ json?: string; error?: string 
             endDate:     b.endDate ?? null,
             status:      b.status ?? null,
             createdAt:   isoOrNull(b.createdAt as TimestampLike),
+            checkedOutAt: isoOrNull(b.checkedOutAt as TimestampLike),
+            returnedAt:  isoOrNull(b.returnedAt as TimestampLike),
           }
         })
 

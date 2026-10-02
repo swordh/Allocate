@@ -43,6 +43,10 @@ interface BookingDocumentInternal {
   rejectionReason: string | null
   cancelledAt: null
   cancelledBy: null
+  checkedOutAt?: unknown
+  checkOutSource?: 'manual' | 'auto'
+  returnedAt?: unknown
+  returnSource?: 'manual' | 'auto'
 }
 
 // ── Conflict detection ──────────────────────────────────────────────────────
@@ -931,6 +935,8 @@ export async function checkOutBooking(bookingId: string): Promise<{ error?: stri
 
       const updatePayload: Record<string, unknown> = {
         status: 'checked_out',
+        checkedOutAt: FieldValue.serverTimestamp(),
+        checkOutSource: 'manual',
         updatedAt: FieldValue.serverTimestamp(),
       }
 
@@ -1002,6 +1008,8 @@ export async function checkInBooking(bookingId: string): Promise<{ error?: strin
 
       tx.update(bookingRef, {
         status: 'returned',
+        returnedAt: FieldValue.serverTimestamp(),
+        returnSource: 'manual',
         updatedAt: FieldValue.serverTimestamp(),
       })
     })
