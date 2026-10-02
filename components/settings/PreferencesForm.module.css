@@ -31,6 +31,8 @@
 .toggleCell {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
   min-height: 32px;
 }
 
