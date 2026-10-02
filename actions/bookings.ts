@@ -43,12 +43,17 @@ interface BookingDocumentInternal {
   rejectionReason: string | null
   cancelledAt: null
   cancelledBy: null
+  checkedOutAt?: unknown
+  checkOutSource?: 'manual' | 'auto'
+  returnedAt?: unknown
+  returnSource?: 'manual' | 'auto'
 }
 
 // ── Conflict detection ──────────────────────────────────────────────────────
 // These are the authoritative conflict-detection helpers for the booking
-// server actions. There is no equivalent in functions/src/bookings/ (it only
-// holds autoStatusUpdate.ts) — this logic lives here, not mirrored from there.
+// server actions. There is no equivalent in functions/src/bookings/ (it holds
+// only the automatic check-in/out logic) — this logic lives here, not mirrored
+// from there.
 
 interface ConflictDetailInternal {
   equipmentId: string
@@ -930,6 +935,8 @@ export async function checkOutBooking(bookingId: string): Promise<{ error?: stri
 
       const updatePayload: Record<string, unknown> = {
         status: 'checked_out',
+        checkedOutAt: FieldValue.serverTimestamp(),
+        checkOutSource: 'manual',
         updatedAt: FieldValue.serverTimestamp(),
       }
 
@@ -1001,6 +1008,8 @@ export async function checkInBooking(bookingId: string): Promise<{ error?: strin
 
       tx.update(bookingRef, {
         status: 'returned',
+        returnedAt: FieldValue.serverTimestamp(),
+        returnSource: 'manual',
         updatedAt: FieldValue.serverTimestamp(),
       })
     })

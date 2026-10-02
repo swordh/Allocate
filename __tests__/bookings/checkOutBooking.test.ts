@@ -364,7 +364,41 @@ describe('checkOutBooking', () => {
     expect(result).toEqual({})
     expect(tx.update).toHaveBeenCalledWith(
       expect.objectContaining({ path: BOOKING_PATH }),
-      { status: 'checked_out', updatedAt: expect.anything() },
+      {
+        status: 'checked_out',
+        checkedOutAt: expect.anything(),
+        checkOutSource: 'manual',
+        updatedAt: expect.anything(),
+      },
+    )
+  })
+
+  it('stamps checkedOutAt and checkOutSource "manual" on an early checkout too (#329)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-15T08:00:00.000Z')) // 10:00 Stockholm
+
+    const { tx } = wireTransaction(
+      {
+        [COMPANY_PATH]: STOCKHOLM_COMPANY,
+        [BOOKING_PATH]: {
+          status: 'confirmed',
+          startDate: '2026-06-15',
+          endDate: '2026-06-15',
+          startTime: '14:00', // not started yet — early checkout
+          endTime: '21:00',
+          items: BOOKING_ITEMS,
+        },
+        [EQUIPMENT_PATH]: SCARCE_EQUIPMENT,
+      },
+      [],
+    )
+
+    const result = await checkOutBooking(BOOKING_ID)
+
+    expect(result).toEqual({})
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: BOOKING_PATH }),
+      expect.objectContaining({ status: 'checked_out', checkOutSource: 'manual', checkedOutAt: expect.anything() }),
     )
   })
 })

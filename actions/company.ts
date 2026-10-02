@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { FieldValue } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { TIME_SLOT_OPTIONS } from '@/constants/company'
@@ -35,12 +36,17 @@ export async function updatePreferences(prefs: Partial<CompanyPreferences>): Pro
     updates['preferences.timezone'] = prefs.timezone
   }
 
-  if (prefs.autoCheckout !== undefined) {
-    updates['preferences.autoCheckout'] = prefs.autoCheckout
-  }
-
-  if (prefs.autoCheckin !== undefined) {
-    updates['preferences.autoCheckin'] = prefs.autoCheckin
+  // Automatic check-out / check-in (#329). Strictly booleans — the Cloud
+  // Functions treat only `=== true` as on, so a truthy string must never be
+  // stored. Turning one on also stamps `<flag>Since` (below) so the automation
+  // only acts on bookings due from that moment on.
+  const turnedOn: Array<'autoCheckout' | 'autoCheckin'> = []
+  for (const key of ['autoCheckout', 'autoCheckin'] as const) {
+    const value = prefs[key]
+    if (value === undefined) continue
+    if (typeof value !== 'boolean') return { error: `Invalid ${key} value.` }
+    updates[`preferences.${key}`] = value
+    if (value) turnedOn.push(key)
   }
 
   if (Object.keys(updates).length === 0) {
@@ -48,12 +54,25 @@ export async function updatePreferences(prefs: Partial<CompanyPreferences>): Pro
   }
 
   try {
-    // Dot-path merge — only the supplied keys are written, so a partial save
-    // from one settings screen can never clobber fields owned by another.
-    await adminDb
-      .collection('companies')
-      .doc(session.activeCompanyId)
-      .update(updates)
+    const companyRef = adminDb.collection('companies').doc(session.activeCompanyId)
+
+    if (turnedOn.length === 0) {
+      // Dot-path merge — only the supplied keys are written, so a partial save
+      // from one settings screen can never clobber fields owned by another.
+      await companyRef.update(updates)
+    } else {
+      // Read the current flag inside the transaction so `Since` is stamped only
+      // on a real false→true flip — re-saving an already-on flag must not move
+      // the cut-off forward and silently drop bookings that were already queued.
+      await adminDb.runTransaction(async (tx) => {
+        const current = (await tx.get(companyRef)).data()?.preferences as Record<string, unknown> | undefined
+        const txUpdates = { ...updates }
+        for (const key of turnedOn) {
+          if (current?.[key] !== true) txUpdates[`preferences.${key}Since`] = FieldValue.serverTimestamp()
+        }
+        tx.update(companyRef, txUpdates)
+      })
+    }
 
     revalidatePath('/settings/preferences')
     console.log('[actions/company]', { uid: session.uid.slice(0, 8) + '...', action: 'preferences_updated', keys: Object.keys(updates) })

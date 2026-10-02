@@ -636,9 +636,9 @@ async function markPhaseComplete(
  * production callers (the immediate-mode branch of `onCompanyDeletionCreated`
  * and the sweep's lease-winning branch) can invoke it directly. Matches the
  * `deliverMail`/`runMailRetrySweep` shape already established in
- * functions/src/email — see autoStatusUpdate.ts for the pattern this
- * deliberately does NOT copy (everything inside the `onSchedule` closure,
- * untestable without a live scheduler invocation).
+ * functions/src/email — and deliberately NOT everything inside an
+ * `onSchedule` closure, which is untestable without a live scheduler
+ * invocation.
  *
  * On phase failure: increments `attempts`, records `lastError`, and — once
  * `attempts` reaches `MAX_ATTEMPTS` — sets `state: 'failed'`, which is what

@@ -8,14 +8,18 @@
  * `preferences.autoCheckout`, `preferences.autoCheckin`) via a Firestore merge
  * `update()`, never a wholesale `{ preferences: {...} }` object — a wholesale
  * write from one screen would silently wipe the other screen's fields, plus
- * autoCheckout/autoCheckin, which drive live Cloud Functions and appear on no
- * settings screen.
+ * autoCheckout/autoCheckin, which drive live Cloud Functions (#329) and live on
+ * the Preferences screen.
+ *
+ * Turning an auto flag ON goes through a transaction that also stamps
+ * `preferences.<flag>Since` on a real false→true flip (forward-only, #329).
  *
  * Firebase Admin, getVerifiedSession, and next/cache are mocked; no network
  * calls are made.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { FieldValue } from 'firebase-admin/firestore'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
@@ -28,6 +32,7 @@ vi.mock('@/lib/firebase-admin', () => {
   }
   const mockDb = {
     collection: vi.fn().mockReturnValue(mockCompaniesCollection),
+    runTransaction: vi.fn(),
   }
   return { adminDb: mockDb, adminAuth: {} }
 })
@@ -142,7 +147,7 @@ describe('updatePreferences — partial save writes only supplied keys', () => {
   it('a multi-field save writes exactly the supplied dot-path keys, nothing more', async () => {
     const result = await updatePreferences({
       timezone: 'Europe/Berlin',
-      autoCheckout: true,
+      autoCheckout: false,
     })
 
     expect(result).toEqual({})
@@ -152,10 +157,87 @@ describe('updatePreferences — partial save writes only supplied keys', () => {
     expect(Object.keys(payload).sort()).toEqual(['preferences.autoCheckout', 'preferences.timezone'])
     expect(payload).toEqual({
       'preferences.timezone': 'Europe/Berlin',
-      'preferences.autoCheckout': true,
+      'preferences.autoCheckout': false,
     })
     expect(payload).not.toHaveProperty('preferences.bookingTimeSlotMinutes')
     expect(payload).not.toHaveProperty('preferences.autoCheckin')
+  })
+})
+
+// ── Automatic check-out / check-in flags (#329) ──────────────────────────────
+
+/** Wires adminDb.runTransaction with a company doc whose `preferences` is `current`. */
+function wireTransaction(current: Record<string, unknown> | undefined) {
+  const tx = {
+    get: vi.fn().mockResolvedValue({ data: () => (current === undefined ? {} : { preferences: current }) }),
+    update: vi.fn(),
+  }
+  vi.mocked(adminDb.runTransaction).mockImplementation((async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)) as never)
+  return tx
+}
+
+describe('updatePreferences — automatic check-out / check-in flags', () => {
+  it.each(['autoCheckout', 'autoCheckin'] as const)('rejects a non-boolean %s and performs no write', async (key) => {
+    for (const bad of ['true', 1, null, {}]) {
+      const result = await updatePreferences({ [key]: bad } as never)
+      expect(result).toEqual({ error: `Invalid ${key} value.` })
+    }
+    expect(adminDb.collection).not.toHaveBeenCalled()
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['autoCheckout', 'preferences.autoCheckoutSince'],
+    ['autoCheckin', 'preferences.autoCheckinSince'],
+  ] as const)('turning %s on (false → true) stamps %s with a server timestamp', async (key, sinceKey) => {
+    const tx = wireTransaction({ [key]: false })
+
+    const result = await updatePreferences({ [key]: true })
+
+    expect(result).toEqual({})
+    expect(tx.update).toHaveBeenCalledOnce()
+    const payload = tx.update.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(payload).sort()).toEqual([`preferences.${key}`, sinceKey].sort())
+    expect(payload[`preferences.${key}`]).toBe(true)
+    expect((payload[sinceKey] as FieldValue).isEqual(FieldValue.serverTimestamp())).toBe(true)
+    expect(revalidatePath).toHaveBeenCalledWith('/settings/preferences')
+  })
+
+  it('stamps since when the flag was absent before', async () => {
+    const tx = wireTransaction(undefined)
+    await updatePreferences({ autoCheckout: true })
+    expect(tx.update.mock.calls[0][1]).toHaveProperty('preferences.autoCheckoutSince')
+  })
+
+  it('re-saving an already-on flag does NOT move since', async () => {
+    const tx = wireTransaction({ autoCheckout: true })
+
+    await updatePreferences({ autoCheckout: true })
+
+    const payload = tx.update.mock.calls[0][1] as Record<string, unknown>
+    expect(payload).toEqual({ 'preferences.autoCheckout': true })
+  })
+
+  it('turning a flag off writes only the flag, no since, and no transaction', async () => {
+    const result = await updatePreferences({ autoCheckin: false })
+
+    expect(result).toEqual({})
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    const docRef = getCompanyDocRef()
+    expect(docRef.update.mock.calls[0][0]).toEqual({ 'preferences.autoCheckin': false })
+  })
+
+  it('ignores a caller-supplied since — only the server stamps it', async () => {
+    const tx = wireTransaction({ autoCheckout: true })
+
+    await updatePreferences({ autoCheckout: true, autoCheckoutSince: '2000-01-01T00:00:00.000Z' } as never)
+
+    expect(tx.update.mock.calls[0][1]).toEqual({ 'preferences.autoCheckout': true })
+  })
+
+  it('returns a generic error when the transaction fails', async () => {
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('aborted'))
+    expect(await updatePreferences({ autoCheckout: true })).toEqual({ error: 'Failed to save preferences' })
   })
 })
 
@@ -171,7 +253,8 @@ describe('updatePreferences — dot-path merge, not a wholesale write', () => {
     expect(payload).toHaveProperty('preferences.timezone')
     expect(payload).not.toHaveProperty('preferences')
     // Guard against a future revert to a wholesale write, which would clobber
-    // autoCheckout/autoCheckin silently since neither appears on any screen.
+    // the other screens' fields (and the autoCheckout/autoCheckin flags that
+    // drive the Cloud Functions) with whatever this screen happened to send.
     expect(payload['preferences']).toBeUndefined()
   })
 
