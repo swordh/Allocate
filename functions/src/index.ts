@@ -14,7 +14,9 @@ export { acceptInvitationByToken } from './auth/acceptInvitation';
 export { onUserCreate } from './auth/onUserCreate';
 export { purgeOldAuditLogs } from './admin/purgeAuditLogs';
 export { purgeOldFeedback } from './admin/purgeOldFeedback';
-export { autoBookingStatusUpdate } from './bookings/autoStatusUpdate';
+// ─── Automatic check-out / check-in (issue #329) ──────────────────────────────
+export { bookingAutoStatusTask } from './bookings/autoStatusTask';
+export { onBookingWrittenAutoStatus, onCompanyAutoStatusChanged } from './bookings/autoStatusTriggers';
 export { onMailQueued } from './email/onMailQueued';
 export { retryFailedMail } from './email/retryFailedMail';
 

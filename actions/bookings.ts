@@ -47,8 +47,9 @@ interface BookingDocumentInternal {
 
 // ── Conflict detection ──────────────────────────────────────────────────────
 // These are the authoritative conflict-detection helpers for the booking
-// server actions. There is no equivalent in functions/src/bookings/ (it only
-// holds autoStatusUpdate.ts) — this logic lives here, not mirrored from there.
+// server actions. There is no equivalent in functions/src/bookings/ (it holds
+// only the automatic check-in/out logic) — this logic lives here, not mirrored
+// from there.
 
 interface ConflictDetailInternal {
   equipmentId: string
