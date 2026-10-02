@@ -135,7 +135,7 @@ describe('exportUserData — issue #423 Timestamp serialisation', () => {
       return [{ id: 'company-A', data: { companyId: 'company-A', role: 'admin', joinedAt: { toDate: () => new Date('2026-02-01T00:00:00.000Z') } } }]
     }
     if (ctx.path === 'companies/company-A/bookings') {
-      return [{ id: 'booking-1', data: { projectName: 'Job 1', startDate: '2026-03-01', endDate: '2026-03-02', status: 'confirmed', createdAt: { toDate: () => new Date('2026-01-10T00:00:00.000Z') } } }]
+      return [{ id: 'booking-1', data: { projectName: 'Job 1', startDate: '2026-03-01', endDate: '2026-03-02', status: 'confirmed', createdAt: { toDate: () => new Date('2026-01-10T00:00:00.000Z') }, checkedOutAt: { toDate: () => new Date('2026-03-01T08:00:00.000Z') }, returnedAt: { toDate: () => new Date('2026-03-02T16:00:00.000Z') }, checkOutSource: 'auto', returnSource: 'manual' } }]
     }
     return []
   }
@@ -164,6 +164,11 @@ describe('exportUserData — issue #423 Timestamp serialisation', () => {
     expect(payload.companies[0].bookings[0].createdAt).toBe('2026-01-10T00:00:00.000Z')
     expect(payload.accountDeletionFailure.firstAt).toBe('2026-01-01T00:00:00.000Z')
     expect(payload.accountDeletionFailure.lastAt).toBe('2026-01-05T00:00:00.000Z')
+    // #329: the check-out / check-in timestamps are exported; the manual/auto source fields are not.
+    expect(payload.companies[0].bookings[0].checkedOutAt).toBe('2026-03-01T08:00:00.000Z')
+    expect(payload.companies[0].bookings[0].returnedAt).toBe('2026-03-02T16:00:00.000Z')
+    expect(payload.companies[0].bookings[0]).not.toHaveProperty('checkOutSource')
+    expect(payload.companies[0].bookings[0]).not.toHaveProperty('returnSource')
     // startDate/endDate are already plain "YYYY-MM-DD" strings, untouched.
     expect(payload.companies[0].bookings[0].startDate).toBe('2026-03-01')
 
@@ -194,6 +199,8 @@ describe('exportUserData — issue #423 Timestamp serialisation', () => {
     expect(payload.user.createdAt).toBeNull()
     expect(payload.companies[0].joinedAt).toBeNull()
     expect(payload.companies[0].bookings[0].createdAt).toBeNull()
+    expect(payload.companies[0].bookings[0].checkedOutAt).toBeNull()
+    expect(payload.companies[0].bookings[0].returnedAt).toBeNull()
     expect(result.json).not.toContain('_seconds')
   })
 })
