@@ -10,7 +10,7 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import type { Booking, BookingStatus, ApprovalStatus, BookingItem } from '@/types'
+import type { Booking, BookingStatus, BookingStatusSource, ApprovalStatus, BookingItem } from '@/types'
 
 export interface UseBookingsOptions {
   /** Include cancelled bookings in the result. Defaults to false. */
@@ -59,6 +59,14 @@ function docToBooking(id: string, data: Record<string, unknown>): Booking {
                         ? data.cancelledAt.toDate().toISOString()
                         : ((data.cancelledAt as string | null) ?? null),
     cancelledBy:      (data.cancelledBy as string | null) ?? null,
+    checkedOutAt:     data.checkedOutAt instanceof Timestamp
+                        ? data.checkedOutAt.toDate().toISOString()
+                        : ((data.checkedOutAt as string | null) ?? null),
+    checkOutSource:   (data.checkOutSource as BookingStatusSource | undefined),
+    returnedAt:       data.returnedAt instanceof Timestamp
+                        ? data.returnedAt.toDate().toISOString()
+                        : ((data.returnedAt as string | null) ?? null),
+    returnSource:     (data.returnSource as BookingStatusSource | undefined),
   }
 }
 

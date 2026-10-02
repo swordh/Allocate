@@ -4,6 +4,13 @@ export interface CompanyPreferences {
   bookingTimeSlotMinutes: number
   autoCheckout: boolean
   autoCheckin: boolean
+  /**
+   * ISO string; when the matching flag was last turned on (#329). Written only by
+   * updatePreferences on a false→true flip. Automatic check-out / check-in acts
+   * only on bookings whose due time is at or after it ("applies from now on").
+   */
+  autoCheckoutSince?: string | null
+  autoCheckinSince?: string | null
   timezone: string
 }
 
