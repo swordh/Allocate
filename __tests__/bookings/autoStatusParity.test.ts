@@ -51,9 +51,15 @@ describe('booking-auto-status parity (app vs functions)', () => {
     }
 
     const b = { status: 'confirmed', startDate: '2026-06-15', startTime: '09:00', endDate: '2026-06-16', endTime: '17:00' }
-    const variants = [undefined, b, { ...b, status: 'checked_out' }, { ...b, startTime: '10:00' }, { ...b, status: 'cancelled' }]
+    const variants = [
+      undefined, b, { ...b, status: 'checked_out' }, { ...b, startTime: '10:00' }, { ...b, endTime: '18:00' }, { ...b, status: 'cancelled' },
+      { ...b, createdAt: { toMillis: () => 5000 } }, { ...b, updatedAt: { toMillis: () => 10 ** 13 } },
+    ]
     for (const before of variants) for (const after of variants) for (const p of [prefs, off]) {
       expect(appCopy.planBookingEnqueue(before, after, p)).toEqual(functionsCopy.planBookingEnqueue(before, after, p))
+    }
+    for (const t of ['checkout', 'checkin'] as const) for (const before of variants) for (const after of variants) {
+      if (after) expect(appCopy.watchedFieldsChanged(before, after, t)).toBe(functionsCopy.watchedFieldsChanged(before, after, t))
     }
     expect(appCopy.planCompanyEnqueue(off, prefs)).toEqual(functionsCopy.planCompanyEnqueue(off, prefs))
     expect(appCopy.planCompanyEnqueue(prefs, { ...prefs, tz: 'UTC' })).toEqual(functionsCopy.planCompanyEnqueue(prefs, { ...prefs, tz: 'UTC' }))

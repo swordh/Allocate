@@ -71,6 +71,18 @@ describe('computeDueInstant', () => {
     expect(computeDueInstant(allDay, 'checkin', 'UTC')).toBeGreaterThan(T('2026-06-16T00:00:00Z'))
   })
 
+  it('treats an empty-string time like null (all-day), matching the manual path', () => {
+    const empty = { ...booking, startTime: '', endTime: '' }
+    expect(computeDueInstant(empty, 'checkout', 'UTC')).toBe(T('2026-06-15T00:00:00Z'))
+    expect(computeDueInstant(empty, 'checkin', 'UTC')).toBe(T('2026-06-16T23:59:00Z'))
+  })
+
+  it('returns null for out-of-range dates and times', () => {
+    for (const bad of [{ startDate: '2026-13-01' }, { startDate: '2026-02-30' }, { startTime: '24:00' }, { startTime: '12:60' }]) {
+      expect(computeDueInstant({ ...booking, ...bad }, 'checkout', 'UTC')).toBeNull()
+    }
+  })
+
   it('returns null for missing or malformed dates', () => {
     expect(computeDueInstant({ ...booking, startDate: undefined }, 'checkout', 'UTC')).toBeNull()
     expect(computeDueInstant({ ...booking, startDate: 'nope' }, 'checkout', 'UTC')).toBeNull()
@@ -104,9 +116,24 @@ describe('planBookingEnqueue', () => {
     expect(planBookingEnqueue(booking, { ...booking }, prefs())).toBeNull()
   })
 
-  it.each(['startDate', 'startTime', 'endDate', 'endTime'] as const)('re-plans when %s changed', (field) => {
-    const after = { ...booking, [field]: field.endsWith('Date') ? '2026-06-20' : '10:00' }
-    expect(planBookingEnqueue(booking, after, prefs())).not.toBeNull()
+  const change = (field: string) => ({ [field]: field.endsWith('Date') ? '2026-06-20' : '10:00' })
+
+  it.each(['startDate', 'startTime'] as const)('a confirmed booking re-plans its check-out when %s changed', (field) => {
+    expect(planBookingEnqueue(booking, { ...booking, ...change(field) }, prefs())?.transition).toBe('checkout')
+  })
+
+  it.each(['endDate', 'endTime'] as const)('a confirmed booking does NOT re-plan check-out when only %s changed', (field) => {
+    expect(planBookingEnqueue(booking, { ...booking, ...change(field) }, prefs())).toBeNull()
+  })
+
+  it.each(['endDate', 'endTime'] as const)('a checked-out booking re-plans its check-in when %s changed', (field) => {
+    const out = { ...booking, status: 'checked_out' }
+    expect(planBookingEnqueue(out, { ...out, ...change(field) }, prefs())?.transition).toBe('checkin')
+  })
+
+  it.each(['startDate', 'startTime'] as const)('a checked-out booking does NOT re-plan check-in when only %s changed', (field) => {
+    const out = { ...booking, status: 'checked_out' }
+    expect(planBookingEnqueue(out, { ...out, ...change(field) }, prefs())).toBeNull()
   })
 
   it('does nothing for statuses without a transition, deletes, or when the flag is off', () => {
@@ -123,6 +150,40 @@ describe('planBookingEnqueue', () => {
     const since = T('2026-06-15T07:00:01Z')
     expect(planBookingEnqueue(undefined, booking, prefs({ autoCheckoutSince: since }))).toBeNull()
     expect(planBookingEnqueue(undefined, booking, prefs({ autoCheckoutSince: T('2026-06-15T07:00:00Z') }))).not.toBeNull()
+  })
+})
+
+describe('forward-only eligibility: due >= since OR touched at/after since', () => {
+  const since = T('2026-06-15T10:00:00Z') // after the 07:00Z due time
+  const ts = (iso: string) => ({ toMillis: () => T(iso) })
+  const p = prefs({ autoCheckoutSince: since })
+
+  it('a booking created after since is planned even though its start has passed', () => {
+    const late = { ...booking, createdAt: ts('2026-06-15T10:00:00Z'), updatedAt: ts('2026-06-15T10:00:00Z') }
+    expect(planBookingEnqueue(undefined, late, p)).toEqual({ transition: 'checkout', dueAt: T('2026-06-15T07:00:00Z') })
+  })
+
+  it('a booking rescheduled/edited after since (updatedAt) is planned', () => {
+    const edited = { ...booking, createdAt: ts('2026-06-01T00:00:00Z'), updatedAt: ts('2026-06-15T11:00:00Z') }
+    expect(planBookingEnqueue({ ...edited, startTime: '08:00' }, edited, p)).not.toBeNull()
+  })
+
+  it('an old untouched booking (created and updated before since, due before since) is skipped', () => {
+    const old = { ...booking, createdAt: ts('2026-06-01T00:00:00Z'), updatedAt: ts('2026-06-02T00:00:00Z') }
+    expect(planBookingEnqueue(undefined, old, p)).toBeNull()
+    expect(planBookingEnqueue(undefined, { ...booking, createdAt: null, updatedAt: null }, p)).toBeNull()
+  })
+
+  const payload: AutoTaskPayload = { companyId: 'c', bookingId: 'b', transition: 'checkout', dueAt: T('2026-06-15T07:00:00Z') }
+  const now = T('2026-06-15T12:00:00Z')
+
+  it('decideTask applies a late-created booking and skips an old untouched one', () => {
+    expect(decideTask(payload, { ...booking, createdAt: ts('2026-06-15T10:30:00Z') }, p, now)).toEqual({ kind: 'apply' })
+    expect(decideTask(payload, { ...booking, createdAt: ts('2026-06-01T00:00:00Z') }, p, now)).toEqual({ kind: 'skip', reason: 'before-since' })
+  })
+
+  it('accepts plain numbers as timestamps too', () => {
+    expect(decideTask(payload, { ...booking, updatedAt: since }, p, now)).toEqual({ kind: 'apply' })
   })
 })
 

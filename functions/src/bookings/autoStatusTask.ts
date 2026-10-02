@@ -25,10 +25,14 @@ import { createTaskEnqueuer, safeEnqueue, type EnqueueFn } from './autoStatusEnq
  * Private function: no `invoker`, so only a service account with
  * `roles/run.invoker` (the Cloud Tasks OIDC token) can call it.
  *
- * No conflict detection on apply. At or after the start time bookings are not
- * rewritten by the date-edit actions, which is the same assumption the old
- * five-minute poller made.
+ * No conflict detection on apply. A pending/confirmed booking can be edited at
+ * any time (updateBooking), but rescheduling it re-fires the booking trigger,
+ * which enqueues a fresh task for the new due time and makes this one stale
+ * (`decideTask` → `stale`); a manual check-out/cancel makes it skip on status.
  */
+
+/** Keep in step with `retryConfig.maxAttempts` below — the final-attempt check relies on it. */
+export const MAX_ATTEMPTS = 8;
 
 export interface TaskDeps {
   db: Firestore;
@@ -57,12 +61,37 @@ function parsePayload(raw: unknown): AutoTaskPayload | null {
  * dropped (returning normally) — retrying could never make it valid; any other
  * failure throws so Cloud Tasks retries per the queue's `retryConfig`.
  */
-export async function runAutoStatusTask(deps: TaskDeps, rawPayload: unknown, parentTaskId: string): Promise<void> {
+export async function runAutoStatusTask(
+  deps: TaskDeps,
+  rawPayload: unknown,
+  parentTaskId: string,
+  isFinalAttempt = false,
+): Promise<void> {
   const payload = parsePayload(rawPayload);
   if (!payload) {
     logger.error('bookingAutoStatusTask: invalid payload, dropping', { parentTaskId });
     return;
   }
+  try {
+    await processTask(deps, payload, parentTaskId);
+  } catch (err) {
+    if (isFinalAttempt) {
+      // Cloud Tasks drops the task after this and nothing else will pick the
+      // booking up — leave a stable, greppable marker. One structured entry
+      // (not console.error of an object, which Cloud Logging splits per line);
+      // ids only, no PII.
+      logger.error('AUTO_STATUS_TASK_FAILED', {
+        marker: 'AUTO_STATUS_TASK_FAILED',
+        companyId: payload.companyId,
+        bookingId: payload.bookingId,
+        transition: payload.transition,
+      });
+    }
+    throw err;
+  }
+}
+
+async function processTask(deps: TaskDeps, payload: AutoTaskPayload, parentTaskId: string): Promise<void> {
   const { companyId, bookingId, transition, dueAt } = payload;
   const companyRef = deps.db.collection('companies').doc(companyId);
   const bookingRef = companyRef.collection('bookings').doc(bookingId);
@@ -101,11 +130,13 @@ export async function runAutoStatusTask(deps: TaskDeps, rawPayload: unknown, par
     // 29 days. Enqueue the next leg, outside the transaction (a side effect
     // must not run inside a retryable transaction body).
     const now = deps.now();
-    const scheduleTime = scheduleTimeFor(dueAt, now);
     await safeEnqueue(deps.enqueue, {
-      id: taskId(transition, [parentTaskId, scheduleTime ?? now]),
+      // Derived from the parent id ONLY — never the clock — so a redelivery of
+      // the same parent (attempt N after a failed enqueue) reproduces the same
+      // child id and hits task-already-exists instead of forking a second chain.
+      id: taskId(transition, [parentTaskId, 'hop']),
       payload,
-      scheduleTime,
+      scheduleTime: scheduleTimeFor(dueAt, now),
     });
   }
 
@@ -115,7 +146,7 @@ export async function runAutoStatusTask(deps: TaskDeps, rawPayload: unknown, par
 export const bookingAutoStatusTask = onTaskDispatched(
   {
     region: 'europe-west1',
-    retryConfig: { maxAttempts: 8, minBackoffSeconds: 30, maxBackoffSeconds: 3600, maxDoublings: 5 },
+    retryConfig: { maxAttempts: MAX_ATTEMPTS, minBackoffSeconds: 30, maxBackoffSeconds: 3600, maxDoublings: 5 },
     rateLimits: { maxConcurrentDispatches: 20, maxDispatchesPerSecond: 10 },
     timeoutSeconds: 60,
   },
@@ -124,6 +155,8 @@ export const bookingAutoStatusTask = onTaskDispatched(
       { db: getFirestore(), enqueue: createTaskEnqueuer(), now: () => Date.now() },
       request.data,
       request.id,
+      // retryCount is 0 on the first attempt, so attempt N has retryCount N-1.
+      request.retryCount >= MAX_ATTEMPTS - 1,
     );
   },
 );

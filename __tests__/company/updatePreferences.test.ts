@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { FieldValue } from 'firebase-admin/firestore'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
@@ -198,7 +199,7 @@ describe('updatePreferences — automatic check-out / check-in flags', () => {
     const payload = tx.update.mock.calls[0][1] as Record<string, unknown>
     expect(Object.keys(payload).sort()).toEqual([`preferences.${key}`, sinceKey].sort())
     expect(payload[`preferences.${key}`]).toBe(true)
-    expect(payload[sinceKey]).toBeDefined()
+    expect((payload[sinceKey] as FieldValue).isEqual(FieldValue.serverTimestamp())).toBe(true)
     expect(revalidatePath).toHaveBeenCalledWith('/settings/preferences')
   })
 
@@ -252,7 +253,8 @@ describe('updatePreferences — dot-path merge, not a wholesale write', () => {
     expect(payload).toHaveProperty('preferences.timezone')
     expect(payload).not.toHaveProperty('preferences')
     // Guard against a future revert to a wholesale write, which would clobber
-    // autoCheckout/autoCheckin silently since neither appears on any screen.
+    // the other screens' fields (and the autoCheckout/autoCheckin flags that
+    // drive the Cloud Functions) with whatever this screen happened to send.
     expect(payload['preferences']).toBeUndefined()
   })
 

@@ -112,7 +112,7 @@ export default function PreferencesForm({ preferences: initial }: PreferencesFor
           <div className={styles.rowLabel}>Automatic check-out</div>
           <div className={styles.rowHelp}>
             Checks out bookings at their start time in your company time zone ({timezone}). Applies to bookings
-            from now on.
+            created or changed from now on, and to upcoming bookings.
           </div>
         </div>
         <div className={styles.toggleCell}>
@@ -130,7 +130,7 @@ export default function PreferencesForm({ preferences: initial }: PreferencesFor
           <div className={styles.rowLabel}>Automatic check-in</div>
           <div className={styles.rowHelp}>
             Checks in bookings at their end time in your company time zone ({timezone}). Applies to bookings
-            from now on.
+            created or changed from now on, and to upcoming bookings.
           </div>
         </div>
         <div className={styles.toggleCell}>

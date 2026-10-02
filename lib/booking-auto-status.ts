@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 
 /**
@@ -36,6 +38,9 @@ export interface AutoBookingFields {
   startTime?: string | null
   endDate?: string | null
   endTime?: string | null
+  /** Firestore Timestamp (or null/absent); read only through `toMillisOrNull`. */
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
 export interface AutoTaskPayload {
@@ -109,7 +114,19 @@ export function zonedWallClockToInstant(date: string, time: string, tz: string):
   const t = /^(\d{2}):(\d{2})$/.exec(time)
   if (!d || !t) throw new RangeError(`Invalid wall-clock ${date} ${time}`)
   const wanted = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]))
-  if (Number.isNaN(wanted)) throw new RangeError(`Invalid wall-clock ${date} ${time}`)
+  // Round-trip so out-of-range parts (month 13, Feb 30, 24:00, 12:60) are
+  // rejected instead of silently rolling over into another day.
+  const check = new Date(wanted)
+  if (
+    Number.isNaN(wanted) ||
+    check.getUTCFullYear() !== Number(d[1]) ||
+    check.getUTCMonth() !== Number(d[2]) - 1 ||
+    check.getUTCDate() !== Number(d[3]) ||
+    check.getUTCHours() !== Number(t[1]) ||
+    check.getUTCMinutes() !== Number(t[2])
+  ) {
+    throw new RangeError(`Invalid wall-clock ${date} ${time}`)
+  }
 
   const f = resolveFormatter(tz)
 
@@ -137,7 +154,7 @@ export function zonedWallClockToInstant(date: string, time: string, tz: string):
 
 // ── Preferences ─────────────────────────────────────────────────────────────
 
-function sinceToMillis(v: unknown): number | null {
+function toMillisOrNull(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (v && typeof (v as { toMillis?: unknown }).toMillis === 'function') {
     const ms = (v as { toMillis: () => number }).toMillis()
@@ -152,8 +169,8 @@ export function readAutoPrefs(companyData: Record<string, unknown> | undefined |
   return {
     autoCheckout: prefs.autoCheckout === true,
     autoCheckin: prefs.autoCheckin === true,
-    autoCheckoutSince: sinceToMillis(prefs.autoCheckoutSince),
-    autoCheckinSince: sinceToMillis(prefs.autoCheckinSince),
+    autoCheckoutSince: toMillisOrNull(prefs.autoCheckoutSince),
+    autoCheckinSince: toMillisOrNull(prefs.autoCheckinSince),
     tz: typeof prefs.timezone === 'string' && prefs.timezone ? prefs.timezone : 'UTC',
   }
 }
@@ -163,13 +180,32 @@ function flagOn(prefs: AutoPrefs, transition: AutoTransition): boolean {
 }
 
 /**
- * Forward-only cut-off. A flag that is on but has no recorded `since` (a
+ * Forward-only cut-off (see `eligible`). A flag that is on but has no recorded `since` (a
  * company that had the flag set before `since` existed) is treated as "no
  * restriction" — the flags are false in every environment today, so this only
  * keeps the logic total rather than covering a real case.
  */
 function sinceFor(prefs: AutoPrefs, transition: AutoTransition): number {
   return (transition === 'checkout' ? prefs.autoCheckoutSince : prefs.autoCheckinSince) ?? 0
+}
+
+/**
+ * Latest time the booking was created or edited, epoch ms (0 if neither is
+ * readable). `updatedAt` is stamped on every write, so this is "last touched".
+ */
+function touchedAt(booking: AutoBookingFields): number {
+  return Math.max(toMillisOrNull(booking.createdAt) ?? 0, toMillisOrNull(booking.updatedAt) ?? 0)
+}
+
+/**
+ * Forward-only eligibility: a booking is handled if its due time is at or after
+ * the flag's `since` (an upcoming booking), OR it was created/edited at or after
+ * `since` (so a booking made or rescheduled after the flag went on is processed
+ * even if its start has already passed). An old, untouched booking whose time
+ * passed before the flag went on is left alone.
+ */
+function eligible(booking: AutoBookingFields, due: number, since: number): boolean {
+  return due >= since || touchedAt(booking) >= since
 }
 
 // ── Due times ───────────────────────────────────────────────────────────────
@@ -186,9 +222,10 @@ export function computeDueInstant(
   tz: string,
 ): number | null {
   const date = transition === 'checkout' ? booking.startDate : booking.endDate
+  // `||`, not `??`: an empty-string time is all-day, like null (matches the manual path).
   const time = transition === 'checkout'
-    ? booking.startTime ?? '00:00'
-    : booking.endTime ?? '23:59'
+    ? booking.startTime || '00:00'
+    : booking.endTime || '23:59'
   if (!date) return null
   try {
     return zonedWallClockToInstant(date, time, tz).getTime()
@@ -211,11 +248,30 @@ function requiredStatus(transition: AutoTransition): string {
 // ── Planning ────────────────────────────────────────────────────────────────
 
 /**
+ * Whether the fields that decide `transition`'s due time (or the status itself)
+ * changed between `before` and `after`. A status change always counts. Check-out
+ * watches the start date/time, check-in the end date/time — an unrelated edit
+ * (e.g. moving only the end time of a confirmed booking) must not re-plan the
+ * other transition.
+ */
+export function watchedFieldsChanged(
+  before: AutoBookingFields | undefined | null,
+  after: AutoBookingFields,
+  transition: AutoTransition,
+): boolean {
+  if (!before || before.status !== after.status) return true
+  return transition === 'checkout'
+    ? before.startDate !== after.startDate || before.startTime !== after.startTime
+    : before.endDate !== after.endDate || before.endTime !== after.endTime
+}
+
+/**
  * What the booking-written trigger should enqueue, if anything. Acts only when
- * the booking was created or one of status/startDate/startTime/endDate/endTime
- * changed, the matching flag is on, and the due time is not before the flag's
- * `since` (forward-only). A due time already in the past still plans a task —
- * the handler applies it immediately.
+ * the booking was created or a field relevant to its transition changed
+ * (`watchedFieldsChanged`), the matching flag is on, and the booking is
+ * `eligible` (due at/after the flag's `since`, or touched at/after it). A due
+ * time already in the past still plans a task — the handler applies it
+ * immediately.
  */
 export function planBookingEnqueue(
   before: AutoBookingFields | undefined | null,
@@ -225,18 +281,9 @@ export function planBookingEnqueue(
   if (!after) return null
   const transition = transitionFor(after.status)
   if (!transition || !flagOn(prefs, transition)) return null
-  if (
-    before &&
-    before.status === after.status &&
-    before.startDate === after.startDate &&
-    before.startTime === after.startTime &&
-    before.endDate === after.endDate &&
-    before.endTime === after.endTime
-  ) {
-    return null
-  }
+  if (!watchedFieldsChanged(before, after, transition)) return null
   const dueAt = computeDueInstant(after, transition, prefs.tz)
-  if (dueAt === null || dueAt < sinceFor(prefs, transition)) return null
+  if (dueAt === null || !eligible(after, dueAt, sinceFor(prefs, transition))) return null
   return { transition, dueAt }
 }
 
@@ -259,7 +306,8 @@ export function planCompanyEnqueue(before: AutoPrefs, after: AutoPrefs): AutoTra
  * What the task handler does with a dispatched task, given the booking and
  * company as they are RIGHT NOW (re-read inside the handler's transaction).
  *
- *  - skip:  booking gone, wrong status, flag off, or due before `since`
+ *  - skip:  booking gone, wrong status, flag off, or not eligible (due before
+ *           `since` and not created/edited since)
  *  - apply: due has passed — perform the transition
  *  - hop:   not due yet and the payload still matches — a task was capped at
  *           29 days, so enqueue the next hop
@@ -277,7 +325,7 @@ export function decideTask(
   if (!flagOn(prefs, payload.transition)) return { kind: 'skip', reason: 'flag-off' }
   const due = computeDueInstant(booking, payload.transition, prefs.tz)
   if (due === null) return { kind: 'skip', reason: 'invalid' }
-  if (due < sinceFor(prefs, payload.transition)) return { kind: 'skip', reason: 'before-since' }
+  if (!eligible(booking, due, sinceFor(prefs, payload.transition))) return { kind: 'skip', reason: 'before-since' }
   if (due <= now) return { kind: 'apply' }
   return payload.dueAt === due ? { kind: 'hop' } : { kind: 'stale' }
 }

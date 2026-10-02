@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions/v2';
 import { FakeDb } from './fakeDb';
 import { runAutoStatusTask } from '../../src/bookings/autoStatusTask';
 import type { AutoStatusTask } from '../../src/bookings/autoStatusEnqueue';
@@ -40,7 +41,7 @@ function setup(opts: { prefs?: Record<string, unknown>; booking?: Record<string,
     tasks.push(t);
   });
   const now = opts.now ?? T('2026-06-15T07:00:30Z');
-  return { db, tasks, enqueue, run: (p: unknown, id = 'parent-1') => runAutoStatusTask({ db: db.asFirestore(), enqueue, now: () => now }, p, id) };
+  return { db, tasks, enqueue, run: (p: unknown, id = 'parent-1', final = false) => runAutoStatusTask({ db: db.asFirestore(), enqueue, now: () => now }, p, id, final) };
 }
 
 describe('runAutoStatusTask apply', () => {
@@ -150,6 +151,18 @@ describe('runAutoStatusTask hop', () => {
     expect(other.tasks[0]!.id).not.toBe(s.tasks[0]!.id);
   });
 
+  it('the child id does not depend on the clock: the same parent redelivered later gives the same id', async () => {
+    const dueAt = T('2026-12-01T08:00:00Z');
+    const far = { ...booking, startDate: '2026-12-01' };
+    const first = setup({ booking: far, now: T('2026-06-01T00:00:00Z') });
+    await first.run(payload({ dueAt }), 'parent-1');
+    const later = setup({ booking: far, now: T('2026-06-01T00:00:00Z') + 3 * 3600_000 + 17 });
+    await later.run(payload({ dueAt }), 'parent-1');
+    expect(later.tasks[0]!.id).toBe(first.tasks[0]!.id);
+    // ...but the scheduleTime does follow the clock (cap is relative to now).
+    expect(later.tasks[0]!.scheduleTime).not.toBe(first.tasks[0]!.scheduleTime);
+  });
+
   it('a duplicate-hop 409 is swallowed', async () => {
     const now = T('2026-06-01T00:00:00Z');
     const s = setup({ booking: { ...booking, startDate: '2026-12-01' }, now });
@@ -172,5 +185,35 @@ describe('runAutoStatusTask payload validation', () => {
     await expect(s.run(bad)).resolves.toBeUndefined();
     expect(s.db.transactionRuns).toBe(0);
     expect(s.tasks).toEqual([]);
+  });
+});
+
+describe('runAutoStatusTask final-attempt failure marker', () => {
+  function failing() {
+    const s = setup();
+    vi.spyOn(s.db, 'runTransaction').mockRejectedValue(new Error('boom'));
+    return s;
+  }
+
+  it('logs AUTO_STATUS_TASK_FAILED (ids only, one structured entry) and rethrows on the final attempt', async () => {
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const s = failing();
+    await expect(s.run(payload(), 'parent-1', true)).rejects.toThrow('boom');
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith('AUTO_STATUS_TASK_FAILED', {
+      marker: 'AUTO_STATUS_TASK_FAILED',
+      companyId: 'c1',
+      bookingId: 'b1',
+      transition: 'checkout',
+    });
+    spy.mockRestore();
+  });
+
+  it('does not log the marker on a non-final attempt, but still rethrows so Cloud Tasks retries', async () => {
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const s = failing();
+    await expect(s.run(payload(), 'parent-1', false)).rejects.toThrow('boom');
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

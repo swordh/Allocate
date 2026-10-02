@@ -94,6 +94,31 @@ describe('runBookingWritten', () => {
     expect(tasks[2]!.id).not.toBe(tasks[0]!.id);
   });
 
+  it('reads nothing (not even the company) when only a field irrelevant to the transition changed', async () => {
+    const { deps, tasks, db } = setup();
+    const spy = vi.spyOn(db, 'collection');
+    // confirmed booking: only the END time moved — check-out's due time is unaffected.
+    await runBookingWritten(deps, args({ before: booking, after: { ...booking, endTime: '18:00' } }));
+    // only updatedAt-style noise
+    await runBookingWritten(deps, args({ before: booking, after: { ...booking, updatedAt: 1 } }));
+    expect(spy).not.toHaveBeenCalled();
+    expect(tasks).toEqual([]);
+  });
+
+  it('a late-created booking (after since) is enqueued even though its start has passed', async () => {
+    const since = T('2026-05-20T00:00:00Z'); // after the 05-01 start, before NOW
+    const { deps, tasks } = setup({
+      autoCheckout: true,
+      timezone: 'Europe/Stockholm',
+      autoCheckoutSince: { toMillis: () => since },
+    });
+    await runBookingWritten(deps, args({ after: { ...booking, startDate: '2026-05-01', createdAt: { toMillis: () => since + 1 } } }));
+    // The same booking created BEFORE since is ignored.
+    await runBookingWritten(deps, args({ bookingId: 'b2', after: { ...booking, startDate: '2026-05-01', createdAt: { toMillis: () => since - 1 } } }));
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.scheduleTime).toBeUndefined();
+  });
+
   it('treats a duplicate-delivery 409 as success', async () => {
     const { deps } = setup();
     const enqueue = vi.fn().mockRejectedValue({ code: 'functions/task-already-exists' });
@@ -188,7 +213,7 @@ describe('runCompanyUpdated', () => {
     expect(conf.payload.dueAt).toBe(T('2026-06-15T09:00:00Z'));
   });
 
-  it('returns early without querying when preferences are unchanged (stats mirror writes)', async () => {
+  it('returns early without querying bookings when preferences are unchanged (stats mirror writes)', async () => {
     const { deps, tasks, db } = seeded();
     const spy = vi.spyOn(db, 'collection');
     await runCompanyUpdated(deps, {

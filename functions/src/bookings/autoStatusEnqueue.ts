@@ -4,6 +4,8 @@ import type { Firestore } from 'firebase-admin/firestore';
 import {
   planBookingEnqueue,
   planCompanyEnqueue,
+  transitionFor,
+  watchedFieldsChanged,
   readAutoPrefs,
   scheduleTimeFor,
   taskId,
@@ -111,9 +113,12 @@ export async function runBookingWritten(
   },
 ): Promise<void> {
   const { eventId, companyId, bookingId, before, after } = args;
-  // Cheap exit before the company read: most booking writes are to statuses
-  // that never transition (pending, returned, cancelled) or deletes.
-  if (!after || (after.status !== 'confirmed' && after.status !== 'checked_out')) return;
+  // Cheap exits before the company read: most booking writes are deletes, are
+  // to statuses that never transition (pending, returned, cancelled), or touch
+  // only fields that don't move this transition's due time.
+  if (!after) return;
+  const transition = transitionFor(after.status);
+  if (!transition || !watchedFieldsChanged(before, after, transition)) return;
 
   const companySnap = await deps.db.collection('companies').doc(companyId).get();
   const plan = planBookingEnqueue(before, after, readAutoPrefs(companySnap.data()));
@@ -133,8 +138,9 @@ const ENQUEUE_CONCURRENCY = 25;
  * `since`. Only that company's bookings are read (single-field equality, so no
  * composite index).
  *
- * Returns early when `preferences` is unchanged — the `stats` mirror also
- * writes to the company document, and each of those writes fires this trigger.
+ * Returns early (no bookings read) when nothing relevant changed — the `stats`
+ * mirror also writes to the company document, and each of those writes fires
+ * this trigger.
  */
 export async function runCompanyUpdated(
   deps: EnqueueDeps,
@@ -147,8 +153,10 @@ export async function runCompanyUpdated(
 ): Promise<void> {
   const { eventId, companyId, before, after } = args;
   if (!before || !after) return;
-  if (JSON.stringify(before.preferences ?? null) === JSON.stringify(after.preferences ?? null)) return;
 
+  // The early return: `planCompanyEnqueue` only reports a transition when an
+  // auto flag flipped on or the zone changed, so a write that leaves
+  // `preferences` alone (the `stats` mirror) yields [] and reads no bookings.
   const afterPrefs = readAutoPrefs(after);
   const transitions = planCompanyEnqueue(readAutoPrefs(before), afterPrefs);
   if (transitions.length === 0) return;

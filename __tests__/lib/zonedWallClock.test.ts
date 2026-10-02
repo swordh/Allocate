@@ -60,4 +60,18 @@ describe('zonedWallClockToInstant', () => {
     expect(() => zonedWallClockToInstant('2026-6-15', '12:00', 'UTC')).toThrow(RangeError)
     expect(() => zonedWallClockToInstant('2026-06-15', '9:00', 'UTC')).toThrow(RangeError)
   })
+
+  it.each([
+    ['2026-13-01', '12:00'],
+    ['2026-00-10', '12:00'],
+    ['2026-02-30', '12:00'],
+    ['2026-04-31', '12:00'],
+    ['2026-06-15', '24:00'],
+    ['2026-06-15', '12:60'],
+  ])('throws on an out-of-range value (%s %s) instead of rolling over', (date, time) => {
+    expect(() => zonedWallClockToInstant(date, time, 'UTC')).toThrow(RangeError)
+  })
+
+  it('accepts a leap day and the last valid minute', () => {
+    expect(iso('2028-02-29', '23:59', 'UTC')).toBe('2028-02-29T23:59:00.000Z')  })
 })
