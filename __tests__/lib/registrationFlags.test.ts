@@ -13,7 +13,7 @@ vi.mock('@/lib/firebase-admin', () => ({
   adminDb: { doc: vi.fn(() => ({ get: mockGet })) },
 }))
 
-import { getRegistrationFlags } from '@/lib/registrationFlags'
+import { getRegistrationFlags, getRegistrationFlagsOrOpen } from '@/lib/registrationFlags'
 import { adminDb } from '@/lib/firebase-admin'
 
 const stamp = (iso: string) => ({ toDate: () => new Date(iso) })
@@ -81,5 +81,28 @@ describe('getRegistrationFlags', () => {
   it('does not swallow a read error', async () => {
     mockGet.mockRejectedValue(new Error('unavailable'))
     await expect(getRegistrationFlags()).rejects.toThrow('unavailable')
+  })
+})
+
+describe('getRegistrationFlagsOrOpen (page layer)', () => {
+  it('treats a read error as open and logs it', async () => {
+    mockGet.mockRejectedValue(new Error('unavailable'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(getRegistrationFlagsOrOpen()).resolves.toEqual({
+      accountsBlocked: false,
+      accountsBlockedSince: null,
+      companiesBlocked: false,
+      companiesBlockedSince: null,
+    })
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('passes real flags through when the read succeeds', async () => {
+    mockGet.mockResolvedValue({ exists: true, data: () => ({ companiesBlocked: true }) })
+
+    const flags = await getRegistrationFlagsOrOpen()
+    expect(flags.companiesBlocked).toBe(true)
   })
 })

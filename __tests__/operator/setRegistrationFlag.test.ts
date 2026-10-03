@@ -2,9 +2,11 @@
  * `setRegistrationFlag` — the operator System tab's kill-switch action
  * (app/operator/(protected)/system/actions.ts).
  *
- * Written so each guard fails a test if removed: operator check, reason
- * length, the no-op short-circuit, since-timestamp set/cleared, and that the
- * audit-log row carries the operator's identity and the TRIMMED reason.
+ * Mutation-checked guards: the operator check, reason length (and trimming),
+ * switch-name and value validation, the no-op short-circuit, the since
+ * timestamp being set/cleared, and the audit row carrying operatorUid and the
+ * trimmed reason. NOT covered: the `typeof reason !== 'string'` guard and the
+ * per-attempt `changed = false` reset on transaction retry.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -136,10 +138,11 @@ describe('setRegistrationFlag — blocking', () => {
       switch: 'companies',
       newValue: true,
       operatorUid: OPERATOR.uid,
-      operatorEmail: OPERATOR.email,
       reason: 'Billing migration',
       at: '__serverTimestamp__',
     })
+    // Operator identity is the uid only — no email in the log row.
+    expect(log![1]).not.toHaveProperty('operatorEmail')
     expect(tx.set).toHaveBeenCalledTimes(2)
   })
 

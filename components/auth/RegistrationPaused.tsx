@@ -24,7 +24,8 @@ interface RegistrationPausedProps {
    * who has no email yet: the box is then left out entirely.
    */
   email?: string
-  primary: PausedAction
+  /** Omitted on /no-company, where there is no safe in-app route to an invite. */
+  primary?: PausedAction
   secondary: PausedAction
   /**
    * 'page' (default) is the full auth screen from the design. 'embedded' is
@@ -110,13 +111,13 @@ export default function RegistrationPaused({
         <div className={styles.infoBox}>
           <span className={styles.infoLabel}>JOIN A TEAM INSTEAD</span>
           <span className={styles.infoText}>
-            Invitations still work. Ask an administrator of an existing company to invite {email}.
+            Invitations still work. Open the link in the invitation email sent to {email} to join your team.
           </span>
         </div>
       )}
 
       <div className={styles.actions}>
-        <ActionButton action={primary} variant="primary" />
+        {primary && <ActionButton action={primary} variant="primary" />}
         <ActionButton action={secondary} variant="secondary" />
       </div>
 

@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import SignupForm from '@/components/auth/SignupForm'
 import RegistrationPaused from '@/components/auth/RegistrationPaused'
-import { getRegistrationFlags } from '@/lib/registrationFlags'
+import { getRegistrationFlagsOrOpen } from '@/lib/registrationFlags'
 
 // Same shape SignupForm accepts for an invite deep link: /invite/<token>.
 const INVITE_REDIRECT = /^\/invite\/[a-zA-Z0-9]{1,40}$/
@@ -24,7 +24,7 @@ export default async function SignupPage({
 }: {
   searchParams: Promise<{ mode?: string; redirect?: string }>
 }) {
-  const [flags, params] = await Promise.all([getRegistrationFlags(), searchParams])
+  const [flags, params] = await Promise.all([getRegistrationFlagsOrOpen(), searchParams])
 
   const onInvitePath =
     params.mode === 'invite' || (typeof params.redirect === 'string' && INVITE_REDIRECT.test(params.redirect))

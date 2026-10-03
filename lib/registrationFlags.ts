@@ -30,8 +30,8 @@ function toIso(value: unknown): string | null {
 /**
  * Reads both switches. Fail-open on a MISSING document: both switches are
  * open until an operator first flips one. A read ERROR is not swallowed — it
- * propagates, so setupNewCompany fails loudly instead of silently treating an
- * unreadable flag as "open".
+ * propagates, so setupNewCompany fails closed instead of silently treating an
+ * unreadable flag as "open". Pages use `getRegistrationFlagsOrOpen` instead.
  *
  * Wrapped in React `cache()` so the several Server Components / actions that
  * ask during one request share a single read.
@@ -48,3 +48,29 @@ export const getRegistrationFlags = cache(async (): Promise<RegistrationFlags> =
     companiesBlockedSince: companiesBlocked ? toIso(data?.companiesBlockedSince) : null,
   }
 })
+
+const FLAGS_OPEN: RegistrationFlags = {
+  accountsBlocked: false,
+  accountsBlockedSince: null,
+  companiesBlocked: false,
+  companiesBlockedSince: null,
+}
+
+/**
+ * For pages (/signup, /no-company): a read error is logged and treated as
+ * OPEN, so the invite path and export/delete/sign-out keep working through a
+ * Firestore hiccup. Safe because the server-side guard in `setupNewCompany`
+ * uses the strict `getRegistrationFlags` and fails closed — a page showing
+ * the form can never create a company the switch forbids.
+ */
+export async function getRegistrationFlagsOrOpen(): Promise<RegistrationFlags> {
+  try {
+    return await getRegistrationFlags()
+  } catch (err) {
+    console.error('[registrationFlags]', {
+      action: 'read_failed_treated_as_open',
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return FLAGS_OPEN
+  }
+}

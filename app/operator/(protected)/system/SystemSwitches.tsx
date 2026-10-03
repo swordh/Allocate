@@ -9,6 +9,7 @@ import Textarea from '@/components/ui/Textarea'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import { formatOperatorDateTime } from '@/lib/operatorDates'
 import type { RegistrationFlags } from '@/lib/registrationFlags'
+import { segmentTarget } from '@/lib/registrationSegment'
 import { setRegistrationFlag, type RegistrationSwitch } from './actions'
 import switchStyles from './SystemSwitches.module.css'
 
@@ -29,7 +30,7 @@ const COPY: Record<RegistrationSwitch, SwitchCopy> = {
     noun: 'account sign-ups',
     openBody: 'Anyone can create an account from the sign-up page.',
     blockBody:
-      'The sign-up page says sign-ups are paused. Existing users log in as usual, and people invited to a company can still create their account through the invite.',
+      'The sign-up page says sign-ups are paused. Existing users log in as usual, and people invited to a company can still create their account through the invite. Server-side this only hides sign-up — block new companies as well to fully stop new customers.',
   },
   companies: {
     title: 'New companies',
@@ -62,7 +63,9 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
 
-  const [pending, setPending] = useState<RegistrationSwitch | null>(null)
+  // `target` is the value the clicked segment stands for (true = BLOCKED).
+  const [pendingState, setPendingState] = useState<{ which: RegistrationSwitch; target: boolean } | null>(null)
+  const pending = pendingState?.which ?? null
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,20 +75,22 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
   const sinceOf = (which: RegistrationSwitch) =>
     which === 'accounts' ? flags.accountsBlockedSince : flags.companiesBlockedSince
 
-  function openConfirm(which: RegistrationSwitch) {
-    setPending(which)
+  function openConfirm(which: RegistrationSwitch, clicked: 'open' | 'blocked') {
+    const target = segmentTarget(blockedOf(which), clicked)
+    if (target === null) return // the active segment: nothing to change
+    setPendingState({ which, target })
     setReason('')
     setError(null)
   }
 
   function close() {
     if (submitting) return
-    setPending(null)
+    setPendingState(null)
     setReason('')
     setError(null)
   }
 
-  const willBlock = pending ? !blockedOf(pending) : false
+  const willBlock = pendingState?.target ?? false
   const canCommit = reason.trim().length >= MIN_REASON_LENGTH && !submitting
 
   async function commit() {
@@ -98,7 +103,7 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
       setError(result.error)
       return
     }
-    setPending(null)
+    setPendingState(null)
     setReason('')
     router.refresh()
   }
@@ -180,7 +185,7 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
                     type="button"
                     className={`${switchStyles.segment} ${!blocked ? switchStyles.segmentOpenActive : ''}`}
                     aria-pressed={!blocked}
-                    onClick={() => openConfirm(which)}
+                    onClick={() => openConfirm(which, 'open')}
                   >
                     OPEN
                   </button>
@@ -188,7 +193,7 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
                     type="button"
                     className={`${switchStyles.segment} ${blocked ? switchStyles.segmentBlockedActive : ''}`}
                     aria-pressed={blocked}
-                    onClick={() => openConfirm(which)}
+                    onClick={() => openConfirm(which, 'blocked')}
                   >
                     BLOCKED
                   </button>

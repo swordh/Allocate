@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { getSessionWithoutCompany } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
 import NoCompanyView from '@/components/auth/NoCompanyView'
-import { getRegistrationFlags } from '@/lib/registrationFlags'
+import { getRegistrationFlagsOrOpen } from '@/lib/registrationFlags'
 
 export const metadata: Metadata = {
   title: 'No company — Allocate',
@@ -22,7 +22,7 @@ export default async function NoCompanyPage() {
   const session = await getSessionWithoutCompany()
   const [profile, flags] = await Promise.all([
     getUserProfile(session.uid),
-    getRegistrationFlags(),
+    getRegistrationFlagsOrOpen(),
   ])
 
   return (

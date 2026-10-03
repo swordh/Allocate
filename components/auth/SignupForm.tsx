@@ -263,25 +263,28 @@ export default function SignupForm({ companiesBlocked = false, accountsBlocked =
     }
 
     // ── Standard path: create company + session ──────────────────────────
+    // Expected refusals come back as a result ({ error }) — a thrown Error's
+    // message is redacted in production builds. A throw is an unexpected failure.
+    let setupFailure: 'already-exists' | 'companies_blocked' | 'unexpected' | null = null
     try {
       const idToken = await credential.user.getIdToken()
-      await setupNewCompany(idToken, trimmedCompany, trimmedName, timezone)
-    } catch (err) {
+      const result = await setupNewCompany(idToken, trimmedCompany, trimmedName, timezone)
+      if ('error' in result) setupFailure = result.error
+    } catch {
+      setupFailure = 'unexpected'
+    }
+
+    if (setupFailure) {
+      // Auth user was created but company setup did not happen — clean up the
+      // orphan, for every failure kind (same as the invite failure path).
       await credential.user.delete().catch(() => {/* best-effort */})
 
-      const msg = err instanceof Error ? err.message : ''
-      if (msg === 'already-exists') {
+      if (setupFailure === 'already-exists') {
         setError('This account is already set up. Please sign in.')
-      } else if (msg === 'companies_blocked') {
-        // The orphan Auth user was deleted above, exactly as on the invite
-        // failure path — nothing is left behind. Show the paused notice.
+      } else if (setupFailure === 'companies_blocked') {
+        // An operator flipped the switch while this form was open.
         setCompaniesBlockedNow(true)
       } else {
-        // Production builds redact the message of an error thrown from a
-        // Server Action, so `companies_blocked` can arrive here as a generic
-        // failure. Re-fetching the page props picks up the switch, and the
-        // paused notice then replaces the form.
-        router.refresh()
         setError('Failed to set up your account. Please try again.')
       }
       setLoading(false)

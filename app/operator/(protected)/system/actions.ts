@@ -81,7 +81,6 @@ export async function setRegistrationFlag(
         switch: which,
         newValue: value,
         operatorUid: session.uid,
-        operatorEmail: session.email,
         reason: trimmedReason,
         at: FieldValue.serverTimestamp(),
       })

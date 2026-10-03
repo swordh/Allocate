@@ -121,7 +121,16 @@ export default function NoCompanyView({
       }
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
       const idToken = await user.getIdToken()
-      await setupNewCompany(idToken, trimmed, name || (user.displayName ?? ''), timezone)
+      const result = await setupNewCompany(idToken, trimmed, name || (user.displayName ?? ''), timezone)
+      if ('error' in result) {
+        if (result.error === 'companies_blocked') {
+          // An operator flipped the switch while this page was open.
+          setBlockedNow(true)
+        } else {
+          setCreateError('You already have an active company.')
+        }
+        return
+      }
 
       // Force token refresh to pick up the new activeCompanyId claim, then
       // re-issue the session cookie from it — same pattern SignupForm and
@@ -129,17 +138,8 @@ export default function NoCompanyView({
       const freshToken = await user.getIdToken(/* forceRefresh */ true)
       await createSession(freshToken)
       router.push('/bookings')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : ''
-      if (msg === 'companies_blocked') {
-        setBlockedNow(true)
-      } else {
-        // Production builds redact a Server Action's error message, so the
-        // refusal can arrive as a generic failure. Re-fetching the page props
-        // picks up the switch and swaps the form for the paused notice.
-        router.refresh()
-        setCreateError(msg === 'already-exists' ? 'You already have an active company.' : 'Could not create your company. Please try again.')
-      }
+    } catch {
+      setCreateError('Could not create your company. Please try again.')
     } finally {
       setCreating(false)
     }
@@ -263,7 +263,6 @@ export default function NoCompanyView({
             variant="companies"
             layout="embedded"
             email={email}
-            primary={{ label: 'I have an invite', href: '/signup?mode=invite' }}
             secondary={{ label: signingOut ? 'Signing out…' : 'Sign out', onClick: handleSignOut, disabled: signingOut }}
           />
         </div>
