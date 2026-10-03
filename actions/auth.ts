@@ -7,6 +7,7 @@ import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { toRole } from '@/lib/roles'
 import { PLAN_LIMITS } from '@/lib/subscription'
 import { INITIAL_COMPANY_STATS } from '@/lib/companyStats'
+import { getRegistrationFlags } from '@/lib/registrationFlags'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
@@ -215,6 +216,17 @@ export async function setupNewCompany(
     const repaired = await repairMissingClaims(uid, liveMemberships)
     if (repaired) return
     throw new Error('already-exists')
+  }
+
+  // Operator kill switch "New companies" (lib/registrationFlags.ts). Checked
+  // HERE — after the idempotency/repair branch above, before anything is
+  // written — so it blocks CREATING a company but never the claims repair for
+  // a user who already has one (that is recovery, not registration). The
+  // signup and no-company screens show the paused notice; this is what
+  // actually enforces it, since a Server Action can be called directly.
+  // Thrown message is matched by SignupForm / NoCompanyView.
+  if ((await getRegistrationFlags()).companiesBlocked) {
+    throw new Error('companies_blocked')
   }
 
   const companyRef = adminDb.collection('companies').doc()

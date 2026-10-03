@@ -12,6 +12,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
+const { mockGetRegistrationFlags } = vi.hoisted(() => ({
+  mockGetRegistrationFlags: vi.fn(),
+}))
+
+// The operator kill switches (lib/registrationFlags.ts). Open by default so
+// every pre-existing test below runs against an unblocked system; the
+// "companies blocked" describe at the end flips it.
+vi.mock('@/lib/registrationFlags', () => ({
+  getRegistrationFlags: mockGetRegistrationFlags,
+}))
+
 vi.mock('@/lib/firebase-admin', () => ({
   adminDb: {
     doc: vi.fn(),
@@ -117,6 +128,20 @@ function liveCompany(createdBy?: string) {
 }
 
 const DEAD_COMPANY = { exists: false, data: () => undefined } as never
+
+const FLAGS_OPEN = {
+  accountsBlocked: false,
+  accountsBlockedSince: null,
+  companiesBlocked: false,
+  companiesBlockedSince: null,
+}
+
+beforeEach(() => {
+  // Registered before the describes' own beforeEach, so it runs first. Their
+  // `vi.clearAllMocks()` strips implementations, which is why this is set in
+  // a top-level hook that runs again per test rather than once at import.
+  mockGetRegistrationFlags.mockResolvedValue(FLAGS_OPEN)
+})
 
 describe('setupNewCompany — initial stats map', () => {
   beforeEach(() => {
@@ -510,5 +535,63 @@ describe('setupNewCompany — refuses to repair claims against a company that is
       activeCompanyId: 'my-co',
       role: 'admin',
     })
+  })
+})
+
+
+/**
+ * Operator kill switch "New companies" (lib/registrationFlags.ts). The UI
+ * hides the form, but a Server Action can be called directly — this guard is
+ * what actually enforces the switch.
+ */
+describe('setupNewCompany — companiesBlocked kill switch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRegistrationFlags.mockResolvedValue({
+      ...FLAGS_OPEN,
+      companiesBlocked: true,
+      companiesBlockedSince: '2026-10-03T08:12:00.000Z',
+    })
+  })
+
+  it('throws companies_blocked and writes nothing', async () => {
+    const { batch } = wire()
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).rejects.toThrow('companies_blocked')
+
+    expect(batch.set).not.toHaveBeenCalled()
+    expect(batch.commit).not.toHaveBeenCalled()
+    expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
+  })
+
+  it('does not block a claims repair for a user who already has a company', async () => {
+    // Recovery, not registration: she founded this company and only her
+    // claims write failed. Blocking would strand her.
+    const { batch } = wire({
+      memberships: [{ companyId: 'live-co' }],
+      companyMembers: { 'live-co': { role: 'admin' } },
+    })
+    vi.mocked(getCompanyDoc).mockResolvedValue(liveCompany(UID))
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).resolves.toBeUndefined()
+
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, {
+      activeCompanyId: 'live-co',
+      role: 'admin',
+    })
+    expect(batch.commit).not.toHaveBeenCalled()
+  })
+
+  it('creates the company when only the accounts switch is on', async () => {
+    mockGetRegistrationFlags.mockResolvedValue({ ...FLAGS_OPEN, accountsBlocked: true })
+    const { batch } = wire()
+
+    await setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm')
+
+    expect(batch.commit).toHaveBeenCalled()
   })
 })
