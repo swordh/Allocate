@@ -63,6 +63,7 @@ type Data = Record<string, unknown>
 let companies: Record<string, Data>
 let stripeEvents: Set<string>
 let companyEvents: Record<string, Data>
+let failCompanyEventIds: Set<string>
 
 function applyDotUpdate(target: Data, updates: Record<string, unknown>) {
   for (const [key, value] of Object.entries(updates)) {
@@ -144,6 +145,7 @@ function wireAdminDb() {
       return {
         doc: (id: string) => ({
           set: async (data: Data) => {
+            if (failCompanyEventIds.has(id)) throw new Error(`simulated companyEvents write failure: ${id}`)
             companyEvents[id] = data
           },
         }),
@@ -216,6 +218,7 @@ beforeEach(() => {
   companies = {}
   stripeEvents = new Set()
   companyEvents = {}
+  failCompanyEventIds = new Set()
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
   wireAdminDb()
 })
@@ -471,5 +474,69 @@ describe('customer.subscription.updated — cancellation (#305)', () => {
     expect(companies['co1'].subscription).not.toHaveProperty('cancelAt')
     expect(companies['co1'].subscription).not.toHaveProperty('cancelAtPeriodEnd')
     expect(Object.keys(companyEvents)).toEqual([])
+  })
+
+  it('a thrown plan/status log write does not lose the cancellation row', async () => {
+    companies['co1'] = company({ plan: 'starter' })
+    failCompanyEventIds.add('evt_iso1')
+
+    await update('evt_iso1', 2000, { cancel_at: CANCEL_AT })
+
+    expect(companyEvents['evt_iso1']).toBeUndefined()
+    expect(companyEvents['evt_iso1:cancellation']).toMatchObject({ kind: 'cancellation_scheduled' })
+  })
+
+  it('a thrown cancellation log write does not lose the plan/status row', async () => {
+    companies['co1'] = company({ plan: 'starter' })
+    failCompanyEventIds.add('evt_iso2:cancellation')
+
+    await update('evt_iso2', 2000, { cancel_at: CANCEL_AT })
+
+    expect(companyEvents['evt_iso2:cancellation']).toBeUndefined()
+    expect(companyEvents['evt_iso2']).toMatchObject({ kind: 'plan_changed', toPlan: 'basic' })
+  })
+
+  it('subscription.deleted after a scheduled cancel clears the cancellation mirror and logs no cancellation row', async () => {
+    companies['co1'] = company({ cancelAtPeriodEnd: true, cancelAt: CANCEL_AT_ISO })
+
+    await callWebhook(
+      subscriptionEvent({
+        id: 'evt_ended',
+        created: 2000,
+        type: 'customer.subscription.deleted',
+        subscription: baseSub({ status: 'canceled', cancel_at: CANCEL_AT }) as unknown as Parameters<typeof subscriptionEvent>[0]['subscription'],
+      }),
+    )
+
+    expect(companies['co1'].subscription).toMatchObject({ status: 'canceled', cancelAtPeriodEnd: false, cancelAt: null })
+    expect(companyEvents['evt_ended:cancellation']).toBeUndefined()
+    expect(companyEvents['evt_ended']).toMatchObject({ kind: 'status_changed', toStatus: 'canceled' })
+  })
+
+  it('scheduled cancel -> deleted -> resubscribe writes no false cancellation_reverted row', async () => {
+    companies['co1'] = company()
+
+    await update('evt_seq1', 2000, { cancel_at: CANCEL_AT })
+    await callWebhook(
+      subscriptionEvent({
+        id: 'evt_seq2',
+        created: 3000,
+        type: 'customer.subscription.deleted',
+        subscription: baseSub({ status: 'canceled', cancel_at: CANCEL_AT }) as unknown as Parameters<typeof subscriptionEvent>[0]['subscription'],
+      }),
+    )
+    await callWebhook(
+      subscriptionEvent({
+        id: 'evt_seq3',
+        created: 4000,
+        type: 'customer.subscription.created',
+        subscription: baseSub({ id: 'sub_2', cancel_at: null }) as unknown as Parameters<typeof subscriptionEvent>[0]['subscription'],
+      }),
+    )
+
+    expect(companyEvents['evt_seq1:cancellation']).toMatchObject({ kind: 'cancellation_scheduled' })
+    expect(companyEvents['evt_seq2:cancellation']).toBeUndefined()
+    expect(companyEvents['evt_seq3:cancellation']).toBeUndefined()
+    expect(companies['co1'].subscription).toMatchObject({ status: 'active', cancelAtPeriodEnd: false, cancelAt: null })
   })
 })

@@ -287,25 +287,50 @@ async function handleSubscriptionUpsert(
   // stripeEventId is stored regardless: the `_stripeEvents` dedup ledger is
   // a read-then-write with no transaction, so concurrent redelivery of the
   // same event can still slip past it and call this function twice.
-  await logSubscriptionEvent({
-    companyId,
-    fromPlan,
-    toPlan: plan,
-    fromStatus,
-    toStatus: mappedStatus,
-    stripeEventId: eventId,
-    stripeSubscriptionId: subscription.id,
-    planUnresolved,
-  })
+  //
+  // Each log write is isolated: processStripeEvent swallows handler errors and
+  // the `_stripeEvents` ledger is already written, so Stripe never retries —
+  // and the mirror above already holds the new state, so no later event would
+  // log the transition either. If the first write threw past the second, the
+  // second row would be lost for good.
+  try {
+    await logSubscriptionEvent({
+      companyId,
+      fromPlan,
+      toPlan: plan,
+      fromStatus,
+      toStatus: mappedStatus,
+      stripeEventId: eventId,
+      stripeSubscriptionId: subscription.id,
+      planUnresolved,
+    })
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      action: 'subscription_event_log_failed',
+      stripeEventId: eventId,
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
-  await logCancellationEvent({
-    companyId,
-    from: fromCancelScheduled,
-    to: cancelScheduled,
-    cancelAt,
-    stripeEventId: eventId,
-    stripeSubscriptionId: subscription.id,
-  })
+  try {
+    await logCancellationEvent({
+      companyId,
+      from: fromCancelScheduled,
+      to: cancelScheduled,
+      cancelAt,
+      stripeEventId: eventId,
+      stripeSubscriptionId: subscription.id,
+    })
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      action: 'cancellation_event_log_failed',
+      kind: cancelScheduled ? 'cancellation_scheduled' : 'cancellation_reverted',
+      stripeEventId: eventId,
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   return companyDoc
 }
@@ -375,6 +400,11 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription, even
     // than leaving a stale pause behind for a future reader to trust.
     'subscription.pauseCollection':  null,
     'subscription.pauseResumesAt':   null,
+    // An ended subscription has no pending cancellation. Leaving the flag set
+    // would make the next subscription on this customer (resubscribe, cancel_at
+    // null) look like a revert and log a false `cancellation_reverted` row.
+    'subscription.cancelAtPeriodEnd': false,
+    'subscription.cancelAt':          null,
   })
 
   console.log('[webhooks/stripe]', {
