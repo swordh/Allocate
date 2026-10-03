@@ -1,0 +1,70 @@
+/* design_handoff_system_controls/Operator - System.dc.html (+ Mobil).
+   Values are the design's own; tokens are used where one matches exactly. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  padding: 24px 4px 48px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--fw-bold);
+  font-size: 34px;
+  letter-spacing: -0.014em;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.titleNote {
+  margin: 0;
+  max-width: 300px;
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-pale);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 0 0 40px;
+    gap: 26px;
+  }
+
+  .titleRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+  }
+
+  .title {
+    font-size: 27px;
+    letter-spacing: -0.012em;
+  }
+
+  /* The mobile design shows no explanatory line under the title. */
+  .titleNote {
+    display: none;
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
