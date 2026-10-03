@@ -27,6 +27,7 @@ export interface CompanySubscription {
   currentPeriodEnd: Timestamp | null;
   trialEnd: Timestamp | null;
   cancelAtPeriodEnd: boolean;
+  cancelAt: string | null;
   limits: PlanLimits;
 }
 

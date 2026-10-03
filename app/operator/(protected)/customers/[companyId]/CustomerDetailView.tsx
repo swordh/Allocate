@@ -14,6 +14,7 @@ interface Subscription {
   plan: string
   currentPeriodEnd: string | null
   cancelAtPeriodEnd: boolean
+  cancelAt?: string | null
   trialEnd: string | null
   interval: string | null
   limits: { equipment: number | null; users: number | null }
@@ -181,7 +182,7 @@ function buildSubRows(company: Company): SubRow[] {
     { label: 'Renews', value: formatDate(subscription.currentPeriodEnd) },
   ]
   if (subscription.cancelAtPeriodEnd) {
-    rows.push({ label: 'Cancellation', value: 'Cancels at period end', className: styles.statusPastDue })
+    rows.push({ label: 'Cancellation', value: `Cancels ${formatDate(subscription.cancelAt ?? subscription.currentPeriodEnd)}`, className: styles.statusPastDue })
   }
   if (subscription.trialEnd) {
     rows.push({ label: 'Trial ends', value: formatDate(subscription.trialEnd) })

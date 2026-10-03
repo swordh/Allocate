@@ -25,7 +25,13 @@ export interface Subscription {
   currentPeriodEnd: string        // ISO string
   limits: { equipment: number; users: number }
   trialEnd?: string               // ISO string
+  /**
+   * Cancellation scheduled — true when Stripe reports `cancel_at` OR
+   * `cancel_at_period_end`. The Billing Portal only sets `cancel_at`, so the
+   * Stripe flag alone would never be true (#305).
+   */
   cancelAtPeriodEnd?: boolean
+  cancelAt?: string | null        // ISO string, when the scheduled cancellation takes effect
   interval?: BillingInterval
   /**
    * Mirrors Stripe's `subscription.pause_collection`. Named after Stripe's own

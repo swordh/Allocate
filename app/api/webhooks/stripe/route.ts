@@ -106,6 +106,42 @@ async function logSubscriptionEvent(params: {
   })
 }
 
+// #305: Cancellation scheduled / reverted. Separate row from the plan/status
+// row (id `{eventId}:cancellation`) because one Stripe event can carry both a
+// plan change and a cancellation change, and each needs its own deterministic
+// id so a redelivery collapses onto the same documents.
+async function logCancellationEvent(params: {
+  companyId: string
+  from: boolean
+  to: boolean
+  cancelAt: string | null
+  stripeEventId: string
+  stripeSubscriptionId: string
+}) {
+  const { companyId, from, to, cancelAt, stripeEventId, stripeSubscriptionId } = params
+
+  // Only log a real transition. customer.subscription.updated fires for many
+  // unrelated reasons; an unchanged cancellation state must not add rows.
+  if (from === to) return
+
+  const kind = to ? 'cancellation_scheduled' : 'cancellation_reverted'
+
+  await adminDb.collection('companyEvents').doc(`${stripeEventId}:cancellation`).set({
+    companyId,
+    kind,
+    at: FieldValue.serverTimestamp(),
+    effectiveAt: to ? cancelAt : null,
+    stripeEventId,
+    stripeSubscriptionId,
+  })
+
+  console.log('[webhooks/stripe]', {
+    action: 'cancellation_event_logged',
+    kind,
+    companyId,
+  })
+}
+
 // #96: Only writes stripeCustomerId — subscription fields are the sole responsibility
 // of handleSubscriptionUpsert (triggered by customer.subscription.created/updated).
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
@@ -184,6 +220,15 @@ async function handleSubscriptionUpsert(
   // log below. Must happen before `update()`, not after.
   const fromPlan   = companyDoc.data()?.subscription?.plan as string | undefined
   const fromStatus = companyDoc.data()?.subscription?.status as string | undefined
+  const fromCancelScheduled = companyDoc.data()?.subscription?.cancelAtPeriodEnd === true
+
+  // #305: The Billing Portal schedules a cancellation by setting `cancel_at`
+  // (= period end) and leaves `cancel_at_period_end` false (verified in alpha,
+  // API version 2024-06-20). Either signal means "cancellation scheduled".
+  const cancelScheduled = subscription.cancel_at != null || subscription.cancel_at_period_end === true
+  const cancelAt = subscription.cancel_at
+    ? new Date(subscription.cancel_at * 1000).toISOString()
+    : null
 
   const mappedStatus = mapStripeStatus(subscription.status)
   const item    = subscription.items.data[0]
@@ -217,7 +262,8 @@ async function handleSubscriptionUpsert(
     'subscription.currentPeriodEnd':     item?.current_period_end
       ? new Date(item.current_period_end * 1000).toISOString()
       : null,
-    'subscription.cancelAtPeriodEnd':    subscription.cancel_at_period_end,
+    'subscription.cancelAtPeriodEnd':    cancelScheduled,
+    'subscription.cancelAt':             cancelAt,
     'subscription.trialEnd':             subscription.trial_end
       ? new Date(subscription.trial_end * 1000).toISOString()
       : null,
@@ -241,16 +287,50 @@ async function handleSubscriptionUpsert(
   // stripeEventId is stored regardless: the `_stripeEvents` dedup ledger is
   // a read-then-write with no transaction, so concurrent redelivery of the
   // same event can still slip past it and call this function twice.
-  await logSubscriptionEvent({
-    companyId,
-    fromPlan,
-    toPlan: plan,
-    fromStatus,
-    toStatus: mappedStatus,
-    stripeEventId: eventId,
-    stripeSubscriptionId: subscription.id,
-    planUnresolved,
-  })
+  //
+  // Each log write is isolated: processStripeEvent swallows handler errors and
+  // the `_stripeEvents` ledger is already written, so Stripe never retries —
+  // and the mirror above already holds the new state, so no later event would
+  // log the transition either. If the first write threw past the second, the
+  // second row would be lost for good.
+  try {
+    await logSubscriptionEvent({
+      companyId,
+      fromPlan,
+      toPlan: plan,
+      fromStatus,
+      toStatus: mappedStatus,
+      stripeEventId: eventId,
+      stripeSubscriptionId: subscription.id,
+      planUnresolved,
+    })
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      action: 'subscription_event_log_failed',
+      stripeEventId: eventId,
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  try {
+    await logCancellationEvent({
+      companyId,
+      from: fromCancelScheduled,
+      to: cancelScheduled,
+      cancelAt,
+      stripeEventId: eventId,
+      stripeSubscriptionId: subscription.id,
+    })
+  } catch (err) {
+    console.error('[webhooks/stripe]', {
+      action: 'cancellation_event_log_failed',
+      kind: cancelScheduled ? 'cancellation_scheduled' : 'cancellation_reverted',
+      stripeEventId: eventId,
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   return companyDoc
 }
@@ -269,9 +349,11 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription, even
   }
 }
 
-// The Billing Portal's "cancel at period end" flow — and every other path
-// that actually ends a subscription — arrives here as
-// customer.subscription.deleted, NOT as an `updated` event. This is the
+// A subscription that actually ends arrives here as
+// customer.subscription.deleted. Note the Billing Portal's cancel does NOT:
+// it arrives earlier as customer.subscription.updated with `cancel_at` set
+// (see handleSubscriptionUpsert / #305); `deleted` only fires once the period
+// has run out. Ending a subscription is the
 // single most interesting transition an operator watches a feed for, so it
 // must log through the same helper as handleSubscriptionUpsert, deriving
 // `toStatus` the same way (mapStripeStatus), not a hardcoded string.
@@ -318,6 +400,11 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription, even
     // than leaving a stale pause behind for a future reader to trust.
     'subscription.pauseCollection':  null,
     'subscription.pauseResumesAt':   null,
+    // An ended subscription has no pending cancellation. Leaving the flag set
+    // would make the next subscription on this customer (resubscribe, cancel_at
+    // null) look like a revert and log a false `cancellation_reverted` row.
+    'subscription.cancelAtPeriodEnd': false,
+    'subscription.cancelAt':          null,
   })
 
   console.log('[webhooks/stripe]', {

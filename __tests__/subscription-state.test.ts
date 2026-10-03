@@ -132,6 +132,21 @@ describe('getSubStateDisplay', () => {
     expect(d.key).toBe('CANCELED')
     expect(d.cta).toBe('RESUME PLAN')
   })
+
+  it('CANCELED uses cancelAt (not currentPeriodEnd) for access end when they differ (#305)', () => {
+    const d = getSubStateDisplay(
+      sub({ status: 'active', cancelAtPeriodEnd: true, cancelAt: '2026-10-20T00:00:00.000Z' }),
+      'Nordfilm AB',
+    )
+    expect(d.cycle).toBe('Access ends Oct 20, 2026')
+    expect(d.notice).toContain('Oct 20, 2026')
+    expect(d.notice).not.toContain('Sep 5, 2026')
+  })
+
+  it('CANCELED falls back to currentPeriodEnd when cancelAt is absent', () => {
+    const d = getSubStateDisplay(sub({ status: 'active', cancelAtPeriodEnd: true }), 'Nordfilm AB')
+    expect(d.cycle).toBe('Access ends Sep 5, 2026')
+  })
 })
 
 describe('getPlanCardCta', () => {
