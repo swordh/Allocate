@@ -12,7 +12,7 @@
  *     here, same as everywhere else a requester is shown to a customer.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { wireDb, type DocMap } from '../helpers/firestore'
 
 vi.mock('@/lib/firebase-admin', () => ({
@@ -31,7 +31,12 @@ const REQUEST_ID = 'req-1'
 const COMPANY_ID = 'company-A'
 const COMPANY_NAME = 'Nordfilm AB'
 
-const FUTURE = { toDate: () => new Date('2026-09-28T00:00:00.000Z') }
+// The clock is pinned to NOW in beforeEach and FUTURE is relative to it,
+// because lookupCancelToken compares expiresAt against Date.now(). A hardcoded
+// absolute date here rotted once already (it was only four days in the future
+// when written).
+const NOW = new Date('2026-06-01T12:00:00.000Z')
+const FUTURE = { toDate: () => new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000) }
 
 function wire(opts: {
   ledger?: Record<string, unknown> | null
@@ -47,6 +52,13 @@ function wire(opts: {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Fake only Date so the mocked Firestore promises are unaffected.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('lookupCancelToken — issue #361 timezone', () => {
@@ -82,6 +94,17 @@ describe('lookupCancelToken — issue #361 timezone', () => {
     wire({ token: { ...BASE_TOKEN, usedAt: FUTURE }, ledger: BASE_LEDGER, company: { name: COMPANY_NAME } })
     const result = await lookupCancelToken(TOKEN)
     expect(result.state).toBe('used')
+    expect(result.timezone).toBeUndefined()
+  })
+
+  it('returns expired (and no timezone) once expiresAt is before the pinned clock', async () => {
+    wire({
+      token: { ...BASE_TOKEN, expiresAt: { toDate: () => new Date(NOW.getTime() - 1) } },
+      ledger: BASE_LEDGER,
+      company: { name: COMPANY_NAME, preferences: { timezone: 'Europe/Stockholm' } },
+    })
+    const result = await lookupCancelToken(TOKEN)
+    expect(result.state).toBe('expired')
     expect(result.timezone).toBeUndefined()
   })
 })
