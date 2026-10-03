@@ -27,11 +27,13 @@ interface AuthCardProps {
    * in flow, so leave this unset there.
    */
   stickyActions?: ReactNode
+  /** Right-aligned slot in the wordmark row, e.g. the signed-in email on the "companies paused" screen. */
+  wordmarkAside?: ReactNode
   children: ReactNode
 }
 
 /** Fixed-width card with the ALLOCATE wordmark as its first child. Used inside `AuthShell`. */
-export default function AuthCard({ width, gap = 26, stickyActions, children }: AuthCardProps) {
+export default function AuthCard({ width, gap = 26, stickyActions, wordmarkAside, children }: AuthCardProps) {
   const env = process.env.NEXT_PUBLIC_APP_ENV
   const envLabel = env ? ENV_LABELS[env] : undefined
 
@@ -47,6 +49,7 @@ export default function AuthCard({ width, gap = 26, stickyActions, children }: A
         {envLabel && env && (
           <span className={`${styles.envBadge} ${ENV_CLASSES[env] ?? ''}`}>{envLabel}</span>
         )}
+        {wordmarkAside && <span className={styles.wordmarkAside}>{wordmarkAside}</span>}
       </div>
 
       {children}

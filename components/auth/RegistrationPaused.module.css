@@ -1,0 +1,117 @@
+/* design_handoff_system_controls: Konton pausade / Företag pausade (+ Mobil).
+   The card (440px column, 22px gaps) comes from AuthCard; this file styles
+   what is inside it. */
+
+.embedded {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--accent);
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 36px;
+  line-height: 1.05;
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+/* In the "New company" tab the "Create account" title sits right above, so
+   the paused heading steps down rather than shouting twice. */
+.headingEmbedded {
+  font-size: 24px;
+}
+
+@media (max-width: 480px) {
+  .heading {
+    font-size: 30px;
+  }
+
+  .headingEmbedded {
+    font-size: 24px;
+  }
+}
+
+.lead {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body-loose);
+  color: var(--text-tertiary);
+  text-wrap: pretty;
+}
+
+.infoBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft);
+}
+
+.infoLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--text-weak);
+}
+
+.infoText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  /* Mobile design pushes the buttons to the bottom of the screen. */
+  .actions {
+    margin-top: auto;
+  }
+}
+
+.questions {
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  color: var(--text-faint);
+}
+
+.questions a {
+  color: var(--accent);
+}
+
+.questions a:hover {
+  color: var(--accent-hover);
+}

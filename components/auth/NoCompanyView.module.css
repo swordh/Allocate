@@ -195,3 +195,10 @@
     padding: 22px;
   }
 }
+
+/* The "New companies are paused" notice (components/auth/RegistrationPaused,
+   embedded layout) sits in the same 440px column the auth screens use. */
+.pausedBlock {
+  width: 100%;
+  max-width: 440px;
+}

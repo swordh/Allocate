@@ -18,6 +18,7 @@ import Field from '@/components/ui/Field'
 import Select from '@/components/ui/Select'
 import ErrorBanner from '@/components/ui/ErrorBanner'
 import PasswordMeter from '@/components/ui/PasswordMeter'
+import RegistrationPaused from './RegistrationPaused'
 import styles from './SignupForm.module.css'
 
 const MIN_PASSWORD_LENGTH = 8
@@ -67,7 +68,24 @@ function mapAcceptInviteError(err: unknown): string {
   }
 }
 
-export default function SignupForm() {
+interface SignupFormProps {
+  /**
+   * The operator "New companies" kill switch (lib/registrationFlags.ts), read
+   * server-side by the signup page. While true the "New company" tab shows the
+   * paused notice instead of the form; the invite tab is unaffected. The
+   * server-side guard in `setupNewCompany` is what actually enforces it.
+   */
+  companiesBlocked?: boolean
+  /**
+   * The operator "New accounts" kill switch. The signup page already swaps
+   * the whole form for the paused screen unless the visitor is on the invite
+   * path; this covers the one way back into the create form from there — the
+   * "New company" tab — which would otherwise sign up a brand-new account.
+   */
+  accountsBlocked?: boolean
+}
+
+export default function SignupForm({ companiesBlocked = false, accountsBlocked = false }: SignupFormProps) {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
@@ -75,7 +93,11 @@ export default function SignupForm() {
   const emailParam       = searchParams.get('email') ?? ''
   const inviteTokenParam = extractInviteToken(redirectParam)
 
-  const [mode, setMode] = useState<Mode>(inviteTokenParam ? 'invite' : 'create')
+  // `?mode=invite` opens the invite tab directly — the "Accounts paused"
+  // screen links here, since invitations keep working while sign-ups are off.
+  const [mode, setMode] = useState<Mode>(
+    inviteTokenParam || searchParams.get('mode') === 'invite' ? 'invite' : 'create',
+  )
 
   // ── Invite validation ─────────────────────────────────────────────────
   const [inviteInput,  setInviteInput]  = useState(inviteTokenParam ?? '')
@@ -132,6 +154,20 @@ export default function SignupForm() {
   const [error,       setError]       = useState<string | null>(null)
   const [emailTaken,  setEmailTaken]  = useState(false)
   const [loading,     setLoading]     = useState(false)
+  // Set when the server refused company creation (`companies_blocked`) even
+  // though the page loaded with the switch off — an operator flipped it while
+  // this form was open.
+  const [companiesBlockedNow, setCompaniesBlockedNow] = useState(false)
+
+  // Which paused notice replaces the create form, if any. Accounts wins: with
+  // sign-ups off, "New company" cannot start either, since it creates the
+  // account first.
+  const pausedVariant: 'accounts' | 'companies' | null =
+    mode !== 'create' ? null
+    : accountsBlocked ? 'accounts'
+    : companiesBlocked || companiesBlockedNow ? 'companies'
+    : null
+  const createPaused = pausedVariant !== null
 
   const effectiveEmail = mode === 'invite' && inviteValid && inviteResult?.ok ? inviteResult.email : email
 
@@ -236,7 +272,16 @@ export default function SignupForm() {
       const msg = err instanceof Error ? err.message : ''
       if (msg === 'already-exists') {
         setError('This account is already set up. Please sign in.')
+      } else if (msg === 'companies_blocked') {
+        // The orphan Auth user was deleted above, exactly as on the invite
+        // failure path — nothing is left behind. Show the paused notice.
+        setCompaniesBlockedNow(true)
       } else {
+        // Production builds redact the message of an error thrown from a
+        // Server Action, so `companies_blocked` can arrive here as a generic
+        // failure. Re-fetching the page props picks up the switch, and the
+        // paused notice then replaces the form.
+        router.refresh()
         setError('Failed to set up your account. Please try again.')
       }
       setLoading(false)
@@ -289,7 +334,7 @@ export default function SignupForm() {
 
   return (
     <AuthShell>
-      <AuthCard width={440} gap={22} stickyActions={actions}>
+      <AuthCard width={440} gap={22} stickyActions={createPaused ? undefined : actions}>
         <h1 className={styles.title}>Create account</h1>
 
         <div className={styles.tabs}>
@@ -309,7 +354,16 @@ export default function SignupForm() {
           </button>
         </div>
 
-        <form id={FORM_ID} className={styles.form} onSubmit={handleSubmit} noValidate>
+        {createPaused && (
+          <RegistrationPaused
+            variant={pausedVariant}
+            layout="embedded"
+            primary={{ label: 'I have an invite', onClick: () => switchMode('invite') }}
+            secondary={{ label: 'Sign in', href: '/login' }}
+          />
+        )}
+
+        <form id={FORM_ID} className={styles.form} onSubmit={handleSubmit} noValidate hidden={createPaused}>
           {error && (
             <ErrorBanner
               tone="danger"
