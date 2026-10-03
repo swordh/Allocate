@@ -110,7 +110,7 @@ function wire(d: DocMap) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION as any)
+  vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION as never)
   wire(baseDocs())
 })
 
@@ -118,7 +118,7 @@ beforeEach(() => {
 
 describe('auth', () => {
   it('returns Unauthorized for non-admin', async () => {
-    vi.mocked(getVerifiedSession).mockResolvedValue(NON_ADMIN_SESSION as any)
+    vi.mocked(getVerifiedSession).mockResolvedValue(NON_ADMIN_SESSION as never)
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 
@@ -171,7 +171,7 @@ describe('validation', () => {
     const result = await updateEquipmentWithUnits(
       EQUIPMENT_ID,
       EQUIPMENT_FIELDS,
-      [{ ...UNIT_UPDATE, status: 'broken' as any }],
+      [{ ...UNIT_UPDATE, status: 'broken' as never }],
       [], []
     )
     expect(result).toEqual({ error: expect.stringContaining('status') })
@@ -182,7 +182,7 @@ describe('validation', () => {
       EQUIPMENT_ID,
       EQUIPMENT_FIELDS,
       [],
-      [{ label: 'New', serialNumber: null, status: 'broken' as any, notes: null, availableForBooking: true }],
+      [{ label: 'New', serialNumber: null, status: 'broken' as never, notes: null, availableForBooking: true }],
       []
     )
     expect(result).toEqual({ error: expect.stringContaining('status') })
@@ -219,7 +219,7 @@ describe('validation', () => {
   })
 
   it('rejects crew role (non-admin)', async () => {
-    vi.mocked(getVerifiedSession).mockResolvedValue({ ...ADMIN_SESSION, role: 'crew' } as any)
+    vi.mocked(getVerifiedSession).mockResolvedValue({ ...ADMIN_SESSION, role: 'crew' } as never)
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
     expect(result).toEqual({ error: 'Unauthorized' })
   })

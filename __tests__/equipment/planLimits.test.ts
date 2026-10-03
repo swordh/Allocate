@@ -189,6 +189,23 @@ describe('createEquipment — plan limit enforcement', () => {
     expect(tx.update).not.toHaveBeenCalled()
   })
 
+  it('creates a units type for a company already over its limit (adding nothing is never blocked)', async () => {
+    // Existing customers can sit above the limit after the counter moved to items (#284).
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 40)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'units' }))
+
+    expect(result).toEqual({ id: newDocId })
+  })
+
+  it('blocks a units type when the subscription has lapsed, even though it adds nothing', async () => {
+    wireCreateEquipmentTransaction('canceled', 'starter', 25, 0)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'units' }))
+
+    expect((result as { error: string }).error).toContain('Subscription')
+  })
+
   it('increments the counter by totalQuantity for a quantity item', async () => {
     const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 5)
 
