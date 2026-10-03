@@ -96,7 +96,7 @@ function formatDate(iso: string | null | undefined): string {
 
 function formatFeedDate(atIso: string): string {
   if (isSameOperatorDay(new Date(atIso), new Date())) return `TODAY ${formatOperatorTime(atIso)}`
-  return `${formatDate(atIso)}`
+  return formatDate(atIso)
 }
 
 function statusColor(status: string): string {
@@ -112,6 +112,7 @@ interface Metric { label: string; value: string; sub: string }
 
 function buildMetrics(company: Company, members: Member[], stats: Stats, teamUnavailable: boolean, bookingHistoryUnavailable: boolean): Metric[] {
   const { limits } = company.subscription
+  const customerMonths = company.createdAt ? monthsSinceOperator(company.createdAt) : null
   return [
     {
       label: 'MEMBERS',
@@ -153,7 +154,7 @@ function buildMetrics(company: Company, members: Member[], stats: Stats, teamUna
     {
       label: 'CUSTOMER SINCE',
       value: company.createdAt ? formatOperatorMonthYear(company.createdAt) : '—',
-      sub: company.createdAt ? `${monthsSinceOperator(company.createdAt)} MONTHS` : '—',
+      sub: customerMonths === null ? '—' : `${customerMonths} MONTHS`,
     },
   ]
 }

@@ -1,12 +1,12 @@
 /**
- * Operator views render every date in UTC (issue #292). The fixtures below are
- * fixed instants and the suite never sets `TZ` — the assertions must hold
- * whatever zone the machine runs in. Run it under `TZ=Europe/Stockholm` and
- * `TZ=America/Los_Angeles` to see the guard bite: a zone-less format would
- * show 11 SEP / 15:42 / 07:42 here.
+ * Operator views render every date in UTC (issue #292). The suite forces a
+ * zone that is never UTC, so a zone-less format fails here whatever zone the
+ * machine or CI runs in: in Stockholm the issue's instant would show
+ * 11 SEP / 00:42 instead of 10 SEP / 22:42. The sanity test below fails if
+ * the override ever stops taking effect.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   OPERATOR_ZONE,
   formatOperatorDate,
@@ -18,12 +18,25 @@ import {
   monthsSinceOperator,
 } from '@/lib/operatorDates'
 
+// ES imports are hoisted above plain statements, and the module under test
+// builds its Intl.DateTimeFormat at load — so the zone has to be set in
+// vi.hoisted, which runs before the imports. Node re-reads TZ at runtime, so
+// this works in the forks pool without a command-line variable.
+vi.hoisted(() => {
+  process.env.TZ = 'Europe/Stockholm'
+})
+
 // The case from the issue: 22:42 UTC is already 11 Sep in Stockholm.
 const ISSUE_INSTANT = '2026-09-10T22:42:13.150Z'
 const NEW_YEARS_EVE = '2026-12-31T23:30:00Z'
 const AFTERNOON = '2026-09-05T14:32:00Z'
 
 describe('operatorDates', () => {
+  it('runs under a non-UTC machine zone, so the guards below mean something', () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('Europe/Stockholm')
+    expect(new Date(ISSUE_INSTANT).getDate()).toBe(11)
+  })
+
   it('uses UTC as the operator zone', () => {
     expect(OPERATOR_ZONE).toBe('UTC')
   })
@@ -93,6 +106,11 @@ describe('operatorDates', () => {
     it('counts across a year boundary and within a month', () => {
       expect(monthsSinceOperator('2025-11-15T12:00:00Z', new Date('2026-02-01T00:00:00Z'))).toBe(3)
       expect(monthsSinceOperator('2026-09-01T00:00:00Z', new Date('2026-09-30T23:59:59Z'))).toBe(0)
+    })
+
+    it('returns null for an invalid date or an invalid now, never NaN', () => {
+      expect(monthsSinceOperator('garbage', new Date('2026-09-10T00:00:00Z'))).toBeNull()
+      expect(monthsSinceOperator('2026-01-01T00:00:00Z', new Date(NaN))).toBeNull()
     })
 
     it('never goes negative', () => {

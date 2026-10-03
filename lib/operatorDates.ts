@@ -94,6 +94,8 @@ export function formatOperatorTime(iso: string): string {
   return formatTimeInZone(iso, OPERATOR_ZONE)
 }
 
+// The getUTC* calls below are tied to OPERATOR_ZONE being 'UTC' — change them with it.
+
 /** True when both instants fall on the same UTC calendar date. */
 export function isSameOperatorDay(a: Date, b: Date): boolean {
   return (
@@ -103,9 +105,17 @@ export function isSameOperatorDay(a: Date, b: Date): boolean {
   )
 }
 
-/** Whole UTC calendar months from `iso` to `now`, never negative. */
-export function monthsSinceOperator(iso: string, now: Date = new Date()): number {
+/**
+ * Whole UTC calendar months from `iso` to `now`, never negative. Null when
+ * either date is invalid, so the caller can render '—' instead of "NaN".
+ *
+ * The default `now = new Date()` is read at render, the same accepted class as
+ * formatFeedDate's TODAY check: the server render and the hydration only
+ * disagree if 00:00 UTC on the 1st falls between them.
+ */
+export function monthsSinceOperator(iso: string, now: Date = new Date()): number | null {
   const start = new Date(iso)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(now.getTime())) return null
   return Math.max(
     0,
     (now.getUTCFullYear() - start.getUTCFullYear()) * 12 + (now.getUTCMonth() - start.getUTCMonth()),
