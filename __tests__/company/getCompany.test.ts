@@ -174,3 +174,25 @@ describe('getCompany — stripeSubscriptionId mapping', () => {
     expect(company?.subscription.stripeSubscriptionId).toBeUndefined()
   })
 })
+
+// ── cancelAt mapping (#305) ──────────────────────────────────────────────────
+
+describe('getCompany — cancelAt mapping', () => {
+  it('maps subscription.cancelAt through from the Firestore mirror', async () => {
+    wireCompanyDoc('co-cancel-1', {
+      name: 'Cancelling AB',
+      stripeCustomerId: 'cus_8',
+      subscription: {
+        status: 'active',
+        plan: 'basic',
+        cancelAtPeriodEnd: true,
+        cancelAt: '2026-11-01T00:00:00.000Z',
+      },
+    })
+
+    const company = await getCompany('co-cancel-1')
+
+    expect(company?.subscription.cancelAtPeriodEnd).toBe(true)
+    expect(company?.subscription.cancelAt).toBe('2026-11-01T00:00:00.000Z')
+  })
+})

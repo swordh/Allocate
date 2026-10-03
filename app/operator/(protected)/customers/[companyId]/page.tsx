@@ -5,6 +5,7 @@ import CustomerDetailView from './CustomerDetailView'
 import DeletedCompanyView from './DeletedCompanyView'
 import { notFound } from 'next/navigation'
 import { iso, isoOrNull, tsToMillis, isoToMillis, unixSecondsToMillis } from '@/lib/firestore-timestamps'
+import { formatDateFullInZone } from '@/lib/dates'
 import { queryDeletionsByCompany } from '@/lib/operatorDeletionQueries'
 import { sortFeed, type FeedEntry } from './activity'
 
@@ -240,14 +241,44 @@ export default async function CustomerDetailPage({
     const d = e.data()
     const at = tsToMillis(d.at)
     if (at === null) continue
-    feed.push({
-      kind: d.kind === 'status_changed' ? 'status_changed' : 'plan_changed',
-      at,
-      atIso: new Date(at).toISOString(),
-      text: d.kind === 'status_changed'
-        ? `Status changed ${d.fromStatus ?? '—'} → ${d.toStatus} (plan: ${d.toPlan})`
-        : `Plan changed ${d.fromPlan ?? '—'} → ${d.toPlan} (${d.fromStatus ?? '—'} → ${d.toStatus})`,
-    })
+    const atIso = new Date(at).toISOString()
+    switch (d.kind) {
+      case 'status_changed':
+        feed.push({
+          kind: 'status_changed',
+          at,
+          atIso,
+          text: `Status changed ${d.fromStatus ?? '—'} → ${d.toStatus} (plan: ${d.toPlan})`,
+        })
+        break
+      case 'plan_changed':
+        feed.push({
+          kind: 'plan_changed',
+          at,
+          atIso,
+          text: `Plan changed ${d.fromPlan ?? '—'} → ${d.toPlan} (${d.fromStatus ?? '—'} → ${d.toStatus})`,
+        })
+        break
+      case 'cancellation_scheduled': {
+        const effectiveIso = isoOrNull(d.effectiveAt)
+        feed.push({
+          kind: 'cancellation_scheduled',
+          at,
+          atIso,
+          text: effectiveIso
+            ? `Cancellation scheduled — ends ${formatDateFullInZone(effectiveIso, 'UTC')}`
+            : 'Cancellation scheduled',
+        })
+        break
+      }
+      case 'cancellation_reverted':
+        feed.push({ kind: 'cancellation_reverted', at, atIso, text: 'Cancellation reverted' })
+        break
+      default:
+        // Unknown kind from a newer writer — skip rather than mislabel it
+        // as a plan change.
+        continue
+    }
   }
 
   const sortedFeed = sortFeed(feed)
@@ -265,6 +296,7 @@ export default async function CustomerDetailPage({
           plan: data.subscription?.plan ?? '',
           currentPeriodEnd: isoOrNull(data.subscription?.currentPeriodEnd),
           cancelAtPeriodEnd: data.subscription?.cancelAtPeriodEnd ?? false,
+          cancelAt: isoOrNull(data.subscription?.cancelAt),
           trialEnd: isoOrNull(data.subscription?.trialEnd),
           interval: data.subscription?.interval ?? null,
           // Not guaranteed present — render as unknown, never a fabricated 0.
