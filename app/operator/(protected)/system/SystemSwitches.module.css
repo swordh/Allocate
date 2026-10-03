@@ -174,18 +174,6 @@
   color: #4f8a5b;
 }
 
-.cancelLink {
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
 .modalContent {
   display: flex;
   flex-direction: column;
@@ -290,7 +278,8 @@
   border-top-color: rgba(229, 72, 77, 0.4);
 }
 
-/* Sheet's eyebrow takes the tag colour; its dismiss link stays neutral. */
+/* Sheet's eyebrow takes the tag colour. Its header dismiss (✕) is hidden: the
+   design has no such control — BACK in the footer, the scrim and Escape close it. */
 .sheetPanel > div:first-child > div > span:first-child {
   color: #4f8a5b;
 }
@@ -300,9 +289,7 @@
 }
 
 .sheetPanel > div:first-child > button {
-  color: var(--text-muted);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  display: none;
 }
 
 .sheetBody {
@@ -367,6 +354,7 @@
   }
 
   .segment {
+    min-height: 44px;
     padding: 13px 0;
     font-size: var(--fs-label);
     text-align: center;

@@ -214,7 +214,6 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
           onClose={close}
           eyebrow={tag}
           title={title}
-          dismissLabel="CANCEL ✕"
           className={`${switchStyles.sheetPanel} ${willBlock ? switchStyles.sheetBlocking : ''}`}
           footer={
             <div className={switchStyles.sheetFooter}>
@@ -242,9 +241,6 @@ export default function SystemSwitches({ flags }: SystemSwitchesProps) {
             <span className={`${switchStyles.tag} ${willBlock ? switchStyles.tagBlock : switchStyles.tagReopen}`}>
               {tag}
             </span>
-            <button type="button" className={switchStyles.cancelLink} onClick={close}>
-              CANCEL ✕
-            </button>
           </div>
           <div className={switchStyles.modalContent}>
             <h2 className={switchStyles.confirmTitle}>{title}</h2>
