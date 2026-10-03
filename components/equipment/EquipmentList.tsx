@@ -523,7 +523,7 @@ export default function EquipmentList({
       <PageHeader
         title="Equipment"
         size="compact"
-        meta={`${totals.types} TYPES · ${totals.units} UNITS`}
+        meta={`${totals.types} TYPES · ${totals.units} ITEMS`}
         actions={
           canEdit ? (
             // Desktop only — on mobile the hamburger menu already carries this
