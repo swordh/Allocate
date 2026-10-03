@@ -28,7 +28,20 @@ export function useEquipment(companyId: string, opts?: UseEquipmentOpts) {
         )
     const unsubEquipment = onSnapshot(eqQuery, (snapshot) => {
       const map = new Map<string, Equipment>()
-      snapshot.docs.forEach((doc) => map.set(doc.id, { id: doc.id, active: true, ...doc.data() } as Equipment))
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data()
+        // Same defaults as lib/queries/equipment.ts: a type written before
+        // trackingType existed is a units type. Without this it would read as
+        // a quantity type here (and count NaN with no totalQuantity) while the
+        // server's plan counter counts its units.
+        map.set(doc.id, {
+          id: doc.id,
+          active: true,
+          ...data,
+          trackingType: data.trackingType ?? 'units',
+          totalQuantity: Number.isInteger(data.totalQuantity) ? data.totalQuantity : 1,
+        } as Equipment)
+      })
       setEquipmentMap(map)
       setLoadingEquipment(false)
     }, (err) => { setError(err as Error); setLoadingEquipment(false) })
