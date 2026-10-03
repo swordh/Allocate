@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import { useCategories } from '@/hooks/useCategories'
@@ -22,6 +21,7 @@ import Glyph from '@/components/ui/Glyph'
 import Modal from '@/components/ui/Modal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
+import ErrorBanner from '@/components/ui/ErrorBanner'
 import EquipmentPanel, {
   type PanelDraft,
   type PanelState,
@@ -156,8 +156,13 @@ export default function EquipmentList({
   const [forcePrompt, setForcePrompt] = useState<{ count: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [panelError, setPanelError] = useState<string | null>(null)
-  /** Failure of an inline action that has no panel to show it in (the quantity steppers). */
-  const [inlineError, setInlineError] = useState<string | null>(null)
+  /**
+   * Failure of an inline action that has no panel to show it in (the quantity
+   * steppers). Tagged with the item count it happened at and only shown while
+   * that count still holds: once the count moves (a later action succeeded, or
+   * something was removed) the message is stale and disappears by itself.
+   */
+  const [inlineError, setInlineError] = useState<{ message: string; count: number } | null>(null)
 
   const categoryNames = useMemo(() => {
     const fromCategories = categories.map((c) => c.name)
@@ -176,6 +181,7 @@ export default function EquipmentList({
     setDraft(next.draft)
     setInitialDraft(next.draft)
     setPanelError(null)
+    setInlineError(null)
   }
 
   function switchPanel(next: { panel: PanelState | null; draft: PanelDraft | null }) {
@@ -389,7 +395,7 @@ export default function EquipmentList({
       const result = await updateEquipment(item.id, form)
       // The button state comes from a snapshot that can be a moment stale; the
       // server is the authority, so surface its answer (e.g. limit reached).
-      if (result.error) setInlineError(result.error)
+      if (result.error) setInlineError({ message: result.error, count: equipmentCount })
     } finally {
       setBusy(false)
     }
@@ -539,19 +545,10 @@ export default function EquipmentList({
         }
       />
 
-      {canEdit && (atLimit || inlineError) && (
-        <p className={styles.notice} role="status">
-          {inlineError ??
-            `EQUIPMENT LIMIT REACHED · ${equipmentCount} / ${equipmentLimit} ITEMS.`}{' '}
-          {!inlineError && (
-            <>
-              <Link href="/settings/subscription" className={styles.noticeLink}>
-                Upgrade your plan
-              </Link>{' '}
-              to add more. Removing items is always possible.
-            </>
-          )}
-        </p>
+      {canEdit && inlineError && inlineError.count === equipmentCount && (
+        <ErrorBanner tone="danger" className={styles.inlineError}>
+          {inlineError.message}
+        </ErrorBanner>
       )}
 
       <div className={styles.toolbar}>
@@ -834,7 +831,7 @@ function TypeRow({
                   className={styles.quantityStep}
                   onClick={() => onAdjustQuantity(1)}
                   disabled={busy || atLimit}
-                  title={atLimit ? 'Equipment limit reached — upgrade your plan to add more' : undefined}
+                  title={atLimit ? 'Equipment limit reached' : undefined}
                   aria-label={`Increase quantity of ${item.name}`}
                 >
                   +
@@ -862,7 +859,7 @@ function TypeRow({
                   className={styles.addUnit}
                   onClick={() => onOpenUnit(null)}
                   disabled={atLimit}
-                  title={atLimit ? 'Equipment limit reached — upgrade your plan to add more' : undefined}
+                  title={atLimit ? 'Equipment limit reached' : undefined}
                 >
                   + ADD UNIT
                 </button>
