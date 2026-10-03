@@ -21,6 +21,7 @@ import {
   type FeedbackTimelineEntry,
 } from '@/types/operator'
 import { updateFeedbackStatus, updateFeedbackPriority, addFeedbackNote } from './actions'
+import { formatOperatorDateTime, formatOperatorShortDate } from '@/lib/operatorDates'
 import styles from './feedback.module.css'
 
 const SEARCH_DEBOUNCE_MS = 300
@@ -141,22 +142,6 @@ function priorityClass(priority: StoredFeedbackPriority): string {
     case 'low': return styles.priorityLow
     default: return styles.typeUnknown
   }
-}
-
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-
-function formatShortDate(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]}`
-}
-
-export function formatFullDateTime(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${formatShortDate(iso)} ${d.getFullYear()} · ${hh}:${mm}`
 }
 
 function SetterButton({
@@ -338,7 +323,7 @@ export default function FeedbackListView({
                     <span className={`${styles.priorityLabel} ${priorityClass(item.priority)}`}>
                       {PRIORITY_BTN_LABELS[item.priority]}
                     </span>
-                    <span className={styles.rowDate}>{formatShortDate(item.submittedAt)}</span>
+                    <span className={styles.rowDate}>{formatOperatorShortDate(item.submittedAt)}</span>
                   </Link>
                 )
               })
@@ -374,7 +359,7 @@ export default function FeedbackListView({
                     {selectedItem.userName || '—'}
                     {selectedItem.userEmail ? ` · ${selectedItem.userEmail}` : ''}
                   </span>
-                  <span className={styles.detailDate}>{formatFullDateTime(selectedItem.submittedAt)}</span>
+                  <span className={styles.detailDate}>{formatOperatorDateTime(selectedItem.submittedAt)}</span>
                 </div>
               </div>
 
@@ -433,7 +418,7 @@ export default function FeedbackListView({
                     <div key={n.id} className={styles.noteItem}>
                       <div className={styles.noteMeta}>
                         <span className={styles.noteAuthor}>{n.createdBy}</span>
-                        <span>{formatFullDateTime(n.createdAt)}</span>
+                        <span>{formatOperatorDateTime(n.createdAt)}</span>
                       </div>
                       <span className={styles.noteText}>{n.text}</span>
                     </div>
@@ -528,7 +513,7 @@ export default function FeedbackListView({
                     <span className={styles.mobileMetaDot}>·</span>
                     <span className={priorityClass(item.priority)}>{PRIORITY_BTN_LABELS[item.priority]}</span>
                     <span className={styles.mobileMetaDot}>·</span>
-                    <span className={styles.rowDate}>{formatShortDate(item.submittedAt)}</span>
+                    <span className={styles.rowDate}>{formatOperatorShortDate(item.submittedAt)}</span>
                   </div>
                   <span className={styles.mobileRowSubline}>
                     {TYPE_LABELS[item.type]} · {item.companyName || '—'} · {item.userName || '—'}

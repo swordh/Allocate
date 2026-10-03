@@ -6,6 +6,7 @@ import DeletedCompanyView from './DeletedCompanyView'
 import { notFound } from 'next/navigation'
 import { iso, isoOrNull, tsToMillis, isoToMillis, unixSecondsToMillis } from '@/lib/firestore-timestamps'
 import { formatDateFullInZone } from '@/lib/dates'
+import { OPERATOR_ZONE } from '@/lib/operatorDates'
 import { queryDeletionsByCompany } from '@/lib/operatorDeletionQueries'
 import { sortFeed, type FeedEntry } from './activity'
 
@@ -266,7 +267,7 @@ export default async function CustomerDetailPage({
           at,
           atIso,
           text: effectiveIso
-            ? `Cancellation scheduled — ends ${formatDateFullInZone(effectiveIso, 'UTC')}`
+            ? `Cancellation scheduled — ends ${formatDateFullInZone(effectiveIso, OPERATOR_ZONE)}`
             : 'Cancellation scheduled',
         })
         break

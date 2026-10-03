@@ -6,6 +6,13 @@ import { addOperatorNote } from './actions'
 import type { FeedEntry } from './activity'
 import Icon from '@/components/ui/Icon'
 import DeletionSection from './DeletionSection'
+import {
+  formatOperatorDate,
+  formatOperatorMonthYear,
+  formatOperatorTime,
+  isSameOperatorDay,
+  monthsSinceOperator,
+} from '@/lib/operatorDates'
 import type { CompanyDeletionRow } from '@/types/operator'
 import styles from './detail.module.css'
 
@@ -84,32 +91,12 @@ interface CustomerDetailViewProps {
 }
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).toUpperCase()
-}
-
-function formatMonthYear(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }).toUpperCase()
+  return formatOperatorDate(iso).toUpperCase()
 }
 
 function formatFeedDate(atIso: string): string {
-  const d = new Date(atIso)
-  const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
-  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  if (sameDay) return `TODAY ${time}`
+  if (isSameOperatorDay(new Date(atIso), new Date())) return `TODAY ${formatOperatorTime(atIso)}`
   return `${formatDate(atIso)}`
-}
-
-function monthsSince(iso: string): number {
-  const start = new Date(iso)
-  const now = new Date()
-  return Math.max(0, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()))
 }
 
 function statusColor(status: string): string {
@@ -165,8 +152,8 @@ function buildMetrics(company: Company, members: Member[], stats: Stats, teamUna
     },
     {
       label: 'CUSTOMER SINCE',
-      value: company.createdAt ? formatMonthYear(company.createdAt) : '—',
-      sub: company.createdAt ? `${monthsSince(company.createdAt)} MONTHS` : '—',
+      value: company.createdAt ? formatOperatorMonthYear(company.createdAt) : '—',
+      sub: company.createdAt ? `${monthsSinceOperator(company.createdAt)} MONTHS` : '—',
     },
   ]
 }

@@ -17,6 +17,7 @@ import {
 import Icon from '@/components/ui/Icon'
 import Glyph from '@/components/ui/Glyph'
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
+import { formatOperatorDate } from '@/lib/operatorDates'
 import styles from './customers.module.css'
 
 /** Typing fires a Server Component re-render that does an unpaginated
@@ -68,15 +69,6 @@ function href(state: HrefState, overrides: Partial<HrefState> = {}): string {
   if (merged.selected) params.set('selected', merged.selected)
   const qs = params.toString()
   return qs ? `/operator/customers?${qs}` : '/operator/customers'
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
 }
 
 /** Null means the backfill has not reached this company — never render it as zero. */
@@ -321,7 +313,7 @@ export default function CustomersListView({
                   <span className={styles.metaMuted}>{selectedRow.subscriptionPlan || '—'}</span>
                   <span className={styles.metaDot}>·</span>
                   <span className={styles.metaMuted}>
-                    RENEWS {formatDate(selectedRow.currentPeriodEnd)}
+                    RENEWS {formatOperatorDate(selectedRow.currentPeriodEnd)}
                   </span>
                 </div>
                 <span className={styles.stripeId}>{selectedRow.stripeCustomerId || '—'}</span>
@@ -357,7 +349,7 @@ export default function CustomersListView({
                 </div>
                 <div className={styles.statCell}>
                   <span className={styles.statLabel}>LAST BOOKING</span>
-                  <span className={styles.statValue}>{formatDate(selectedRow.lastBookingAt)}</span>
+                  <span className={styles.statValue}>{formatOperatorDate(selectedRow.lastBookingAt)}</span>
                 </div>
               </div>
 
