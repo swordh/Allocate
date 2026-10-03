@@ -64,6 +64,7 @@ vi.mock('next/cache', () => ({
 import { createEquipment, createEquipmentWithUnits, deactivateEquipment } from '@/actions/equipment'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
+import { wireDb, makeTransaction, type DocMap, type TransactionStub } from '../helpers/firestore'
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -84,7 +85,10 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData()
   fd.set('name', 'Test Camera')
   fd.set('category', 'Camera')
-  fd.set('trackingType', 'individual')
+  // One quantity item: adds exactly 1 to the counter. A `units` type adds 0 at
+  // creation (its units are counted as they are added), so it cannot exercise the limit.
+  fd.set('trackingType', 'quantity')
+  fd.set('totalQuantity', '1')
   for (const [k, v] of Object.entries(overrides)) fd.set(k, v)
   return fd
 }
@@ -199,86 +203,58 @@ function wireDeactivateTransaction(opts: {
   equipmentActive: boolean
   counterCount: number
   hasActiveBookings?: boolean
+  /** Defaults to 'units'. `undefined` models a legacy doc written before trackingType existed. */
+  trackingType?: string | null
+  totalQuantity?: number
+  /** Active unit documents under the type. */
+  activeUnits?: number
 }): {
-  tx: {
-    get: ReturnType<typeof vi.fn>
-    set: ReturnType<typeof vi.fn>
-    update: ReturnType<typeof vi.fn>
-  }
+  tx: TransactionStub
+  batch: ReturnType<typeof wireDb>['batch']
 } {
-  const counterPath = `companies/${COMPANY_ID}/_meta/equipmentCount`
   const equipPath = `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}`
+  const trackingType = opts.trackingType === undefined ? 'units' : opts.trackingType
 
-  const txGet: TxGetFn = async (ref) => {
-    if (ref.path === equipPath) {
-      return {
-        exists: true,
-        data: () => ({
-          active: opts.equipmentActive,
-          name: 'Test Camera',
-          trackingType: 'individual',
-        }),
-      }
-    }
-    if (ref.path === counterPath) {
-      return {
-        exists: true,
-        data: () => ({ count: opts.counterCount }),
-      }
-    }
-    return { exists: false, data: () => ({}) }
+  const docs: DocMap = {
+    [equipPath]: {
+      active: opts.equipmentActive,
+      name: 'Test Camera',
+      ...(trackingType === null ? {} : { trackingType }),
+      ...(opts.totalQuantity !== undefined && { totalQuantity: opts.totalQuantity }),
+    },
+    [`companies/${COMPANY_ID}/_meta/equipmentCount`]: { count: opts.counterCount },
   }
 
-  const tx = {
-    get: vi.fn().mockImplementation(txGet),
-    set: vi.fn(),
-    update: vi.fn(),
-  }
-
-  vi.mocked(adminDb.runTransaction).mockImplementation(
-    (async (cb: (tx: unknown) => Promise<unknown>) => {
-      await cb(tx)
-    }) as never,
-  )
-
-  vi.mocked(adminDb.doc).mockImplementation((path: string) => ({
-    path,
-    id: path.split('/').pop(),
-  } as never))
-
-  // No active bookings by default
   const bookingDocs = opts.hasActiveBookings
-    ? [{ data: () => ({ status: 'confirmed', endDate: '2099-01-01' }) }]
+    ? [{ id: 'b1', data: { status: 'confirmed', endDate: '2099-01-01' } }]
     : []
+  const unitDocs = Array.from({ length: opts.activeUnits ?? 0 }, (_, i) => ({
+    id: `u${i}`,
+    path: `${equipPath}/units/u${i}`,
+    data: { active: true },
+  }))
 
-  vi.mocked(adminDb.collection).mockImplementation(() => ({
-    where: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({ docs: bookingDocs }),
-      }),
-      get: vi.fn().mockResolvedValue({ docs: bookingDocs }),
-      count: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({ data: () => ({ count: 0 }) }),
-      }),
-    }),
-    doc: vi.fn().mockReturnValue({
-      path: `companies/${COMPANY_ID}`,
-      id: COMPANY_ID,
-      collection: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          get: vi.fn().mockResolvedValue({ docs: bookingDocs }),
-        }),
-      }),
-    }),
-  } as never))
+  const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
+    docs,
+    query: (ctx) => {
+      if (ctx.path === `${equipPath}/units`) return unitDocs
+      if (ctx.path === `companies/${COMPANY_ID}/bookings`) return bookingDocs
+      return []
+    },
+  })
 
-  vi.mocked(adminDb.batch).mockReturnValue({
-    set: vi.fn(),
-    update: vi.fn(),
-    commit: vi.fn().mockResolvedValue(undefined),
-  } as never)
+  const tx = makeTransaction(docs)
+  vi.mocked(adminDb.runTransaction).mockImplementation(((cb: (t: unknown) => unknown) => cb(tx)) as never)
 
-  return { tx }
+  return { tx, batch: wired.batch }
+}
+
+/** The counter increment a transaction wrote, or null when it never touched the counter. */
+function counterDelta(tx: { update: ReturnType<typeof vi.fn> }): number | null {
+  const call = tx.update.mock.calls.find(
+    ([ref]) => (ref as { path: string }).path === `companies/${COMPANY_ID}/_meta/equipmentCount`,
+  )
+  return call ? (call[1] as { count: { operand: number } }).count.operand : null
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -633,10 +609,11 @@ describe('deactivateEquipment — counter document decrement', () => {
   // ── Active equipment: decrement counter ───────────────────────────────────
 
   it('atomically decrements both the counter and the company mirror when deactivating active equipment', async () => {
-    // Equipment is active → counter should decrement from 5 to 4
+    // Active type with one active unit → counter should decrement from 5 to 4
     const { tx } = wireDeactivateTransaction({
       equipmentActive: true,
       counterCount: 5,
+      activeUnits: 1,
     })
 
     const result = await deactivateEquipment(EQUIPMENT_ID)
@@ -645,7 +622,7 @@ describe('deactivateEquipment — counter document decrement', () => {
     // Counter must be decremented inside the transaction
     expect(tx.update).toHaveBeenCalledWith(
       expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
-      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
+      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-activeUnits)
     )
     // The mirror on the company document must move in the same transaction.
     // The pairing is the assertion — either both move or the two disagree.
@@ -759,6 +736,7 @@ describe('deactivateEquipment — counter document decrement', () => {
     const { tx } = wireDeactivateTransaction({
       equipmentActive: true,
       counterCount: 5,
+      activeUnits: 1,
     })
 
     const result = await deactivateEquipment(EQUIPMENT_ID)
@@ -769,7 +747,81 @@ describe('deactivateEquipment — counter document decrement', () => {
     // Counter must be decremented inside the transaction
     expect(tx.update).toHaveBeenCalledWith(
       expect.objectContaining({ path: `companies/${COMPANY_ID}/_meta/equipmentCount` }),
-      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-1)
+      expect.objectContaining({ count: expect.any(Object) }), // FieldValue.increment(-activeUnits)
     )
+  })
+
+  // ── How much a type takes off the counter ─────────────────────────────────
+
+  it('subtracts every active unit under the type, not one', async () => {
+    const { tx } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 10, activeUnits: 3 })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBe(-3)
+  })
+
+  it('subtracts totalQuantity for a quantity-tracked type', async () => {
+    const { tx, batch } = wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 12,
+      trackingType: 'quantity',
+      totalQuantity: 7,
+    })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBe(-7)
+    // a quantity type has no unit documents to cascade to
+    expect(batch.update).not.toHaveBeenCalled()
+  })
+
+  it('treats a legacy type without trackingType as units: counts and cascades its active units', async () => {
+    const { tx, batch } = wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 6,
+      trackingType: null,
+      activeUnits: 2,
+    })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBe(-2)
+    expect(batch.update).toHaveBeenCalledTimes(2)
+    expect(batch.commit).toHaveBeenCalledOnce()
+  })
+
+  it('writes no counter change for a units type with no active units', async () => {
+    const { tx } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 4, activeUnits: 0 })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBeNull()
+  })
+
+  it('does not subtract anything for an already-inactive quantity type', async () => {
+    const { tx } = wireDeactivateTransaction({
+      equipmentActive: false,
+      counterCount: 4,
+      trackingType: 'quantity',
+      totalQuantity: 7,
+    })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBeNull()
+  })
+
+  it('fails with the backfill message when the counter document is missing, writing nothing', async () => {
+    const { tx } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 4, activeUnits: 1 })
+    // wire a counter-less company
+    const missing = makeTransaction({ [`companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}`]: { active: true, trackingType: 'units' } })
+    vi.mocked(adminDb.runTransaction).mockImplementation(((cb: (t: unknown) => unknown) => cb(missing)) as never)
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ error: expect.stringContaining('backfill') })
+    expect(missing.update).not.toHaveBeenCalled()
+    expect(tx.update).not.toHaveBeenCalled()
   })
 })

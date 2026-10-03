@@ -3,7 +3,9 @@
  *
  * The equipment limit check is the only atomic plan-limit guard exposed
  * through a public action. It lives in the Firestore transaction of
- * createEquipment: currentCount >= limit → throws resource-exhausted error.
+ * createEquipment: currentCount + items being added > limit → throws
+ * resource-exhausted error. A quantity type adds `totalQuantity` items; a units
+ * type adds none (its units are added one by one through createUnit).
  *
  * Firebase Admin and getVerifiedSession are mocked; no network calls.
  */
@@ -48,6 +50,9 @@ const NON_ADMIN_SESSION = {
   activeCompanyId: COMPANY_ID,
   role: 'crew' as const,
 }
+
+/** One quantity item — the smallest thing createEquipment can add to the counter. */
+const ONE_ITEM = { trackingType: 'quantity', totalQuantity: '1' }
 
 function makeFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData()
@@ -153,9 +158,44 @@ describe('createEquipment — plan limit enforcement', () => {
     // limit = 25, current = 24 → allowed
     const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
-    const result = await createEquipment(makeFormData())
+    const result = await createEquipment(makeFormData(ONE_ITEM))
 
     expect(result).toEqual({ id: newDocId })
+  })
+
+  it('creates a quantity item that lands exactly on the limit', async () => {
+    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 15)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'quantity', totalQuantity: '10' }))
+
+    expect(result).toEqual({ id: newDocId })
+  })
+
+  it('blocks a quantity item whose totalQuantity overshoots the limit though the count is below it', async () => {
+    wireCreateEquipmentTransaction('active', 'starter', 25, 15)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'quantity', totalQuantity: '11' }))
+
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
+  })
+
+  it('creates a units type on a full plan — it holds no units yet', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'units' }))
+
+    expect(result).toEqual({ id: newDocId })
+    // adding 0: the counter is not touched
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('increments the counter by totalQuantity for a quantity item', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 5)
+
+    await createEquipment(makeFormData({ trackingType: 'quantity', totalQuantity: '10' }))
+
+    const call = tx.update.mock.calls.find(([ref]) => (ref as { path: string }).path.endsWith('_meta/equipmentCount'))
+    expect((call![1] as { count: { operand: number } }).count.operand).toBe(10)
   })
 
   // ── At limit ───────────────────────────────────────────────────────────────
@@ -164,7 +204,7 @@ describe('createEquipment — plan limit enforcement', () => {
     // limit = 25, current = 25 → blocked
     wireCreateEquipmentTransaction('active', 'starter', 25, 25)
 
-    const result = await createEquipment(makeFormData())
+    const result = await createEquipment(makeFormData(ONE_ITEM))
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')
@@ -176,7 +216,7 @@ describe('createEquipment — plan limit enforcement', () => {
     // Defensive: count somehow exceeds limit (data migration scenario)
     wireCreateEquipmentTransaction('active', 'starter', 25, 26)
 
-    const result = await createEquipment(makeFormData())
+    const result = await createEquipment(makeFormData(ONE_ITEM))
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')

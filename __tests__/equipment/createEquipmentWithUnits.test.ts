@@ -6,8 +6,9 @@
  *   - Input validation: name, category, totalQuantity, unit label, unit status
  *   - Plan limit enforcement: at-limit and inactive subscription
  *   - Happy path without units: transaction runs, returns { id }
- *   - Happy path with units: transaction + batch.set per unit, returns { id }
- *   - Error handling: batch.commit throws, internal details must not leak
+ *   - Happy path with units: units written in the same transaction, returns { id }
+ *   - Counter: units type adds one per unit, quantity type adds totalQuantity
+ *   - Error handling: transaction throws, internal details must not leak
  *
  * Firebase Admin and getVerifiedSession are fully mocked; no network calls.
  */
@@ -134,7 +135,7 @@ function wireCreateEquipmentTransaction(
 
   // adminDb.collection is used for:
   //   1. Getting the new equipment doc ref (.doc().id) inside the transaction
-  //   2. Getting unit doc refs for the post-transaction batch write
+  //   2. Getting unit doc refs for the unit writes (also inside the transaction)
   vi.mocked(adminDb.collection).mockImplementation((path: string) => ({
     doc: vi.fn().mockReturnValue({
       id: newDocId,
@@ -145,18 +146,19 @@ function wireCreateEquipmentTransaction(
   return { tx, newDocId }
 }
 
-/**
- * Sets up adminDb.batch with a fresh mock returned on every call.
- * Returns a getter so individual tests can inspect the batch that was created.
- */
-function wireBatch() {
-  const mockBatch = {
-    set: vi.fn(),
-    update: vi.fn(),
-    commit: vi.fn().mockResolvedValue(undefined),
-  }
-  vi.mocked(adminDb.batch).mockReturnValue(mockBatch as never)
-  return () => mockBatch
+/** The counter increment a transaction wrote, or null when it never touched the counter. */
+function counterDelta(tx: { update: ReturnType<typeof vi.fn> }): number | null {
+  const call = tx.update.mock.calls.find(
+    ([ref]) => (ref as { path: string }).path === `companies/${COMPANY_ID}/_meta/equipmentCount`,
+  )
+  return call ? (call[1] as { count: { operand: number } }).count.operand : null
+}
+
+/** Unit documents a transaction wrote (identified by `label`; the equipment doc has none). */
+function unitWrites(tx: { set: ReturnType<typeof vi.fn> }) {
+  return (tx.set.mock.calls as Array<[unknown, Record<string, unknown>]>)
+    .map(([, data]) => data)
+    .filter((data) => 'label' in data)
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -164,7 +166,6 @@ function wireBatch() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
-  wireBatch()
 })
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -177,7 +178,6 @@ describe('auth guard', () => {
 
     expect(result).toEqual({ error: 'Unauthorized' })
     expect(adminDb.runTransaction).not.toHaveBeenCalled()
-    expect(adminDb.batch).not.toHaveBeenCalled()
   })
 
   it('returns { error: "Unauthorized" } for crew role', async () => {
@@ -304,7 +304,6 @@ describe('input validation', () => {
       for (const status of validStatuses) {
         vi.clearAllMocks()
         vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION)
-        wireBatch()
         wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
         const result = await createEquipmentWithUnits(VALID_FIELDS, [
@@ -324,23 +323,76 @@ describe('input validation', () => {
 
 describe('plan limit enforcement', () => {
   it('blocks creation when current count equals the plan limit', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
 
-    const result = await createEquipmentWithUnits(VALID_FIELDS, [])
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')
     expect((result as { error: string }).error).toContain('starter')
     expect((result as { error: string }).error).toContain('25')
+    expect(tx.set).not.toHaveBeenCalled()
+    expect(tx.update).not.toHaveBeenCalled()
   })
 
   it('blocks creation when current count exceeds the plan limit', async () => {
     wireCreateEquipmentTransaction('active', 'starter', 25, 26)
 
-    const result = await createEquipmentWithUnits(VALID_FIELDS, [])
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
     expect(result).toHaveProperty('error')
     expect((result as { error: string }).error).toContain('Equipment limit reached')
+  })
+
+  it('blocks a batch of units that would overshoot the limit even though the count is below it', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
+
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT, VALID_UNIT])
+
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
+    expect(tx.set).not.toHaveBeenCalled()
+  })
+
+  it('allows a batch of units that lands exactly on the limit and counts every unit', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 23)
+
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT, VALID_UNIT])
+
+    expect(result).toEqual({ id: newDocId })
+    expect(counterDelta(tx)).toBe(2)
+  })
+
+  it('allows a units type with no units on a full plan (it occupies nothing yet)', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [])
+
+    expect(result).toEqual({ id: newDocId })
+    expect(counterDelta(tx)).toBeNull()
+  })
+
+  it('blocks a quantity type whose totalQuantity would overshoot the limit', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 20)
+
+    const result = await createEquipmentWithUnits(
+      { ...VALID_FIELDS, trackingType: 'quantity', totalQuantity: 6 },
+      [],
+    )
+
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
+    expect(tx.set).not.toHaveBeenCalled()
+  })
+
+  it('counts a quantity type by totalQuantity, not by one', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 15)
+
+    const result = await createEquipmentWithUnits(
+      { ...VALID_FIELDS, trackingType: 'quantity', totalQuantity: 10 },
+      [],
+    )
+
+    expect(result).toEqual({ id: newDocId })
+    expect(counterDelta(tx)).toBe(10)
   })
 
   it('blocks creation when subscription is past_due', async () => {
@@ -382,13 +434,12 @@ describe('happy path — no units', () => {
     expect(adminDb.runTransaction).toHaveBeenCalledOnce()
   })
 
-  it('does not call batch.set when no units are provided', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 10)
-    const getBatch = wireBatch()
+  it('writes no unit documents when no units are provided', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 10)
 
     await createEquipmentWithUnits(VALID_FIELDS, [])
 
-    expect(getBatch().set).not.toHaveBeenCalled()
+    expect(unitWrites(tx)).toHaveLength(0)
   })
 
   it('writes equipment fields inside the transaction', async () => {
@@ -408,10 +459,9 @@ describe('happy path — no units', () => {
   })
 
   it('allows creation at exactly one below the plan limit (boundary)', async () => {
-    // limit = 5, current = 4 — should succeed
     const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
-    const result = await createEquipmentWithUnits(VALID_FIELDS, [])
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
     expect(result).toEqual({ id: newDocId })
   })
@@ -420,38 +470,33 @@ describe('happy path — no units', () => {
 // ── Happy path — with units ───────────────────────────────────────────────────
 
 describe('happy path — with units', () => {
-  it('returns { id } after transaction and batch complete', async () => {
+  it('returns { id } and creates no separate batch', async () => {
     const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-    const getBatch = wireBatch()
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
     expect(result).toEqual({ id: newDocId })
-    expect(getBatch().commit).toHaveBeenCalledOnce()
+    expect(adminDb.batch).not.toHaveBeenCalled()
   })
 
-  it('calls batch.set once per unit with denormalized equipmentId and companyId', async () => {
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-    const getBatch = wireBatch()
+  it('writes each unit in the transaction with denormalized equipmentId and companyId', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
-    expect(getBatch().set).toHaveBeenCalledTimes(1)
-    expect(getBatch().set).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        equipmentId: newDocId,
-        companyId: COMPANY_ID,
-        label: VALID_UNIT.label,
-        status: VALID_UNIT.status,
-        active: true,
-      }),
-    )
+    const units = unitWrites(tx)
+    expect(units).toHaveLength(1)
+    expect(units[0]).toMatchObject({
+      equipmentId: newDocId,
+      companyId: COMPANY_ID,
+      label: VALID_UNIT.label,
+      status: VALID_UNIT.status,
+      active: true,
+    })
   })
 
-  it('calls batch.set once per unit when multiple units are provided', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-    const getBatch = wireBatch()
+  it('writes one unit per entry and increments the counter by that many', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     const units = [
       { ...VALID_UNIT, label: 'Alexa #1' },
@@ -461,12 +506,12 @@ describe('happy path — with units', () => {
 
     await createEquipmentWithUnits(VALID_FIELDS, units)
 
-    expect(getBatch().set).toHaveBeenCalledTimes(3)
+    expect(unitWrites(tx)).toHaveLength(3)
+    expect(counterDelta(tx)).toBe(3)
   })
 
-  it('persists the correct label and status for each unit in the batch', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-    const getBatch = wireBatch()
+  it('persists the correct label and status for each unit', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     const units = [
       { ...VALID_UNIT, label: 'Alexa #1', status: 'ok' as const },
@@ -475,38 +520,42 @@ describe('happy path — with units', () => {
 
     await createEquipmentWithUnits(VALID_FIELDS, units)
 
-    const calls = getBatch().set.mock.calls as Array<[unknown, Record<string, unknown>]>
-    const writtenLabels = calls.map(([, data]) => data.label)
-    const writtenStatuses = calls.map(([, data]) => data.status)
-
-    expect(writtenLabels).toContain('Alexa #1')
-    expect(writtenLabels).toContain('Alexa #2')
-    expect(writtenStatuses).toContain('ok')
-    expect(writtenStatuses).toContain('needs_repair')
+    const written = unitWrites(tx)
+    expect(written.map((d) => d.label)).toEqual(['Alexa #1', 'Alexa #2'])
+    expect(written.map((d) => d.status)).toEqual(['ok', 'needs_repair'])
   })
 
-  it('does not call batch.commit when no units are created', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-    const getBatch = wireBatch()
+  it('writes no units when none are created', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 0)
 
     await createEquipmentWithUnits(VALID_FIELDS, [])
 
-    expect(getBatch().commit).not.toHaveBeenCalled()
+    expect(unitWrites(tx)).toHaveLength(0)
+  })
+
+  it('writes nothing when the plan limit rejects the batch (no orphaned units)', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+
+    await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
+
+    expect(tx.set).not.toHaveBeenCalled()
+  })
+
+  it('rejects more units than fit in one transaction', async () => {
+    const units = Array.from({ length: 498 }, (_, i) => ({ ...VALID_UNIT, label: `U${i}` }))
+
+    const result = await createEquipmentWithUnits(VALID_FIELDS, units)
+
+    expect(result).toEqual({ error: 'Too many units in one request' })
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
   })
 })
 
 // ── Error handling ────────────────────────────────────────────────────────────
 
 describe('error handling', () => {
-  it('returns { error } when batch.commit throws and does not leak internal details', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-
-    const leakyBatch = {
-      set: vi.fn(),
-      update: vi.fn(),
-      commit: vi.fn().mockRejectedValue(new Error('Firestore quota exceeded — internal trace')),
-    }
-    vi.mocked(adminDb.batch).mockReturnValue(leakyBatch as never)
+  it('returns { error } when the commit throws and does not leak internal details', async () => {
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('Firestore quota exceeded — internal trace'))
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
@@ -519,15 +568,8 @@ describe('error handling', () => {
     expect(error).not.toContain('internal trace')
   })
 
-  it('handles non-Error rejection from batch.commit gracefully', async () => {
-    wireCreateEquipmentTransaction('active', 'starter', 25, 0)
-
-    const leakyBatch = {
-      set: vi.fn(),
-      update: vi.fn(),
-      commit: vi.fn().mockRejectedValue('network error string'),
-    }
-    vi.mocked(adminDb.batch).mockReturnValue(leakyBatch as never)
+  it('handles non-Error rejection from the transaction gracefully', async () => {
+    vi.mocked(adminDb.runTransaction).mockRejectedValue('network error string')
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [VALID_UNIT])
 
