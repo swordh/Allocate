@@ -208,6 +208,8 @@ function wireDeactivateTransaction(opts: {
   totalQuantity?: number
   /** Active unit documents under the type. */
   activeUnits?: number
+  /** Inactive unit documents under the type — must never be counted or cascaded. */
+  inactiveUnits?: number
 }): {
   tx: TransactionStub
   batch: ReturnType<typeof wireDb>['batch']
@@ -228,16 +230,28 @@ function wireDeactivateTransaction(opts: {
   const bookingDocs = opts.hasActiveBookings
     ? [{ id: 'b1', data: { status: 'confirmed', endDate: '2099-01-01' } }]
     : []
-  const unitDocs = Array.from({ length: opts.activeUnits ?? 0 }, (_, i) => ({
-    id: `u${i}`,
-    path: `${equipPath}/units/u${i}`,
-    data: { active: true },
-  }))
+  const unitDocs = [
+    ...Array.from({ length: opts.activeUnits ?? 0 }, (_, i) => ({
+      id: `u${i}`,
+      path: `${equipPath}/units/u${i}`,
+      data: { active: true },
+    })),
+    ...Array.from({ length: opts.inactiveUnits ?? 0 }, (_, i) => ({
+      id: `x${i}`,
+      path: `${equipPath}/units/x${i}`,
+      data: { active: false },
+    })),
+  ]
 
   const wired = wireDb(adminDb as unknown as Record<string, unknown>, {
     docs,
     query: (ctx) => {
-      if (ctx.path === `${equipPath}/units`) return unitDocs
+      if (ctx.path === `${equipPath}/units`) {
+        // Honour where('active', '==', X) like Firestore does, so dropping the
+        // filter from production code changes what comes back.
+        const active = ctx.filters.find((f) => f.field === 'active' && f.op === '==')
+        return active ? unitDocs.filter((u) => u.data.active === active.value) : unitDocs
+      }
       if (ctx.path === `companies/${COMPANY_ID}/bookings`) return bookingDocs
       return []
     },
@@ -759,6 +773,46 @@ describe('deactivateEquipment — counter document decrement', () => {
     await deactivateEquipment(EQUIPMENT_ID)
 
     expect(counterDelta(tx)).toBe(-3)
+  })
+
+  it('ignores inactive units: counts and cascades only the active ones', async () => {
+    const { tx, batch } = wireDeactivateTransaction({
+      equipmentActive: true,
+      counterCount: 10,
+      activeUnits: 2,
+      inactiveUnits: 3,
+    })
+
+    await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(counterDelta(tx)).toBe(-2)
+    expect(batch.update).toHaveBeenCalledTimes(2)
+  })
+
+  it('cascades more than one batch worth of units in chunks', async () => {
+    const { batch } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 2000, activeUnits: 1000 })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ success: true })
+    expect(batch.update).toHaveBeenCalledTimes(1000)
+    expect(batch.commit).toHaveBeenCalledTimes(3) // 450 + 450 + 100
+  })
+
+  it('rejects an id containing a slash before touching Firestore', async () => {
+    const result = await deactivateEquipment('E/units/U')
+
+    expect(result).toEqual({ error: 'equipmentId is required' })
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+
+  it('does not leak raw Firestore errors', async () => {
+    wireDeactivateTransaction({ equipmentActive: true, counterCount: 5 })
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('5 NOT_FOUND: internal path details'))
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ error: expect.not.stringContaining('NOT_FOUND') })
   })
 
   it('subtracts totalQuantity for a quantity-tracked type', async () => {

@@ -260,6 +260,28 @@ describe('input validation', () => {
     })
   })
 
+  describe('trackingType', () => {
+    it('rejects a trackingType outside the enum', async () => {
+      const result = await createEquipmentWithUnits(
+        { ...VALID_FIELDS, trackingType: 'individual' as never },
+        [],
+      )
+
+      expect(result).toEqual({ error: 'Invalid trackingType' })
+      expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    })
+
+    it('rejects unit creates for a quantity-tracked type (they would never be counted)', async () => {
+      const result = await createEquipmentWithUnits(
+        { ...VALID_FIELDS, trackingType: 'quantity', totalQuantity: 3 },
+        [VALID_UNIT],
+      )
+
+      expect(result).toEqual({ error: expect.stringContaining('quantity') })
+      expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    })
+  })
+
   describe('unit label', () => {
     it('rejects a unit with an empty label', async () => {
       const result = await createEquipmentWithUnits(VALID_FIELDS, [

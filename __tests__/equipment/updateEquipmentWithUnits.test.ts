@@ -401,6 +401,24 @@ describe('unit deletes', () => {
     expect(counterDelta()).toBe(-1)
   })
 
+  it('fails with the backfill message when a net decrease finds no counter, writing nothing', async () => {
+    wire(baseDocs({ counter: null }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({ error: expect.stringContaining('backfill') })
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses unit deletes on a quantity-tracked item so the counter is never touched', async () => {
+    wire({ ...baseDocs(), [EQUIP_PATH]: { trackingType: 'quantity', totalQuantity: 4, active: true } })
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({ error: expect.stringContaining('unit-tracked') })
+    expect(counterDelta()).toBeNull()
+  })
+
   it('counts a unit listed twice only once', async () => {
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99', 'unit-99'])
 

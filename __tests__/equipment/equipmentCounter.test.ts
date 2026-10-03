@@ -40,7 +40,14 @@ vi.mock('next/cache', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
-import { updateEquipment, createUnit, deactivateUnit } from '@/actions/equipment'
+import {
+  updateEquipment,
+  createUnit,
+  deactivateUnit,
+  updateUnit,
+  toggleEquipmentAvailability,
+  toggleUnitAvailability,
+} from '@/actions/equipment'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { wireDb, makeTransaction, type DocMap, type TransactionStub } from '../helpers/firestore'
@@ -217,6 +224,33 @@ describe('updateEquipment — quantity changes move the counter', () => {
     expect(counterDelta()).toBe(2) // 22 − 20, not 22 − 10
   })
 
+  it('rejects an equipmentId containing a slash', async () => {
+    wire({ equipment: quantityItem })
+
+    const result = await updateEquipment('E/units/U', qtyForm(3))
+
+    expect(result).toEqual({ error: 'equipmentId is required' })
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+
+  it('fails with the backfill message, not a raw error, when a decrease finds no counter', async () => {
+    wire({ count: null, equipment: quantityItem })
+
+    const result = await updateEquipment(EQUIPMENT_ID, qtyForm(4))
+
+    expect(result).toEqual({ error: expect.stringContaining('backfill') })
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('does not leak raw Firestore errors from the transaction', async () => {
+    wire({ equipment: quantityItem })
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('5 NOT_FOUND: internal'))
+
+    const result = await updateEquipment(EQUIPMENT_ID, qtyForm(4))
+
+    expect(result).toEqual({ error: expect.not.stringContaining('NOT_FOUND') })
+  })
+
   it('updates non-quantity fields with a plain write, no transaction', async () => {
     const { doc } = wire({ equipment: quantityItem })
     const update = vi.fn().mockResolvedValue(undefined)
@@ -328,6 +362,18 @@ describe('createUnit — plan limit and counter', () => {
     expect(counterDelta()).toBe(1)
   })
 
+  it.each([['slash', 'E/units/U'], ['blank', '  ']])(
+    'rejects an equipmentId that is %s — no phantom unit, no counter write',
+    async (_label, id) => {
+      wire()
+
+      const result = await createUnit(id, unitForm())
+
+      expect(result).toEqual({ error: 'equipmentId is required' })
+      expect(adminDb.runTransaction).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects a blank label before touching Firestore', async () => {
     wire()
 
@@ -405,6 +451,49 @@ describe('deactivateUnit — counter', () => {
     expect(counterDelta()).toBe(-1)
   })
 
+  it('does not decrement for a unit under a quantity-tracked type (it counts totalQuantity)', async () => {
+    wire({ count: 10, equipment: { trackingType: 'quantity', totalQuantity: 4, active: true } })
+
+    await deactivateUnit(EQUIPMENT_ID, UNIT_ID)
+
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: UNIT_PATH }),
+      expect.objectContaining({ active: false }),
+    )
+    expect(counterDelta()).toBeNull()
+  })
+
+  it('decrements for a unit under a legacy type with no trackingType', async () => {
+    wire({ count: 10, equipment: { active: true } })
+
+    await deactivateUnit(EQUIPMENT_ID, UNIT_ID)
+
+    expect(counterDelta()).toBe(-1)
+  })
+
+  it.each([
+    ['equipmentId with slash', 'E/units/U', UNIT_ID],
+    ['unitId with slash', EQUIPMENT_ID, 'a/b'],
+    ['blank equipmentId', '  ', UNIT_ID],
+    ['blank unitId', EQUIPMENT_ID, ''],
+  ])('rejects %s without reading Firestore', async (_label, eq, unit) => {
+    wire()
+
+    const result = await deactivateUnit(eq, unit)
+
+    expect(result).toEqual({ error: expect.stringContaining('required') })
+    expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+
+  it('does not leak raw Firestore errors', async () => {
+    wire()
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('5 NOT_FOUND: internal'))
+
+    const result = await deactivateUnit(EQUIPMENT_ID, UNIT_ID)
+
+    expect(result).toEqual({ error: expect.not.stringContaining('NOT_FOUND') })
+  })
+
   it('returns an error for a unit that does not exist', async () => {
     wire({ unit: null })
 
@@ -442,5 +531,27 @@ describe('deactivateUnit — counter', () => {
 
     expect(result).toEqual({ requiresForce: true, futureBookingCount: 1 })
     expect(adminDb.runTransaction).not.toHaveBeenCalled()
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Id guards — ids are interpolated into document paths
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('actions that take ids reject path-like ids before reading Firestore', () => {
+  it.each([
+    ['toggleEquipmentAvailability', () => toggleEquipmentAvailability('E/units/U', true)],
+    ['toggleUnitAvailability (equipmentId)', () => toggleUnitAvailability('E/x', UNIT_ID, true)],
+    ['toggleUnitAvailability (unitId)', () => toggleUnitAvailability(EQUIPMENT_ID, 'a/b', true)],
+    ['updateUnit (equipmentId)', () => updateUnit('E/x', UNIT_ID, unitForm())],
+    ['updateUnit (unitId)', () => updateUnit(EQUIPMENT_ID, 'a/b', unitForm())],
+  ])('%s', async (_name, call) => {
+    wire()
+    vi.mocked(adminDb.doc).mockClear()
+
+    const result = await call()
+
+    expect(result).toEqual({ error: expect.stringContaining('required') })
+    expect(adminDb.doc).not.toHaveBeenCalled()
   })
 })
