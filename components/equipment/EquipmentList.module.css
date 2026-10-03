@@ -386,18 +386,10 @@
   color: var(--text-weak);
 }
 
-/* ── Plan-limit notice ───────────────────────────────────────────────────── */
+/* ── Inline action error ─────────────────────────────────────────────────── */
 
-.notice {
+.inlineError {
   margin: 0 0 14px;
-  font-family: var(--font-ui);
-  font-size: var(--fs-tab);
-  color: var(--text-muted);
-}
-
-.noticeLink {
-  color: var(--text-primary);
-  text-decoration: underline;
 }
 
 /* ── Error state ─────────────────────────────────────────────────────────── */
