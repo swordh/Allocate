@@ -2,6 +2,7 @@ import 'server-only'
 
 import { FieldValue, type Transaction } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/firebase-admin'
+import type { Subscription } from '@/types'
 
 /**
  * Derived per-company stats mirrored onto `companies/{companyId}` so the operator
@@ -51,12 +52,21 @@ function companyRef(companyId: string) {
  * Applies `delta` to both the authoritative counter at
  * `companies/{id}/_meta/equipmentCount` and the mirror on the company document.
  *
+ * The counter counts equipment ITEMS, not type documents: per active type, the
+ * number of active unit documents (`units` / legacy types) or `totalQuantity`
+ * (`quantity` types). A soft-deleted type or unit contributes 0. So a single
+ * operation moves it by more than 1 — creating a quantity type with 10 pieces is
+ * +10, deactivating a type with 3 active units is -3. `delta` is any integer;
+ * 0 is a no-op (no write, no counter-exists check).
+ *
  * The two writes deliberately differ: the counter uses `update`, which throws when
  * the document is missing, preserving the existing "Run the backfill migration
  * first" contract. The mirror uses a merge-set, which cannot fail that way — a
  * derived statistic must never be the reason an equipment operation fails.
  */
-export function equipmentCountDelta(tx: Transaction, companyId: string, delta: 1 | -1): void {
+export function equipmentCountDelta(tx: Transaction, companyId: string, delta: number): void {
+  if (delta === 0) return
+
   tx.update(adminDb.doc(`companies/${companyId}/_meta/equipmentCount`), {
     count: FieldValue.increment(delta),
     updatedAt: FieldValue.serverTimestamp(),
@@ -72,6 +82,69 @@ export function equipmentCountDelta(tx: Transaction, companyId: string, delta: 1
     },
     { merge: true },
   )
+}
+
+/**
+ * The plan-limit guard shared by every path that adds equipment items
+ * (createEquipment, createEquipmentWithUnits, createUnit, updateEquipment's
+ * quantity increase, updateEquipmentWithUnits). `adding` is the number of items
+ * the caller is about to add — NOT the number of documents.
+ *
+ * Reads the company document and the counter inside `tx`, so Firestore's
+ * transaction serialisation is what closes the check-then-write race. Because it
+ * only reads, it must be called before the caller's first write.
+ *
+ * Throws, with a `code` the callers map to a user-facing message:
+ *   - `not-found`            company document missing
+ *   - `failed-precondition`  subscription neither trialing nor active, or the
+ *                            counter document is missing (backfill not run)
+ *   - `resource-exhausted`   `count + adding` would exceed the plan's limit
+ *
+ * `adding <= 0` skips the limit comparison only: a type created with no units yet
+ * is allowed on a full plan (it occupies nothing), but a lapsed subscription
+ * still blocks it.
+ */
+export async function assertEquipmentCapacity(
+  tx: Transaction,
+  companyId: string,
+  adding: number,
+): Promise<void> {
+  const companySnap = await tx.get(companyRef(companyId))
+
+  if (!companySnap.exists) {
+    throw Object.assign(new Error('Company not found.'), { code: 'not-found' })
+  }
+
+  const { subscription } = companySnap.data() as { subscription: Subscription }
+
+  if (subscription.status !== 'trialing' && subscription.status !== 'active') {
+    throw Object.assign(
+      new Error('Subscription is not active. Reactivate your plan to add equipment.'),
+      { code: 'failed-precondition' },
+    )
+  }
+
+  const counterSnap = await tx.get(adminDb.doc(`companies/${companyId}/_meta/equipmentCount`))
+
+  if (!counterSnap.exists) {
+    throw Object.assign(
+      new Error('Equipment counter not initialized. Run the backfill migration first.'),
+      { code: 'failed-precondition' },
+    )
+  }
+
+  const currentCount = counterSnap.data()!.count as number
+  const limit = subscription.limits.equipment
+  const plan = subscription.plan
+
+  if (adding > 0 && currentCount + adding > limit) {
+    throw Object.assign(
+      new Error(
+        `Equipment limit reached. Your ${plan} plan allows ${limit} items. Upgrade to add more.`,
+      ),
+      { code: 'resource-exhausted' },
+    )
+  }
 }
 
 /**

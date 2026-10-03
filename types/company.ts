@@ -47,7 +47,7 @@ export interface Subscription {
  * tools/backfill_company_stats.js has run everywhere.
  */
 export interface CompanyStats {
-  equipmentCount: number          // active equipment only
+  equipmentCount: number          // active units (units types) + totalQuantity (quantity types); soft-deleted = 0
   bookingsCreated: number         // lifetime, never decremented
   bookingsCancelled: number       // lifetime, never decremented
   lastBookingAt: string | null    // ISO string
