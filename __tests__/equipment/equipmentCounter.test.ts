@@ -396,6 +396,15 @@ describe('deactivateUnit — counter', () => {
     expect(mirrorWritten()).toBe(false)
   })
 
+  it('still works when the plan is over its limit (count 40, limit 25): removing is never blocked', async () => {
+    wire({ count: 40, limit: 25 })
+
+    const result = await deactivateUnit(EQUIPMENT_ID, UNIT_ID)
+
+    expect(result).toBeUndefined()
+    expect(counterDelta()).toBe(-1)
+  })
+
   it('returns an error for a unit that does not exist', async () => {
     wire({ unit: null })
 

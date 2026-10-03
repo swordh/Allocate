@@ -392,6 +392,15 @@ describe('unit deletes', () => {
     )
   })
 
+  it('still deletes units when the plan is over its limit (count 40, limit 25)', async () => {
+    wire(baseDocs({ counter: 40, limit: 25 }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({})
+    expect(counterDelta()).toBe(-1)
+  })
+
   it('counts a unit listed twice only once', async () => {
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99', 'unit-99'])
 

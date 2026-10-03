@@ -362,8 +362,17 @@ describe('plan limit enforcement', () => {
     expect(counterDelta(tx)).toBe(2)
   })
 
-  it('allows a units type with no units on a full plan (it occupies nothing yet)', async () => {
-    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+  it('blocks a units type with no units on a full plan: a new type needs room for at least one', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+
+    const result = await createEquipmentWithUnits(VALID_FIELDS, [])
+
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
+    expect(tx.set).not.toHaveBeenCalled()
+  })
+
+  it('allows a units type with no units when one slot is free, without touching the counter', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
     const result = await createEquipmentWithUnits(VALID_FIELDS, [])
 

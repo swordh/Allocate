@@ -791,6 +791,15 @@ describe('deactivateEquipment — counter document decrement', () => {
     expect(batch.commit).toHaveBeenCalledOnce()
   })
 
+  it('still deactivates a type when the plan is over its limit (count 40, limit 25)', async () => {
+    const { tx } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 40, activeUnits: 3 })
+
+    const result = await deactivateEquipment(EQUIPMENT_ID)
+
+    expect(result).toEqual({ success: true })
+    expect(counterDelta(tx)).toBe(-3)
+  })
+
   it('writes no counter change for a units type with no active units', async () => {
     const { tx } = wireDeactivateTransaction({ equipmentActive: true, counterCount: 4, activeUnits: 0 })
 

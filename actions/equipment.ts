@@ -75,7 +75,7 @@ export async function createEquipment(
       const adding = trackingType === 'quantity' ? totalQuantity : 0
 
       // Reads company + counter — ALL reads must come before writes.
-      await assertEquipmentCapacity(tx, companyId, adding)
+      await assertEquipmentCapacity(tx, companyId, adding, 1)
 
       const newRef = adminDb.collection(`companies/${companyId}/equipment`).doc()
       newEquipmentId = newRef.id
@@ -885,7 +885,7 @@ export async function createEquipmentWithUnits(
       const adding = fields.trackingType === 'quantity' ? fields.totalQuantity : unitCreates.length
 
       // Reads company + counter — ALL reads must come before writes.
-      await assertEquipmentCapacity(tx, companyId, adding)
+      await assertEquipmentCapacity(tx, companyId, adding, 1)
 
       const newRef = adminDb.collection(`companies/${companyId}/equipment`).doc()
       newEquipmentId = newRef.id

@@ -179,8 +179,18 @@ describe('createEquipment — plan limit enforcement', () => {
     expect((result as { error: string }).error).toContain('Equipment limit reached')
   })
 
-  it('creates a units type on a full plan — it holds no units yet', async () => {
-    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+  it('blocks a units type on a full plan even though it adds no items yet', async () => {
+    const { tx } = wireCreateEquipmentTransaction('active', 'starter', 25, 25)
+
+    const result = await createEquipment(makeFormData({ trackingType: 'units' }))
+
+    expect(result).toEqual({ error: expect.stringContaining('Equipment limit reached') })
+    expect(tx.set).not.toHaveBeenCalled()
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('creates a units type when exactly one slot is free, without touching the counter', async () => {
+    const { tx, newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 24)
 
     const result = await createEquipment(makeFormData({ trackingType: 'units' }))
 
@@ -189,13 +199,12 @@ describe('createEquipment — plan limit enforcement', () => {
     expect(tx.update).not.toHaveBeenCalled()
   })
 
-  it('creates a units type for a company already over its limit (adding nothing is never blocked)', async () => {
-    // Existing customers can sit above the limit after the counter moved to items (#284).
-    const { newDocId } = wireCreateEquipmentTransaction('active', 'starter', 25, 40)
+  it('blocks a units type for a company already over its limit (count 40, limit 25)', async () => {
+    wireCreateEquipmentTransaction('active', 'starter', 25, 40)
 
     const result = await createEquipment(makeFormData({ trackingType: 'units' }))
 
-    expect(result).toEqual({ id: newDocId })
+    expect((result as { error: string }).error).toContain('Equipment limit reached')
   })
 
   it('blocks a units type when the subscription has lapsed, even though it adds nothing', async () => {

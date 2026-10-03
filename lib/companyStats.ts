@@ -100,14 +100,17 @@ export function equipmentCountDelta(tx: Transaction, companyId: string, delta: n
  *                            counter document is missing (backfill not run)
  *   - `resource-exhausted`   `count + adding` would exceed the plan's limit
  *
- * `adding <= 0` skips the limit comparison only: a type created with no units yet
- * is allowed on a full plan (it occupies nothing), but a lapsed subscription
- * still blocks it.
+ * `requireRoom` is the room the operation needs even when it adds nothing to
+ * the counter. Creating an equipment type passes 1: a type with no units yet
+ * adds 0 items, but a full plan must still refuse to start a new one. The check
+ * is `count + max(adding, requireRoom) > limit`; when both are <= 0 the limit
+ * comparison is skipped entirely. Decreases and deletions never call this.
  */
 export async function assertEquipmentCapacity(
   tx: Transaction,
   companyId: string,
   adding: number,
+  requireRoom = 0,
 ): Promise<void> {
   const companySnap = await tx.get(companyRef(companyId))
 
@@ -137,7 +140,8 @@ export async function assertEquipmentCapacity(
   const limit = subscription.limits.equipment
   const plan = subscription.plan
 
-  if (adding > 0 && currentCount + adding > limit) {
+  const room = Math.max(adding, requireRoom)
+  if (room > 0 && currentCount + room > limit) {
     throw Object.assign(
       new Error(
         `Equipment limit reached. Your ${plan} plan allows ${limit} items. Upgrade to add more.`,
