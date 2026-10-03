@@ -325,9 +325,15 @@
   cursor: pointer;
 }
 
-.addUnit:hover {
+.addUnit:hover:not(:disabled) {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+.addUnit:disabled {
+  color: var(--text-pale);
+  border-color: var(--hairline);
+  cursor: not-allowed;
 }
 
 /* ── Quantity-tracked types ──────────────────────────────────────────────── */
@@ -378,6 +384,20 @@
   font-family: var(--font-ui);
   font-size: var(--fs-tab);
   color: var(--text-weak);
+}
+
+/* ── Plan-limit notice ───────────────────────────────────────────────────── */
+
+.notice {
+  margin: 0 0 14px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  color: var(--text-muted);
+}
+
+.noticeLink {
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 /* ── Error state ─────────────────────────────────────────────────────────── */

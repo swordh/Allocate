@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import { useCategories } from '@/hooks/useCategories'
@@ -40,6 +41,9 @@ interface EquipmentListProps {
   companyId: string
   role: Role
   initialEquipment: Equipment[]
+  /** `_meta/equipmentCount` and the plan's limit at page load. UX only — the server enforces. */
+  initialEquipmentCount: number
+  equipmentLimit: number
 }
 
 type StatusFilter = 'ALL' | 'OUT' | 'INACTIVE' | 'BROKEN'
@@ -104,7 +108,13 @@ function unitDraftFrom(unit: EquipmentUnit | null): UnitDraft {
   }
 }
 
-export default function EquipmentList({ companyId, role, initialEquipment }: EquipmentListProps) {
+export default function EquipmentList({
+  companyId,
+  role,
+  initialEquipment,
+  initialEquipmentCount,
+  equipmentLimit,
+}: EquipmentListProps) {
   // Real-time listener replaces the server-fetched initial data.
   // initialEquipment seeds the UI with SSR data while the listener connects.
   const { equipment: liveEquipment, loading, error } = useEquipment(companyId)
@@ -114,6 +124,23 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const { categories } = useCategories(companyId)
 
   const canEdit = role === 'admin'
+
+  // The plan counter's definition (active units, or totalQuantity), derived from
+  // the live data so the controls react to the changes made on this very page.
+  // Until the listener connects, the server-read counter stands in.
+  const liveCount = useMemo(
+    () =>
+      equipment.reduce(
+        (sum, item) =>
+          sum + (item.trackingType !== 'units' ? item.totalQuantity : (item.units?.length ?? 0)),
+        0,
+      ),
+    [equipment],
+  )
+  const equipmentCount = loading ? initialEquipmentCount : liveCount
+  // Room for one more item. Adding anything — a type, a unit, one more piece —
+  // needs at least one free slot, so every "add" control shares this.
+  const atLimit = equipmentCount + 1 > equipmentLimit
 
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<StatusFilter>('ALL')
@@ -129,6 +156,8 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   const [forcePrompt, setForcePrompt] = useState<{ count: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [panelError, setPanelError] = useState<string | null>(null)
+  /** Failure of an inline action that has no panel to show it in (the quantity steppers). */
+  const [inlineError, setInlineError] = useState<string | null>(null)
 
   const categoryNames = useMemo(() => {
     const fromCategories = categories.map((c) => c.name)
@@ -158,6 +187,10 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
   }
 
   function openNewType() {
+    // The header button is disabled when full, but the mobile menu CTA reaches
+    // here through an event / ?add=1 — refuse there too rather than open a form
+    // the server would reject.
+    if (atLimit) return
     switchPanel({
       panel: { kind: 'newType' },
       draft: emptyTypeDraft(categoryNames[0] ?? ''),
@@ -349,10 +382,14 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
     if (next < 1) return
 
     setBusy(true)
+    setInlineError(null)
     try {
       const form = new FormData()
       form.set('totalQuantity', String(next))
-      await updateEquipment(item.id, form)
+      const result = await updateEquipment(item.id, form)
+      // The button state comes from a snapshot that can be a moment stale; the
+      // server is the authority, so surface its answer (e.g. limit reached).
+      if (result.error) setInlineError(result.error)
     } finally {
       setBusy(false)
     }
@@ -489,6 +526,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
               variant="primary"
               size="sm"
               onClick={openNewType}
+              disabled={atLimit}
               className={styles.desktopOnlyAction}
             >
               NEW EQUIPMENT
@@ -500,6 +538,21 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
           )
         }
       />
+
+      {canEdit && (atLimit || inlineError) && (
+        <p className={styles.notice} role="status">
+          {inlineError ??
+            `EQUIPMENT LIMIT REACHED · ${equipmentCount} / ${equipmentLimit} ITEMS.`}{' '}
+          {!inlineError && (
+            <>
+              <Link href="/settings/subscription" className={styles.noticeLink}>
+                Upgrade your plan
+              </Link>{' '}
+              to add more. Removing items is always possible.
+            </>
+          )}
+        </p>
+      )}
 
       <div className={styles.toolbar}>
         <div className={styles.search}>
@@ -542,7 +595,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
               }
               action={
                 inventoryEmpty && canEdit ? (
-                  <Button variant="primary" size="sm" onClick={openNewType}>
+                  <Button variant="primary" size="sm" onClick={openNewType} disabled={atLimit}>
                     NEW EQUIPMENT
                   </Button>
                 ) : undefined
@@ -587,6 +640,7 @@ export default function EquipmentList({ companyId, role, initialEquipment }: Equ
                           open={filterActive || openTypeId === type.equipment.id}
                           canEdit={canEdit}
                           busy={busy}
+                          atLimit={atLimit}
                           activeUnitId={activeUnitId}
                           quantityBooked={quantityOnBooking.get(type.equipment.id) ?? 0}
                           onToggle={() =>
@@ -691,6 +745,7 @@ interface TypeRowProps {
   open: boolean
   canEdit: boolean
   busy: boolean
+  atLimit: boolean
   activeUnitId?: string
   quantityBooked: number
   onToggle: () => void
@@ -704,6 +759,7 @@ function TypeRow({
   open,
   canEdit,
   busy,
+  atLimit,
   activeUnitId,
   quantityBooked,
   onToggle,
@@ -777,7 +833,8 @@ function TypeRow({
                   type="button"
                   className={styles.quantityStep}
                   onClick={() => onAdjustQuantity(1)}
-                  disabled={busy}
+                  disabled={busy || atLimit}
+                  title={atLimit ? 'Equipment limit reached — upgrade your plan to add more' : undefined}
                   aria-label={`Increase quantity of ${item.name}`}
                 >
                   +
@@ -800,7 +857,13 @@ function TypeRow({
                 </button>
               ))}
               {canEdit && (
-                <button type="button" className={styles.addUnit} onClick={() => onOpenUnit(null)}>
+                <button
+                  type="button"
+                  className={styles.addUnit}
+                  onClick={() => onOpenUnit(null)}
+                  disabled={atLimit}
+                  title={atLimit ? 'Equipment limit reached — upgrade your plan to add more' : undefined}
+                >
                   + ADD UNIT
                 </button>
               )}

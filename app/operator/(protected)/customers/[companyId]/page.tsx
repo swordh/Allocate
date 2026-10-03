@@ -51,8 +51,9 @@ export default async function CustomerDetailPage({
       adminDb.doc(`companies/${companyId}`).get(),
       safeRead(adminDb.collection(`companies/${companyId}/members`).get(), 'members', { companyId }),
       safeRead(adminDb.collection(`companies/${companyId}/bookings`).count().get(), 'bookingsCount', { companyId }),
-      // Active only, matching both the plan limit and the list's mirrored count.
-      safeRead(adminDb.collection(`companies/${companyId}/equipment`).where('active', '==', true).count().get(), 'equipmentCount', { companyId }),
+      // The plan-limit counter itself (active units + quantity totals), the same
+      // number the customer sees on their subscription page and the list mirrors.
+      safeRead(adminDb.doc(`companies/${companyId}/_meta/equipmentCount`).get(), 'equipmentCount', { companyId }),
       // `where('createdAt', '>=', …)` silently excludes bookings missing
       // `createdAt` (tools/backfill_company_stats.js already warns some do) —
       // this count can undercount, never overcount.
@@ -111,7 +112,7 @@ export default async function CustomerDetailPage({
     : []
 
   const bookingsTotal  = bookingsCountSnap ? bookingsCountSnap.data().count : null
-  const equipmentCount = equipmentCountSnap ? equipmentCountSnap.data().count : null
+  const equipmentCount = equipmentCountSnap ? ((equipmentCountSnap.data()?.count as number | undefined) ?? 0) : null
   const bookings30d    = bookings30dSnap ? bookings30dSnap.data().count : null
 
   const bookingHistoryUnavailable = recentBookingsSnap === null
