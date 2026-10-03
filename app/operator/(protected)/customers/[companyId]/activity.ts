@@ -20,6 +20,8 @@ export type FeedEntryKind =
   | 'payment_failed'
   | 'plan_changed'
   | 'status_changed'
+  | 'cancellation_scheduled'
+  | 'cancellation_reverted'
 
 export interface FeedEntry {
   kind: FeedEntryKind

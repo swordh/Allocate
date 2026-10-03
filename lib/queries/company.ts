@@ -20,6 +20,9 @@ function docToCompany(doc: FirebaseFirestore.DocumentSnapshot): Company {
                           ?? subscription.trialEnd
                           ?? undefined,
     cancelAtPeriodEnd:  subscription.cancelAtPeriodEnd  ?? undefined,
+    cancelAt:           subscription.cancelAt?.toDate?.()?.toISOString()
+                          ?? subscription.cancelAt
+                          ?? null,
     interval:           subscription.interval           ?? undefined,
     pauseCollection:    subscription.pauseCollection    ?? null,
     pauseResumesAt:     subscription.pauseResumesAt?.toDate?.()?.toISOString()

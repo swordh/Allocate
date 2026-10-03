@@ -238,6 +238,7 @@ export async function setupNewCompany(
       currentPeriodEnd:  null,
       trialEnd:          null,
       cancelAtPeriodEnd: false,
+      cancelAt:          null,
     },
     stats: {
       ...INITIAL_COMPANY_STATS,

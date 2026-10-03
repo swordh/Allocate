@@ -313,6 +313,7 @@ function buildCompanyWrites(company, seededUsers, admin, companyId, nowIso, writ
       currentPeriodEnd:  nil(),
       trialEnd:          nil(),
       cancelAtPeriodEnd: bool(false),
+      cancelAt:          nil(),
     });
   } else if (company.subscriptionMode !== 'none') {
     throw new Error(`Unknown subscriptionMode: ${company.subscriptionMode}`);

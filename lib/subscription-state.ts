@@ -178,9 +178,9 @@ const SUB_STATES: Record<SubStateKey, SubStateDef> = {
   CANCELED: {
     label: 'CANCELED',
     accent: 'neutral',
-    cycle: (sub) => `Access ends ${formatDate(sub?.currentPeriodEnd)}`,
+    cycle: (sub) => `Access ends ${formatDate(sub?.cancelAt ?? sub?.currentPeriodEnd)}`,
     notice: (sub) =>
-      `This subscription is canceled. You keep full access until ${formatDate(sub?.currentPeriodEnd)} — after that, bookings are read-only.`,
+      `This subscription is canceled. You keep full access until ${formatDate(sub?.cancelAt ?? sub?.currentPeriodEnd)} — after that, bookings are read-only.`,
     cta: 'RESUME PLAN',
     tone: 'neutral',
   },

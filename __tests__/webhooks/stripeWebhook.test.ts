@@ -194,6 +194,7 @@ function baseSub(overrides: Partial<Stripe.Subscription> = {}) {
     customer: 'cus_1',
     status: 'active' as Stripe.Subscription.Status,
     cancel_at_period_end: false,
+    cancel_at: null,
     trial_end: null,
     pause_collection: null,
     items: {
@@ -346,5 +347,129 @@ describe('customer.subscription.updated — pause_collection mirroring', () => {
       pauseCollection: null,
       pauseResumesAt: null,
     })
+  })
+})
+
+// ── #305: cancellation mirroring + feed entries ──────────────────────────────
+
+describe('customer.subscription.updated — cancellation (#305)', () => {
+  const CANCEL_AT = 1_700_000_000
+  const CANCEL_AT_ISO = new Date(CANCEL_AT * 1000).toISOString()
+
+  function company(sub: Data = {}) {
+    return {
+      stripeCustomerId: 'cus_1',
+      subscription: { status: 'active', plan: 'basic', stripeUpdatedAt: 1000, ...sub },
+    }
+  }
+
+  function update(id: string, created: number, sub: Partial<Stripe.Subscription>) {
+    return callWebhook(
+      subscriptionEvent({
+        id,
+        created,
+        type: 'customer.subscription.updated',
+        subscription: baseSub(sub) as unknown as Parameters<typeof subscriptionEvent>[0]['subscription'],
+      }),
+    )
+  }
+
+  it("Billing Portal's real shape (only cancel_at set) mirrors true + date and logs scheduled", async () => {
+    companies['co1'] = company()
+
+    // cancel_at_period_end stays false, exactly as Stripe sends it from the portal.
+    await update('evt_cancel', 2000, { cancel_at: CANCEL_AT, cancel_at_period_end: false })
+
+    expect(companies['co1'].subscription).toMatchObject({
+      cancelAtPeriodEnd: true,
+      cancelAt: CANCEL_AT_ISO,
+    })
+    expect(companyEvents['evt_cancel:cancellation']).toMatchObject({
+      companyId: 'co1',
+      kind: 'cancellation_scheduled',
+      effectiveAt: CANCEL_AT_ISO,
+      stripeEventId: 'evt_cancel',
+      stripeSubscriptionId: 'sub_1',
+    })
+  })
+
+  it('reverting (cancel_at back to null) mirrors false/null and logs reverted', async () => {
+    companies['co1'] = company({ cancelAtPeriodEnd: true, cancelAt: CANCEL_AT_ISO })
+
+    await update('evt_renew', 2000, { cancel_at: null, cancel_at_period_end: false })
+
+    expect(companies['co1'].subscription).toMatchObject({
+      cancelAtPeriodEnd: false,
+      cancelAt: null,
+    })
+    expect(companyEvents['evt_renew:cancellation']).toMatchObject({
+      kind: 'cancellation_reverted',
+      effectiveAt: null,
+    })
+  })
+
+  it('cancel_at_period_end alone (no cancel_at) also counts as scheduled', async () => {
+    companies['co1'] = company()
+
+    await update('evt_cape', 2000, { cancel_at: null, cancel_at_period_end: true })
+
+    expect(companies['co1'].subscription).toMatchObject({ cancelAtPeriodEnd: true, cancelAt: null })
+    expect(companyEvents['evt_cape:cancellation']).toMatchObject({
+      kind: 'cancellation_scheduled',
+      effectiveAt: null,
+    })
+  })
+
+  it('logs nothing when the cancellation state is unchanged', async () => {
+    companies['co1'] = company({ cancelAtPeriodEnd: true, cancelAt: CANCEL_AT_ISO })
+
+    await update('evt_same', 2000, { cancel_at: CANCEL_AT })
+
+    expect(companyEvents['evt_same:cancellation']).toBeUndefined()
+    expect(Object.keys(companyEvents)).toEqual([])
+  })
+
+  it('logs nothing when no stored value exists and the subscription is not canceled', async () => {
+    companies['co1'] = company() // no cancelAtPeriodEnd stored at all
+
+    await update('evt_none', 2000, {})
+
+    expect(Object.keys(companyEvents)).toEqual([])
+  })
+
+  it('writes two separate rows when plan and cancellation change in one event', async () => {
+    companies['co1'] = company({ plan: 'starter' })
+
+    await update('evt_both', 2000, { cancel_at: CANCEL_AT })
+
+    expect(companyEvents['evt_both']).toMatchObject({ kind: 'plan_changed', toPlan: 'basic' })
+    expect(companyEvents['evt_both:cancellation']).toMatchObject({ kind: 'cancellation_scheduled' })
+    expect(Object.keys(companyEvents).sort()).toEqual(['evt_both', 'evt_both:cancellation'])
+  })
+
+  it('a redelivery of the same event collapses onto the same row id', async () => {
+    const before = company()
+    companies['co1'] = structuredClone(before)
+
+    await update('evt_redeliver', 2000, { cancel_at: CANCEL_AT })
+
+    // Simulate the non-transactional dedup ledger letting a redelivery through
+    // before the first write landed: ledger and stored state are as they were.
+    stripeEvents.clear()
+    companies['co1'] = structuredClone(before)
+
+    await update('evt_redeliver', 2000, { cancel_at: CANCEL_AT })
+
+    expect(Object.keys(companyEvents)).toEqual(['evt_redeliver:cancellation'])
+  })
+
+  it('a stale event neither mirrors nor logs a cancellation', async () => {
+    companies['co1'] = company({ stripeUpdatedAt: 5000 })
+
+    await update('evt_stale_cancel', 2000, { cancel_at: CANCEL_AT })
+
+    expect(companies['co1'].subscription).not.toHaveProperty('cancelAt')
+    expect(companies['co1'].subscription).not.toHaveProperty('cancelAtPeriodEnd')
+    expect(Object.keys(companyEvents)).toEqual([])
   })
 })
