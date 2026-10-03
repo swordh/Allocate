@@ -2,12 +2,15 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
+import { getEquipmentCount } from '@/lib/queries/company'
+import { shouldReadEquipmentCount } from '@/lib/equipmentLimitBanner'
 import { listUserCompanies } from '@/lib/queries/companies'
 import { evaluateAppAccess, hasFullAccess } from '@/lib/subscriptionAccess'
 import PrimaryNav from '@/components/nav/PrimaryNav'
 import { MobileMenu } from '@/components/nav/MobileMenu'
 import CompanyDeletionBanner from '@/components/company/CompanyDeletionBanner'
 import NoPlanBanner from '@/components/subscription/NoPlanBanner'
+import EquipmentLimitBanner from '@/components/subscription/EquipmentLimitBanner'
 import type { CompanyDeletionBannerData } from '@/lib/companyDeletionBanner'
 import type { CompanyDeletionState } from '@/types'
 import styles from './app-layout.module.css'
@@ -35,6 +38,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const fullAccess = hasFullAccess(subStatus, trialEnd)
 
   const profile = await getUserProfile(session.uid)
+
+  // Equipment-limit banner (#284): one cheap doc read, and only for the admins
+  // who can see it — the company doc above already carries the limit.
+  const equipmentCount = shouldReadEquipmentCount(session.role, fullAccess)
+    ? await getEquipmentCount(session.activeCompanyId)
+    : null
 
   // Company switcher (issue #352) — the membership list is the same for
   // every render in this request, so one fetch here serves both PrimaryNav
@@ -82,6 +91,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NoPlanBanner
           hasFullAccess={fullAccess}
           role={session.role}
+          className={styles.deletionBanner}
+        />
+        <EquipmentLimitBanner
+          role={session.role}
+          hasFullAccess={fullAccess}
+          count={equipmentCount}
+          limit={subscription?.limits?.equipment}
           className={styles.deletionBanner}
         />
         {children}

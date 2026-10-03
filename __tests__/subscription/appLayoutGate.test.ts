@@ -36,6 +36,11 @@ vi.mock('@/lib/queries/users', () => ({
   getUserProfile: mockGetUserProfile,
 }))
 
+// The equipment-limit banner reads the counter for admins with an active plan.
+vi.mock('@/lib/queries/company', () => ({
+  getEquipmentCount: vi.fn().mockResolvedValue(0),
+}))
+
 vi.mock('@/lib/queries/companies', () => ({
   listUserCompanies: mockListUserCompanies,
 }))
