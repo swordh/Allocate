@@ -26,6 +26,31 @@ function isQuantityTracked(data: { trackingType?: string }): boolean {
 // Errors thrown inside a transaction whose message is safe to show the user.
 const USER_FACING_CODES = ['resource-exhausted', 'failed-precondition', 'not-found']
 
+const CASCADE_BATCH_SIZE = 450
+
+// Returns the error's own message only when it was thrown on purpose for the
+// user (limit reached, subscription inactive, not found, ...). Anything else —
+// raw Firestore/gRPC errors — is logged and replaced by `fallback`.
+function userMessage(err: unknown, fallback: string, context: string): string {
+  const code = (err as { code?: string }).code
+  if (USER_FACING_CODES.includes(code ?? '') && err instanceof Error) return err.message
+  console.error(`[actions/equipment] ${context} failed`, { message: err instanceof Error ? err.message : err })
+  return fallback
+}
+
+// Ids end up inside document paths: a '/' would address a different document
+// (createUnit('E/units/U') would write a phantom unit), so reject before any ref is built.
+function isValidId(id: unknown): id is string {
+  return typeof id === 'string' && id.trim() !== '' && !id.includes('/')
+}
+
+function counterMissing(): Error {
+  return Object.assign(
+    new Error('Equipment counter not initialized. Run the backfill migration first.'),
+    { code: 'failed-precondition' },
+  )
+}
+
 // ── createEquipment ──────────────────────────────────────────────────────────
 
 export async function createEquipment(
@@ -103,9 +128,7 @@ export async function createEquipment(
 
     return { id: newEquipmentId! }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create equipment'
-    console.error('[actions/equipment] createEquipment failed', { message })
-    return { error: message }
+    return { error: userMessage(err, 'Failed to create equipment. Please try again.', 'createEquipment') }
   }
 }
 
@@ -120,7 +143,7 @@ export async function updateEquipment(
 
   const companyId = session.activeCompanyId
 
-  if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
 
   // trackingType is immutable — reject any attempt to change it.
   if (formData.get('trackingType') !== null) {
@@ -214,6 +237,7 @@ export async function updateEquipment(
       await equipmentRef.update(updates)
     } else {
       const qty = newTotalQuantity
+      const counterRef = adminDb.doc(`companies/${companyId}/_meta/equipmentCount`)
       await adminDb.runTransaction(async (tx) => {
         // Re-read inside the transaction: the pre-read above is only a fast
         // validation path, and a concurrent deactivate or quantity change must
@@ -227,12 +251,18 @@ export async function updateEquipment(
         // Only a quantity-tracked, active item occupies `totalQuantity` slots.
         // An inactive one counts 0 either way, so its quantity can change freely.
         const delta =
-          isQuantityTracked(current) && current.active
+          isQuantityTracked(current) && current.active === true
             ? qty - (current.totalQuantity ?? 0)
             : 0
 
         // Reads company + counter — ALL reads must come before writes.
-        if (delta > 0) await assertEquipmentCapacity(tx, companyId, delta)
+        if (delta > 0) {
+          await assertEquipmentCapacity(tx, companyId, delta)
+        } else if (delta < 0) {
+          // A decrease skips the capacity check, so check the counter exists
+          // here — otherwise the increment below fails with a raw NOT_FOUND.
+          if (!(await tx.get(counterRef)).exists) throw counterMissing()
+        }
 
         tx.update(equipmentRef, updates)
         equipmentCountDelta(tx, companyId, delta)
@@ -248,9 +278,7 @@ export async function updateEquipment(
   } catch (err) {
     const code = (err as { code?: string }).code
     if (code === 'not-found') return { error: 'Equipment not found.' }
-    const message = err instanceof Error ? err.message : 'Failed to update equipment'
-    console.error('[actions/equipment] updateEquipment failed', { message })
-    return { error: message }
+    return { error: userMessage(err, 'Failed to update equipment. Please try again.', 'updateEquipment') }
   }
 }
 
@@ -269,7 +297,7 @@ export async function deactivateEquipment(
 
   const companyId = session.activeCompanyId
 
-  if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
 
   // ── Active/upcoming booking check ──────────────────────────────────────────
   // Query by equipmentIds array-contains + endDate range; filter by status in memory.
@@ -316,13 +344,11 @@ export async function deactivateEquipment(
 
       const existingData = equipmentSnap.data() as EquipmentDocumentInternal
       trackingType = existingData.trackingType
-      const wasActive = existingData.active
+      const wasActive = existingData.active === true
 
       const counterSnap = await tx.get(counterRef)
 
-      if (!counterSnap.exists) {
-        throw new Error('Equipment counter not initialized. Run the backfill migration first.')
-      }
+      if (!counterSnap.exists) throw counterMissing()
 
       // What this type contributes to the counter right now: its active units, or
       // its totalQuantity. Read inside the transaction so a unit created or
@@ -355,9 +381,10 @@ export async function deactivateEquipment(
     // retry is needed in that case. Legacy types without a trackingType are units types too.
     if (trackingType !== 'quantity') {
       const unitsSnap = await equipmentRef.collection('units').where('active', '==', true).get()
-      if (unitsSnap.size > 0) {
+      // Chunked: a batch holds at most 500 writes, and a type can have more units.
+      for (let i = 0; i < unitsSnap.docs.length; i += CASCADE_BATCH_SIZE) {
         const batch = adminDb.batch()
-        for (const unitDoc of unitsSnap.docs) {
+        for (const unitDoc of unitsSnap.docs.slice(i, i + CASCADE_BATCH_SIZE)) {
           batch.update(unitDoc.ref, { active: false, deactivatedAt: FieldValue.serverTimestamp() })
         }
         await batch.commit()
@@ -373,9 +400,7 @@ export async function deactivateEquipment(
     if (code === 'not-found') {
       return { error: 'Equipment not found.' }
     }
-    const message = err instanceof Error ? err.message : 'Failed to deactivate equipment'
-    console.error('[actions/equipment] deactivateEquipment failed', { message })
-    return { error: message }
+    return { error: userMessage(err, 'Failed to deactivate equipment. Please try again.', 'deactivateEquipment') }
   }
 }
 
@@ -390,7 +415,7 @@ export async function toggleEquipmentAvailability(
 
   const companyId = session.activeCompanyId
 
-  if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
 
   const equipmentRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
   const equipmentSnap = await equipmentRef.get()
@@ -421,8 +446,8 @@ export async function toggleUnitAvailability(
   const session = await getVerifiedSession()
   if (session.role !== 'admin') return { error: 'Unauthorized' }
 
-  if (!equipmentId?.trim()) return { error: 'equipmentId is required' }
-  if (!unitId?.trim()) return { error: 'unitId is required' }
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
+  if (!isValidId(unitId)) return { error: 'unitId is required' }
 
   const companyId = session.activeCompanyId
   const path = `companies/${companyId}/equipment/${equipmentId}/units/${unitId}`
@@ -457,6 +482,8 @@ export async function createUnit(
   if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
 
   const companyId = session.activeCompanyId
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
+
   const parentRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}`)
   const label = (formData.get('label') as string | null)?.trim() ?? ''
   if (!label) return { error: 'Label is required.' }
@@ -536,6 +563,9 @@ export async function updateUnit(
   const session = await getVerifiedSession()
   if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
 
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
+  if (!isValidId(unitId)) return { error: 'unitId is required' }
+
   const companyId = session.activeCompanyId
   const unitRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}/units/${unitId}`)
   const unitSnap = await unitRef.get()
@@ -577,6 +607,9 @@ export async function deactivateUnit(
 ): Promise<void | { error: string } | { requiresForce: true; futureBookingCount: number }> {
   const session = await getVerifiedSession()
   if (!session || session.role !== 'admin') return { error: 'Unauthorized' }
+
+  if (!isValidId(equipmentId)) return { error: 'equipmentId is required' }
+  if (!isValidId(unitId)) return { error: 'unitId is required' }
 
   const companyId = session.activeCompanyId
   const unitRef = adminDb.doc(`companies/${companyId}/equipment/${equipmentId}/units/${unitId}`)
@@ -623,12 +656,14 @@ export async function deactivateUnit(
       // the counter down by two.
       if (txUnitSnap.data()!.active === false) return
 
-      // The unit contributes to the counter only while its type is active. Under
-      // an inactive type the counter was already zeroed by deactivateEquipment.
-      const parentActive = parentSnap.exists && (parentSnap.data() as EquipmentDocumentInternal).active
-      if (parentActive && !counterSnap.exists) {
-        throw new Error('Equipment counter not initialized. Run the backfill migration first.')
-      }
+      // The unit contributes to the counter only while it is active, its type is
+      // active, and the type is units-tracked (a quantity type counts totalQuantity,
+      // whatever unit documents hang under it). Under an inactive type the counter
+      // was already zeroed by deactivateEquipment. Same reading as the backfill.
+      const parent = parentSnap.exists ? (parentSnap.data() as EquipmentDocumentInternal) : null
+      const counted =
+        txUnitSnap.data()!.active === true && parent?.active === true && !isQuantityTracked(parent)
+      if (counted && !counterSnap.exists) throw counterMissing()
 
       // ── Write phase ────────────────────────────────────────────────────────
       tx.update(unitRef, {
@@ -636,13 +671,11 @@ export async function deactivateUnit(
         deactivatedAt: FieldValue.serverTimestamp(),
         deactivatedBy: session.uid,
       })
-      if (parentActive) equipmentCountDelta(tx, companyId, -1)
+      if (counted) equipmentCountDelta(tx, companyId, -1)
     })
   } catch (err) {
     if ((err as { code?: string }).code === 'not-found') return { error: 'Unit not found.' }
-    const message = err instanceof Error ? err.message : 'Failed to deactivate unit'
-    console.error('[actions/equipment] deactivateUnit failed', { message })
-    return { error: message }
+    return { error: userMessage(err, 'Failed to deactivate unit. Please try again.', 'deactivateUnit') }
   }
 
   revalidatePath('/equipment')
@@ -748,11 +781,19 @@ export async function updateEquipmentWithUnits(
       // Only deletions of units that are still active lower the counter; a unit
       // that is already inactive was subtracted when it was deactivated.
       const deletedSnaps = await Promise.all(uniqueDeletedIds.map((id) => tx.get(unitRefFor(id))))
-      const deactivating = deletedSnaps.filter((snap) => snap.exists && snap.data()?.active !== false).length
+      const deactivating = deletedSnaps.filter((snap) => snap.exists && snap.data()?.active === true).length
 
       const delta = unitCreates.length - deactivating
 
-      if (delta > 0) await assertEquipmentCapacity(tx, companyId, delta)
+      if (delta > 0) {
+        await assertEquipmentCapacity(tx, companyId, delta)
+      } else if (delta < 0) {
+        // A decrease skips the capacity check; check the counter exists here so
+        // the increment below cannot fail with a raw NOT_FOUND.
+        if (!(await tx.get(adminDb.doc(`companies/${companyId}/_meta/equipmentCount`))).exists) {
+          throw counterMissing()
+        }
+      }
 
       // ── Write phase ──────────────────────────────────────────────────────────
       // Update equipment basic fields
@@ -856,6 +897,16 @@ export async function createEquipmentWithUnits(
 
   const category = fields.category?.trim() ?? ''
   if (!category) return { error: 'Category is required' }
+
+  if (fields.trackingType !== 'units' && fields.trackingType !== 'quantity') {
+    return { error: 'Invalid trackingType' }
+  }
+
+  // Unit documents under a quantity type would never be counted (it counts
+  // totalQuantity) yet would show up as units everywhere else.
+  if (fields.trackingType === 'quantity' && unitCreates.length > 0) {
+    return { error: 'Units cannot be added to quantity-tracked equipment' }
+  }
 
   if (fields.trackingType === 'quantity') {
     const qty = fields.totalQuantity
