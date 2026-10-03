@@ -12,6 +12,7 @@ import type {
   StoredFeedbackType,
 } from '@/types/operator'
 import { updateFeedbackStatus, updateFeedbackPriority, addFeedbackNote } from '../actions'
+import { formatOperatorDateTime, formatOperatorShortDate } from '@/lib/operatorDates'
 import styles from './detail.module.css'
 
 export interface SubmitterInfo {
@@ -101,22 +102,6 @@ const TYPE_DOT: Record<StoredFeedbackType, string> = {
 const NOTE_DOT = '#9fb3c8'
 const EVENT_DOT_OPERATOR = 'var(--accent)'
 const EVENT_DOT_SYSTEM = '#4a4b52'
-
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-
-function formatShortDate(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]}`
-}
-
-function formatFullDateTime(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${formatShortDate(iso)} ${d.getFullYear()} · ${hh}:${mm}`
-}
 
 interface ThreadItem {
   id: string
@@ -232,7 +217,7 @@ export default function FeedbackDetailView({ item, timeline, submitter, related 
     { label: 'Role', value: submitter.role || '—' },
     { label: 'Company', value: item.companyName || '—' },
     { label: 'Plan', value: submitter.plan || '—' },
-    { label: 'Submitted', value: formatFullDateTime(item.submittedAt) },
+    { label: 'Submitted', value: formatOperatorDateTime(item.submittedAt) },
   ]
 
   const settersBlock = (
@@ -309,7 +294,7 @@ export default function FeedbackDetailView({ item, timeline, submitter, related 
               <div className={styles.threadBody}>
                 <div className={styles.threadMeta}>
                   <span className={entry.authorClassName}>{entry.author}</span>
-                  <span>{formatFullDateTime(entry.createdAt)}</span>
+                  <span>{formatOperatorDateTime(entry.createdAt)}</span>
                 </div>
                 {entry.kind === 'report' && (
                   <div className={styles.reportCard}>
@@ -376,7 +361,7 @@ export default function FeedbackDetailView({ item, timeline, submitter, related 
               <Link key={r.id} href={`/operator/feedback/${r.id}`} className={styles.relatedItem}>
                 <span className={styles.relatedTitle}>{r.title}</span>
                 <span className={`${styles.relatedMeta} ${statusClass(r.status)}`}>
-                  {TYPE_LABELS[r.type]} · {STATUS_LABELS[r.status]} · {formatShortDate(r.submittedAt)}
+                  {TYPE_LABELS[r.type]} · {STATUS_LABELS[r.status]} · {formatOperatorShortDate(r.submittedAt)}
                 </span>
               </Link>
             ))

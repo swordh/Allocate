@@ -2,13 +2,12 @@
 
 import Chip from '@/components/ui/Chip'
 import { formatDateFullInZone } from '@/lib/dates'
+import { OPERATOR_ZONE } from '@/lib/operatorDates'
 import { isStuckDeletion, nowMs, timeRemaining } from '@/lib/operatorDeletionView'
 import { CancelBlock, MarkFailedBlock, RequeueBlock, RequestDeletionBlock } from './DeletionActionBlocks'
 import type { CompanyDeletionRow } from '@/types/operator'
 import DeletionHistoryList from './DeletionHistoryList'
 import styles from './deletion.module.css'
-
-const ZONE = 'UTC' // see DeletionHistoryList's docblock for why UTC, not the company's own zone
 
 interface DeletionSectionProps {
   companyId: string
@@ -54,7 +53,7 @@ export default function DeletionSection({ companyId, companyName, rows, historyU
           {stuck && <Chip size="tag" interactive={false} tone="danger">STUCK</Chip>}
           {latest.state === 'requested' && remaining && (
             <span className={styles.remaining}>
-              Scheduled for {formatDateFullInZone(latest.scheduledFor, ZONE)} — {remaining.label}
+              Scheduled for {formatDateFullInZone(latest.scheduledFor, OPERATOR_ZONE)} — {remaining.label}
             </span>
           )}
           {latest.state !== 'requested' && (

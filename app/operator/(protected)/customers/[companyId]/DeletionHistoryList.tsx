@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Chip from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { formatDateFullInZone } from '@/lib/dates'
+import { OPERATOR_ZONE } from '@/lib/operatorDates'
 import {
   FAILURE_REASON_LABELS,
   LEDGER_STATE_LABELS,
@@ -19,26 +20,14 @@ import {
 import type { CompanyDeletionRow } from '@/types/operator'
 import styles from './deletion.module.css'
 
-/**
+/*
  * Renders a `CompanyDeletionRow`'s history — shared by the per-company
  * detail page (one company, its own timeline) and the two site-wide list
  * entries under /operator/deletions (many companies, one row each).
  *
- * Zone note: every absolute instant here renders in UTC, not the company's
- * own `preferences.timezone` the way the customer-facing banner does
- * (lib/companyDeletionBanner.ts). That banner's zone choice exists so a
- * member reads the SAME calendar date their own bookings are dated in — a
- * concern that doesn't apply to an operator, who has no bookings of their
- * own in any company's zone and, on the site-wide views, is looking at many
- * companies with different zones side by side; picking any one company's
- * zone there would make dates inconsistent from row to row, and picking
- * "the operator's own zone" isn't meaningful either — this is a server
- * render with no browser-local zone to read. UTC is the one zone every row
- * agrees on. The more important signal for "is there still time to act" —
- * `timeRemaining` below — is a duration, not an instant, so it carries no
- * zone dependency at all; the UTC date is secondary, supporting context.
+ * Zone: every absolute instant here renders in UTC — see the docblock in
+ * lib/operatorDates.ts for why.
  */
-const ZONE = 'UTC'
 
 function chipTone(tone: OutcomeTone): 'neutral' | 'accent' | 'danger' {
   return tone
@@ -139,19 +128,19 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
 
       <div className={styles.historyBody}>
         <span className={styles.metaLine}>
-          Requested {formatDateFullInZone(row.requestedAt, ZONE)}
+          Requested {formatDateFullInZone(row.requestedAt, OPERATOR_ZONE)}
         </span>
         <IdentityLine label="by" value={row.requestedByName} email={row.requestedByEmail ?? undefined} />
 
         {row.state === 'requested' && remaining && (
           <span className={remaining.expired ? styles.metaLine : styles.remaining}>
-            Scheduled for {formatDateFullInZone(row.scheduledFor, ZONE)} — {remaining.label}
+            Scheduled for {formatDateFullInZone(row.scheduledFor, OPERATOR_ZONE)} — {remaining.label}
           </span>
         )}
 
         {row.canceledAt && (
           <>
-            <span className={styles.metaLine}>Canceled {formatDateFullInZone(row.canceledAt, ZONE)}</span>
+            <span className={styles.metaLine}>Canceled {formatDateFullInZone(row.canceledAt, OPERATOR_ZONE)}</span>
             <IdentityLine label="by" value={row.canceledByName} email={row.canceledByEmail ?? undefined} />
             {row.cancelSource && (
               <span className={styles.metaLine}>
@@ -167,7 +156,7 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
         )}
 
         {row.completedAt && (
-          <span className={styles.metaLine}>Completed {formatDateFullInZone(row.completedAt, ZONE)}</span>
+          <span className={styles.metaLine}>Completed {formatDateFullInZone(row.completedAt, OPERATOR_ZONE)}</span>
         )}
 
         {(row.state === 'failed' || row.state === 'executing') && (
@@ -178,7 +167,7 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
             </span>
             {row.state === 'failed' && row.failedAt && (
               <span className={styles.metaLine}>
-                Failed {formatDateFullInZone(row.failedAt, ZONE)}
+                Failed {formatDateFullInZone(row.failedAt, OPERATOR_ZONE)}
                 {row.failureReason ? ` — ${FAILURE_REASON_LABELS[row.failureReason]}` : ''}
               </span>
             )}
@@ -191,7 +180,7 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
               </span>
             )}
             {row.lastHeartbeatAt && (
-              <span className={styles.metaLine}>Last heartbeat {formatDateFullInZone(row.lastHeartbeatAt, ZONE)}</span>
+              <span className={styles.metaLine}>Last heartbeat {formatDateFullInZone(row.lastHeartbeatAt, OPERATOR_ZONE)}</span>
             )}
             {row.lastError === null && (
               <span className={styles.metaLine}><em className={styles.redacted}>Error detail redacted (24-month retention)</em></span>
@@ -211,7 +200,7 @@ export function DeletionRow({ row, showCompanyName, linkToCompany }: {
             {row.operatorActions.map((a, i) => (
               <div key={i} className={styles.operatorActionRow}>
                 <span className={styles.metaLine}>
-                  {OPERATOR_ACTION_LABELS[a.action] ?? a.action} — {formatDateFullInZone(a.at, ZONE)}
+                  {OPERATOR_ACTION_LABELS[a.action] ?? a.action} — {formatDateFullInZone(a.at, OPERATOR_ZONE)}
                 </span>
                 <IdentityLine label="by" value={a.byName} />
                 {a.note && <span className={styles.metaLine}>{a.note}</span>}

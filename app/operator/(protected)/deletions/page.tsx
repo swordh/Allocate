@@ -3,6 +3,7 @@ import Chip from '@/components/ui/Chip'
 import EmptyState from '@/components/ui/EmptyState'
 import { adminAuth } from '@/lib/firebase-admin'
 import { formatDateFullInZone } from '@/lib/dates'
+import { OPERATOR_ZONE } from '@/lib/operatorDates'
 import { getOperatorSession } from '@/lib/operator-dal'
 import {
   queryAllDeletions,
@@ -21,13 +22,6 @@ import {
 } from '@/types/operator'
 import DeletionHistoryList from '../customers/[companyId]/DeletionHistoryList'
 import styles from './deletions.module.css'
-
-/**
- * Same zone choice as `DeletionHistoryList` — see that file's `ZONE` docblock
- * for why UTC, not any one company's own timezone, is the only zone every
- * row on a site-wide operator list agrees on.
- */
-const STUCK_ZONE = 'UTC'
 
 type StuckAccountDeletionDisplayRow = StuckAccountDeletionRow & {
   email: string | null
@@ -74,7 +68,7 @@ function StuckAccountDeletionRowView({ row }: { row: StuckAccountDeletionDisplay
       </div>
       <div className={styles.stuckRowBody}>
         <span className={styles.metaLine}>
-          First attempt {formatDateFullInZone(row.firstAt, STUCK_ZONE)} · last {formatDateFullInZone(row.lastAt, STUCK_ZONE)}
+          First attempt {formatDateFullInZone(row.firstAt, OPERATOR_ZONE)} · last {formatDateFullInZone(row.lastAt, OPERATOR_ZONE)}
         </span>
         <span className={styles.metaLine}>
           {row.attempts} {row.attempts === 1 ? 'attempt' : 'attempts'} · {ACCOUNT_DELETION_FAILURE_PATH_LABELS[row.lastPath]}
