@@ -2,36 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
-vi.mock('@/lib/firebase-admin', () => {
-  const mockBatch = {
-    update: vi.fn(),
-    set: vi.fn(),
-    commit: vi.fn().mockResolvedValue(undefined),
-  }
-  const mockEquipRef = {
-    get: vi.fn().mockResolvedValue({
-      exists: true,
-      data: () => ({
-        name: 'ARRI Alexa Mini LF',
-        category: 'Camera',
-        trackingType: 'units',
-        active: true,
-      }),
-    }),
-    update: vi.fn(),
-  }
-  const mockUnitRef = { update: vi.fn(), set: vi.fn() }
-  const mockNewUnitRef = { id: 'new-unit-1' }
-  const mockCollection = {
-    doc: vi.fn().mockReturnValue(mockNewUnitRef),
-  }
-  const mockDb = {
-    doc: vi.fn().mockReturnValue(mockEquipRef),
-    collection: vi.fn().mockReturnValue(mockCollection),
-    batch: vi.fn().mockReturnValue(mockBatch),
-  }
-  return { adminDb: mockDb, adminAuth: {} }
-})
+vi.mock('@/lib/firebase-admin', () => ({
+  adminDb: {
+    doc: vi.fn(),
+    collection: vi.fn(),
+    batch: vi.fn(),
+    runTransaction: vi.fn(),
+  },
+  adminAuth: {},
+}))
 
 vi.mock('@/lib/dal', () => ({
   getVerifiedSession: vi.fn(),
@@ -47,11 +26,17 @@ import { updateEquipmentWithUnits } from '@/actions/equipment'
 import { adminDb } from '@/lib/firebase-admin'
 import { getVerifiedSession } from '@/lib/dal'
 import { revalidatePath } from 'next/cache'
+import { wireDb, makeTransaction, type DocMap, type TransactionStub } from '../helpers/firestore'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const COMPANY_ID = 'company-1'
 const EQUIPMENT_ID = 'eq-1'
+
+const EQUIP_PATH = `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}`
+const COUNTER_PATH = `companies/${COMPANY_ID}/_meta/equipmentCount`
+const COMPANY_PATH = `companies/${COMPANY_ID}`
+const unitPath = (id: string) => `${EQUIP_PATH}/units/${id}`
 
 const ADMIN_SESSION = {
   uid: 'user-1',
@@ -79,55 +64,66 @@ const UNIT_UPDATE = {
   availableForBooking: true,
 }
 
-function getBatch() {
-  return vi.mocked(adminDb.batch).mock.results[0]?.value as {
-    update: ReturnType<typeof vi.fn>
-    set: ReturnType<typeof vi.fn>
-    commit: ReturnType<typeof vi.fn>
+const NEW_UNIT = {
+  label: 'Alexa #4',
+  serialNumber: null,
+  status: 'ok' as const,
+  notes: null,
+  availableForBooking: true,
+}
+
+let docs: DocMap
+let tx: TransactionStub
+
+/** Pulls the `count` increment out of a counter `tx.update` call (the FieldValue's operand). */
+function counterDelta(): number | null {
+  const call = tx.update.mock.calls.find(([ref]) => (ref as { path: string }).path === COUNTER_PATH)
+  if (!call) return null
+  return (call[1] as { count: { operand: number } }).count.operand
+}
+
+function baseDocs(overrides: { counter?: number | null; limit?: number; status?: string } = {}): DocMap {
+  return {
+    [COMPANY_PATH]: {
+      subscription: {
+        status: overrides.status ?? 'active',
+        plan: 'starter',
+        limits: { equipment: overrides.limit ?? 25, users: 10 },
+      },
+    },
+    [COUNTER_PATH]: overrides.counter === null ? null : { count: overrides.counter ?? 5 },
+    [EQUIP_PATH]: { name: 'ARRI Alexa Mini LF', category: 'Camera', trackingType: 'units', active: true },
+    [unitPath('unit-1')]: { label: 'Alexa #1', active: true },
+    [unitPath('unit-2')]: { label: 'Alexa #2', active: true },
+    [unitPath('unit-99')]: { label: 'Gone', active: true },
   }
+}
+
+function wire(d: DocMap) {
+  docs = d
+  wireDb(adminDb as unknown as Record<string, unknown>, { docs })
+  tx = makeTransaction(docs)
+  vi.mocked(adminDb.runTransaction).mockImplementation(((cb: (t: unknown) => unknown) => cb(tx)) as never)
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION as any)
-
-  const mockBatch = {
-    update: vi.fn(),
-    set: vi.fn(),
-    commit: vi.fn().mockResolvedValue(undefined),
-  }
-  vi.mocked(adminDb.batch).mockReturnValue(mockBatch as any)
-
-  vi.mocked(adminDb.doc).mockReturnValue({
-    get: vi.fn().mockResolvedValue({
-      exists: true,
-      data: () => ({
-        name: 'ARRI Alexa Mini LF',
-        category: 'Camera',
-        trackingType: 'units',
-        active: true,
-      }),
-    }),
-    update: vi.fn(),
-  } as any)
-
-  vi.mocked(adminDb.collection).mockReturnValue({
-    doc: vi.fn().mockReturnValue({ id: 'new-unit-1' }),
-  } as any)
+  vi.mocked(getVerifiedSession).mockResolvedValue(ADMIN_SESSION as never)
+  wire(baseDocs())
 })
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 describe('auth', () => {
   it('returns Unauthorized for non-admin', async () => {
-    vi.mocked(getVerifiedSession).mockResolvedValue(NON_ADMIN_SESSION as any)
+    vi.mocked(getVerifiedSession).mockResolvedValue(NON_ADMIN_SESSION as never)
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 
     expect(result).toEqual({ error: 'Unauthorized' })
-    expect(vi.mocked(adminDb.batch)).not.toHaveBeenCalled()
+    expect(vi.mocked(adminDb.runTransaction)).not.toHaveBeenCalled()
   })
 })
 
@@ -175,7 +171,7 @@ describe('validation', () => {
     const result = await updateEquipmentWithUnits(
       EQUIPMENT_ID,
       EQUIPMENT_FIELDS,
-      [{ ...UNIT_UPDATE, status: 'broken' as any }],
+      [{ ...UNIT_UPDATE, status: 'broken' as never }],
       [], []
     )
     expect(result).toEqual({ error: expect.stringContaining('status') })
@@ -186,7 +182,7 @@ describe('validation', () => {
       EQUIPMENT_ID,
       EQUIPMENT_FIELDS,
       [],
-      [{ label: 'New', serialNumber: null, status: 'broken' as any, notes: null, availableForBooking: true }],
+      [{ label: 'New', serialNumber: null, status: 'broken' as never, notes: null, availableForBooking: true }],
       []
     )
     expect(result).toEqual({ error: expect.stringContaining('status') })
@@ -223,7 +219,7 @@ describe('validation', () => {
   })
 
   it('rejects crew role (non-admin)', async () => {
-    vi.mocked(getVerifiedSession).mockResolvedValue({ ...ADMIN_SESSION, role: 'crew' } as any)
+    vi.mocked(getVerifiedSession).mockResolvedValue({ ...ADMIN_SESSION, role: 'crew' } as never)
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
     expect(result).toEqual({ error: 'Unauthorized' })
   })
@@ -233,77 +229,79 @@ describe('validation', () => {
 
 describe('equipment not found', () => {
   it('returns error when equipment doc does not exist', async () => {
-    vi.mocked(adminDb.doc).mockReturnValue({
-      get: vi.fn().mockResolvedValue({ exists: false, data: () => undefined }),
-    } as any)
+    wire({ ...baseDocs(), [EQUIP_PATH]: null })
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
     expect(result).toEqual({ error: expect.stringContaining('not found') })
+    expect(tx.update).not.toHaveBeenCalled()
   })
 
   it('returns error when equipment is inactive', async () => {
-    vi.mocked(adminDb.doc).mockReturnValue({
-      get: vi.fn().mockResolvedValue({
-        exists: true,
-        data: () => ({ active: false }),
-      }),
-    } as any)
+    wire({ ...baseDocs(), [EQUIP_PATH]: { active: false } })
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
     expect(result).toEqual({ error: expect.stringContaining('not found') })
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses unit creates/deletes on a quantity-tracked item', async () => {
+    wire({ ...baseDocs(), [EQUIP_PATH]: { trackingType: 'quantity', totalQuantity: 4, active: true } })
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT], [])
+    expect(result).toEqual({ error: expect.stringContaining('unit-tracked') })
+    expect(tx.set).not.toHaveBeenCalled()
   })
 })
 
 // ── Equipment update ──────────────────────────────────────────────────────────
 
 describe('equipment update', () => {
-  it('calls batch.update on the equipment doc with correct fields', async () => {
+  it('updates the equipment doc inside the transaction with the correct fields', async () => {
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 
-    expect(vi.mocked(adminDb.doc)).toHaveBeenCalledWith(
-      `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}`
-    )
-    const batch = getBatch()
-    expect(batch.update).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: EQUIP_PATH }),
       expect.objectContaining({
         name: 'ARRI Alexa Mini LF',
         category: 'Camera',
         requiresApproval: false,
-      })
+      }),
     )
   })
 
-  it('commits the batch and revalidates /equipment', async () => {
-    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
+  it('revalidates /equipment and returns no error', async () => {
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 
-    expect(getBatch().commit).toHaveBeenCalledOnce()
+    expect(result).toEqual({})
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith('/equipment')
+  })
+
+  it('does not touch the counter when no unit is created or removed', async () => {
+    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [UNIT_UPDATE], [], [])
+
+    expect(counterDelta()).toBeNull()
+    expect(tx.set).not.toHaveBeenCalled()
   })
 })
 
 // ── Unit updates ──────────────────────────────────────────────────────────────
 
 describe('unit updates', () => {
-  it('calls batch.update for each unit in unitUpdates with correct path', async () => {
+  it('updates each unit in unitUpdates at the right path', async () => {
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [UNIT_UPDATE], [], [])
 
-    expect(vi.mocked(adminDb.doc)).toHaveBeenCalledWith(
-      `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}/units/unit-1`
-    )
-    const batch = getBatch()
-    expect(batch.update).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: unitPath('unit-1') }),
       expect.objectContaining({
         label: 'Alexa #1',
         serialNumber: 'K1.0012345',
         status: 'ok',
         availableForBooking: true,
-      })
+      }),
     )
   })
 
-  it('handles multiple unit updates in one batch', async () => {
+  it('handles multiple unit updates in one transaction', async () => {
     const units = [
       { ...UNIT_UPDATE, id: 'unit-1', label: 'Alexa #1' },
       { ...UNIT_UPDATE, id: 'unit-2', label: 'Alexa #2', status: 'ok' as const },
@@ -311,26 +309,18 @@ describe('unit updates', () => {
 
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, units, [], [])
 
-    // equipment update + 2 unit updates = 3 batch.update calls
-    expect(getBatch().update).toHaveBeenCalledTimes(3)
+    // equipment update + 2 unit updates
+    expect(tx.update).toHaveBeenCalledTimes(3)
   })
 })
 
 // ── Unit creates ──────────────────────────────────────────────────────────────
 
 describe('unit creates', () => {
-  it('calls batch.set for each new unit with correct fields', async () => {
-    const newUnit = {
-      label: 'Alexa #4',
-      serialNumber: null,
-      status: 'ok' as const,
-      notes: null,
-      availableForBooking: true,
-    }
+  it('sets each new unit with the correct fields', async () => {
+    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT], [])
 
-    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [newUnit], [])
-
-    expect(getBatch().set).toHaveBeenCalledWith(
+    expect(tx.set).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         label: 'Alexa #4',
@@ -338,37 +328,119 @@ describe('unit creates', () => {
         active: true,
         equipmentId: EQUIPMENT_ID,
         companyId: COMPANY_ID,
-      })
+      }),
     )
+  })
+
+  it('increments the counter by the number of created units', async () => {
+    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT, NEW_UNIT, NEW_UNIT], [])
+
+    expect(counterDelta()).toBe(3)
+  })
+
+  it('rejects creates that would take the counter over the plan limit and writes nothing', async () => {
+    wire(baseDocs({ counter: 24, limit: 25 }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT, NEW_UNIT], [])
+
+    expect(result).toEqual({ error: expect.stringContaining('Equipment limit reached') })
+    expect(tx.set).not.toHaveBeenCalled()
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('allows creates that land exactly on the limit', async () => {
+    wire(baseDocs({ counter: 23, limit: 25 }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT, NEW_UNIT], [])
+
+    expect(result).toEqual({})
+    expect(counterDelta()).toBe(2)
+  })
+
+  it('rejects creates when the subscription is not active', async () => {
+    wire(baseDocs({ status: 'canceled' }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT], [])
+
+    expect(result).toEqual({ error: expect.stringContaining('Subscription is not active') })
+    expect(tx.set).not.toHaveBeenCalled()
   })
 })
 
 // ── Unit deletes ──────────────────────────────────────────────────────────────
 
 describe('unit deletes', () => {
-  it('calls batch.update with active:false for each deleted unit id', async () => {
+  it('deactivates each deleted unit and decrements the counter', async () => {
     await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
 
-    expect(vi.mocked(adminDb.doc)).toHaveBeenCalledWith(
-      `companies/${COMPANY_ID}/equipment/${EQUIPMENT_ID}/units/unit-99`
+    expect(tx.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: unitPath('unit-99') }),
+      expect.objectContaining({ active: false }),
     )
-    expect(getBatch().update).toHaveBeenCalledWith(
+    expect(counterDelta()).toBe(-1)
+  })
+
+  it('does not decrement for a unit that was already inactive', async () => {
+    wire({ ...baseDocs(), [unitPath('unit-99')]: { label: 'Gone', active: false } })
+
+    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(counterDelta()).toBeNull()
+    expect(tx.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: unitPath('unit-99') }),
       expect.anything(),
-      expect.objectContaining({ active: false })
     )
+  })
+
+  it('still deletes units when the plan is over its limit (count 40, limit 25)', async () => {
+    wire(baseDocs({ counter: 40, limit: 25 }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({})
+    expect(counterDelta()).toBe(-1)
+  })
+
+  it('fails with the backfill message when a net decrease finds no counter, writing nothing', async () => {
+    wire(baseDocs({ counter: null }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({ error: expect.stringContaining('backfill') })
+    expect(tx.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses unit deletes on a quantity-tracked item so the counter is never touched', async () => {
+    wire({ ...baseDocs(), [EQUIP_PATH]: { trackingType: 'quantity', totalQuantity: 4, active: true } })
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99'])
+
+    expect(result).toEqual({ error: expect.stringContaining('unit-tracked') })
+    expect(counterDelta()).toBeNull()
+  })
+
+  it('counts a unit listed twice only once', async () => {
+    await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], ['unit-99', 'unit-99'])
+
+    expect(counterDelta()).toBe(-1)
+  })
+
+  it('nets creates against deletes, and lets a swap through on a full plan', async () => {
+    wire(baseDocs({ counter: 25, limit: 25 }))
+
+    const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [NEW_UNIT], ['unit-99'])
+
+    // +1 -1 = 0: no limit check needed, no counter write
+    expect(result).toEqual({})
+    expect(counterDelta()).toBeNull()
   })
 })
 
 // ── Error handling ────────────────────────────────────────────────────────────
 
 describe('error handling', () => {
-  it('returns generic error when batch.commit throws (does not leak internals)', async () => {
-    const batch = {
-      update: vi.fn(),
-      set: vi.fn(),
-      commit: vi.fn().mockRejectedValue(new Error('Firestore quota exceeded (internal)')),
-    }
-    vi.mocked(adminDb.batch).mockReturnValue(batch as any)
+  it('returns generic error when the transaction throws (does not leak internals)', async () => {
+    vi.mocked(adminDb.runTransaction).mockRejectedValue(new Error('Firestore quota exceeded (internal)'))
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 
@@ -379,12 +451,7 @@ describe('error handling', () => {
   })
 
   it('handles non-Error rejections gracefully', async () => {
-    const batch = {
-      update: vi.fn(),
-      set: vi.fn(),
-      commit: vi.fn().mockRejectedValue('network error'),
-    }
-    vi.mocked(adminDb.batch).mockReturnValue(batch as any)
+    vi.mocked(adminDb.runTransaction).mockRejectedValue('network error')
 
     const result = await updateEquipmentWithUnits(EQUIPMENT_ID, EQUIPMENT_FIELDS, [], [], [])
 

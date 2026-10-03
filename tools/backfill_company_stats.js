@@ -1,6 +1,15 @@
 /**
  * Backfill: recompute the derived stats map on every company document.
  *
+ * equipmentCount counts equipment ITEMS (issue #284), not type documents: per
+ * ACTIVE type, the number of active unit documents (`units` types and legacy
+ * types without a trackingType) or `totalQuantity` (`quantity` types). A
+ * soft-deleted type or unit counts 0; availableForBooking:false and
+ * needs_repair units still count; totalQuantity on a `units` type is ignored.
+ * Every run also reports companies whose recomputed count exceeds their plan's
+ * equipment limit ("OVER LIMIT") — informational only, nothing is changed for
+ * them. The plan limit is read from subscription.limits.equipment.
+ *
  * Writes companies/{id}.stats (equipmentCount, bookingsCreated,
  * bookingsCancelled, lastBookingAt, memberCount), companies/{id}/_meta/equipmentCount,
  * and companies/{id}/_meta/memberCounts (members + admins) from the actual
@@ -122,11 +131,34 @@ const db = getFirestore();
 
 // ── Truth queries ────────────────────────────────────────────────────────────
 
+// Items, not type documents — see the header. Reading the units of every active
+// units type is N+1 queries per company, which is fine for a one-off backfill.
+async function countEquipmentItems(company) {
+  const typesSnap = await company
+    .collection('equipment')
+    .where('active', '==', true)
+    .select('trackingType', 'totalQuantity')
+    .get();
+
+  const perType = await Promise.all(
+    typesSnap.docs.map(async (typeDoc) => {
+      if (typeDoc.get('trackingType') === 'quantity') {
+        const qty = typeDoc.get('totalQuantity');
+        return Number.isInteger(qty) && qty > 0 ? qty : 0;
+      }
+      const units = await typeDoc.ref.collection('units').where('active', '==', true).count().get();
+      return units.data().count;
+    }),
+  );
+
+  return perType.reduce((sum, n) => sum + n, 0);
+}
+
 async function computeStats(companyId) {
   const company = db.collection('companies').doc(companyId);
 
-  const [equipment, bookings, cancelled, lastBooking, members, admins] = await Promise.all([
-    company.collection('equipment').where('active', '==', true).count().get(),
+  const [equipmentCount, bookings, cancelled, lastBooking, members, admins] = await Promise.all([
+    countEquipmentItems(company),
     company.collection('bookings').count().get(),
     company.collection('bookings').where('status', '==', 'cancelled').count().get(),
     company.collection('bookings').orderBy('createdAt', 'desc').limit(1).get(),
@@ -135,7 +167,7 @@ async function computeStats(companyId) {
   ]);
 
   return {
-    equipmentCount: equipment.data().count,
+    equipmentCount,
     bookingsCreated: bookings.data().count,
     bookingsCancelled: cancelled.data().count,
     lastBookingAt: lastBooking.empty ? null : lastBooking.docs[0].get('createdAt'),
@@ -168,6 +200,8 @@ async function readStored(companyId) {
       admins: memberCountsSnap.exists ? memberCountsSnap.get('admins') : null,
     },
     name: companySnap.get('name') || '(unnamed)',
+    plan: companySnap.get('subscription.plan') ?? '(none)',
+    limit: companySnap.get('subscription.limits.equipment') ?? null,
   };
 }
 
@@ -295,6 +329,7 @@ async function main() {
   let drifted = 0;
   let written = 0;
   const warnings = [];
+  const overLimit = [];
 
   for await (const batchOfIds of chunks(companyIds(), CONCURRENCY)) {
     await Promise.all(
@@ -310,13 +345,27 @@ async function main() {
           warnings.push(`${id} (${stored.name}): ${truth.bookingsCreated} bookings but none carry createdAt`);
         }
 
+        // Informational: no company is changed because of this, it is only
+        // listed so someone can decide what to say to them.
+        const isOver = stored.limit !== null && truth.equipmentCount > stored.limit;
+        if (isOver) {
+          overLimit.push({
+            id,
+            name: stored.name,
+            plan: stored.plan,
+            count: truth.equipmentCount,
+            limit: stored.limit,
+          });
+        }
+        const limitNote = `[plan ${stored.plan}, limit ${stored.limit ?? '—'}${isOver ? ', OVER LIMIT' : ''}]`;
+
         if (changes.length === 0) {
-          console.log(`  ok    ${id}  ${stored.name}`);
+          console.log(`  ok    ${id}  ${stored.name}  ${limitNote}`);
           return;
         }
 
         drifted += 1;
-        console.log(`  DRIFT ${id}  ${stored.name}`);
+        console.log(`  DRIFT ${id}  ${stored.name}  ${limitNote}`);
         for (const c of changes) console.log(`          ${c}`);
 
         if (APPLY) {
@@ -330,6 +379,14 @@ async function main() {
   console.log('');
   const noun = total === 1 ? 'company' : 'companies';
   console.log(`  ${total} ${noun}, ${drifted} with drift${APPLY ? `, ${written} written` : ''}`);
+
+  if (overLimit.length) {
+    console.log('');
+    console.log(`  OVER LIMIT — ${overLimit.length} ${overLimit.length === 1 ? 'company' : 'companies'} with more items than their plan allows (no action taken):`);
+    for (const o of overLimit) {
+      console.log(`    ${o.id}  ${o.name}  plan=${o.plan}  items=${o.count}  limit=${o.limit}`);
+    }
+  }
 
   if (warnings.length) {
     console.log('');

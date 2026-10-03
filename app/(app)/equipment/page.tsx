@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { getVerifiedSession } from '@/lib/dal'
 import { getEquipment } from '@/lib/queries/equipment'
+import { getCompany, getEquipmentCount } from '@/lib/queries/company'
 import EquipmentList from '@/components/equipment/EquipmentList'
 
 /**
@@ -11,7 +12,11 @@ import EquipmentList from '@/components/equipment/EquipmentList'
  */
 export default async function EquipmentPage() {
   const session = await getVerifiedSession()
-  const initialEquipment = await getEquipment(session.activeCompanyId)
+  const [initialEquipment, equipmentCount, company] = await Promise.all([
+    getEquipment(session.activeCompanyId),
+    getEquipmentCount(session.activeCompanyId),
+    getCompany(session.activeCompanyId),
+  ])
 
   return (
     <Suspense>
@@ -19,6 +24,10 @@ export default async function EquipmentPage() {
         companyId={session.activeCompanyId}
         role={session.role}
         initialEquipment={initialEquipment}
+        initialEquipmentCount={equipmentCount}
+        // Disables the add controls when full. UX only — the server actions enforce it.
+        // No subscription on the doc → Infinity: don't grey anything out on a guess.
+        equipmentLimit={company?.subscription?.limits?.equipment ?? Infinity}
       />
     </Suspense>
   )

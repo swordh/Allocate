@@ -122,3 +122,16 @@ export const getCompany = cache(async (companyId: string): Promise<Company | nul
   if (!doc.exists) return null
   return docToCompany(doc)
 })
+
+/**
+ * The company's equipment usage — the same `_meta/equipmentCount` counter the
+ * plan-limit guards in actions/equipment.ts read, so what a user sees on the
+ * subscription page is exactly what blocks them. Counts active units
+ * (`units` types) and `totalQuantity` (`quantity` types), not type documents.
+ * A missing counter (company created before it existed) reads as 0; the guards
+ * themselves still refuse to write until the backfill has run.
+ */
+export const getEquipmentCount = cache(async (companyId: string): Promise<number> => {
+  const snap = await adminDb.doc(`companies/${companyId}/_meta/equipmentCount`).get()
+  return (snap.data()?.count as number | undefined) ?? 0
+})

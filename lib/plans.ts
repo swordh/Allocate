@@ -24,11 +24,11 @@ export interface PlanInfo {
 export const PLAN_CATALOG: Record<PlanId, PlanInfo> = {
   starter: {
     id: 'starter', name: 'Starter', priceMonthly: 149, priceYearly: 1490, equipment: 25, users: 10,
-    features: ['25 equipment types', '10 users', 'All booking views'],
+    features: ['25 equipment items', '10 users', 'All booking views'],
   },
   basic: {
     id: 'basic', name: 'Basic', priceMonthly: 390, priceYearly: 3900, equipment: 100, users: 30,
-    features: ['100 equipment types', '30 users', 'Custom category fields'],
+    features: ['100 equipment items', '30 users', 'Custom category fields'],
   },
 }
 

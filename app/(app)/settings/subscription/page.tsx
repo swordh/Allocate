@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getVerifiedSession } from '@/lib/dal'
-import { getCompany } from '@/lib/queries/company'
-import { getEquipmentCategoryCounts } from '@/lib/queries/equipment'
+import { getCompany, getEquipmentCount } from '@/lib/queries/company'
 import { listMembers } from '@/lib/queries/members'
 import { trialHasPaymentMethod } from '@/lib/trialPaymentMethod'
 import { resolveBillingEmailFlag } from '@/lib/billingEmailFlag'
@@ -17,14 +16,12 @@ export default async function SubscriptionSettingsPage() {
   // read path — see lib/billingEmailFlag.ts for why the weekly sweep alone
   // isn't enough. Both Stripe lookups only depend on `company`, so they run
   // alongside the other reads.
-  const [categoryCounts, members, hasPaymentMethod, billing] = await Promise.all([
-    getEquipmentCategoryCounts(session.activeCompanyId),
+  const [equipmentCount, members, hasPaymentMethod, billing] = await Promise.all([
+    getEquipmentCount(session.activeCompanyId),
     listMembers(session.activeCompanyId),
     trialHasPaymentMethod(company?.subscription ?? null),
     resolveBillingEmailFlag(session.activeCompanyId, company?.stripeCustomerId, company?.billing ?? null),
   ])
-
-  const equipmentCount = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0)
 
   return (
     <SubscriptionView
