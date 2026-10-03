@@ -42,6 +42,19 @@
 .wordmarkRow {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.wordmarkAside {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--fs-tab);
+  font-weight: var(--fw-medium);
+  color: var(--text-faint);
 }
 
 .wordmark {

@@ -7,6 +7,7 @@ import { getVerifiedSession, getCompanyDoc } from '@/lib/dal'
 import { toRole } from '@/lib/roles'
 import { PLAN_LIMITS } from '@/lib/subscription'
 import { INITIAL_COMPANY_STATS } from '@/lib/companyStats'
+import { getRegistrationFlags } from '@/lib/registrationFlags'
 import { DEFAULT_COMPANY_PREFERENCES } from '@/constants/company'
 
 const DEFAULT_CATEGORIES = ['Camera', 'Lenses', 'Audio', 'Lighting', 'Grip', 'Accessories']
@@ -128,6 +129,17 @@ async function repairMissingClaims(
 }
 
 /**
+ * Expected refusals are RETURNED, not thrown: Next.js redacts the message of
+ * any error thrown from a Server Action in production builds, so a thrown
+ * `Error('companies_blocked')` reaches the client as a generic failure. Truly
+ * unexpected failures (bad token, Firestore/Auth errors, a read error on the
+ * kill-switch flag) still throw — and fail closed.
+ */
+export type SetupNewCompanyResult =
+  | { ok: true }
+  | { error: 'companies_blocked' | 'already-exists' }
+
+/**
  * Creates a company for a newly registered user — server-side, no CORS issues.
  * Sets custom claims (activeCompanyId, role) on the Auth user.
  *
@@ -145,7 +157,7 @@ export async function setupNewCompany(
   companyName: string,
   userName: string,
   timezone = 'UTC',
-): Promise<void> {
+): Promise<SetupNewCompanyResult> {
   let uid: string
   let email: string
   try {
@@ -213,8 +225,21 @@ export async function setupNewCompany(
     // A dead end with a deadline is worse than the one #252 exists to close,
     // so repair the claims instead of throwing.
     const repaired = await repairMissingClaims(uid, liveMemberships)
-    if (repaired) return
-    throw new Error('already-exists')
+    if (repaired) return { ok: true }
+    return { error: 'already-exists' }
+  }
+
+  // Operator kill switch "New companies" (lib/registrationFlags.ts). Checked
+  // HERE — after the idempotency/repair branch above, before anything is
+  // written — so it blocks CREATING a company but never the claims repair for
+  // a user who already has one (that is recovery, not registration). The
+  // signup and no-company screens show the paused notice; this is what
+  // actually enforces it, since a Server Action can be called directly.
+  // Returned (not thrown) so SignupForm / NoCompanyView can match it in
+  // production. A flag READ ERROR is deliberately not caught here: it throws,
+  // so this fails closed.
+  if ((await getRegistrationFlags()).companiesBlocked) {
+    return { error: 'companies_blocked' }
   }
 
   const companyRef = adminDb.collection('companies').doc()
@@ -327,6 +352,7 @@ export async function setupNewCompany(
   }
 
   console.log('[actions/auth]', { action: 'company_created' })
+  return { ok: true }
 }
 
 /**

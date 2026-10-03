@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { getSessionWithoutCompany } from '@/lib/dal'
 import { getUserProfile } from '@/lib/queries/users'
 import NoCompanyView from '@/components/auth/NoCompanyView'
+import { getRegistrationFlagsOrOpen } from '@/lib/registrationFlags'
 
 export const metadata: Metadata = {
   title: 'No company — Allocate',
@@ -19,12 +20,18 @@ export const metadata: Metadata = {
  */
 export default async function NoCompanyPage() {
   const session = await getSessionWithoutCompany()
-  const profile = await getUserProfile(session.uid)
+  const [profile, flags] = await Promise.all([
+    getUserProfile(session.uid),
+    getRegistrationFlagsOrOpen(),
+  ])
 
   return (
     <NoCompanyView
       name={profile?.name ?? ''}
       email={session.email}
+      // The operator "New companies" kill switch. When on, the create-company
+      // card gives way to the paused notice; export, delete and sign out stay.
+      companiesBlocked={flags.companiesBlocked}
       /*
        * Only the date crosses the RSC boundary — never the whole
        * `pendingDeletion` object. A React Server Component serialises a prop

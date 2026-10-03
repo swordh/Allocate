@@ -39,6 +39,9 @@ export const OPERATOR_NAV: NavItem[] = [
   { label: 'CUSTOMERS',  href: '/operator/customers' },
   { label: 'DELETIONS',  href: '/operator/deletions' },
   { label: 'FEEDBACK',   href: '/operator/feedback'  },
+  // Registration kill switches (operator System tab) — site-wide settings,
+  // so it sits last, after the three entity lists.
+  { label: 'SYSTEM',     href: '/operator/system'    },
 ]
 
 export const BOOKINGS_ITEMS: NavItem[] = [

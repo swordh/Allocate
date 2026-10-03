@@ -54,6 +54,11 @@
   gap: 22px;
 }
 
+/* `display:flex` above would otherwise win over the UA rule for [hidden]. */
+.form[hidden] {
+  display: none;
+}
+
 .createGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

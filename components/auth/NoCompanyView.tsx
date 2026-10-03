@@ -11,6 +11,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Field from '@/components/ui/Field'
 import ErrorBanner from '@/components/ui/ErrorBanner'
+import RegistrationPaused from './RegistrationPaused'
 import styles from './NoCompanyView.module.css'
 
 interface NoCompanyViewProps {
@@ -29,6 +30,12 @@ interface NoCompanyViewProps {
    * app/(auth)/no-company/page.tsx.
    */
   deletionScheduledFor: string | null
+  /**
+   * The operator "New companies" kill switch, read server-side. While true
+   * the create-company card is replaced by the paused notice. Export, delete
+   * and sign out stay — those are the user's own rights, not registration.
+   */
+  companiesBlocked: boolean
 }
 
 /**
@@ -61,8 +68,15 @@ export default function NoCompanyView({
   email,
   deletionScheduled,
   deletionScheduledFor,
+  companiesBlocked,
 }: NoCompanyViewProps) {
   const router = useRouter()
+
+  // Also set when the server refuses with `companies_blocked` although the
+  // page loaded with the switch off (an operator flipped it while this page
+  // was open).
+  const [blockedNow, setBlockedNow] = useState(false)
+  const paused = companiesBlocked || blockedNow
 
   // Computed on the client, from `Date.now()` at render time. `kind` is
   // 'unknown' whenever the date is missing or unparseable, which is why the
@@ -107,7 +121,16 @@ export default function NoCompanyView({
       }
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
       const idToken = await user.getIdToken()
-      await setupNewCompany(idToken, trimmed, name || (user.displayName ?? ''), timezone)
+      const result = await setupNewCompany(idToken, trimmed, name || (user.displayName ?? ''), timezone)
+      if ('error' in result) {
+        if (result.error === 'companies_blocked') {
+          // An operator flipped the switch while this page was open.
+          setBlockedNow(true)
+        } else {
+          setCreateError('You already have an active company.')
+        }
+        return
+      }
 
       // Force token refresh to pick up the new activeCompanyId claim, then
       // re-issue the session cookie from it — same pattern SignupForm and
@@ -115,9 +138,8 @@ export default function NoCompanyView({
       const freshToken = await user.getIdToken(/* forceRefresh */ true)
       await createSession(freshToken)
       router.push('/bookings')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : ''
-      setCreateError(msg === 'already-exists' ? 'You already have an active company.' : 'Could not create your company. Please try again.')
+    } catch {
+      setCreateError('Could not create your company. Please try again.')
     } finally {
       setCreating(false)
     }
@@ -174,76 +196,100 @@ export default function NoCompanyView({
     <div className={styles.wrapper}>
       <span className={styles.logo}>ALLOCATE</span>
 
-      <div className={styles.intro}>
-        <span className={styles.eyebrow}>{deletionScheduled ? 'COMPANY DELETED' : 'NO COMPANY'}</span>
-        <h1 className={styles.heading}>
-          {deletionScheduled ? "You're not part of a company anymore" : 'Create your company'}
-        </h1>
-        <p className={styles.subheading}>
-          {deletionScheduled ? (
-            <>
-              The company you belonged to was deleted, and you were its only member left. You can still
-              sign in, export your data, or create a new company — doing so cancels the deletion of your
-              account.{' '}
-              {countdown.kind === 'counting' && (
-                <>
-                  If you do neither, your account is deleted in{' '}
-                  <strong>{countdown.label}</strong>.
-                </>
-              )}
-              {/*
-                * Past the deadline the sentence above would be a lie, and
-                * "Less than a day left" — what this rendered before — is a
-                * lie that repeats forever. `strandedAccountSweep`
-                * (functions/src/company/strandedAccountSweep.ts, issue #252
-                * step 6) now enforces the deadline, running at most every 24
-                * hours — so this state is reachable for up to a day after
-                * the deadline passes, on every stranded user, not a rare
-                * edge case. The copy below ("can be removed as soon as it
-                * is processed") is written to stay true either way.
-                */}
-              {countdown.kind === 'passed' && (
-                <>
-                  Your account is <strong>past its scheduled deletion date</strong> and can be removed as
-                  soon as it is processed. Create a company now if you want to keep it.
-                </>
-              )}
-              {countdown.kind === 'unknown' && (
-                <>Your account is scheduled for deletion.</>
-              )}
-            </>
-          ) : (
-            <>You&apos;re signed in as {email}, but not part of a company yet. Create one to continue.</>
+      {(!paused || deletionScheduled) && (
+        <div className={styles.intro}>
+          <span className={styles.eyebrow}>{deletionScheduled ? 'COMPANY DELETED' : 'NO COMPANY'}</span>
+          <h1 className={styles.heading}>
+            {deletionScheduled ? "You're not part of a company anymore" : 'Create your company'}
+          </h1>
+          <p className={styles.subheading}>
+            {deletionScheduled ? (
+              <>
+                The company you belonged to was deleted, and you were its only member left.{' '}
+                {paused ? (
+                  <>
+                    You can still sign in or export your data. Creating a new company — which would
+                    cancel the deletion of your account — is paused for now.
+                  </>
+                ) : (
+                  <>
+                    You can still sign in, export your data, or create a new company — doing so cancels
+                    the deletion of your account.
+                  </>
+                )}{' '}
+                {countdown.kind === 'counting' && (
+                  <>
+                    {paused ? 'Your account is deleted in' : 'If you do neither, your account is deleted in'}{' '}
+                    <strong>{countdown.label}</strong>.
+                  </>
+                )}
+                {/*
+                  * Past the deadline the sentence above would be a lie, and
+                  * "Less than a day left" — what this rendered before — is a
+                  * lie that repeats forever. `strandedAccountSweep`
+                  * (functions/src/company/strandedAccountSweep.ts, issue #252
+                  * step 6) now enforces the deadline, running at most every 24
+                  * hours — so this state is reachable for up to a day after
+                  * the deadline passes, on every stranded user, not a rare
+                  * edge case. The copy below ("can be removed as soon as it
+                  * is processed") is written to stay true either way.
+                  */}
+                {countdown.kind === 'passed' && (
+                  <>
+                    Your account is <strong>past its scheduled deletion date</strong> and can be removed as
+                    soon as it is processed.{paused ? '' : ' Create a company now if you want to keep it.'}
+                  </>
+                )}
+                {countdown.kind === 'unknown' && (
+                  <>Your account is scheduled for deletion.</>
+                )}
+              </>
+            ) : (
+              <>You&apos;re signed in as {email}, but not part of a company yet. Create one to continue.</>
+            )}
+          </p>
+          {countdown.kind !== 'unknown' && deletionScheduled && (
+            <div className={styles.countdown} role="status">
+              <span className={styles.countdownValue}>{countdown.label}</span>
+              <span className={styles.countdownLabel}>{countdown.caption}</span>
+            </div>
           )}
-        </p>
-        {countdown.kind !== 'unknown' && deletionScheduled && (
-          <div className={styles.countdown} role="status">
-            <span className={styles.countdownValue}>{countdown.label}</span>
-            <span className={styles.countdownLabel}>{countdown.caption}</span>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {paused && (
+        <div className={styles.pausedBlock}>
+          <RegistrationPaused
+            variant="companies"
+            layout="embedded"
+            email={email}
+            secondary={{ label: signingOut ? 'Signing out…' : 'Sign out', onClick: handleSignOut, disabled: signingOut }}
+          />
+        </div>
+      )}
 
       <div className={styles.cardGrid}>
-        <form className={styles.card} onSubmit={handleCreateCompany}>
-          <h2 className={styles.cardTitle}>Create a new company</h2>
-          <p className={styles.cardBody}>Start fresh with a new workspace. This is your place again.</p>
-          <Field label="Company name" htmlFor="companyName">
-            <Input
-              id="companyName"
-              inputSize="lg"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              required
-              disabled={creating}
-              busy={creating}
-            />
-          </Field>
-          {createError && <ErrorBanner tone="danger">{createError}</ErrorBanner>}
-          <Button type="submit" size="lg" fullWidth loading={creating} disabled={!companyName.trim()}>
-            {creating ? 'Creating…' : 'Create company'}
-          </Button>
-        </form>
+        {!paused && (
+          <form className={styles.card} onSubmit={handleCreateCompany}>
+            <h2 className={styles.cardTitle}>Create a new company</h2>
+            <p className={styles.cardBody}>Start fresh with a new workspace. This is your place again.</p>
+            <Field label="Company name" htmlFor="companyName">
+              <Input
+                id="companyName"
+                inputSize="lg"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                required
+                disabled={creating}
+                busy={creating}
+              />
+            </Field>
+            {createError && <ErrorBanner tone="danger">{createError}</ErrorBanner>}
+            <Button type="submit" size="lg" fullWidth loading={creating} disabled={!companyName.trim()}>
+              {creating ? 'Creating…' : 'Create company'}
+            </Button>
+          </form>
+        )}
 
         <div className={styles.card}>
           <h2 className={styles.cardTitle}>Export your data</h2>
@@ -298,9 +344,11 @@ export default function NoCompanyView({
         </div>
       </div>
 
-      <button type="button" className={styles.signOutLink} onClick={handleSignOut} disabled={signingOut}>
-        {signingOut ? 'Signing out…' : 'Sign out'}
-      </button>
+      {!paused && (
+        <button type="button" className={styles.signOutLink} onClick={handleSignOut} disabled={signingOut}>
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      )}
     </div>
   )
 }

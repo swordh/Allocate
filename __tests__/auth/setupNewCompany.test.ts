@@ -12,6 +12,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Mocks (hoisted) ───────────────────────────────────────────────────────────
 
+const { mockGetRegistrationFlags } = vi.hoisted(() => ({
+  mockGetRegistrationFlags: vi.fn(),
+}))
+
+// The operator kill switches (lib/registrationFlags.ts). Open by default so
+// every pre-existing test below runs against an unblocked system; the
+// "companies blocked" describe at the end flips it.
+vi.mock('@/lib/registrationFlags', () => ({
+  getRegistrationFlags: mockGetRegistrationFlags,
+}))
+
 vi.mock('@/lib/firebase-admin', () => ({
   adminDb: {
     doc: vi.fn(),
@@ -118,6 +129,21 @@ function liveCompany(createdBy?: string) {
 
 const DEAD_COMPANY = { exists: false, data: () => undefined } as never
 
+const FLAGS_OPEN = {
+  accountsBlocked: false,
+  accountsBlockedSince: null,
+  companiesBlocked: false,
+  companiesBlockedSince: null,
+}
+
+beforeEach(() => {
+  // Top-level hook: runs before each describe's own beforeEach, resetting the
+  // flag mock to "open" for every test. Needed because the kill-switch
+  // describe at the end overrides it to "blocked" — without this reset that
+  // value would leak into any test that runs after it.
+  mockGetRegistrationFlags.mockResolvedValue(FLAGS_OPEN)
+})
+
 describe('setupNewCompany — initial stats map', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -194,7 +220,7 @@ describe('setupNewCompany — idempotency probe skips orphaned memberships', () 
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual({ ok: true })
 
     expect(getCompanyDoc).toHaveBeenCalledWith('ghost-co')
     expect(batch.commit).toHaveBeenCalled()
@@ -211,7 +237,7 @@ describe('setupNewCompany — idempotency probe skips orphaned memberships', () 
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     // No partial write: the guard fires before any batch op is queued.
     expect(batch.set).not.toHaveBeenCalled()
@@ -229,7 +255,7 @@ describe('setupNewCompany — idempotency probe skips orphaned memberships', () 
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
     expect(batch.commit).not.toHaveBeenCalled()
   })
 })
@@ -320,7 +346,7 @@ describe('setupNewCompany — repairs claims for a company she founded but canno
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual({ ok: true })
 
     expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, {
       activeCompanyId: 'my-co',
@@ -350,7 +376,7 @@ describe('setupNewCompany — repairs claims for a company she founded but canno
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
@@ -374,7 +400,7 @@ describe('setupNewCompany — repairs claims for a company she founded but canno
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
@@ -401,7 +427,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     // The load-bearing assertion: NO claims were written against a company
     // she did not create. Membership plus missing claims must not be a
@@ -419,7 +445,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     // `createdBy === uid` must not degrade to `undefined === undefined` or
     // to a truthiness check for a document predating the field.
@@ -435,7 +461,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     // Founding it once is not standing membership. A founder who was removed
     // from her own company must not be readmitted by a signup retry.
@@ -455,7 +481,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
@@ -469,7 +495,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     // Never write a role into claims that isn't one of the two the app
     // knows (types/user.ts `Role`).
@@ -489,7 +515,7 @@ describe('setupNewCompany — refuses to repair claims against a company that is
 
     await expect(
       setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
-    ).rejects.toThrow('already-exists')
+    ).resolves.toEqual({ error: 'already-exists' })
 
     expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
@@ -510,5 +536,88 @@ describe('setupNewCompany — refuses to repair claims against a company that is
       activeCompanyId: 'my-co',
       role: 'admin',
     })
+  })
+})
+
+
+/**
+ * Operator kill switch "New companies" (lib/registrationFlags.ts). The UI
+ * hides the form, but a Server Action can be called directly — this guard is
+ * what actually enforces the switch.
+ */
+describe('setupNewCompany — companiesBlocked kill switch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRegistrationFlags.mockResolvedValue({
+      ...FLAGS_OPEN,
+      companiesBlocked: true,
+      companiesBlockedSince: '2026-10-03T08:12:00.000Z',
+    })
+  })
+
+  it('returns companies_blocked and writes nothing', async () => {
+    const { batch } = wire()
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).resolves.toEqual({ error: 'companies_blocked' })
+
+    expect(batch.set).not.toHaveBeenCalled()
+    expect(batch.commit).not.toHaveBeenCalled()
+    expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
+  })
+
+  it('does not block a claims repair for a user who already has a company', async () => {
+    // Recovery, not registration: she founded this company and only her
+    // claims write failed. Blocking would strand her.
+    const { batch } = wire({
+      memberships: [{ companyId: 'live-co' }],
+      companyMembers: { 'live-co': { role: 'admin' } },
+    })
+    vi.mocked(getCompanyDoc).mockResolvedValue(liveCompany(UID))
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).resolves.toEqual({ ok: true })
+
+    expect(adminAuth.setCustomUserClaims).toHaveBeenCalledWith(UID, {
+      activeCompanyId: 'live-co',
+      role: 'admin',
+    })
+    expect(batch.commit).not.toHaveBeenCalled()
+  })
+
+  it('creates the company when only the accounts switch is on', async () => {
+    mockGetRegistrationFlags.mockResolvedValue({ ...FLAGS_OPEN, accountsBlocked: true })
+    const { batch } = wire()
+
+    await setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm')
+
+    expect(batch.commit).toHaveBeenCalled()
+  })
+})
+
+/**
+ * A flag READ error must fail closed in setupNewCompany: the page layer may
+ * treat an unreadable flag as open (getRegistrationFlagsOrOpen), so this
+ * server-side guard is the only thing standing between an unreadable switch
+ * and a company being created.
+ */
+describe('setupNewCompany — unreadable kill-switch flag fails closed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRegistrationFlags.mockRejectedValue(new Error('firestore unavailable'))
+  })
+
+  it('throws (does not create a company) when the flag cannot be read', async () => {
+    const { batch } = wire()
+
+    await expect(
+      setupNewCompany('id-token', 'Nordfilm AB', 'Owner', 'Europe/Stockholm'),
+    ).rejects.toThrow('firestore unavailable')
+
+    expect(batch.set).not.toHaveBeenCalled()
+    expect(batch.commit).not.toHaveBeenCalled()
+    expect(adminAuth.setCustomUserClaims).not.toHaveBeenCalled()
   })
 })

@@ -126,6 +126,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── System switches (registration kill switches) ──────────────────────────
+    // `system/registration` holds the two operator kill switches
+    // (accountsBlocked / companiesBlocked + *Since timestamps) and its `log`
+    // subcollection holds the audit trail — operator uid/email and a free-text
+    // reason. Admin-SDK only: written by the operator System tab's server
+    // action, read by lib/registrationFlags.ts. The recursive `{doc=**}`
+    // covers the `log` subcollection. Never readable or writable by a client.
+    match /system/{doc=**} {
+      allow read, write: if false;
+    }
+
     // ── Account deletion failure trace (issue #337) ───────────────────────────
     // One doc per uid, `accountDeletionFailures/{uid}` — a minimal, durable
     // trace of a self-service `deleteAccount` (actions/account.ts) attempt
