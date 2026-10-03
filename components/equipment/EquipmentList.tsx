@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useEquipment } from '@/hooks/useEquipment'
 import { useCategories } from '@/hooks/useCategories'
@@ -45,6 +45,9 @@ interface EquipmentListProps {
   initialEquipmentCount: number
   equipmentLimit: number
 }
+
+/** Hover text on every disabled add control. */
+const LIMIT_TITLE = 'Equipment limit reached'
 
 type StatusFilter = 'ALL' | 'OUT' | 'INACTIVE' | 'BROKEN'
 
@@ -163,6 +166,17 @@ export default function EquipmentList({
    * something was removed) the message is stale and disappears by itself.
    */
   const [inlineError, setInlineError] = useState<{ message: string; count: number } | null>(null)
+  // Ids the quantity actions in flight are tagged with, so only the most recent
+  // one may report a failure (an older, slower one must not resurrect a message
+  // the user already moved past). The live count is mirrored into a ref so the
+  // error is tagged with the count at the moment it ARRIVES, not the one captured
+  // in the click-time closure — a count that moved while the request was in
+  // flight would otherwise hide the message before it was ever rendered.
+  const lastActionId = useRef(0)
+  const liveCountRef = useRef(0)
+  useEffect(() => {
+    liveCountRef.current = equipmentCount
+  }, [equipmentCount])
 
   const categoryNames = useMemo(() => {
     const fromCategories = categories.map((c) => c.name)
@@ -387,6 +401,7 @@ export default function EquipmentList({
     const next = item.totalQuantity + delta
     if (next < 1) return
 
+    const actionId = ++lastActionId.current
     setBusy(true)
     setInlineError(null)
     try {
@@ -395,7 +410,9 @@ export default function EquipmentList({
       const result = await updateEquipment(item.id, form)
       // The button state comes from a snapshot that can be a moment stale; the
       // server is the authority, so surface its answer (e.g. limit reached).
-      if (result.error) setInlineError({ message: result.error, count: equipmentCount })
+      if (result.error && actionId === lastActionId.current) {
+        setInlineError({ message: result.error, count: liveCountRef.current })
+      }
     } finally {
       setBusy(false)
     }
@@ -528,15 +545,13 @@ export default function EquipmentList({
           canEdit ? (
             // Desktop only — on mobile the hamburger menu already carries this
             // action, and a second one crowds the title row.
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={openNewType}
-              disabled={atLimit}
-              className={styles.desktopOnlyAction}
-            >
-              NEW EQUIPMENT
-            </Button>
+            // The title sits on a wrapper: a disabled button swallows hover in
+            // some browsers, so a title on the button itself would not show.
+            <span title={atLimit ? LIMIT_TITLE : undefined} className={styles.desktopOnlyAction}>
+              <Button variant="primary" size="sm" onClick={openNewType} disabled={atLimit}>
+                NEW EQUIPMENT
+              </Button>
+            </span>
           ) : (
             <Chip size="tag" interactive={false}>
               VIEW ONLY · {role.toUpperCase()}
@@ -592,9 +607,11 @@ export default function EquipmentList({
               }
               action={
                 inventoryEmpty && canEdit ? (
-                  <Button variant="primary" size="sm" onClick={openNewType} disabled={atLimit}>
-                    NEW EQUIPMENT
-                  </Button>
+                  <span title={atLimit ? LIMIT_TITLE : undefined}>
+                    <Button variant="primary" size="sm" onClick={openNewType} disabled={atLimit}>
+                      NEW EQUIPMENT
+                    </Button>
+                  </span>
                 ) : undefined
               }
             />
@@ -831,7 +848,7 @@ function TypeRow({
                   className={styles.quantityStep}
                   onClick={() => onAdjustQuantity(1)}
                   disabled={busy || atLimit}
-                  title={atLimit ? 'Equipment limit reached' : undefined}
+                  title={atLimit ? LIMIT_TITLE : undefined}
                   aria-label={`Increase quantity of ${item.name}`}
                 >
                   +
@@ -859,7 +876,7 @@ function TypeRow({
                   className={styles.addUnit}
                   onClick={() => onOpenUnit(null)}
                   disabled={atLimit}
-                  title={atLimit ? 'Equipment limit reached' : undefined}
+                  title={atLimit ? LIMIT_TITLE : undefined}
                 >
                   + ADD UNIT
                 </button>

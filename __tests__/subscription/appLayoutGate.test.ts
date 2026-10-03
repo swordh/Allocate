@@ -55,6 +55,7 @@ vi.mock('@/lib/queries/companies', () => ({
 vi.mock('@/lib/firebase', () => ({ auth: {}, db: {} }))
 
 import AppLayout from '@/app/(app)/layout'
+import { getEquipmentCount } from '@/lib/queries/company'
 
 const SESSION = {
   uid: 'user-1',
@@ -98,5 +99,21 @@ describe('AppLayout — evaluateAppAccess is actually wired in', () => {
   it('does not redirect a company with an active subscription, regardless of pathname', async () => {
     wire({ pathname: '/bookings', companyData: { subscription: { status: 'active' } } })
     await expect(AppLayout({ children: null })).resolves.toBeTruthy()
+  })
+
+  it('still renders when the equipment counter read fails — the banner just stays hidden', async () => {
+    wire({ pathname: '/bookings', companyData: { subscription: { status: 'active' } } })
+    vi.mocked(getEquipmentCount).mockRejectedValueOnce(new Error('UNAVAILABLE'))
+
+    await expect(AppLayout({ children: null })).resolves.toBeTruthy()
+    expect(getEquipmentCount).toHaveBeenCalledWith(SESSION.activeCompanyId)
+  })
+
+  it('does not read the equipment counter for crew', async () => {
+    wire({ pathname: '/bookings', role: 'crew', companyData: { subscription: { status: 'active' } } })
+
+    await AppLayout({ children: null })
+
+    expect(getEquipmentCount).not.toHaveBeenCalled()
   })
 })

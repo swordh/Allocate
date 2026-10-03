@@ -37,18 +37,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!access.allowed) redirect(access.redirectTo)
   const fullAccess = hasFullAccess(subStatus, trialEnd)
 
-  const profile = await getUserProfile(session.uid)
-
-  // Equipment-limit banner (#284): one cheap doc read, and only for the admins
-  // who can see it — the company doc above already carries the limit.
-  const equipmentCount = shouldReadEquipmentCount(session.role, fullAccess)
-    ? await getEquipmentCount(session.activeCompanyId)
-    : null
-
   // Company switcher (issue #352) — the membership list is the same for
   // every render in this request, so one fetch here serves both PrimaryNav
   // (desktop) and MobileMenu (mobile); companyData is already loaded above.
-  const companies = await listUserCompanies(session.uid)
+  //
+  // Equipment-limit banner (#284): one cheap doc read, only for the admins who
+  // can see it (the company doc above already carries the limit), run beside the
+  // other reads. A failed read must only hide the banner, never break the shell.
+  const [profile, companies, equipmentCount] = await Promise.all([
+    getUserProfile(session.uid),
+    listUserCompanies(session.uid),
+    shouldReadEquipmentCount(session.role, fullAccess)
+      ? getEquipmentCount(session.activeCompanyId).catch(() => null)
+      : null,
+  ])
   const companyName = companyData?.name ?? ''
 
   // Company-deletion banner (issue #252 step 6, PR 3) — visible to every
